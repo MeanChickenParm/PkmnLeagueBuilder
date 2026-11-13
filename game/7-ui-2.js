@@ -3,31 +3,59 @@ function viewCircuit() {
   const rows = challengers().sort((a, b) => b.badges.length - a.badges.length || (a.badgeWeek || 99) - (b.badgeWeek || 99) || ovr(b) - ovr(a));
   return `${legendBanner()}${roamBanner()}${stormBanner()}${outbreakBanner()}
   <section class="panel"><div class="ph"><h2>Badge circuit${nLeagues() > 1 ? ' · ' + S.lgName : ''} · Season ${S.season || 1}</h2><span class="muted">${rows.length} challengers</span></div>
-  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th><th>Badges</th><th>Gym W–L</th><th>Top Lv</th><th>Pokémon</th></tr></thead><tbody>
+  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th><th>Badges</th><th>Gym W–L</th><th>Next gym</th><th>Pokémon</th></tr></thead><tbody>
   ${rows.map((t, i) => { const w = t.weekLog.filter(e => e.won === true).length, l = t.weekLog.filter(e => e.won === false).length;
-    return `<tr><td class="num">${i + 1}</td><td>${tname(t.id)}${t.seasons <= 1 ? ' <span class="tag">rookie</span>' : ''}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${badgeRow(t)}</td><td class="num">${w}–${l}</td><td class="num">${Math.floor(topAvg(t, 1))}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
+    return `<tr><td class="num">${i + 1}</td><td>${tname(t.id)}${t.seasons <= 1 ? ' <span class="tag">rookie</span>' : ''}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${badgeRow(t)}</td><td class="num">${w}–${l}</td><td>${gymStatus(t)}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
   </tbody></table></div></section>${skyPanel()}`;
 }
-function eliteCard(t, label, extra = '') {
+// where a challenger stands at their next gym: tries used, gym trainers beaten, or out for the season
+function gymStatus(t) {
+  const g = t.badges.length;
+  if (t.out) return `<span class="tag notice" title="Lost three times at ${townName(g)} Gym in week ${t.out}">Out · week ${t.out}</span>`;
+  if (g >= 8) return '<span class="muted">Qualified</span>';
+  const used = t.gymTries || 0, st = t.gymStage || 0;
+  return `<span class="small">${townName(g)} · ${GYM_TRIES - used} ${GYM_TRIES - used === 1 ? 'try' : 'tries'} left${st ? ` · ${st} of ${GYM_TRAINERS} trainers beaten` : ''}</span>`;
+}
+function eliteCard(t, label, extra = '', foot = '') {
   return `<article class="elite"><div class="eyebrow">${label}</div><div class="elite-h">${tname(t.id)} ${ovrPill(t)}</div><div class="elite-s">${specChips(t)} <span class="muted">Age ${t.age}</span> ${extra}</div>
-    <ul class="mini">${t.team.slice().reverse().map(m => `<li><span>${monMini(m.sp, m.shiny || m.radiant)}<button class="tlink" data-act="mon" data-t="${t.id}" data-u="${m.uid}">${m.sp}</button></span><span class="num">${stOf(m).b ? wl(stOf(m)) + ' · ' : ''}Lv ${Math.floor(m.lvl)}</span></li>`).join('')}</ul></article>`;
+    <ul class="mini">${t.team.slice().reverse().map(m => `<li><span>${monMini(m.sp, m.shiny || m.radiant)}<button class="tlink" data-act="mon" data-t="${t.id}" data-u="${m.uid}">${m.sp}</button></span><span class="num">${stOf(m).b ? wl(stOf(m)) + ' · ' : ''}Lv ${Math.floor(m.lvl)}</span></li>`).join('')}</ul>${foot}</article>`;
 }
 function viewGyms() {
   const ch = T(S.champion);
-  return `<section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">${ch.career.titles} title${ch.career.titles === 1 ? '' : 's'} · ${ch.career.defenses} defenses</span></div>${eliteCard(ch, `${S.lgName} Champion`)}</section>
-  <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order</span></div><div class="elite-grid">${S.e4.map((id, i) => eliteCard(T(id), `Elite Four #${i + 1} · ${T(id).career.e4Wins} career wins`)).join('')}</div></section>
-  <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">Record is the gym's wins–losses this season. A season holding under 30% of 6+ challenges is a poor season; three in a row and the League replaces the leader.</span></div><div class="elite-grid">${S.gyms.map((g, i) => g.leader ? eliteCard(T(g.leader), `Badge ${i + 1} · ${townName(i)}`, `${gymWeatherTag(T(g.leader))}${g.poorFor === g.leader && g.poor ? `<span class="tag notice" title="Three poor seasons in a row and the League replaces the leader">${g.poor} poor season${g.poor > 1 ? 's' : ''}</span>` : ''}<span class="rec">${g.w}–${g.l}</span>`) : `<article class="elite"><div class="eyebrow">Badge ${i + 1} · ${townName(i)}</div><p class="muted">Vacant</p></article>`).join('')}</div></section>${banCard()}`;
+  return `<section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">${ch.career.defenses} defenses · ${ch.career.conceded || 0} title${(ch.career.conceded || 0) === 1 ? '' : 's'} conceded · keeps the seat when beaten</span></div>${eliteCard(ch, `${S.lgName} Champion`)}</section>
+  <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order, each at a set level for both sides (${E4_LV.join(', ')}; the Champion at ${champLv()})</span></div><div class="elite-grid">${S.e4.map((id, i) => eliteCard(T(id), `Elite Four #${i + 1} · ${T(id).career.e4Wins} career wins`)).join('')}</div></section>
+  <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">Every battle is at the gym's set level for both sides, and a challenger fields as many Pokémon as the trainer in front of them. They must beat both gym trainers, then the leader, and get ${GYM_TRIES} tries a season at each gym. Record is tries turned back–badges conceded this season. A season holding under 30% of 6+ tries is a poor season; three in a row and the League replaces the leader.</span></div><div class="elite-grid">${S.gyms.map((g, i) => g.leader ? eliteCard(T(g.leader), `Badge ${i + 1} · ${townName(i)} · Lv ${GYM_LV[i]}`, `${gymWeatherTag(T(g.leader))}${g.poorFor === g.leader && g.poor ? `<span class="tag notice" title="Three poor seasons in a row and the League replaces the leader">${g.poor} poor season${g.poor > 1 ? 's' : ''}</span>` : ''}<span class="rec">${g.w}–${g.l}</span>`, gymTrainerList(g, i)) : `<article class="elite"><div class="eyebrow">Badge ${i + 1} · ${townName(i)}</div><p class="muted">Vacant</p></article>`).join('')}</div></section>${banCard()}`;
+}
+function gymTrainerList(g, i) {
+  const ts = (g.trainers || []).map(T).filter(Boolean);
+  if (!ts.length) return '';
+  return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · ${GYM_SIZE[i] - 1} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${tname(t.id)} ${ovrPill(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>`;
+}
+// the wall report: the headline (perfect seasons and the streak) and each season's line
+function wallReport() {
+  const h = S.history.filter(x => x.titles != null);
+  if (!h.length) return '';
+  const perfect = h.filter(x => !x.titles).length;
+  let streak = 0; for (let i = h.length - 1; i >= 0 && !h[i].titles; i--) streak++;
+  let best = 0, run = 0; for (const x of h) { run = x.titles ? 0 : run + 1; best = Math.max(best, run); }
+  const avg = f => (h.reduce((a, x) => a + f(x), 0) / h.length).toFixed(1);
+  return `<section class="panel"><div class="ph"><h2>Wall report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">A perfect season is one with no title conceded</span></div>
+  <p><b>${perfect}</b> perfect season${perfect === 1 ? '' : 's'} in ${h.length} · current streak <b>${streak}</b> · longest <b>${best}</b> · ${avg(x => x.badges)} badges conceded a season · ${avg(x => x.titles)} titles conceded a season</p>
+  <div class="scroll"><table class="tbl"><thead><tr><th>Season</th><th>Result</th><th>Titles conceded</th><th>Badges conceded</th><th>Finished the circuit</th><th>Out on three losses</th><th>Best challenger</th></tr></thead><tbody>
+  ${h.slice().reverse().map(x => `<tr><td class="num">${x.season}</td><td>${x.titles ? '<span class="tag notice">Conceded</span>' : '<span class="tag gold">Perfect</span>'}</td><td>${x.titles ? x.winners.map(tname).join(', ') : '—'}</td><td class="num">${x.badges}</td><td class="num">${x.qualifiers}</td><td class="num">${x.out}</td><td>${x.bestId ? tname(x.bestId) + ` <span class="muted">(${depthName(x.best)})</span>` : '—'}</td></tr>`).join('')}
+  </tbody></table></div></section>`;
 }
 // ---------- trainers page ----------
 const recOf = t => t.rec || { w: 0, l: 0, gw: 0, gl: 0, lw: 0, ll: 0, tw: 0, tl: 0 };
-const ROLE_SHORT = { challenger: 'Challenger', leader: 'Gym Leader', e4: 'Elite Four', champion: 'Champion', retired: 'Retired', exchamp: 'Former Champion', free: 'Free agent' };
+const ROLE_SHORT = { challenger: 'Challenger', leader: 'Gym Leader', gymtrainer: 'Gym trainer', e4: 'Elite Four', champion: 'Champion', retired: 'Retired', exchamp: 'Former Champion', free: 'Free agent' };
 function positionText(t) {
-  const lg = nLeagues() > 1 && ['leader', 'e4', 'champion', 'challenger'].includes(t.role) ? ` · ${lgShort(lgOf(t))}` : '';
+  const lg = nLeagues() > 1 && [...STAFF_ROLES, 'challenger'].includes(t.role) ? ` · ${lgShort(lgOf(t))}` : '';
   return positionHere(t) + lg;
 }
 function positionHere(t) {
   if (t.role === 'leader') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => g.leader === t.id); return `${townName(i)} Gym Leader`; });
   if (t.role === 'e4') return inLeague(lgOf(t), () => `Elite Four #${S.e4.indexOf(t.id) + 1}`);
+  if (t.role === 'gymtrainer') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return `${townName(i)} Gym trainer`; });
   return ROLE_SHORT[t.role] || t.role;
 }
 function circuitWins(t) { return (t.seasonHist || []).filter(h => h.badges === 8).length; }
@@ -98,7 +126,7 @@ function trainersResults() {
   if (trScope === 'active') list = list.filter(t => t.role !== 'retired' && t.role !== 'free');
   if (trScope === 'retired') list = list.filter(t => t.role === 'retired');
   if (trGroup === 'chal') list = list.filter(t => t.role === 'challenger');
-  if (trGroup === 'elite') list = list.filter(t => ['leader', 'e4', 'champion'].includes(t.role));
+  if (trGroup === 'elite') list = list.filter(t => STAFF_ROLES.includes(t.role));
   if (trGroup === 'famous') list = list.filter(t => t.famous && (trFam === 'all' || famousTags(t).includes(trFam)));
   const q = fold(trQ.trim());
   if (q) list = list.filter(t => fold([dn(t), t.name, t.cls, t.legacy ? 'legacy' : '', positionText(t), specName(t), t.spec2 ? 'dual' : '', traitOf(t) ? TRAITS[traitOf(t)].name : '', t.rival ? 'rival' : '', t.nemesis ? 'nemesis' : '', ...famousTags(t).map(k => FAMOUS_TAG_LABELS[k]), ...t.team.map(m => m.sp)].join(' ')).includes(q));
@@ -330,7 +358,7 @@ function viewRecords() {
     ${recBoard('Interim Champions, never Champion', topBy(interimOnly, t => t.interim.length, 50).map(([t, v]) => row(t, v + (v === 1 ? ' interim title' : ' interim titles'), seasonsLg(t.interim))), 'Took the title and lost it in the same League, without ever holding it at the end of a season.', 'tr-interim-only')}
     ${recBoard('So close: title matches lost', topBy(ts, lostFinals, 50).map(([t, v]) => row(t, v, titles(t) ? `won ${titles(t)} title${titles(t) > 1 ? 's' : ''} too` : 'never won the title')), 'Beat all four of the Elite Four, then lost to the Champion.', 'tr-lost-finals')}
     ${recBoard('Most League runs without a title', topBy(ts.filter(t => !titles(t)), t => t.career.leagueApps, 50).map(([t, v]) => row(t, v + ' runs', `${e4Beaten(t)} Elite Four wins`)), 'tr-runs-no-title')}
-    ${recBoard('Longest career without a League run', topBy(ts.filter(t => !t.career.leagueApps && !['leader', 'e4', 'champion'].includes(t.role) && !(t.posts || []).length), t => t.seasons, 50).map(([t, v]) => row(t, v + ' seasons', `best: ${Math.max(0, ...(t.seasonHist || []).map(h => h.badges || 0))} badges`)), 'Never completed the badge circuit.', 'tr-no-league')}
+    ${recBoard('Longest career without a League run', topBy(ts.filter(t => !t.career.leagueApps && !STAFF_ROLES.includes(t.role) && !(t.posts || []).length), t => t.seasons, 50).map(([t, v]) => row(t, v + ' seasons', `best: ${Math.max(0, ...(t.seasonHist || []).map(h => h.badges || 0))} badges`)), 'Never completed the badge circuit.', 'tr-no-league')}
     ${recBoard('Most gym losses', topBy(ts.filter(t => t.role !== 'leader' && !(t.posts || []).some(p => p.role === 'leader')), t => recOf(t).gl || 0, 50).map(([t, v]) => row(t, v, `${recOf(t).gw || 0} gym wins`)), 'Challengers who never led a gym.', 'tr-gym-losses')}
     ${recBoard('Most knocked out', topBy(mons, x => x.st.f || 0, 50).map(([x, v]) => ({ who: monWho(x), v: v + ' faints', sub: `${x.st.b} battles` })), 'pk-most-faints')}
     ${recBoard('Worst Pokémon win %', bottomBy(noGymMons.filter(x => x.st.b >= 40), x => x.st.w / x.st.b).map(([x, v]) => ({ who: monWho(x), v: Math.round(v * 100) + '%', sub: `${x.st.w}–${x.st.l}` })), 'At least 40 battles. Gym Leaders\' Pokémon not included.', 'pk-worst-win')}
@@ -414,7 +442,7 @@ function viewHof() {
 }
 function viewHistory() {
   const h = S.history.slice().reverse();
-  return `${worldHistory()}<section class="panel"><div class="ph"><h2>Season history${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2></div>
+  return `${worldHistory()}${wallReport()}<section class="panel"><div class="ph"><h2>Season history${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2></div>
   ${h.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Season</th><th>Champion</th><th>Deepest run</th><th>Qualifiers</th><th>Meta</th></tr></thead><tbody>
   ${h.map(x => `<tr><td class="num">${x.season}</td><td>${tname(x.champ)}${x.champWasNew ? ' <span class="tag gold">new</span>' : ''}</td><td>${x.runner ? tname(x.runner) + ` <span class="muted">(${x.runnerStage === 4 ? 'Final' : 'E4 #' + (x.runnerStage + 1)})</span>` : '—'}</td><td class="num">${x.qualifiers}</td><td>${x.metaMons && x.metaMons.length ? `<span class="small">${x.metaMons.join(', ')}</span>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>` : '<p class="muted">The first season has not finished yet.</p>'}</section>
@@ -455,7 +483,7 @@ function awardsPanel(h, title) {
 
 function viewRecap() {
   const L = S.league, h = S.history[S.history.length - 1]; if (!L || !h) return viewCircuit();
-  const ran = Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', 'leader', 'e4', 'champion'].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12);
+  const ran = Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12);
   return `${worldPanel()}<div class="grid-office"><div class="col">
     <section class="panel callout"><div class="eyebrow">Season ${S.season} recap${nLeagues() > 1 ? ' · ' + S.lgName : ''}</div><h2>${tname(S.champion)} ${h.champWasNew ? 'took the crown' : 'is still Champion'}</h2>
       <p>${h.qualifiers} trainer${h.qualifiers === 1 ? '' : 's'} reached the League.${h.metaMons && h.metaMons.length ? ` The season's top performers on the circuit: ${h.metaMons.join(', ')}.` : ''}</p></section>
@@ -580,12 +608,12 @@ function simManyBody() {
   const m = modal;
   if (m.running || m.done) {
     const pct = Math.round(m.log.length / m.n * 100);
-    const rows = m.log.map(x => `<tr><td class="num">${x.season}</td><td>${tname(x.champ)}${x.champWasNew ? ' <span class="tag gold">new</span>' : ''}</td><td class="num">${x.qualifiers}</td></tr>`).join('');
+    const rows = m.log.map(x => `<tr><td class="num">${x.season}</td><td>${tname(x.champ)}${x.champWasNew ? ' <span class="tag gold">new</span>' : ''}</td><td>${x.titles ? x.titles + ' conceded' : 'Perfect'}</td><td class="num">${x.badges}</td><td class="num">${x.qualifiers}</td></tr>`).join('');
     return `<div class="mh"><h2>${m.done ? `Simulated ${m.log.length} season${m.log.length === 1 ? '' : 's'}` : `Simulating… ${m.log.length} of ${m.n}`}</h2>${m.done ? '<button class="btn icon" data-act="simmanyclose" aria-label="Close">×</button>' : ''}</div>
       <div class="simbar" role="progressbar" aria-valuemin="0" aria-valuemax="${m.n}" aria-valuenow="${m.log.length}"><i style="width:${pct}%"></i></div>
       ${m.stopped ? '<p class="muted small">Stopped early. You pick up at the start of the next season.</p>' : ''}
       ${m.failed ? `<p class="warn">Something went wrong during Season ${m.failed.season}, so the sim stopped. Everything up to that point is saved. If it happens again, please report this message: <span class="small">${esc(m.failed.msg).slice(0, 200)}</span></p>` : ''}
-      ${rows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Season</th><th>Champion${nLeagues() > 1 ? ' · ' + S.lgName : ''}</th><th>Reached the League</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      ${rows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Season</th><th>Champion${nLeagues() > 1 ? ' · ' + S.lgName : ''}</th><th>Titles</th><th>Badges conceded</th><th>Reached the League</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
       <div class="confirm-row">${m.done ? `<button class="btn primary" data-act="simmanyclose">Continue in Season ${S.season}${S.phase === 'season' && S.week ? `, week ${S.week + 1}` : ''}</button><button class="btn" data-act="simmanyrecords">See records</button>` : '<button class="btn" data-act="simmanystop">Stop after this season</button>'}</div>`;
   }
   const n = m.n || 5;
@@ -683,13 +711,16 @@ const GLOSS_TERMS = {
   ],
   league: [
     ['Badge circuit', 'The eight gyms challengers work through each season. Eight badges qualify a trainer for the League.'],
-    ['Elite Four', 'Four battles in a row at the League. One loss ends the run.'],
-    ['Champion', 'Beat the Champion to take the title. The title only changes hands in battle.'],
-    ['Interim Champion', 'Won the title and lost it again in the same League, so it doesn\'t count as a full title.'],
-    ['Elite Four title shot', "If no challenger reaches the Champion, the best unbeaten Elite Four member gets a title match."],
+    ['Set level', `Every battle on the circuit is fought at a set level for both sides: gyms ${GYM_LV.join(', ')}, the Elite Four ${E4_LV.join(', ')}, the Champion ${CHAMP_LV}. Challengers' Pokémon have no levels of their own: each one takes the form and moves it would have at the level of its trainer's next battle, so nobody can out-level a gym.`],
+    ['Who fights', "A challenger fields as many Pokémon as the trainer in front of them, picked for the matchup. A trainer with a higher Strategy rating picks better."],
+    ['Gym trainers', `Each gym has ${GYM_TRAINERS} gym trainers of the leader's type, each with one Pokémon fewer than the leader. A challenger must beat them, then the leader, and is healed between battles. A gym trainer already beaten stays beaten.`],
+    ['Tries', `A challenger gets ${GYM_TRIES} tries at each gym in a season. A loss to a gym trainer or the leader costs one. A third loss at the same gym ends their season.`],
+    ['Perfect season', 'A season in which no challenger beats your Champion. The wall report on the History page counts them, with badges conceded and how far the best challenger got.'],
+    ['Elite Four', 'Four battles in a row at the League, then the Champion. One loss ends the run.'],
+    ['Champion', 'A challenger who beats the Champion wins a title, and the League has conceded one. The Champion keeps the seat and only leaves by retiring; for now the strongest Elite Four member then moves up.'],
     ['World Championship', 'With several Leagues, their Champions meet after the season.'],
-    ['Triple Crown', 'Champion of three different Leagues across a career. Former Champions chase it: a dethroned one returns to the circuit in a League they haven\'t won when there\'s room, and a trainer with titles in 2+ Leagues gets 3 extra seasons before age can retire them.'],
-    ['Hall of Fame', 'Retired Champions.'],
+    ['Triple Crown', 'Champion of three different Leagues across a career. A trainer with titles in 2+ Leagues gets 3 extra seasons before age can retire them.'],
+    ['Hall of Fame', 'Retired trainers who won a title.'],
     ['Hall of Shame', "Records nobody wants: worst win rates, longest losing streaks and the like."],
     ['Meta', 'The five best-performing species of the season. Gyms and newcomers adapt to counter them.'],
     ['Rival', 'Two challengers who keep meeting in close road battles.'],

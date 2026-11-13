@@ -166,7 +166,6 @@ const FEATURES = [
   { group: 'World', items: [
     ['legacy', 'Legacy trainers', "Notable retirees' children set out as challengers years later."],
     ['extclasses', 'Extended trainer classes', "Trainer classes made for this game that aren't in the Pokémon games, such as Storm Chaser, Lamplighter, Locksmith and Desert Nomad. They're mostly dual-type specialists covering type pairs the games' classes don't. Off: only classes from the games are handed out."],
-    ['rotation', 'Gym rotation', 'Gym Leaders are shuffled among the towns each season.'],
     ['banlist', 'League banlists', "Each offseason a League's trainers vote on banning its top performers for the next seasons. Challengers let banned Pokémon go, and Gym Leaders, the Elite Four and the Champion get replacements."] ] },
 ];
 const featOn = k => !(S && S.cfg && S.cfg.off && S.cfg.off[k]);
@@ -205,11 +204,8 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2; // 2: the wall rules (0.2.0)
 const SEASON_WEEKS = 24;
-// pacing: levels gained per week from travel, and the bonus from each action
-const PACE = { travel: 1.35, trainBase: 0.75, trainPerRating: 1.9, win: 1.1, loss: 0.45, explore: 1.0, catchUpGap: 4, catchUpMult: 2.0 };
-const trainGain = t => (PACE.trainBase + t.r.trn / 100 * PACE.trainPerRating) * (hasTrait(t, 'grinder') ? 1.12 : 1);
 // the regions: each has a name for its League and eight cities. A League sits in one region (gym types are random
 // and reshuffle)
 const LEAGUE_SETS = [
@@ -233,7 +229,11 @@ function regionCities(region) {
 const gymCity = i => S.cities[S.gyms[i].city];
 const townName = i => gymCity(i).name;
 const GYM_LV = [16, 24, 32, 41, 51, 61, 70, 77];
-const GYM_SIZE = [2, 3, 3, 4, 4, 5, 5, 6];
+const GYM_SIZE = [3, 3, 4, 4, 5, 5, 6, 6];
+// the wall: every gym has two gym trainers to beat before the leader (each fields one Pokémon fewer than the
+// leader), and a challenger gets three tries at each gym in a season
+const GYM_TRAINERS = 2, GYM_TRIES = 3;
+const E4_SIZE = 6;
 const E4_LV = [81, 84, 87, 89]; // 2.0: was 77/80/83/85
 const CHAMP_LV = 96; // 2.0: was 91 before parties
 // v142 (abilities, weather) used Lv 92; named moves (v146) made Champions stronger (title changes ~32%), so Lv 91 (~44%);
@@ -418,15 +418,6 @@ function temperOf(m) {
 const isTemper = (m, n) => temperOf(m) === n;
 // the level a Pokémon counts as for learning moves (Modest learns 5 levels early)
 const moveLv = m => Math.floor(m.lvl) + (isTemper(m, 'Modest') ? 5 : 0);
-// growth from temperament, with team context (Gentle teammates)
-function temperGrowth(m, team) {
-  const n = temperOf(m); let g = 1;
-  if (n === 'Adamant') g *= 1.08;
-  if (n === 'Relaxed') g *= 0.92;
-  if (n === 'Hasty') g *= S.week < SEASON_WEEKS / 2 ? 1.15 : 0.88;
-  if (team && team.some(x => x !== m && isTemper(x, 'Gentle') && x.lvl - m.lvl >= 10)) g *= 1.15;
-  return g;
-}
 // friendship gains (Lonely bonds faster)
 const temperFr = m => isTemper(m, 'Lonely') ? 1.5 : 1;
 // a temperament's damage multiplier for one battle: t is the Pokémon's trainer, foe the other side
@@ -488,6 +479,35 @@ function evolveMon(m, pref) {
   while ((nx = pickBranch(s, m.lvl, pref))) { out.push([s.name, nx]); (m.evoLog = m.evoLog || []).push({ from: s.name, to: nx, lvl: Math.floor(m.lvl), season: S.season || 1 }); m.sp = nx; s = SP[nx]; }
   return out;
 }
+// ---------- set levels ----------
+// Every battle on the circuit is fought at a set level, so a challenger's Pokémon have no levels of their own.
+// Each one stands at the level of its trainer's next battle, in the form and with the moves it would have there:
+// a Charizard owner meets gym 1 with a Charmander. m.top remembers the furthest form it has reached, so a
+// branching line (Eevee) keeps its branch.
+function evoPath(root, to) {
+  if (root === to) return [root];
+  for (const e of SP[root].evos || []) { const p = evoPath(e.to, to); if (p) return [root].concat(p); }
+  return null;
+}
+function stageAt(m, L, pref) {
+  const top = m.top && SP[m.top] && LINE[m.top] === LINE[m.sp] ? m.top : m.sp;
+  const path = evoPath(LINE[top], top) || [top];
+  let i = 0;
+  while (i + 1 < path.length && SP[path[i]].evos.find(e => e.to === path[i + 1]).lvl <= L) i++;
+  let sp = path[i];
+  if (i === path.length - 1) sp = formAt(sp, L, pref);
+  m.top = i === path.length - 1 ? sp : top;
+  return sp;
+}
+function setTeamLevel(t, L) {
+  for (const m of t.team) {
+    m.lvl = L; delete m.cap;
+    if (heldItem(m) !== 'everstone') m.sp = stageAt(m, L, t.specialty);
+    ensureMon(m); refreshMoves(m);
+  }
+}
+// the level a challenger's team stands at: their next gym's, or the first Elite Four member's once they have eight badges
+const challengerLevel = t => t.badges.length < 8 ? GYM_LV[t.badges.length] : E4_LV[0];
 function monPower(m) { return Math.floor(m.lvl) * SP[m.sp].bst / 450; }
 function topAvg(t, n) { const ls = t.team.map(m => m.lvl).sort((a, b) => b - a).slice(0, n); return ls.reduce((a, b) => a + b, 0) / Math.max(1, ls.length); }
 function teamPower(t) { const p = t.team.map(monPower).sort((a, b) => b - a); return p.reduce((a, b) => a + b, 0) / 6; }
@@ -632,8 +652,9 @@ function eliteSlot(t) {
   // the League that's loaded first (a trainer's League tag is only refreshed when Leagues switch), then the others
   const places = [S].concat((S.leagues || []).filter(x => x && x !== S));
   for (const L of places) {
-    if (t.role === 'e4') { const i = (L.e4 || []).indexOf(t.id); if (i >= 0) return { lvl: E4_LV[i], size: i < 2 ? 5 : 6 }; }
+    if (t.role === 'e4') { const i = (L.e4 || []).indexOf(t.id); if (i >= 0) return { lvl: E4_LV[i], size: E4_SIZE }; }
     if (t.role === 'leader') { const i = (L.gyms || []).findIndex(g => g.leader === t.id); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] }; }
+    if (t.role === 'gymtrainer') { const i = (L.gyms || []).findIndex(g => (g.trainers || []).includes(t.id)); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] - 1 }; }
   }
   return null;
 }
@@ -691,38 +712,6 @@ function adaptGym(i) {
   const top = Object.entries(foes).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
   news(`${dn(L)} lost ${streak} straight at ${townName(i)} Gym and shook up the team: ${drop.sp} is out, ${best.sp} is in to deal with the ${top.join(' and ')} types that keep winning.`, 'circuit', L.id);
 }
-// ---------- gym rotation ----------
-// Each new season the Gym Leaders are shuffled among the eight towns (the badge order stays the same), so no one
-// is stuck at an early gym that nearly every challenger beats. A leader brings their type and their run of poor
-// seasons with them. Early gyms field fewer Pokémon: a leader moving down sets the extras aside (not released),
-// and one moving up brings them back first, then fills any gap with new Pokémon of their type.
-function fitGymTeam(L) {
-  const slot = eliteSlot(L); if (!slot) return;
-  const pool = L.team.concat(L.bench || []);
-  const v = m => (isSpecial(m) ? 2000 : 0) + (onSpec(L, m.sp) ? 1000 : 0) + monPower(m);
-  pool.sort((a, b) => v(b) - v(a));
-  L.team = pool.slice(0, slot.size); L.bench = pool.slice(slot.size);
-  if (L.team.length < slot.size) {
-    const lines = new Set(pool.map(m => LINE[m.sp]));
-    const fresh = buildEliteTeam(L.specialty, slot.lvl, slot.size - L.team.length + 3, false).filter(m => !lines.has(LINE[m.sp])).slice(0, slot.size - L.team.length);
-    fresh.forEach(m => stamp(m, 'assigned')); L.team.push(...fresh);
-  }
-  relevelElite(L);
-}
-function rotateGyms() {
-  const was = S.gyms.map(g => ({ id: g.leader, poor: g.poor, poorFor: g.poorFor }));
-  if (was.some(x => !x.id || !T(x.id))) return;
-  const order = shuffle(was.map((_, i) => i));
-  order.forEach((from, to) => { const g = S.gyms[to], x = was[from]; g.leader = x.id; g.poor = x.poorFor === x.id ? x.poor : 0; g.poorFor = x.id; });
-  for (let i = 0; i < S.gyms.length; i++) {
-    const L = T(S.gyms[i].leader);
-    const place = `${townName(i)} Gym`, cur = (L.posts || []).find(p => p.to == null);
-    // a move closes last season's stint and starts a new one this season
-    if (!cur || cur.place !== place) { if (cur) cur.to = Math.max(cur.from, S.season - 1); (L.posts = L.posts || []).push({ role: 'leader', place, from: S.season, to: null, lg: S.lg || 0 }); }
-    fitGymTeam(L);
-  }
-  news(`New season, new gym order: ${S.gyms.map((g, i) => `${townName(i)} — ${T(g.leader).name} (${T(g.leader).specialty})`).join(', ')}.`, 'move');
-}
 // ---------- Mega Evolution ----------
 // Completing the badge circuit earns a challenger a Key Stone and a Mega Stone for that season only. The Elite Four
 // and the Champion hold Key Stones while in their posts. In League battles (the Elite Four, title matches and seat
@@ -779,7 +768,7 @@ function relevelElite(t) {
   const n = t.team.length;
   t.team.sort((a, b) => SP[a.sp].bst - SP[b.sp].bst);
   t.team.forEach((m, i) => { m.lvl = slot.lvl + off - Math.min(4, n - 1 - i) + (t.role === 'champion' && i === n - 1 ? CHAMP_ACE_BONUS : 0); m.cap = m.lvl + 2; evolveMon(m, t.specialty); });
-  if (['leader', 'e4', 'champion'].includes(t.role)) eliteItems(t);
+  if (STAFF_ROLES.includes(t.role)) eliteItems(t);
   for (const m of t.team) refreshMoves(m);
 }
 function installElite(t, role, slotIndex) {
@@ -808,6 +797,45 @@ function installElite(t, role, slotIndex) {
     t.team = keep.concat(fresh);
   }
   relevelElite(t);
+}
+// ---------- gym trainers ----------
+// Two per gym, of the leader's type, placed automatically for now. A trainer whose type no longer fits the gym
+// (a new leader of another type) is let go and replaced.
+const STAFF_ROLES = ['leader', 'gymtrainer', 'e4', 'champion'];
+function staffGym(i) {
+  const g = S.gyms[i], L = T(g.leader); if (!L) return;
+  g.trainers = g.trainers || [];
+  for (let k = 0; k < GYM_TRAINERS; k++) {
+    const cur = T(g.trainers[k]);
+    if (cur && cur.role === 'gymtrainer' && cur.specialty === L.specialty) continue;
+    g.trainers[k] = null;
+    if (cur && cur.role === 'gymtrainer') retire(cur, `when ${townName(i)} Gym changed type`);
+    const t = newTrainer({ age: ri(16, 34), quality: 42 + i * 2, role: 'gymtrainer', specialty: L.specialty, noFamous: true });
+    t.spec2 = null; t.lg = S.lg || 0;
+    g.trainers[k] = t.id;
+    openPost(t, 'gymtrainer');
+    t.team = buildEliteTeam(t.specialty, GYM_LV[i], GYM_SIZE[i] - 1, false).map(m => stamp(m, 'assigned'));
+    relevelElite(t);
+  }
+}
+// everyone who holds a post in the bound League
+function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }
+// which of a challenger's Pokémon fight: as many as the other side fields, picked for the matchup. A sharper
+// trainer (Strategy) reads it better; a poor one is half guessing.
+function pickSquad(t, foe) {
+  const n = foe.team.length;
+  if (t.team.length <= n) return t.team.slice();
+  const noise = (100 - t.r.str) / 100 * 1.2;
+  const sc = m => { let v = 0; for (const f of foe.team) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
+    return v / foe.team.length + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise; };
+  const best = new Set(t.team.map(m => [m, sc(m)]).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]));
+  return t.team.filter(m => best.has(m));
+}
+// a battle on the circuit: both sides at the post's set level, the challenger fielding as many as the post does
+function setBattle(t, foe, lvl, stakes, title) {
+  const full = t.team;
+  t.team = pickSquad(t, foe);
+  try { return battle(t, foe, stakes, title, { equal: lvl }); } finally { t.team = full; }
 }
 
 // ================= BATTLE =================
@@ -980,7 +1008,7 @@ function defendAbMul(d, dAb, mv, phys) {
 // and unpredictable trainers pick at random. Gym Leaders, the Elite Four and the Champion save their ace for last.
 const LEAD_STYLES = { rotate: 'Rotates the team, giving less-used Pokémon a turn', ace: 'Leads with their strongest Pokémon', random: 'Unpredictable send-out order', acelast: 'Saves their ace for last' };
 function leadStyle(t) {
-  if (['leader', 'e4', 'champion'].includes(t.role)) return 'acelast';
+  if (STAFF_ROLES.includes(t.role)) return 'acelast';
   if (!t.leadStyle) { const r = rand(); t.leadStyle = r < 0.5 ? 'rotate' : r < 0.72 ? 'ace' : 'random'; }
   return t.leadStyle;
 }
@@ -1004,7 +1032,7 @@ function styledPick(t, av, mons, opening) {
 }
 // how a trainer's trait changes their strength in this battle
 // side 1 is the defending side: the Gym Leader, Elite Four member or Champion being challenged
-const SEAT_ROLES = { gym: ['leader'], league: ['e4', 'champion'], title: ['e4', 'champion'] };
+const SEAT_ROLES = { gym: ['leader', 'gymtrainer'], league: ['e4', 'champion'], title: ['e4', 'champion'] };
 // v199: a team "stronger" or "weaker" than another by more than this share of its power
 const TRAIT_EDGE = 0.05;
 // 2.0: a trainer's ace walks beside them out of its ball, and bonds faster for it
@@ -1758,7 +1786,6 @@ const ITEMS = {
   eviolite: { name: 'Eviolite', tier: 2, desc: 'Defense and Sp. Def ×1.5 while it can still evolve.' },
   focussash: { name: 'Focus Sash', tier: 2, desc: 'At full HP, survives a knockout blow with 1 HP (once).' },
   assaultvest: { name: 'Assault Vest', tier: 2, desc: 'Sp. Def ×1.4.' },
-  luckyegg: { name: 'Lucky Egg', tier: 2, desc: 'Gains levels 15% faster.' },
   choiceband: { name: 'Choice Band', tier: 3, desc: 'Attack ×1.3, but it only uses its own types (no coverage moves).' },
   choicespecs: { name: 'Choice Specs', tier: 3, desc: 'Sp. Atk ×1.3, but it only uses its own types (no coverage moves).' },
   lifeorb: { name: 'Life Orb', tier: 3, desc: 'Hits 25% harder, but loses 10% of its HP with each hit.' },
@@ -1799,7 +1826,6 @@ function itemScore(m, k, t, foe) {
     case 'sitrus': return 6;
     case 'scopelens': return 4 + (m.fr ?? 70) / 120;
     case 'quickclaw': return b.spe < 60 ? 7 : 2;
-    case 'luckyegg': { if (!t || t.role !== 'challenger') return 0; const top = Math.max(...t.team.map(x => x.lvl)); return m.lvl < top - 4 ? 12 : 1; }
     case 'soothebell': return t && t.role === 'challenger' && (m.fr ?? 70) < 220 ? 3 : 0;
     default: return 0;
   }
@@ -1869,7 +1895,8 @@ function eliteItems(t) {
   if (!itemsOn()) return;
   let n = t.team.length;
   if (t.role === 'leader') { const gi = S.gyms.findIndex(g => g.leader === t.id); n = gi < 3 ? 0 : Math.min(t.team.length, gi - 2); }
-  const keys = Object.keys(ITEMS).filter(k => k !== 'luckyegg' && k !== 'soothebell' && k !== 'everstone');
+  if (t.role === 'gymtrainer') { const gi = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); n = gi < 4 ? 0 : Math.min(t.team.length, gi - 3); }
+  const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone');
   const order = t.team.slice().sort((a, b) => b.lvl - a.lvl || SP[b.sp].bst - SP[a.sp].bst).slice(0, n);
   const held = new Set();
   for (const m of order) {
@@ -1974,14 +2001,12 @@ function checkBonds() {
     news(`${dn(t)} and ${m.sp} now share a Battle Bond. In League battles, its first knockout turns it into ${bondName(t, m)}.`, 'circuit', t.id);
   }
 }
-// a held Lucky Egg speeds up levelling
-const monGrowth = m => (heldItem(m) === 'luckyegg' ? 1.15 : 1);
 // road battles: challengers run into each other between gyms, like rival battles in the games
 const ROAD_CHANCE = 0.08;
 function roadBattles() {
   if (!featOn('road')) return;
   const done = new Set();
-  const pool = challengers().filter(t => t.team.length >= 2);
+  const pool = challengers().filter(t => t.team.length >= 2 && !t.out);
   for (const t of shuffle(pool.slice())) {
     if (done.has(t.id)) continue;
     const comp = hasTrait(t, 'competitor');
@@ -1993,7 +2018,7 @@ function roadBattles() {
     if (!foe) continue;
     done.add(t.id); done.add(foe.id);
     const rivals = isRival(t, foe);
-    const res = battle(t, foe, 'rival', `${rivals ? 'Rival battle' : 'Road battle'} · ${dn(foe)}`);
+    const res = battle(t, foe, 'rival', `${rivals ? 'Rival battle' : 'Road battle'} · ${dn(foe)}`, { equal: true });
     const w = res.winner === 0 ? t : foe, l = w === t ? foe : t;
     for (const x of [t, foe]) { const e = x.weekLog[x.weekLog.length - 1]; if (e) e.road = { vs: (x === t ? foe : t).id, won: x === w, rival: rivals }; }
     if (rivals) { const h = h2hOf(w, l); news(`Rival battle: ${dn(w)} beat ${dn(l)} on the road. Their rivalry stands at ${h.w}–${h.l}.`, 'circuit', w.id); weald(w); }
