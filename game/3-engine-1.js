@@ -686,15 +686,20 @@ function eliteSlot(t) {
 const SCOUT_BST = 1.6;   // base-stat ceiling per point of Scouting above or below 50
 const STRAT_NOISE = 5;   // how much a trainer with no Strategy misjudges a pick (in the units of fitScore)
 const TRAIN_IV = 2.5;    // points of Training per point of IV: above 50 it lifts the worst roll, below 50 it lowers the best
+// BUILD_PAR (0.5.0, the wall's tuning lever): the rating at which a trainer builds an ordinary team. The builder reads
+// Scouting, Strategy and Training as if they were (BUILD_PAR - 50) points lower, so every staff team is weaker by the
+// same amount and the gap between good and poor staff stays as it was. 0.3.0 built at 50.
+const BUILD_PAR = 95;
+const bld = (t, k) => t.r[k] - (BUILD_PAR - 50);
 // the share of what they can find that a trainer looks at, strongest first: 60% at Scouting 50, 30% at 80, 90% at 20
-const scoutShare = t => clamp(1.1 - t.r.sct / 100, 0.25, 0.9);
+const scoutShare = t => clamp(1.1 - bld(t, 'sct') / 100, 0.25, 0.9);
 // how often a trainer gives a Pokémon a fitting nature and the right coverage moves: never at Training 40, always at 100
-const trainCare = t => clamp((t.r.trn - 40) / 60, 0, 1);
+const trainCare = t => clamp((bld(t, 'trn') - 40) / 60, 0, 1);
 const typeLabel = t => specTypes(t).join('/') || 'mixed';
 // species a trainer could field at level L: on their type, under their Scouting ceiling, best first
 function staffPool(t, L, mixed, need) {
   const ty = mixed ? [] : specTypes(t);
-  let cap = 300 + L * 6.2 + (t.r.sct - 50) * SCOUT_BST, pool = [];
+  let cap = 300 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, pool = [];
   for (let tries = 0; tries < 10 && pool.length < need; tries++) {
     const set = new Set();
     for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
@@ -725,7 +730,7 @@ function staffPicks(t, L, n, opts = {}) {
   (opts.team || []).forEach(m => addWeak(m.sp));
   const own = opts.mixed ? [] : specTypes(t);
   const threats = TYPES.filter(a => own.some(d => effOne(a, d) >= 2));
-  const noise = (100 - t.r.str) / 100 * STRAT_NOISE;
+  const noise = (100 - bld(t, 'str')) / 100 * STRAT_NOISE;
   while (out.length < n && pool.length) {
     const best = pool.map(sp => [sp, fitScore(sp, weak, threats) + (rand() - 0.5) * 2 * noise]).sort((a, b) => b[1] - a[1])[0][0];
     out.push(staffMon(t, best, L)); addWeak(best);
@@ -736,7 +741,7 @@ function staffPicks(t, L, n, opts = {}) {
 // one Pokémon raised by trainer t: Training sets its IVs and how often it gets a nature that suits it and the two
 // coverage moves that answer its own weaknesses
 function staffMon(t, sp, L) {
-  const d = Math.round((t.r.trn - 50) / TRAIN_IV), lo = clamp(d, 0, 20), hi = 31 + clamp(d, -15, 0), care = trainCare(t);
+  const d = Math.round((bld(t, 'trn') - 50) / TRAIN_IV), lo = clamp(d, 0, 20), hi = 31 + clamp(d, -15, 0), care = trainCare(t);
   const m = { uid: uid(), sp, lvl: L, iv: ivSet(() => ri(lo, hi)) };
   if (rand() < care) { const cat = moveCat(m, sp); if (cat) m.nat = pick(cat === 'P' ? ['Adamant', 'Jolly'] : ['Modest', 'Timid']); }
   if (rand() < care) {

@@ -46,8 +46,9 @@ function check(tag) {
     if (z.league && z.league.conceded.length !== z.league.entries.filter(e => e.stage === 5).length) bad('titles conceded and title wins disagree');
     z.e4.forEach(id => { const t = g.T(id); if (!t || t.role !== 'e4') bad('Elite Four seat is wrong'); });
     { const t = g.T(z.champion); if (!t || t.role !== 'champion') bad('Champion is wrong'); }
-    // no cap on a circuit, but weak challengers giving up should keep the field in a sensible range
-    if (z.challengers.length > 80) bad('field too big: ' + z.challengers.length);
+    // no cap on a circuit, but weak challengers giving up should keep the field in a sensible range (0.5.0: an older,
+    // larger field, about 50 to 75 a League; 120 is the alarm)
+    if (z.challengers.length > 120) bad('field too big: ' + z.challengers.length);
     if (z.challengers.length < 8) bad('field too thin: ' + z.challengers.length);
     fieldSum += z.challengers.length; fieldN++; fieldMax = Math.max(fieldMax, z.challengers.length);
     for (const id of z.challengers) { const t = g.T(id);

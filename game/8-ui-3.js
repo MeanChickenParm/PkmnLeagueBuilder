@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 5, ver: '0.5.0', date: 'November 13, 2026', time: '4:30 PM ET', title: 'The wall, tuned', items: [
+    "The wall is tuned. Every League's staff now build their teams as a trainer 45 rating points weaker would have before. Scouting, Strategy and Training still decide how good a team is, and the gap between strong and poor staff is unchanged, but no League is close to unbeatable any more. Even a League with excellent staff should expect to let a few trainers through each year, and a perfect year is now a rare feat.",
+    "The Elite Four and Champion are still one run: a single loss ends it. Only an excellent challenger gets through all five battles.",
+    "Challengers stay on the circuit longer. One who keeps going out early now gives up only after their first three years, and less often, so the field is older and larger (about 50 to 70 in a one-League world).",
+    "A challenger who reached the Elite Four now takes their next run to another League three times in four, where there is one.",
+    "The wall report on the History page leads with the number of trainers let through (titles conceded), then perfect years and the streak.",
+  ] },
   { id: 4, ver: '0.4.0', date: 'November 13, 2026', time: '11:30 AM ET', title: 'One continuous world: no more seasons', items: [
     "There are no seasons any more. The world runs week by week on one calendar that never stops: a year is 48 weeks, twelve months of four. Nothing waits for a League tournament or an offseason.",
     "Every challenger is on their own clock. They set out on a run from the first gym with their best three Pokémon, get three tries at each gym, and take on the Elite Four and the Champion as soon as they have eight badges and are ready (up to three weeks spent filling their team first). A third loss at one gym ends the run. Then they rest for 6 to 10 weeks and set out again from the first gym with no badges.",

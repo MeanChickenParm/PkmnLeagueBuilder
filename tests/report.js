@@ -1,6 +1,6 @@
 // wall report: node tests/report.js [years=100] [worlds=1] [--seed=1] [--boost=N] [--tiers]
-// Sims whole years of one League and prints how the wall held: perfect years (no title conceded), badges conceded,
-// and how far the best challenger got. Each world is a fresh League; the numbers are for all worlds together.
+// Sims whole years of one League and prints how the wall held: trainers let through (titles conceded), perfect years
+// (none let through), badges conceded, and how far the best challenger got. Each world is a fresh League; the numbers are for all worlds together.
 // The year is the unit the wall is scored on (0.4.0): 48 weeks of a continuous world, challengers on their own clocks.
 //   --seed=N    the run's random seed (default 1), so the same command prints the same numbers; --seed=random for a fresh one
 //   --boost=N   every staff member is N rating points better (or worse) than the game would make them, and no
@@ -25,17 +25,17 @@ function run(boost) {
 }
 const stats = ({ all, gyms }) => {
   const n = all.length, avg = f => (all.reduce((a, h) => a + f(h), 0) / n);
-  return { n, avg, per100: k => (k / n * 100).toFixed(1), perfect: all.filter(h => !h.titles).length,
+  return { n, all, avg, per100: k => (k / n * 100).toFixed(1), perfect: all.filter(h => !h.titles).length,
     held: gyms.map(x => x.held + x.lost ? Math.round(x.held / (x.held + x.lost) * 100) : 0) };
 };
 if ('tiers' in opt) {
   console.log(`Wall report by staff tier: ${W} world${W === 1 ? '' : 's'} of ${N} years each, seed ${seed}`);
-  console.log('  tier            perfect/100  titles  badges   runs  E4 runs    out  field  best  tries turned back, gyms 1 to 8');
+  console.log('  tier            let through  a year  perfect/100  badges   runs  E4 runs    out  field  best  tries turned back, gyms 1 to 8');
   for (const [name, boost] of [['strong (+15)', 15], ['average (0)', 0], ['poor (-15)', -15]]) {
     const s = stats(run(boost));
-    console.log(`  ${name.padEnd(14)}  ${s.per100(s.perfect).padStart(11)}  ${s.avg(h => h.titles).toFixed(2).padStart(6)}  ${s.avg(h => h.badges).toFixed(1).padStart(6)}  ${s.avg(h => h.runs).toFixed(1).padStart(5)}  ${s.avg(h => h.qualifiers).toFixed(2).padStart(7)}  ${s.avg(h => h.out).toFixed(1).padStart(5)}  ${s.avg(h => h.field).toFixed(1).padStart(5)}  ${s.avg(h => h.best).toFixed(1).padStart(4).padStart(4)}  ${s.held.map(x => x + '%').join(' ')}`);
+    console.log(`  ${name.padEnd(14)}  ${String(s.all.reduce((a, h) => a + h.titles, 0)).padStart(11)}  ${s.avg(h => h.titles).toFixed(2).padStart(6)}  ${s.per100(s.perfect).padStart(11)}  ${s.avg(h => h.badges).toFixed(1).padStart(6)}  ${s.avg(h => h.runs).toFixed(1).padStart(5)}  ${s.avg(h => h.qualifiers).toFixed(2).padStart(7)}  ${s.avg(h => h.out).toFixed(1).padStart(5)}  ${s.avg(h => h.field).toFixed(1).padStart(5)}  ${s.avg(h => h.best).toFixed(1).padStart(4).padStart(4)}  ${s.held.map(x => x + '%').join(' ')}`);
   }
-  console.log('  (titles, badges, runs begun, runs at the Elite Four and runs out on three losses are per year; field is challengers on the circuit at New Year;');
+  console.log('  (let through is the total over every year of every world; a year, badges, runs begun, runs at the Elite Four and runs out on three losses are per year; field is challengers on the circuit at New Year;');
   console.log('   best is how far the best challenger got: 8 = all badges, 12 = beat the Elite Four, 13 = won the title)');
 } else {
   const boost = opt.boost != null ? +opt.boost : null;
@@ -43,8 +43,8 @@ if ('tiers' in opt) {
   let streak = 0, bestStreak = 0; for (const h of all) { streak = h.titles ? 0 : streak + 1; bestStreak = Math.max(bestStreak, streak); }
   const dist = {}; for (const h of all) dist[h.best] = (dist[h.best] || 0) + 1;
   console.log(`Wall report: ${n} years (${W} world${W === 1 ? '' : 's'} of ${N}), seed ${seed}${boost == null ? '' : `, staff ${boost >= 0 ? '+' : ''}${boost}`}`);
-  console.log(`  perfect years (no title conceded): ${per100(s.perfect)} in 100${W === 1 ? `   longest streak: ${bestStreak}` : ''}`);
-  console.log(`  titles conceded per year: ${avg(h => h.titles).toFixed(2)}`);
+  console.log(`  trainers let through (titles conceded): ${all.reduce((a, h) => a + h.titles, 0)} in ${n} years, ${avg(h => h.titles).toFixed(2)} a year`);
+  console.log(`  perfect years (none let through): ${per100(s.perfect)} in 100${W === 1 ? `   longest streak: ${bestStreak}` : ''}`);
   console.log(`  badges conceded per year: ${avg(h => h.badges).toFixed(1)} (${(avg(h => h.badges) / avg(h => h.runs)).toFixed(2)} a run)`);
   console.log(`  runs begun per year: ${avg(h => h.runs).toFixed(1)}, by ${avg(h => h.field).toFixed(1)} challengers on the circuit`);
   console.log(`  runs that reached the Elite Four per year: ${avg(h => h.qualifiers).toFixed(2)}`);

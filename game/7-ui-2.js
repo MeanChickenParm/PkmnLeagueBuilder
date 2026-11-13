@@ -52,16 +52,16 @@ function gymTrainerList(g, i) {
   if (!ts.length) return '';
   return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · ${GYM_SIZE[i] - 1} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${tname(t.id)} ${specChips(t)} ${ovrPill(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>`;
 }
-// the wall report: the headline (perfect years and the streak) and each year's line
+// the wall report: the headline (trainers let through, then perfect years and the streak) and each year's line
 function wallReport() {
   const h = S.history.filter(x => x.titles != null);
   if (!h.length) return '';
-  const perfect = h.filter(x => !x.titles).length;
+  const perfect = h.filter(x => !x.titles).length, total = h.reduce((a, x) => a + x.titles, 0);
   let streak = 0; for (let i = h.length - 1; i >= 0 && !h[i].titles; i--) streak++;
   let best = 0, run = 0; for (const x of h) { run = x.titles ? 0 : run + 1; best = Math.max(best, run); }
   const avg = f => (h.reduce((a, x) => a + f(x), 0) / h.length).toFixed(1);
-  return `<section class="panel"><div class="ph"><h2>Wall report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">A perfect year is one with no title conceded</span></div>
-  <p><b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} in ${h.length} · current streak <b>${streak}</b> · longest <b>${best}</b> · ${avg(x => x.badges)} badges conceded a year · ${avg(x => x.titles)} titles conceded a year · ${wallStanding()}</p>
+  return `<section class="panel"><div class="ph"><h2>Wall report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">A trainer let through is a title conceded; a perfect year is one with none</span></div>
+  <p><b>${total}</b> trainer${total === 1 ? '' : 's'} let through in ${h.length} year${h.length === 1 ? '' : 's'} · <b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} · current streak <b>${streak}</b> · longest <b>${best}</b> · ${avg(x => x.badges)} badges conceded a year · ${avg(x => x.titles)} let through a year · ${wallStanding()}</p>
   <div class="scroll"><table class="tbl"><thead><tr><th>Year</th><th>Result</th><th>Titles conceded</th><th>Badges conceded</th><th>Runs</th><th>Reached the Elite Four</th><th>Out on three losses</th><th>Best challenger</th></tr></thead><tbody>
   ${h.slice().reverse().map(x => `<tr><td class="num">${x.season}</td><td>${x.titles ? '<span class="tag notice">Conceded</span>' : '<span class="tag gold">Perfect</span>'}</td><td>${x.titles ? x.winners.map(tname).join(', ') : '—'}</td><td class="num">${x.badges}</td><td class="num">${x.runs ?? '—'}</td><td class="num">${x.qualifiers}</td><td class="num">${x.out}</td><td>${x.bestId ? tname(x.bestId) + ` <span class="muted">(${depthName(x.best)})</span>` : '—'}</td></tr>`).join('')}
   </tbody></table></div></section>`;
@@ -672,7 +672,7 @@ const GLOSS_TERMS = {
     ['Explore', 'Meet wild Pokémon and try to catch one. Sometimes turns up a held item.'],
     ['Seek', 'Battle a legendary that has appeared, at full strength every time. The damage adds up across weeks, and when it is worn down or its five weeks are up it goes to the trainer who did the most (ties are fought out). Luck swings each attempt hard, and a failed attempt still earns experience.'],
     ['Who decides', 'Every trainer chooses their own week.'],
-    ['Newcomers', `There is no draft. About ${NEWCOMERS_PER_LEAGUE} new trainers set out for each League every year, one at a time. A circuit has no fixed number of places: everyone who wants to challenge does. A challenger who keeps going out early (${GIVE_UP_RUNS} or more runs in a row that end sooner than a typical run) gives up after their first two years, which keeps the field in check.`],
+    ['Newcomers', `There is no draft. About ${NEWCOMERS_PER_LEAGUE} new trainers set out for each League every year, one at a time. A circuit has no fixed number of places: everyone who wants to challenge does. A challenger who keeps going out early (${GIVE_UP_RUNS} or more runs in a row that end sooner than a typical run) gives up after their first ${GIVE_UP_GRACE} years, which keeps the field in check.`],
     ['Calendar', `One continuous world. A year is ${YEAR_WEEKS} weeks, twelve months of four, and it never stops for a tournament or an offseason. Every trainer has a birthday week, when they grow a year older and their ratings move; staff retire then, and a challenger who decides to retire sees their run through first. Only the wall report, the awards, the meta report and the ban vote wait for New Year.`],
     ['Run', `A challenger's trip around the circuit. They set out for the first gym with their best ${START_TEAM} Pokémon and catch more on the way. The run ends on a third loss at one gym, or after the Elite Four and Champion. Then they rest ${REST_WEEKS[0]} to ${REST_WEEKS[1]} weeks and set out again from the first gym; one who reached the Elite Four and moves on to a different League rests only ${REST_QUICK[0]} to ${REST_QUICK[1]}.`],
     ['Free agent', 'A trainer between circuits. They join one within a few weeks.'],
