@@ -120,38 +120,38 @@ const gymWeatherTag = L => abOn() && L && gymWeatherType(L) ? ` <span class="tag
 const itemTag = m => itemsOn() && m && m.item && ITEMS[m.item] ? ` <span class="tag item" title="${esc(ITEMS[m.item].desc)}">◆ ${ITEMS[m.item].name}</span>` : '';
 const itemChip = k => `<span class="itemchip t${ITEMS[k].tier}" title="${esc(ITEMS[k].desc)}">${ITEMS[k].name}</span>`;
 // holds this season's Mega Stone
-const megaTag = m => { if (!m || !m.uid) return ''; const t = Object.values(S.trainers).find(x => hasMega(x) && x.mega.uid === m.uid); return t && megaFor(t, m) ? ` <span class="tag mega" title="Can become ${megaFor(t, m).name} in League battles this season">Mega Stone</span>` : ''; };
+const megaTag = m => { if (!m || !m.uid) return ''; const t = Object.values(S.trainers).find(x => hasMega(x) && x.mega.uid === m.uid); return t && megaFor(t, m) ? ` <span class="tag mega" title="Can become ${megaFor(t, m).name} in League battles this year">Mega Stone</span>` : ''; };
 // a great legendary loose in the region
 function legendBanner() {
-  const L = legendState(S.legend); if (S.phase !== 'season' || !L) return '';
+  const L = legendState(S.legend); if (!L) return '';
   const worn = Math.min(100, Math.round(L.total / LEGEND_BARS * 100)), rank = legendRank(L).slice(0, 3);
   const board = rank.length ? `<ul class="mini">${rank.map((r, i) => `<li><span>${i + 1}. ${T(r.id) ? dn(T(r.id)) : '—'}</span><span class="num">${Math.round(r.d * 100)}% · ${r.n} attempt${r.n === 1 ? '' : 's'}</span></li>`).join('')}</ul>` : '<p class="small muted">No one has tried yet.</p>';
-  return `<div class="legendbox"><span class="lg-k">Legendary</span> <b>${L.sp}</b> ${chips(SP[L.sp].types)} Lv ${L.lvl} is near <b>${L.town}</b> until week ${L.until}.
+  return `<div class="legendbox"><span class="lg-k">Legendary</span> <b>${L.sp}</b> ${chips(SP[L.sp].types)} Lv ${L.lvl} is near <b>${L.town}</b> until ${turnDate(L.until)}.
     <div class="lg-bar"><i style="width:${worn}%"></i></div><div class="small muted">${worn}% worn down after ${L.attempts} attempt${L.attempts === 1 ? '' : 's'}. Any challenger can spend a week battling it at full strength; their damage adds to their own total. When it's worn down, or its time is up, it goes to whoever did the most (a tie is fought out). Each attempt's luck swings hard, and even a failed one earns experience.${['Groudon', 'Kyogre'].includes(L.sp) ? ` Its ${L.sp === 'Groudon' ? 'drought' : 'rain'} lasts until it's caught.` : L.sp === 'Eternatus' ? ' Every battle is chaos while it is loose.' : ''}</div>${board}</div>`;
 }
 // v182: a legendary roaming the region
 function roamBanner() {
-  const R = S.roamer; if (S.phase !== 'season' || !R) return '';
+  const R = S.roamer; if (!R) return '';
   const trail = R.trail.slice(-5).map(i => townName(i)).join(' → ');
-  return `<div class="roambox"><span class="rm-k">Roaming</span> <b>${R.sp}</b> ${chips(SP[R.sp].types)} was last seen near <b>${townName(R.town)}</b>. It leaves the region after week ${R.until}.
+  return `<div class="roambox"><span class="rm-k">Roaming</span> <b>${R.sp}</b> ${chips(SP[R.sp].types)} was last seen near <b>${townName(R.town)}</b>. It leaves the region after ${turnDate(R.until)}.
     <div class="small muted">Challengers exploring on the way to its town (or the next one over) may find it among their wild Pokémon, and catch it like any other. It moves on most weeks. Seen near: ${trail}.</div></div>`;
 }
 // v182: a legendary's storm over the region
 function stormBanner() {
-  const st = S.phase === 'season' && S.storm; if (!st) return '';
+  const st = S.storm; if (!st) return '';
   const s = STORMS[st.sp], rank = stormRank(st).slice(0, 3);
   const fx = stormFx(s).replace(/^./, c => c.toUpperCase());
   const board = rank.length ? `<ul class="mini">${rank.map((r, i) => `<li><span>${i + 1}. ${dn(T(r.id))}</span><span class="num">${r.w} win${r.w === 1 ? '' : 's'} · ${r.k} KO${r.k === 1 ? '' : 's'}</span></li>`).join('')}</ul>` : '<p class="small muted">No wins yet.</p>';
-  return `<div class="stormbox"><span class="sm-k">${s.name}</span> <b>${st.sp}</b> ${chips(SP[st.sp].types)} is over the region until week ${st.until}: ${fx}.
+  return `<div class="stormbox"><span class="sm-k">${s.name}</span> <b>${st.sp}</b> ${chips(SP[st.sp].types)} is over the region until ${turnDate(st.until)}: ${fx}.
     <div class="small muted">When it passes, ${st.sp} chooses the challenger who won the most battles while it lasted (at least ${STORM_MIN}; knockouts settle a tie), whatever their type. Every battle counts.</div>${board}</div>`;
 }
 // v182: the region's recent legendary sightings
 function skyPanel() {
   const log = (S.skyLog || []).slice(0, 6); if (!log.length) return '';
-  return `<section class="panel"><div class="ph"><h3>Legendary sightings</h3><span class="muted">Roamers and storms</span></div><ul class="mini">${log.map(l => `<li><span>${l.text}</span><span class="num muted">S${l.season} · W${l.week}</span></li>`).join('')}</ul></section>`;
+  return `<section class="panel"><div class="ph"><h3>Legendary sightings</h3><span class="muted">Roamers and storms</span></div><ul class="mini">${log.map(l => `<li><span>${l.text}</span><span class="num muted">Y${l.season} · ${weekShort(l.week - 1)}</span></li>`).join('')}</ul></section>`;
 }
 function outbreakBanner() {
-  const ob = S.phase === 'season' && activeOutbreak(); if (!ob) return '';
+  const ob = activeOutbreak(); if (!ob) return '';
   const sp = SP[ob.sp];
   return `<div class="outbreak"><span class="ob-k">Mass outbreak</span> <b>${ob.sp}</b> ${chips(sp.types)} swarming near ${ob.town} this week${SP[ob.sp].rare ? ' <span class="tag">rare</span>' : ''}. Challengers who explore can find one in the open slot, with alphas 4× and shinies 8× as likely.</div>`;
 }
@@ -182,7 +182,7 @@ function badgeRowHere(t, big) {
   return h + '</div>';
 }
 function stageText(st) {
-  if (st == null) return 'Did not qualify';
+  if (st == null) return 'No run at the Elite Four';
   if (st === 5) return 'Won the Championship';
   if (st === 4) return 'Lost in the Championship';
   return `Lost to Elite Four #${st + 1}`;
@@ -202,7 +202,7 @@ const STAT_SHORT = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', s
 function temperLine(m) {
   const n = temperOf(m); if (!n) return '';
   const q = m.nat === 'Quirky';
-  return `<p class="small"><b>${TEMPER[m.nat].name}</b>${q ? ` <span class="muted">· this season ${TEMPER[n].name} (as if ${n})</span>` : ''} <span class="muted">· ${TEMPER[n].d}</span></p>`;
+  return `<p class="small"><b>${TEMPER[m.nat].name}</b>${q ? ` <span class="muted">· this year ${TEMPER[n].name} (as if ${n})</span>` : ''} <span class="muted">· ${TEMPER[n].d}</span></p>`;
 }
 function natureText(n) {
   const fx = natureFx(n);
@@ -241,25 +241,31 @@ const CATCH_WORDS = /caught (a|an) (Radiant|shiny|alpha|Delta)|caught the Ultra 
 const isCatchNews = n => n.tag === 'catch' || CATCH_WORDS.test(n.text);
 function newsList(items) {
   if (!items.length) return '<p class="muted">Nothing yet.</p>';
-  return `<ul class="news">${items.map(n => `<li class="n-${n.tag}"><span class="n-when">S${n.season}${n.week ? ' · W' + n.week : ''}${n.lg != null && nLeagues() > 1 ? ' · ' + lgShort(n.lg) : ''}</span><span>${n.text}</span></li>`).join('')}</ul>`;
+  return `<ul class="news">${items.map(n => `<li class="n-${n.tag}"><span class="n-when">Y${n.season} · ${weekShort(Math.min(YEAR_WEEKS - 1, n.week || 0))}${n.lg != null && nLeagues() > 1 ? ' · ' + lgShort(n.lg) : ''}</span><span>${n.text}</span></li>`).join('')}</ul>`;
 }
 
 // ---------- header & nav ----------
+// the live headline: how long the wall has stood since the last title was conceded (the bound League)
+function wallStanding() {
+  const since = S.lastTitle == null ? (S.turn || 0) : S.turn - S.lastTitle, y = Math.floor(since / YEAR_WEEKS), w = since % YEAR_WEEKS;
+  const span = y ? `${y} year${y === 1 ? '' : 's'}${w ? `, ${w} week${w === 1 ? '' : 's'}` : ''}` : `${w} week${w === 1 ? '' : 's'}`;
+  return S.lastTitle == null ? `no title conceded in ${span}` : `${span} since a title was conceded`;
+}
 function header() {
-  let status = '', btn = '';
-  if (S.phase === 'season') { status = `Season ${S.season} · Week ${S.week + 1} of ${SEASON_WEEKS}`; btn = `<button class="btn primary" data-act="playweek">Play week ${S.week + 1}</button><button class="btn ghost" data-act="autoseasonask">Play to League</button>`; }
-  if (S.phase === 'league') { status = `Season ${S.season} · Pokémon League`; btn = `<button class="btn primary" data-act="runleague">Run the Pokémon League</button>`; }
-  if (S.phase === 'offseason') { status = `Season ${S.season} · Offseason`; btn = `<button class="btn primary" data-act="nextseason">Start Season ${S.season + 1}</button>`; }
+  // one continuous world: time moves a week, a month or a year at a time, and you can act between any two weeks.
+  // The longer steps stop early when something needs you (a title conceded, a vacant post, the New Year report).
+  const status = `${dateName()} · ${wallStanding()}`;
+  const btn = `<button class="btn primary" data-act="playweek">Next week</button><button class="btn ghost" data-act="playmonth" title="Stops early if a title is conceded or a post falls vacant">Next month</button><button class="btn ghost" data-act="playyear" title="Stops early if a title is conceded or a post falls vacant">To New Year</button>`;
   return `<header class="top"><div class="top-in">
     <div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">${nLeagues() > 1 ? `${nLeagues()} Leagues` : S.lgName} · ${status}</div></div></div>
-    <div class="top-act">${btn}<button class="btn ghost" data-act="simmany">Sim seasons</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
+    <div class="top-act">${btn}<button class="btn ghost" data-act="simmany">Sim years</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
   </div></header>`;
 }
 // the page menu: three groups, each a dropdown (League / Trainers / Stats), plus the Glossary
 let navOpen = null;
 function navGroups() {
   const league = [['circuit', 'Badge circuit'], ['gyms', 'Gyms & Elite']];
-  if (S.phase === 'offseason') league.push(['recap', 'Season recap']);
+  if (S.lastLeague) league.push(['recap', 'Year in review']);
   league.push(['news', 'News'], ['history', 'History']);
   if (godOn()) league.push(['god', 'God mode']);
   return [
@@ -628,7 +634,7 @@ function viewDexEditor() {
       </div>
       <p class="muted small">Leave "Evolves from" empty for a first-stage Pokémon: it's caught in the wild like any other, and anything you add can evolve from it. Something that evolves from a game Pokémon becomes another branch of that line, picked like Eevee's.</p>
       <div class="adv-list">
-        <label class="cf-imp-row${d.from ? ' off' : ''}"><input id="dx-legend" type="checkbox"${d.legend ? ' checked' : ''}${d.from ? ' disabled' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Very rare: it can take a hundred seasons or more to first appear. It's never found in the wild. It only appears as a legendary encounter that challengers battle for, like Regigigas or Darkrai. Only for a base stat total over ${DEX_LEGEND_BST}. Nothing can evolve from it, and one trainer holds it at a time, as a partner for a few seasons.</span></span></label>
+        <label class="cf-imp-row${d.from ? ' off' : ''}"><input id="dx-legend" type="checkbox"${d.legend ? ' checked' : ''}${d.from ? ' disabled' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Very rare: it can take a hundred years or more to first appear. It's never found in the wild. It only appears as a legendary encounter that challengers battle for, like Regigigas or Darkrai. Only for a base stat total over ${DEX_LEGEND_BST}. Nothing can evolve from it, and one trainer holds it at a time, as a partner for a few seasons.</span></span></label>
         <label class="cf-imp-row${d.from || d.legend ? ' off' : ''}"><input id="dx-rare" type="checkbox"${d.rare && !d.legend ? ' checked' : ''}${d.from || d.legend ? ' disabled' : ''}><span><b>Rare in the wild</b><span class="muted small cf-imp-team">Turns up as seldom as Dratini or Larvitar.</span></span></label>
         <label class="cf-imp-row${d.from || d.legend ? ' off' : ''}"><input id="dx-starter" type="checkbox"${d.starter && !d.legend ? ' checked' : ''}${d.from || d.legend ? ' disabled' : ''}><span><b>Starter</b><span class="muted small cf-imp-team">New trainers can start with it, like Bulbasaur or Charmander.</span></span></label>
       </div><datalist id="dx-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>` : ''}
@@ -709,12 +715,12 @@ function viewSetup() {
   const advOn = Object.entries(setupAdv).filter(([, v]) => v).map(([k]) => ({ allFamous: 'All-famous league' }[k])).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []);
   const opt = (act, v, cur, label) => `<button class="seg${cur === v ? ' on' : ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${label}</button>`;
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
-    <p>You will run a Pokémon League and try to let nobody through. That part isn't built yet: for now the world runs on its own. ${CIRCUIT_SIZE} challengers travel the badge circuit each season, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
+    <p>You will run a Pokémon League and try to let nobody through. That part isn't built yet: for now the world runs on its own. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
     <div class="setup-opts">
       <div><div class="eyebrow">New Leagues open over time</div><div class="segs setup-segs">${opt('setgrowth', 1, setupGrowth ? 1 : 0, 'On')}${opt('setgrowth', 0, setupGrowth ? 1 : 0, 'Off')}</div></div>
       <div><div class="eyebrow">God mode</div><div class="segs setup-segs">${opt('setgod', 0, setupGod ? 1 : 0, 'Off')}${opt('setgod', 1, setupGod ? 1 : 0, 'On')}</div></div>
     </div>
-    <p class="muted small">The world starts with one League, in the region you choose. ${setupGrowth ? 'A new League opens in another region every 8 to 12 seasons until all four regions are in, and the Champions then meet in a World Championship. ' : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
+    <p class="muted small">The world starts with one League, in the region you choose. ${setupGrowth ? 'A new League opens in another region every 8 to 12 years until all four regions are in, and the Champions then meet in a World Championship. ' : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
@@ -742,7 +748,7 @@ function careerExtras(t) {
   const acc = accolades(t);
   const posts = postReigns(t.posts || []);
   if (!acc.length && !posts.length && !Object.keys(t.h2h || {}).length) return '';
-  const span = (a, b) => b == null ? `Season ${a}–present` : a === b ? `Season ${a}` : `Seasons ${a}–${b}`;
+  const span = (a, b) => b == null ? `Year ${a}–present` : a === b ? `Year ${a}` : `Years ${a}–${b}`;
   return `<section class="panel"><div class="ph"><h3>Honors &amp; history</h3></div><div class="hist3">
     <div><div class="eyebrow">Honors</div>${acc.length ? `<ul class="changes">${acc.map(x => `<li>${x.text}</li>`).join('')}</ul>` : '<p class="muted small">None yet.</p>'}</div>
     <div><div class="eyebrow">Positions held</div>${posts.length ? `<ul class="changes">${posts.slice().reverse().map(p => `<li><b>${p.role === 'leader' ? 'Gym Leader' : p.interim ? 'Interim Champion' : p.place}</b>${lgIn(p.lg) ? ' · ' + leagueName(p.lg) : ''} · ${span(p.from, p.to)}</li>`).join('')}</ul>` : '<p class="muted small">None.</p>'}</div>
@@ -763,14 +769,14 @@ function profileBody(t, full) {
     <section class="panel"><div class="ph"><h3>Team</h3><span class="muted">${t.team.length}/6${walkingPartner(t) ? ' · walks with ' + walkingPartner(t).sp : ''}</span></div>${t.team.map(m => monRow(m, t.id)).join('') || '<p class="muted">No Pokémon.</p>'}</section>
     ${(t.alumni || []).length ? `<section class="panel"><div class="ph"><h3>Former Pokémon</h3><span class="muted">${t.alumni.length}</span></div><div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Last Lv</th><th>Record</th><th>KOs</th><th>Left</th></tr></thead><tbody>${t.alumni.map((a, i) => `<tr><td><button class="tlink" data-act="alum" data-t="${t.id}" data-i="${i}">${a.sp}</button></td><td class="num">${a.lvl}</td><td class="num">${wl(a.st)}</td><td class="num">${a.st.ko}</td><td class="muted small">S${a.left} · ${a.why}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
     ${careerExtras(t)}
-    <section class="panel"><div class="ph"><h3>Career</h3><span class="muted">${t.role === 'retired' ? `Retired in Season ${t.retiredSeason} after ${t.seasons || 0} seasons` : `Season ${Math.max(1, t.seasons || 0)} of their career${t.age >= 45 ? ` · could retire for age from ${Math.max(50, t.age + Math.max(0, careerSpan(t) - (t.seasons || 0)))}` : ''}`}</span></div>
+    <section class="panel"><div class="ph"><h3>Career</h3><span class="muted">${t.role === 'retired' ? `Retired in Year ${t.retiredSeason} after ${t.seasons || 0} years` : `Year ${(t.seasons || 0) + 1} of their career${t.role === 'challenger' ? ` · ${t.runs || 0} run${t.runs === 1 ? '' : 's'}${t.rest != null && t.last ? `, last one ${lastRunText(t)}` : ''}` : ''}${t.age >= 45 ? ` · could retire for age from ${Math.max(50, t.age + Math.max(0, careerSpan(t) - (t.seasons || 0)))}` : ''}`}</span></div>
       <div class="stats">
         <div><b>${recOf(t).w}–${recOf(t).l}</b><small>All battles</small></div><div><b>${recOf(t).lw + recOf(t).tw}–${recOf(t).ll + recOf(t).tl}</b><small>League &amp; title</small></div>
         <div><b>${c.badges}</b><small>Badges</small></div><div><b>${c.gymW}–${c.gymL}</b><small>Gym record as challenger</small></div>
         <div><b>${c.leagueApps}</b><small>League runs</small></div><div><b>${c.titles}</b><small>Titles</small></div>
         <div><b>${c.defenses}</b><small>Title defenses</small></div><div><b>${c.e4Wins}</b><small>Elite Four wins</small></div>
       </div>
-      ${sh.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Season</th>${nLeagues() > 1 ? '<th>League</th>' : ''}<th>OVR</th><th>Badges</th><th>Result</th><th>Pts</th></tr></thead><tbody>${sh.map(h => `<tr><td>${h.season}</td>${nLeagues() > 1 ? `<td>${lgIn(h.lg) || '<span class="muted">—</span>'}</td>` : ''}<td class="num">${h.ovr}</td><td class="num">${h.role === 'champion' ? '—' : h.badges}</td><td>${h.role === 'champion' ? 'Reigning Champion' : stageText(h.stage)}</td><td class="num">${h.pts ?? ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${sh.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Year</th>${nLeagues() > 1 ? '<th>League</th>' : ''}<th>OVR</th><th title="Most badges in one run that year">Badges</th><th title="Their best run that year">Best run</th><th>Pts</th></tr></thead><tbody>${sh.map(h => `<tr><td>${h.season}</td>${nLeagues() > 1 ? `<td>${lgIn(h.lg) || '<span class="muted">—</span>'}</td>` : ''}<td class="num">${h.ovr}</td><td class="num">${h.role === 'champion' ? '—' : h.badges}</td><td>${h.role === 'champion' ? 'Reigning Champion' : stageText(h.stage)}</td><td class="num">${h.pts ?? ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </section></div>`;
 }
 
