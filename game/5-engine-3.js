@@ -876,12 +876,10 @@ function settleLegendClash(t) {
   });
 }
 // ================= NEWCOMERS =================
-// There is no draft: challengers travel on their own. Each offseason a class of new trainers sets out, and they and
-// the free agents waiting for a place compete for the places on each League's circuit. A League's circuit holds
-// CIRCUIT_SIZE challengers. A newcomer takes an open place, or the place of the circuit's weakest challenger if they
-// look clearly better. Anyone left over waits as a free agent; a brand-new trainer with no place gives up.
-const NEWCOMERS_PER_LEAGUE = 8; // new trainers setting out each offseason, per League
-const NEWCOMER_EDGE = 0;        // how much better a newcomer must look to take a challenger's place
+// There is no draft: challengers travel on their own. New trainers set out one at a time through the year (see
+// arrivals in 4-engine-2.js), and they and anyone without a place join the emptiest circuit. A circuit has no cap
+// (0.4.0): the field is kept in check by weak challengers giving up (see endRun), not by a number of places.
+const NEWCOMERS_PER_LEAGUE = 8; // new trainers setting out each year, per League, one at a time (see arrivals)
 function makeNewcomers(n) {
   const cls = [];
   // legacy trainers whose time has come take the first places in the class (at most two a year)
@@ -920,48 +918,29 @@ function joinCircuit(t, i) {
   inLeague(i, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
   if (nLeagues() > 1) settleLegendClash(t);
 }
-// the offseason's intake: `ids` (new trainers and free agents) look for a place, the most promising first
-function fillCircuits(ids) {
+// new trainers and free agents join a circuit, the emptiest first. A circuit has no cap (0.4.0). `stagger` spreads
+// a founding field's setting out over that many weeks; anyone else sets out within a few weeks.
+function fillCircuits(ids, stagger) {
   const pool = ids.map(T).filter(t => t && ['prospect', 'free'].includes(t.role)).sort((a, b) => circuitValue(b) - circuitValue(a));
   for (const t of pool) {
-    // the emptiest circuit first
-    const room = eachLeague(i => ({ i, n: S.challengers.length })).filter(x => x.n < CIRCUIT_SIZE).sort((a, b) => a.n - b.n)[0];
-    if (room) { joinCircuit(t, room.i); continue; }
-    // every circuit is full: they can take the place of the weakest challenger anywhere, if they look better
-    const weakest = eachLeague(() => challengers().filter(x => x.returned !== S.season && !comebackProtected(x))).flat().sort((a, b) => circuitValue(a) - circuitValue(b))[0];
-    if (weakest && circuitValue(t) > circuitValue(weakest) + NEWCOMER_EDGE) {
-      const i = homeLeague(weakest);
-      toFreeAgent(weakest, `lost their place on the circuit to ${dn(t)}`);
-      joinCircuit(t, i);
-    } else if (t.role === 'prospect') { if (t.famous) S.famousUsed = (S.famousUsed || []).filter(n => n !== t.name); delete S.trainers[t.id]; }
-    else if (!S.freeAgents.includes(t.id)) { S.freeAgents.push(t.id); t.freeSince = t.freeSince ?? S.season; }
+    const room = eachLeague(i => ({ i, n: S.challengers.length })).sort((a, b) => a.n - b.n)[0];
+    joinCircuit(t, room.i);
+    t.rest = S.turn + (stagger != null ? ri(0, stagger) : ri(1, 3)); t.early = 0;
   }
   S.freeAgents = S.freeAgents.filter(id => T(id) && T(id).role === 'free');
 }
-function newcomersArrive() {
-  const cls = makeNewcomers(NEWCOMERS_PER_LEAGUE * nLeagues() + (S.leagueOpened && S.leagueOpened.season === S.season + 1 ? CIRCUIT_SIZE - NEWCOMERS_PER_LEAGUE : 0));
-  fillCircuits(cls.concat(S.freeAgents));
-}
-// the offseason's last steps, then the new season: newcomers arrive, challengers change Leagues and the ban vote is settled
-function nextSeason() {
-  if (S.phase !== 'offseason') return;
-  newcomersArrive();
-  challengerLeagueMoves();
-  settleBanVote();
-  startSeason();
-}
 // ---------- simming ----------
-// one step through whatever the current phase needs
-function autoStep() {
-  if (S.phase === 'season') { while (S.phase === 'season') simWeek(); return; }
-  if (S.phase === 'league') { runLeague(); return; }
-  if (S.phase === 'offseason') nextSeason();
-}
-// play through to the end of the next season's League, then on to the start of the season after it
-function simOneSeason() {
-  const target = S.history.length + 1; let guard = 0;
-  while ((S.history.length < target || S.phase !== 'season') && guard++ < 60) autoStep();
+// play to the next New Year (the wall report for the year just ended is the last entry of S.history)
+function simYear() {
+  const y = S.season; let guard = 0;
+  while (S.season === y && guard++ < YEAR_WEEKS + 2) simWeek();
   return S.history[S.history.length - 1];
+}
+// play up to n weeks; with `stops`, pause as soon as something needs the player (see stopFor). Returns why it
+// stopped, or null.
+function simWeeks(n, stops) {
+  for (let i = 0; i < n; i++) { simWeek(); if (stops && S.stop) return S.stop; }
+  return null;
 }
 // legendaries held in this League. A baby legendary (Cosmog, Type: Null, Kubfu…) counts as every legendary it can grow into,
 // so nobody is handed a Solgaleo while a Cosmog that could become one is out there
@@ -1090,8 +1069,8 @@ function expireBans(i, changes) {
       const age = S.season - b.season;
       S.bans = S.bans.filter(z => z !== b);
       S.banLog.unshift({ season: S.season, sp: b.sp, act: 'lift', n: b.n, limit: true, len: banLen(b) });
-      changes.push(`${pre}The ban on ${b.sp} is lifted after ${age} season${age === 1 ? '' : 's'}.`);
-      news(`The ${S.lgName}'s ban on ${b.sp} is over. It can battle there again in Season ${S.season + 1}.`, 'league');
+      changes.push(`${pre}The ban on ${b.sp} is lifted after ${age} year${age === 1 ? '' : 's'}.`);
+      news(`The ${S.lgName}'s ban on ${b.sp} is over. It can battle there again in Year ${S.season + 1}.`, 'league');
     }
   });
 }
@@ -1133,12 +1112,12 @@ function resolveBanVote(i, cands, changes) {
   for (const { row, c } of passed) {
     if (room <= 0) { row.capped = true; continue; }
     room--; row.passed = true;
-    const len = row.len, thru = S.season + len, span = len === 1 ? `Season ${thru}` : `Seasons ${S.season + 1}–${thru}`;
+    const len = row.len, thru = S.season + len, span = len === 1 ? `Year ${thru}` : `Years ${S.season + 1}–${thru}`;
     S.bans.push({ sp: c.sp, members: c.members, season: S.season, ty: row.ty, tn: row.tn, pct: row.pct, len });
     const bc = banCounts(); bc[c.sp] = (bc[c.sp] || 0) + 1;
     S.banLog.unshift({ season: S.season, sp: c.sp, act: 'ban', ty: row.ty, tn: row.tn, pct: row.pct, len });
     const tally = `${row.ty} of ${row.tn} trainers voting for it`;
-    changes.push(`${pre}${c.sp} is banned for ${len === 1 ? span : `${len} seasons (${span})`} (${tally}).`);
+    changes.push(`${pre}${c.sp} is banned for ${len === 1 ? span : `${len} years (${span})`} (${tally}).`);
     const lt = row.loud && T(row.loud.id);
     const loud = lt ? ` ${dn(lt)}, ${row.loud.loss ? `beaten by it ${row.loud.loss === 1 ? 'once' : `${row.loud.loss} times`}` : `who lost ${row.loud.ko} Pokémon to it`} this season, led the push.` : '';
     news(`The ${S.lgName} banned ${c.sp}${c.members.length > 1 ? ` (and ${c.members.filter(s => s !== c.sp).join(', ')})` : ''} for ${len === 1 ? span : `${len} seasons, ${span}`}, with ${tally}.${loud}`, 'league', lt ? lt.id : undefined);
@@ -1197,32 +1176,22 @@ function applyRegistration(t, uids) {
   const keep = t.team.filter(m => uids.includes(m.uid)).slice(0, START_TEAM);
   if (!keep.length) return;
   const gone = t.team.filter(m => !keep.includes(m));
-  for (const m of gone) farewell(t, m, 'not registered for the new season');
+  for (const m of gone) farewell(t, m, 'left behind for a new run');
   t.team = keep;
 }
-function startSeason() {
-  S.season++; S.week = 0; S.phase = 'season'; S.dexSeason = {}; S.changes = null; S.progress = null; S.worlds = null;
+// the world's first year begins
+function startWorld() {
+  S.season = 1; S.week = 0; S.turn = 0; S.phase = 'season'; S.dexSeason = {}; S.changes = null; S.progress = null; S.worlds = null;
   eachLeague(() => {
-    S.league = null;
-    enforceBans();
-    S.gyms.forEach(g => { g.w = 0; g.l = 0; g.streak = 0; g.foes = []; g.lastSwap = null; });
-    for (const t of challengers()) {
-      autoEquip(t);
-      t.badges = []; t.badgeWeek = null; t.weekLog = []; t.out = null; t.gymStage = 0; t.gymTries = 0;
-      for (const m of t.team) m.form = (m.form || 0) * 0.3;
-      if (t.team.length > START_TEAM) applyRegistration(t, bestThree(t));
-      setTeamLevel(t, GYM_LV[0]);
-      t.seasons++;
-    }
-    for (const id of staffIds()) { const t = T(id); t.weekLog = []; t.badges = []; t.seasons = (t.seasons || 0) + 1; relevelElite(t); }
+    S.league = null; S.lastLeague = null;
+    for (const id of staffIds()) { const t = T(id); t.weekLog = []; t.badges = []; relevelElite(t); }
   });
-  for (const id of S.freeAgents) { const t = T(id); if (t && t.role === 'free') t.seasons = (t.seasons || 0) + 1; }
   const circ = eachLeague(() => S.challengers.length);
-  news(`Season ${S.season} begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers on the circuit'}.`, 'league');
+  news(`Year 1 begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers'} are setting out.`, 'league');
 }
 
 function newWorld(cfg = {}) {
-  S = { version: SAVE_VERSION, season: 0, week: 0, phase: 'offseason', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
+  S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
   S.cfg = { leagues: [1, 2, 3, 4].includes(cfg.leagues) ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
@@ -1245,7 +1214,7 @@ function newWorld(cfg = {}) {
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   for (let li = 0; li < S.cfg.leagues; li++) inLeague(li, () => foundLeague());
   foundingField();
-  startSeason();
+  startWorld();
 }
 // one League's founding staff: eight Gym Leaders, the Elite Four and a Champion
 function foundLeague() {
@@ -1290,7 +1259,7 @@ function shiftLeague(t, to) {
   inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
   t.lg = to;
   inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
-  (t.lgMoves = t.lgMoves || []).push({ season: S.season + 1, from, to });
+  (t.lgMoves = t.lgMoves || []).push({ season: S.season, from, to });
 }
 // ---------- Grand Slam: Champion (at a season's end) of every League in the world ----------
 let champLgCache = { key: null, map: null };
@@ -1320,12 +1289,12 @@ const unwonLeagues = t => Array.from({ length: nLeagues() }, (_, i) => i).filter
 // v199: a Globetrotter feels the pull twice as strongly and looks for a move every offseason
 const globetrotter = t => !!t && t.r && hasTrait(t, 'globetrotter');
 const slamFit = (t, i) => leagueFit(t, i) + (slamChaser(t) && !champLeaguesOf(t).has(i) ? SLAM_PULL * (globetrotter(t) ? 2 : 1) : 0);
-// can challenger t go to League i: room on its circuit and no legendary clash
+// can challenger t go to League i: no legendary clash (a circuit has no cap)
 function slamRoom(t, i) {
   if (i === lgOf(t)) return false;
   const legs = t.team.filter(m => SP[m.sp].legend).map(m => m.sp);
   if (legs.length && inLeague(i, () => { const held = ownedLegends(); return legs.some(sp => held.has(sp)); })) return false;
-  return inLeague(i, () => S.challengers.length) < CIRCUIT_SIZE;
+  return true;
 }
 // after the League offseasons: a dethroned Slam chaser looks for a new challenge in a League they haven't won
 function slamReturns(changes) {
@@ -1359,20 +1328,7 @@ function checkGrandSlams() {
     news(`TRIPLE CROWN! ${dn(t)} has now been Champion of three different Leagues: ${[...champLeaguesOf(t)].map(leagueName).join(', ')}.`, 'title', t.id);
   }
 }
-// each offseason a Slam chaser or a Globetrotter may move to another League's circuit, when its matchups suit them
-// clearly better and there is room
-const MOVE_EDGE = 0.35;
-function challengerLeagueMoves() {
-  if (nLeagues() < 2) return;
-  for (const t of eachLeague(() => challengers()).flat()) {
-    if (!slamChaser(t) && !globetrotter(t)) continue;
-    const from = lgOf(t);
-    const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) })).sort((a, b) => b.gain - a.gain)[0];
-    if (!best || best.gain <= MOVE_EDGE * (globetrotter(t) ? 0.5 : 1)) continue;
-    shiftLeague(t, best.i);
-    inLeague(best.i, () => news(`${dn(t)} moved from the ${leagueName(from)} to the ${leagueName(best.i)}.`, 'move', t.id));
-  }
-}
+const MOVE_EDGE = 0.35; // how much better another League's matchups must look to a Triple Crown chaser or a Globetrotter (see leagueMove)
 // the founding field: experienced trainers with no recorded League history fill every circuit
 function foundingField() {
   const ids = [];
@@ -1386,8 +1342,8 @@ function foundingField() {
     S.freeAgents.push(t.id); ids.push(t.id);
   }
   news(`The ${nLeagues() > 1 ? 'World Circuit' : S.lgName} has been founded${nLeagues() > 1 ? `: ${eachLeague(() => S.lgName).join(', ')}` : ''}.`, 'league');
-  fillCircuits(ids);
+  fillCircuits(ids, FOUNDING_STAGGER);
   scheduleLeague();
 }
 
-if (typeof module !== 'undefined') module.exports = { godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startSeason, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, simOneSeason, autoStep, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, runLeague, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, nextSeason, newcomersArrive, fillCircuits, circuitValue, makeNewcomers, challengerLeagueMoves, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, toFreeAgent, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };

@@ -131,24 +131,26 @@ for (const n of ULTRA_BEASTS) SP[n].ub = true;
 // ---------- mass outbreaks ----------
 // Most weeks there's a chance that one wild species swarms near a town for the coming week. Everyone who explores
 // that week is offered it (at their own level), and outbreak Pokémon are far more often alphas or shinies.
+// world events keep their yearly rates over a year twice as long: half the weekly odds, in any week (0.4.0)
+const EVENT_PACE = 0.5;
 const OUTBREAK_CHANCE = 0.16, OUTBREAK_ALPHA = 4, OUTBREAK_SHINY = 8;
-const activeOutbreak = () => S.outbreak && S.outbreak.week === S.week ? S.outbreak : null;
+const activeOutbreak = () => S.outbreak && S.outbreak.turn === S.turn ? S.outbreak : null;
 function maybeOutbreak() {
   const ob = S.outbreak;
-  if (ob && ob.week < S.week) {
+  if (ob && ob.turn < S.turn) {
     S.outbreak = null;
     const bits = [`${ob.caught} caught`]; if (ob.alpha) bits.push(`${ob.alpha} alpha${ob.alpha > 1 ? 's' : ''}`); if (ob.shiny) bits.push(`${ob.shiny} shiny`);
     catchNews(`The ${ob.sp} outbreak near ${ob.town} has died down: ${bits.join(', ')}.`, 'circuit');
-    (S.outbreakLog = S.outbreakLog || []).push({ season: S.season, week: ob.week + 1, sp: ob.sp, town: ob.town, caught: ob.caught, alpha: ob.alpha, shiny: ob.shiny });
+    (S.outbreakLog = S.outbreakLog || []).push({ season: ob.season, week: ob.week + 1, sp: ob.sp, town: ob.town, caught: ob.caught, alpha: ob.alpha, shiny: ob.shiny });
     if (S.outbreakLog.length > 60) S.outbreakLog.shift();
   }
-  if (!featOn('outbreak') || S.outbreak || S.week < 1 || S.week >= SEASON_WEEKS - 1 || rand() >= OUTBREAK_CHANCE) return;
+  if (!featOn('outbreak') || S.outbreak || rand() >= OUTBREAK_CHANCE * EVENT_PACE) return;
   // usually a common Pokémon; sometimes something rarer worth chasing
   const pool = BASES.filter(b => !SP[b].starter && SP[b].bst < 420 && (rand() < 0.3 ? SP[b].rare : !SP[b].rare));
   if (!pool.length) return;
   const sp = pick(pool), town = townName(ri(0, S.gyms.length - 1));
-  S.outbreak = { sp, town, week: S.week, caught: 0, alpha: 0, shiny: 0 };
-  catchNews(`Mass outbreak! Wild ${sp} are swarming near ${town} in week ${S.week + 1}. Trainers who explore will find them, with far better odds of an alpha or a shiny.`, 'circuit');
+  S.outbreak = { sp, town, turn: S.turn, season: S.season, week: S.week, caught: 0, alpha: 0, shiny: 0 };
+  catchNews(`Mass outbreak! Wild ${sp} are swarming near ${town} this week. Trainers who explore will find them, with far better odds of an alpha or a shiny.`, 'circuit');
 }
 // ---------- optional features (chosen when a league is created; all on by default) ----------
 const FEATURES = [
@@ -158,37 +160,37 @@ const FEATURES = [
     ['delta', 'Delta Pokémon', 'Rarer than alphas, more common than shinies: an unusual second type and outstanding IVs.'],
     ['alpha', 'Alpha Pokémon', 'Uncommon alphas with outstanding IVs, already hot.'],
     ['outbreak', 'Mass outbreaks', 'One species swarms near a town for a week, with better shiny and alpha odds.'],
-    ['wormhole', 'Ultra Wormholes', 'From midseason, an Ultra Beast can come through near a trainer.'],
+    ['wormhole', 'Ultra Wormholes', 'Now and then an Ultra Beast comes through near a trainer.'],
     ['rarefind', 'Rare finds', 'Meltan, Poipole, Cosmog, Kubfu and the other one-of-a-kind finds.'] ] },
   { group: 'Events', items: [
     ['roamers', 'Roaming legendaries', 'Raikou, Entei, Suicune, Latias, Latios and the Loyal Three roam between towns; challengers exploring nearby may find and catch them.'],
     ['storms', 'Legendary storms', 'The legendary birds (sometimes their Galarian forms), the Forces of Nature, the island guardians and the Treasures of Ruin change battles across the whole region for four weeks, then choose the challenger who won the most battles in it.'],
-    ['greatlegends', 'Legendary encounters', 'The box legendaries appear through story events, along with rare encounters (Regigigas, Darkrai, Cresselia, Deoxys), legendaries found while exploring (the Regis, Mew, Shaymin and more), legendaries that choose a trainer by character or season (the Lake trio, the Swords of Justice, Victini and more) and Missingno. A trainer holds one legendary at a time.'],
+    ['greatlegends', 'Legendary encounters', 'The box legendaries appear through story events, along with rare encounters (Regigigas, Darkrai, Cresselia, Deoxys), legendaries found while exploring (the Regis, Mew, Shaymin and more), legendaries that choose a trainer by character or year (the Lake trio, the Swords of Justice, Victini and more) and Missingno. A trainer holds one legendary at a time.'],
     ['abilities', 'Abilities', 'Pokémon have their real abilities (a growing set), with gym weather (rain, sun, sand, snow), burns, paralysis, poison and stat changes in battle.'],
     ['items', 'Held items', 'Pokémon hold items: type boosters, Leftovers, Choice items, Life Orb, Focus Sash and more. Earned from gyms, found while exploring, and given for deep League runs.'],
     ['temper', 'Temperaments', 'Each nature also gives a small effect off the field: nerves on the big stage, faster learning and more.'],
     ['bond', 'Battle Bond', 'Long-time partners at max friendship can transform after a knockout in League battles.'],
     ['road', 'Road battles and rivalries', 'Challengers run into each other between gyms; rivalries and nemeses grow from it.'],
     ['gymadapt', 'Gym Leaders adapt', 'A Gym Leader on a losing streak swaps a Pokémon to counter what is beating them.'],
-    ['meta', 'Meta response', "New prospects counter the season's top Pokémon."] ] },
+    ['meta', 'Meta response', "New prospects counter the year's top Pokémon."] ] },
   { group: 'World', items: [
     ['legacy', 'Legacy trainers', "Notable retirees' children set out as challengers years later."],
     ['extclasses', 'Extended trainer classes', "Trainer classes made for this game that aren't in the Pokémon games, such as Storm Chaser, Lamplighter, Locksmith and Desert Nomad. They're mostly dual-type specialists covering type pairs the games' classes don't. Off: only classes from the games are handed out."],
-    ['banlist', 'League banlists', "Each offseason a League's trainers vote on banning its top performers for the next seasons. Challengers let banned Pokémon go, and Gym Leaders, the Elite Four and the Champion get replacements."] ] },
+    ['banlist', 'League banlists', "Each New Year a League's trainers vote on banning its top performers for the next years. Challengers let banned Pokémon go, and Gym Leaders, the Elite Four and the Champion get replacements."] ] },
 ];
 const featOn = k => !(S && S.cfg && S.cfg.off && S.cfg.off[k]);
-const WORMHOLE_WEEK = 12, WORMHOLE_CHANCE = 0.03, WORMHOLE_OPEN = 2; // per week from week 13; open for two weeks
+const WORMHOLE_CHANCE = 0.03 * 11 / 48, WORMHOLE_OPEN = 2; // per week, any week (the source: 0.03 in 11 of a year's 24 weeks); open for two weeks
 // open a wormhole near one challenger; it stays open for a couple of weeks, and exploring there finds the Ultra Beast
 function maybeWormhole() {
-  if (S.wormhole && S.week >= S.wormhole.until) { const w = S.wormhole, t = T(w.id); S.wormhole = null; if (t) catchNews(`The Ultra Wormhole near ${t.name} closed, and ${w.sp} went back through it.`, 'circuit', t.id); }
-  if (!featOn('wormhole') || S.wormhole || S.week < WORMHOLE_WEEK || S.week >= SEASON_WEEKS - 1 || rand() >= WORMHOLE_CHANCE) return;
-  const held = ownedLegends(), free = ULTRA_BEASTS.filter(n => !held.has(n)); const near = challengers().filter(t => t.team.length);
+  if (S.wormhole && S.turn >= S.wormhole.until) { const w = S.wormhole, t = T(w.id); S.wormhole = null; if (t) catchNews(`The Ultra Wormhole near ${t.name} closed, and ${w.sp} went back through it.`, 'circuit', t.id); }
+  if (!featOn('wormhole') || S.wormhole || rand() >= WORMHOLE_CHANCE) return;
+  const held = ownedLegends(), free = ULTRA_BEASTS.filter(n => !held.has(n)); const near = challengers().filter(t => t.team.length && t.rest == null);
   if (!free.length || !near.length) return;
   let t = pick(near), sp = pick(free);
   // now and then the wormhole leads into Ultra Space itself, and Solgaleo or Lunala comes through
   const space = featOn('greatlegends') && !legendFull(t) ? ['Solgaleo', 'Lunala', 'Necrozma'].filter(n => !held.has(n) && !legendBlocked(t, n)) : [];
   if (space.length && rand() < 0.15) sp = pick(space);
-  S.wormhole = { id: t.id, sp, until: Math.min(SEASON_WEEKS, S.week + WORMHOLE_OPEN) };
+  S.wormhole = { id: t.id, sp, until: S.turn + WORMHOLE_OPEN };
   catchNews(`An Ultra Wormhole opened near ${dn(t)}! ${sp} has come through. Exploring in the next ${WORMHOLE_OPEN} weeks gives ${t.name} one chance to catch it.`, 'circuit', t.id);
 }
 // a baby legendary line is free when nobody active holds any stage of it
@@ -212,8 +214,19 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 2; // 2: the wall rules (0.2.0)
-const SEASON_WEEKS = 24;
+const SAVE_VERSION = 3; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0)
+// The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
+// stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
+// source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
+// what every timer uses so it can run across New Year.
+const YEAR_WEEKS = 48;
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// week w of the year (0 to 47) in words
+const weekName = w => `week ${(w % 4) + 1} of ${MONTHS[Math.floor(w / 4) % 12]}`;
+const weekShort = w => `${MONTHS[Math.floor(w / 4) % 12].slice(0, 3)} wk ${(w % 4) + 1}`;
+const dateName = (y = S.season, w = S.week) => `Year ${y}, ${weekName(w)}`;
+// the date of an absolute turn, counted from today
+function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.season + Math.floor(d / YEAR_WEEKS), w = ((d % YEAR_WEEKS) + YEAR_WEEKS) % YEAR_WEEKS; return y === S.season ? weekName(w) : `${weekName(w)}, Year ${y}`; }
 // the regions: each has a name for its League and eight cities. A League sits in one region (gym types are random
 // and reshuffle)
 const LEAGUE_SETS = [
@@ -397,7 +410,7 @@ const TEMPER = {
   Impish: { name: 'Spiteful', d: "+5% damage against its trainer's rival." },
   Lax: { name: 'Careless', d: '−4% damage against a team whose top three are 4 or more levels lower on average.' },
   Timid: { name: 'Nervous', d: '−7% damage in its first Elite Four or Championship battle each season, unless a Calm teammate steadies it.' },
-  Hasty: { name: 'Impatient', d: 'Levels 15% faster in the first half of the season and 12% slower in the second.' },
+  Hasty: { name: 'Impatient', d: 'Levels 15% faster in the first half of the year and 12% slower in the second.' },
   Jolly: { name: 'Cheerful', d: 'While its trainer is on a win streak of 2 or more, the whole team does 3% more damage.' },
   Modest: { name: 'Studious', d: 'Learns stronger moves and coverage moves 5 levels early.' },
   Mild: { name: 'Easygoing', d: 'A cold streak never lowers its damage; a hot streak still helps.' },
@@ -408,7 +421,7 @@ const TEMPER = {
   Careful: { name: 'Cautious', d: 'Hard to wear down: fainting cools its form half as much.' },
   Hardy: { name: 'Even-keeled', d: 'Never runs hot or cold: streaks have no effect on it.' },
   Serious: { name: 'Focused', d: '+4% damage in Elite Four and Championship battles.' },
-  Bashful: { name: 'Shy', d: 'Starts each season at −4% damage and gains 1% for every win it takes part in, up to +4%.' },
+  Bashful: { name: 'Shy', d: 'Starts each year at −4% damage and gains 1% for every win it takes part in, up to +4%.' },
   Quirky: { name: 'Unpredictable', d: 'Takes on a different temperament each season.' },
 };
 const TEMPER_KEYS = Object.keys(TEMPER).filter(k => k !== 'Quirky');
@@ -745,7 +758,7 @@ function gymLost(i, winner) {
   // remember what's been beating them: the types of each winner's strongest Pokémon
   const top = winner.team.slice().sort((a, b) => monPower(b) - monPower(a)).slice(0, 3);
   gym.foes = (gym.foes || []).concat(top.flatMap(m => SP[m.sp].types)).slice(-30);
-  if (gym.streak >= GYM_ADAPT_STREAK && (gym.lastSwap == null || S.week - gym.lastSwap >= GYM_ADAPT_COOLDOWN)) adaptGym(i);
+  if (gym.streak >= GYM_ADAPT_STREAK && (gym.lastSwap == null || S.turn - gym.lastSwap >= GYM_ADAPT_COOLDOWN)) adaptGym(i);
 }
 function adaptGym(i) {
   const gym = S.gyms[i], L = T(gym.leader), slot = L && eliteSlot(L);
@@ -768,7 +781,7 @@ function adaptGym(i) {
   stamp(best, 'swap'); best.fr = 120;
   L.team.push(best); relevelElite(L);
   const streak = gym.streak;
-  gym.streak = 0; gym.lastSwap = S.week; gym.swaps = (gym.swaps || 0) + 1;
+  gym.streak = 0; gym.lastSwap = S.turn; gym.swaps = (gym.swaps || 0) + 1;
   const top = Object.entries(foes).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
   news(`${dn(L)} lost ${streak} straight at ${townName(i)} Gym and shook up the team: ${drop.sp} is out, ${best.sp} is in to deal with the ${top.join(' and ')} types that keep winning.`, 'circuit', L.id);
 }
@@ -789,7 +802,8 @@ function megaFor(t, m) {
   if (t && t.mega && t.mega.uid === m.uid && t.mega.v) { const f = forms.find(x => x.v === t.mega.v); if (f) return f; }
   return forms.slice().sort((a, b) => specTypes(t).filter(ty => b.types.includes(ty)).length - specTypes(t).filter(ty => a.types.includes(ty)).length)[0];
 }
-const hasMega = t => !!(featOn('mega') && t && t.mega && t.mega.season === S.season);
+// a Mega Stone is good for the run it was earned on, which can cross New Year (0.4.0)
+const hasMega = t => !!(featOn('mega') && t && t.mega && t.mega.season >= S.season - 1);
 const megaHolder = t => hasMega(t) ? t.team.find(m => m.uid === t.mega.uid && megaForms(m).length) || null : null;
 // give the stone to the best Pokémon that can Mega Evolve right now (null if none)
 function assignMegaStone(t, uid, v) {
@@ -807,13 +821,7 @@ function earnMega(t) {
   t.mega = { season: S.season, uid: null, v: '' };
   const m = assignMegaStone(t);
   t.career.megaStones = (t.career.megaStones || 0) + 1;
-  if (m) news(`${dn(t)} completed the badge circuit and earned a Key Stone and a Mega Stone for ${m.sp}, good for the League this season.`, 'circuit', t.id);
-}
-// before the League: a trainer whose holder left or who had no eligible Pokémon gets the stone sorted out,
-// and the Elite Four and Champion are ready with theirs
-function settleMegaStones() {
-  for (const t of challengers()) if (hasMega(t) && !megaHolder(t)) assignMegaStone(t);
-  for (const id of [...S.e4, S.champion]) { const t = T(id); if (t) eliteMega(t); }
+  if (m) news(`${dn(t)} completed the badge circuit and earned a Key Stone and a Mega Stone for ${m.sp}, good for this run at the League.`, 'circuit', t.id);
 }
 // the Elite Four and the Champion Mega Evolve only if one of their own Pokémon can; the League supplies none
 function eliteMega(t) {
@@ -1997,7 +2005,8 @@ function exploreFind(t) {
   // a Pokémon with Pickup doubles the chance
   // (Run Away: 1.5x)
   if (!itemsOn() || rand() >= ITEM_FIND * (t.team.some(m => abilityOf(m) === 'Pickup') ? 2 : t.team.some(m => abilityOf(m) === 'Run Away') ? 1.5 : 1)) return null;
-  const k = rollItem(S.week >= 16 ? 3 : S.week >= 8 ? 2 : 1);
+  // better finds the longer a run has gone on (the source: the later in the season)
+  const wk = runWeeks(t), k = rollItem(wk >= 16 ? 3 : wk >= 8 ? 2 : 1);
   bagAdd(t, k); autoEquip(t);
   return k;
 }
@@ -2075,7 +2084,7 @@ const ROAD_CHANCE = 0.08;
 function roadBattles() {
   if (!featOn('road')) return;
   const done = new Set();
-  const pool = challengers().filter(t => t.team.length >= 2 && !t.out);
+  const pool = challengers().filter(t => t.team.length >= 2 && t.rest == null);
   for (const t of shuffle(pool.slice())) {
     if (done.has(t.id)) continue;
     const comp = hasTrait(t, 'competitor');
@@ -2152,7 +2161,7 @@ function recordBattle(trainers, tally, winner, stakes) {
 }
 // where a Pokémon came from, shown on its stat card
 const FR_START = { starter: 120, caught: 50, gift: 90, assigned: 100 };
-function stamp(m, how) { if (!m.metFr) { m.fr = FR_START[how] ?? m.fr; m.metFr = 1;  } if (!m.met) m.met = S.phase === 'season' || S.phase === 'league' ? { how, season: S.season, week: S.week + 1 } : { how, season: S.season + 1, week: 1 }; return m; }
+function stamp(m, how) { if (!m.metFr) { m.fr = FR_START[how] ?? m.fr; m.metFr = 1;  } if (!m.met) m.met = { how, season: S.season || 1, week: S.week + 1 }; return m; }
 // keep a record of Pokémon that leave a trainer's team after they've battled
 function farewell(t, m, why) {
   // a released Pokémon's held item goes back in the bag

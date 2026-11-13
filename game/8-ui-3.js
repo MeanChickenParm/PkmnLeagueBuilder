@@ -1,5 +1,18 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 4, ver: '0.4.0', date: 'November 13, 2026', time: '11:30 AM ET', title: 'One continuous world: no more seasons', items: [
+    "There are no seasons any more. The world runs week by week on one calendar that never stops: a year is 48 weeks, twelve months of four. Nothing waits for a League tournament or an offseason.",
+    "Every challenger is on their own clock. They set out on a run from the first gym with their best three Pokémon, get three tries at each gym, and take on the Elite Four and the Champion as soon as they have eight badges and are ready (up to three weeks spent filling their team first). A third loss at one gym ends the run. Then they rest for 6 to 10 weeks and set out again from the first gym with no badges.",
+    "The wall is scored by the calendar year. A perfect year is one with no title conceded, and the streak counts perfect years in a row. The header also shows how long it has been since a title was last conceded, and the circuit page keeps a running tally of the year so far.",
+    "Time moves with three buttons: Next week, Next month and To New Year. The longer steps stop early when something needs you: a title conceded, a post that fell vacant, or the New Year report. Sim years still plays whole years without stopping.",
+    "The world's slow changes are spread through the year. Every trainer has a birthday week, when they grow a year older and their ratings move. Staff retire on their birthday and the post is filled at once; a challenger who decides to retire sees their run through first. New trainers set out one at a time, about eight a year.",
+    "A circuit no longer has 24 places. Everyone who wants to challenge does. A challenger who keeps going out early (three or more runs in a row that end sooner than a typical run) gives up after their first two years, which keeps the field at around 30 to 40.",
+    "New Year brings the year in review: the wall report, the awards, the meta report, the ban vote and, with two or more Leagues, the World Championship. History, records and profiles now count years, and a profile shows a challenger's best run of each year.",
+    "Legendary encounters, roaming legendaries, storms, outbreaks and Ultra Wormholes can now begin in any week and leave on their own timers. They happen about as often per year as before.",
+    "With more than one League, a challenger who reached the Elite Four often takes their next run to a different League after only 2 or 3 weeks of rest.",
+    "Not tuned yet. The wall is still far too strong for a well-staffed League: tests showed that starting teams, squad picking, gym trainers and tries per gym barely move it, because almost nobody gets through the Elite Four and Champion. What to change instead is the next decision.",
+    "Saves from earlier versions can't be loaded: the calendar changed too much. Start a new world.",
+  ] },
   { id: 3, ver: '0.3.0', date: 'November 13, 2026', time: '9:50 AM ET', title: 'Gym types from the class, and staff who build their own teams', items: [
     "A gym's type is now its leader's class. A dual-type leader keeps both types: a Rock/Flying leader leads a Rock/Flying gym. A leader with no type focus (an Ace Trainer or a Veteran) leads a gym with a mixed team.",
     "Gym trainers follow the leader. In a typed gym each gym trainer shares at least one type with the leader and fields Pokémon of their own class's types, so a Rock/Flying gym can have a Rock/Fighting or a Flying/Fairy gym trainer. In an untyped gym they can be of any class. Gym trainers can now have a dual-type class too.",
@@ -64,7 +77,7 @@ function updatesBody() {
 function menuBody() {
   const m = modal;
   return `<div class="mh"><h2>World file</h2><button class="btn icon" data-act="close" aria-label="Close">×</button></div>
-  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple seasons…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button><button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
+  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple years…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button><button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
   <p class="muted">Progress saves automatically in this browser after every week. Copy the save to back it up or move it to another device.</p>
   <div class="confirm-row"><button class="btn" data-act="export">Copy save to clipboard</button>${canSaveFile() ? '<button class="btn" data-act="savefile">Download save file</button>' : ''}<button class="btn" data-act="importshow">Load a save</button></div>
   ${m.copying ? '<p class="fine">Preparing the save…</p>' : m.copied ? '<p class="fine">Save copied to the clipboard. Paste it into Load a save to bring this world back.</p>' : ''}
@@ -171,8 +184,8 @@ function receiveFromEmbed() {
     window.removeEventListener('message', onMsg);
     if (!ev.data.code) return;
     const v = await parseSave(ev.data.code); if (!v) return;
-    if (S && (S.season || 0) > (v.season || 0)) { toast('This tab already has a later season of your world, so it was kept.'); return; }
-    adoptSave(v); save(); render(); toast(`Your world came over from the other page: Season ${S.season || 1}. Progress now saves in this tab.`);
+    if (S && (S.season || 0) > (v.season || 0)) { toast('This tab already has a later year of your world, so it was kept.'); return; }
+    adoptSave(v); save(); render(); toast(`Your world came over from the other page: Year ${S.season || 1}. Progress now saves in this tab.`);
   };
   window.addEventListener('message', onMsg);
   try { window.opener.postMessage({ type: 'plb-ready' }, location.origin); } catch (e) {}
@@ -251,18 +264,20 @@ function lgBar() {
 }
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
-// a view that no longer fits (a recap outside the offseason, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && S.phase !== 'offseason') || (view === 'god' && !godOn())) view = 'circuit'; }
+// a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.lastLeague) || (view === 'god' && !godOn())) view = 'circuit'; }
 
 // ---------- actions ----------
 
 
-function playWeek() {
-  if (S.phase !== 'season') return;
-  simWeek();
+// Move time on by up to n weeks. A step of more than a week stops early when something needs you: a title
+// conceded, a post that fell vacant, or the New Year report (which opens the year in review).
+function playWeeks(n) {
+  const y = S.season, stop = simWeeks(n, n > 1);
   save();
+  if (S.season !== y) { go('recap'); toast(`Year ${y} is over. Here is the year in review.`); return; }
   render();
-  toast(S.phase === 'league' ? 'The regular season is over. Time for the Pokémon League.' : `Week ${S.week} complete.`);
+  toast(stop ? `Stopped in ${weekName(S.week)}: ${stop.text}` : `It is now ${weekName(S.week)}, Year ${S.season}.`);
 }
 
 // open / close the page menu's dropdowns in place (no full re-render)
@@ -337,8 +352,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Season 1 is underway.`); break;
-    case 'nextseason': if (S.phase !== 'offseason') break; nextSeason(); save(); go('circuit'); toast(`Season ${S.season} is underway.`); break;
+    case 'newworld': viewLg = 0; newWorld({ region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Year 1 is underway.`); break;
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;
     case 'profile': modal = { kind: 'profile', id: +el.dataset.id, back: recBack() }; renderModal(); break;
@@ -357,10 +371,9 @@ document.addEventListener('click', ev => {
     case 'simmanystop': modal.stopRequested = true; renderModal(); break;
     case 'simmanyclose': modal = null; renderModal(); go('circuit'); break;
     case 'simmanyrecords': modal = null; renderModal(); go('records'); break;
-    case 'playweek': playWeek(); break;
-    case 'autoseasonask': modal = { kind: 'confirmsim' }; renderModal(); setTimeout(() => { const b = document.querySelector('[data-act="autoseason"]'); if (b && b.focus) b.focus(); }, 0); break;
-    case 'autoseason': modal = null; renderModal(); while (S.phase === 'season') simWeek(); save(); go('circuit'); toast('Played to the end of the regular season.'); break;
-    case 'runleague': runLeague(); save(); go('recap'); break;
+    case 'playweek': playWeeks(1); break;
+    case 'playmonth': playWeeks(4); break;
+    case 'playyear': playWeeks(YEAR_WEEKS - S.week); break;
     case 'godlgsel': godLg = +el.dataset.i; godPick = null; render(); break;
     case 'godpick': godPick = godPick === +el.dataset.id ? null : +el.dataset.id; render(); break;
     case 'godsave': { const id = +el.dataset.id, val = k => { const x = $('#ge-' + k); return x ? x.value : null; }; const errs = [];
@@ -368,7 +381,7 @@ document.addEventListener('click', ev => {
       save(); render(); toast(errs[0] || 'Saved.'); break; }
     case 'godrolesel': godRole = el.dataset.k; godPick = null; render(); break;
     case 'watchworld': { const m = S.worlds && S.worlds.matches[+el.dataset.i]; if (m) { modal = { kind: 'battle', r: m.log }; renderModal(); } break; }
-    case 'watch': { const r = S.league.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
+    case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;
     case 'bspeed': setBattleSpeed(el.dataset.v); break;
     case 'bpause': toggleBattlePause(); break;
@@ -395,7 +408,7 @@ document.addEventListener('click', ev => {
     case 'importshow': modal.importing = true; renderModal(); break;
     case 'importgo': { const m0 = modal; parseSave($('#importbox').value).then(v => { if (modal !== m0) return; if (!v) { m0.err = SAVE_ERR; renderModal(); return; } adoptSave(v); save(); modal = null; renderModal(); go(view); toast('Save loaded.'); }); break; }
     case 'savefile': saveFile(); break;
-    case 'setuploadgo': { parseSave(($('#setupload') || {}).value).then(v => { if (!v) { setupLoadErr = SAVE_ERR; render(); return; } setupLoadErr = ''; setupPage = 'main'; adoptSave(v); save(); go(view); toast(`Loaded Season ${S.season || 1}.`); }); break; }
+    case 'setuploadgo': { parseSave(($('#setupload') || {}).value).then(v => { if (!v) { setupLoadErr = SAVE_ERR; render(); return; } setupLoadErr = ''; setupPage = 'main'; adoptSave(v); save(); go(view); toast(`Loaded Year ${S.season || 1}.`); }); break; }
     case 'newask': modal.confirmNew = true; renderModal(); break;
     case 'newcancel': modal.confirmNew = false; renderModal(); break;
     case 'newgo': try { localStorage.removeItem(SAVE_KEY); } catch (e) {} S = null; modal = null; renderModal(); render(); break;
@@ -439,7 +452,7 @@ document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === 
 // take over a save and open the right screen for its phase
 function adoptSave(v, keepView) {
   S = v; applyDex(S.cfg && S.cfg.dex); applyCfg();
-  view = keepView || (S.phase === 'offseason' ? 'recap' : 'circuit');
+  view = keepView || 'circuit';
 }
 // Download save file: inside claude.ai the viewer's downloads capability offers the file (with a confirmation);
 // opened as a plain local file, an ordinary browser download does it
@@ -447,7 +460,7 @@ let downloadsNs = null, downloadsChecked = !window.claude;
 if (window.claude && window.claude.use) window.claude.use('downloads').then(ns => { downloadsNs = ns; downloadsChecked = true; if (modal && modal.kind === 'menu') renderModal(); }, () => { downloadsChecked = true; });
 const canSaveFile = () => !window.claude || !!downloadsNs;
 async function saveFile() {
-  const data = await saveCode(), filename = `pokemon-league-builder-season-${S.season || 1}.${data.startsWith(CODE_TAG) ? 'txt' : 'json'}`;
+  const data = await saveCode(), filename = `pokemon-league-builder-year-${S.season || 1}.${data.startsWith(CODE_TAG) ? 'txt' : 'json'}`;
   if (downloadsNs) {
     try { await downloadsNs.save({ filename, data }); toast('Save file downloaded.'); }
     catch (e) { const c = e && e.code; if (c === 'declined') return; toast(c === 'rate_limited' ? 'A download is already waiting for your answer.' : "Couldn't download here. Use Copy save to clipboard instead."); }

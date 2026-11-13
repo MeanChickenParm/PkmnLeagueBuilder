@@ -70,9 +70,9 @@ function legendDepartures() {
       if (!m.leg || m.leg.until > S.season || !isLegendLine(m.sp)) continue;
       if (t.team.length <= 1) { m.leg.until = S.season + 1; continue; }
       const seasons = (S.season || 1) - ((m.partners || []).slice(-1)[0] || { from: S.season }).from + 1;
-      farewell(t, m, `moved on after ${seasons} season${seasons === 1 ? '' : 's'}`);
+      farewell(t, m, `moved on after ${seasons} year${seasons === 1 ? '' : 's'}`);
       t.team = t.team.filter(x => x !== m);
-      inLeague(homeLeague(t), () => news(`${m.sp} moved on from ${dn(t)} after ${seasons} season${seasons === 1 ? '' : 's'} together. It will wait in the ${leagueName(m.lgHome ?? (S.lg || 0))} for a new partner.`, 'title', t.id));
+      inLeague(homeLeague(t), () => news(`${m.sp} moved on from ${dn(t)} after ${seasons} year${seasons === 1 ? '' : 's'} together. It will wait in the ${leagueName(m.lgHome ?? (S.lg || 0))} for a new partner.`, 'title', t.id));
       if (STAFF_ROLES.includes(t.role)) inLeague(lgOf(t), () => backfillElite(t, m));
     }
   }
@@ -103,7 +103,7 @@ function backfillElite(t, gone) {
           evoLog: a.evoLog, best: a.best, sweeps: a.sweeps, megas: a.megas, bonds: a.bonds, awards: a.awards, alpha: a.alpha, shiny: a.shiny, radiant: a.radiant, delta: a.delta, lucky: a.lucky, pkrs: a.pkrs };
         for (const k of Object.keys(back)) if (back[k] === undefined) delete back[k];
         ensureMon(back);
-        t.alumni = t.alumni.filter(x => x !== a); how = a.why ? `(${a.why} in Season ${a.left})` : '';
+        t.alumni = t.alumni.filter(x => x !== a); how = a.why ? `(${a.why} in Year ${a.left})` : '';
       }
     }
     if (back) {
@@ -180,7 +180,7 @@ const sctOf = t => t.r.sct;
 function wildOffers(t) {
   const avg = t.team.length ? t.team.reduce((a, m) => a + m.lvl, 0) / t.team.length : 10;
   const L = Math.max(5, Math.round(avg - 3 + sctOf(t) / 40));
-  const cap = 300 + (S.week / SEASON_WEEKS) * 190 + sctOf(t) * 0.7 + (t.role === 'champion' ? 200 : 0) + (hasTrait(t, 'collector') ? 25 : 0);
+  const cap = 300 + Math.min(1, runWeeks(t) / 24) * 190 + sctOf(t) * 0.7 + (t.role === 'champion' ? 200 : 0) + (hasTrait(t, 'collector') ? 25 : 0);
   const luck = hasTrait(t, 'collector') ? 2 : 1;
   const items = [];
   for (const b of BASES) {
@@ -235,7 +235,7 @@ function wildOffers(t) {
   if (featOn('rarefind') && out.length && rand() < BABY_CHANCE + sctOf(t) / 100 * 0.0015) { const free = legendFull(t) ? [] : freeBabies().filter(b => !legendBlocked(t, b)); if (free.length) { const b0 = pick(free), pb = pooledLegend(b0), b = pb ? pb.sp : b0; out[out.length - 1] = ensureMon({ sp: b, lvl: L, baby: true }); rareFind = true; catchNews(`${t.name} spotted a ${b} while exploring!`, 'circuit', t.id); } }
   // v184: rarer still, a legendary in the open slot: a sealed chamber, a hidden glade, a ring in the air
   if (featOn('greatlegends') && !rareFind && out.length && !legendFull(t) && rand() < LEGEND_FIND + sctOf(t) / 100 * 0.0008) {
-    const free = FIND_LEGENDS.filter(sp => greatFree(sp) && !legendBlocked(t, sp) && !(sp === 'Shaymin' && S.week + 1 > 6));
+    const free = FIND_LEGENDS.filter(sp => greatFree(sp) && !legendBlocked(t, sp) && !(sp === 'Shaymin' && S.week + 1 > 12));
     if (free.length) { const sp0 = pick(free), pl = pooledLegend(sp0), sp = pl ? pl.sp : sp0, lvl = Math.max(L, Math.floor(Math.max(...t.team.map(m => m.lvl), L)));
       out[out.length - 1] = ensureMon({ sp, lvl, legendFind: true, form: 1, iv: ivSet(() => ri(20, 31)) }); rareFind = true; }
   }
@@ -317,14 +317,13 @@ function aiActionBase(t) {
   const ob = activeOutbreak();
   if (ob && t.role === 'challenger' && !t.team.some(m => LINE[m.sp] === LINE[ob.sp])) {
     const fits = onSpec(t, formAt(ob.sp, 60, t.specialty)) || linePeak(ob.sp) >= 500;
-    const time = t.badges.length >= 8 || SEASON_WEEKS - S.week > 8 - t.badges.length + 2;
-    if (fits && time && rand() < 0.55) return 'explore';
+    if (fits && rand() < 0.55) return 'explore';
   }
-  // with no levels to gain, a season is spent building a roster and taking on the gyms: a challenger wants at
-  // least as many Pokémon as the next gym's leader fields, and keeps looking for more now and then
+  // with no levels to gain, a run is spent building a roster and taking on the gyms: a challenger wants at
+  // least as many Pokémon as the next gym's leader fields, and keeps looking for more now and then. With eight
+  // badges they take on the Elite Four when ready: up to READY_WEEKS weeks spent filling the team to six first.
   const b = t.badges.length, n = t.team.length;
-  if (b >= 8) return n < 6 && rand() < 0.6 ? 'explore' : 'train';
-  if (SEASON_WEEKS - S.week <= 8 - b) return 'challenge';
+  if (b >= 8) { if (n < 6 && (t.ready || 0) < READY_WEEKS) { t.ready = (t.ready || 0) + 1; return 'explore'; } return 'league'; }
   if (n < Math.min(6, GYM_SIZE[b]) && rand() < 0.85) return 'explore';
   if (n < 6 && rand() < 0.25) return 'explore';
   return rand() < 0.1 ? 'train' : 'challenge';
@@ -341,12 +340,12 @@ const AWARDS = {
   poy:  { name: 'Pokémon of the Year', short: 'Pokémon of the Year' },
   coy:  { name: 'Catch of the Year', short: 'Catch of the Year' },
 };
-// a challenger's season, scored: League run and badges (season points), gym record and road wins
-function seasonScore(t, L) {
+// a challenger's year, scored: League runs and badges (year points), gym record and road wins
+function seasonScore(t) {
   const wl = t.weekLog || [];
   const gw = wl.filter(w => w.act === 'challenge' && w.won).length, gl = wl.filter(w => w.act === 'challenge' && w.won === false).length;
   const rw = wl.filter(w => w.road && w.road.won).length;
-  return trainerPoints(t, L) * 2 + gw - gl * 0.5 + rw * 0.5;
+  return trainerPoints(t) * 2 + gw - gl * 0.5 + rw * 0.5;
 }
 const monYear = m => (m.ss && m.ss.season === S.season && m.ss.b >= 6 ? m.ss.ko * 2 + m.ss.w + m.ss.lw * 3 + (m.ss.dmg || 0) / 2500 : 0);
 function giveAward(k, t, m, why) {
@@ -356,17 +355,19 @@ function giveAward(k, t, m, why) {
 }
 function seasonAwards(L) {
   const out = [];
-  const cands = [...new Set([...S.challengers, ...L.entries.map(e => e.id)])].map(T).filter(t => t && t.seasonHist && t.seasonHist.length);
-  const scored = cands.map(t => ({ t, s: seasonScore(t, L), e: L.entries.find(x => x.id === t.id) })).sort((a, b) => b.s - a.s);
-  const res = x => x.e ? (x.e.stage === 5 ? (x.e.interim ? 'Interim Champion' : 'won the title') : x.e.stage === 4 ? 'reached the title match' : `reached Elite Four #${x.e.stage + 1}`) : `${x.t.badges.length} badge${x.t.badges.length === 1 ? '' : 's'}`;
+  const cands = [...new Set([...S.challengers, ...L.entries.map(e => e.id)])].map(T).filter(t => t && t.role !== 'retired' && t.seasonHist && t.seasonHist.length);
+  // a challenger can make several runs in a year: their best League run is the one that counts
+  const bestRun = t => L.entries.filter(x => x.id === t.id).sort((a, b) => b.stage - a.stage)[0];
+  const scored = cands.map(t => ({ t, s: seasonScore(t), e: bestRun(t) })).sort((a, b) => b.s - a.s);
+  const res = x => { const b = yearOf(x.t).b; return x.e ? (x.e.stage === 5 ? 'won the title' : x.e.stage === 4 ? 'reached the title match' : `reached Elite Four #${x.e.stage + 1}`) : `${b} badge${b === 1 ? '' : 's'} in their best run`; };
   if (scored[0]) out.push(giveAward('toy', scored[0].t, null, res(scored[0])));
   // no rookie award in the founding season, when everyone is new
-  const rook = S.season > 1 && scored.find(x => x.t.seasonHist.length === 1);
+  const rook = S.season > 1 && scored.find(x => x.t.seasonHist.length === 1 && x.t.joined === S.season);
   if (rook) out.push(giveAward('roy', rook.t, null, res(rook)));
   const imp = cands.filter(t => t.seasonHist.length >= 2 && t.seasonHist[t.seasonHist.length - 2].season === S.season - 1 && t.seasonHist[t.seasonHist.length - 2].pts != null)
     .map(t => { const h = t.seasonHist, a = h[h.length - 2], b = h[h.length - 1]; return { t, d: (b.pts - a.pts) + (b.ovr - a.ovr) * 0.25, from: a.pts, to: b.pts }; })
     .filter(x => x.d > 0).sort((a, b) => b.d - a.d)[0];
-  if (imp) out.push(giveAward('mip', imp.t, null, `${imp.from} → ${imp.to} season points`));
+  if (imp) out.push(giveAward('mip', imp.t, null, `${imp.from} → ${imp.to} year points`));
   const gl = S.gyms.map((g, i) => ({ g, i, t: T(g.leader) })).filter(x => x.t && x.g.w + x.g.l >= 5).sort((a, b) => b.g.w / (b.g.w + b.g.l) - a.g.w / (a.g.w + a.g.l) || b.g.w - a.g.w)[0];
   if (gl) out.push(giveAward('gloy', gl.t, null, `${townName(gl.i)} Gym, ${gl.g.w}–${gl.g.l}`));
   const e4 = S.e4.map(id => T(id)).filter(Boolean).map(t => ({ t, w: L.entries.filter(e => e.lostTo === t.id).length })).filter(x => x.w > 0).sort((a, b) => b.w - a.w)[0];
@@ -378,7 +379,7 @@ function seasonAwards(L) {
   if (mons[0] && mons[0].v > 0) { const { t, m } = mons[0]; out.push(giveAward('poy', t, m, `${m.ss.ko} KOs, ${m.ss.w}–${m.ss.l}`)); }
   const rare = m => (m.shiny ? 14 : 0) + (m.radiant ? 16 : 0) + (m.delta ? 12 : 0) + (m.alpha ? 6 : 0) + (SP[m.sp].legend ? 10 : 0) + (SP[m.sp].baby || babyLine(m.sp) ? 10 : 0);
   const caught = mons.filter(x => x.m.met && x.m.met.season === S.season && ['caught', 'wormhole'].includes(x.m.met.how)).map(x => ({ ...x, c: x.v + rare(x.m) })).sort((a, b) => b.c - a.c)[0];
-  if (caught) { const { t, m } = caught; const tag = [m.radiant && 'Radiant', m.shiny && 'shiny', m.delta && 'Delta', m.alpha && 'alpha'].filter(Boolean).join(' '); out.push(giveAward('coy', t, m, `${tag ? tag + ', ' : ''}caught in week ${m.met.week}`)); }
+  if (caught) { const { t, m } = caught; const tag = [m.radiant && 'Radiant', m.shiny && 'shiny', m.delta && 'Delta', m.alpha && 'alpha'].filter(Boolean).join(' '); out.push(giveAward('coy', t, m, `${tag ? tag + ', ' : ''}caught in ${weekName(m.met.week - 1)}`)); }
   return out;
 }
 // ================= LEGACY TRAINERS =================
@@ -511,9 +512,9 @@ function circuitLevel() {
 function startLegend(sp, why) {
   if (!featOn('greatlegends') || !greatFree(sp) || S.legend || S.phase !== 'season' || S.legendSeason === S.season) return false;
   const lvl = Math.min(100, Math.round(circuitLevel()) + LEGEND_LV);
-  S.legend = { sp, season: S.season, from: S.week + 1, until: ['Groudon', 'Kyogre'].includes(sp) ? SEASON_WEEKS : Math.min(SEASON_WEEKS, S.week + LEGEND_WEEKS), town: townName(ri(0, S.gyms.length - 1)), lvl, attempts: 0, dmg: {}, tries: {}, total: 0 };
+  S.legend = { sp, season: S.season, from: S.week + 1, until: S.turn + (['Groudon', 'Kyogre'].includes(sp) ? LEGEND_WEEKS * 3 : LEGEND_WEEKS), town: townName(ri(0, S.gyms.length - 1)), lvl, attempts: 0, dmg: {}, tries: {}, total: 0 };
   S.legendSeason = S.season;
-  news(`${why || LEGEND_STORY[sp] || sp + ' has appeared.'} It's near ${S.legend.town}; challengers can seek it until week ${S.legend.until}, and it goes to whoever does the most damage.`, 'title');
+  news(`${why || LEGEND_STORY[sp] || sp + ' has appeared.'} It's near ${S.legend.town}; challengers can seek it until ${turnDate(S.legend.until)}, and it goes to whoever does the most damage.`, 'title');
   return true;
 }
 // one week's attempt at the legendary: a full-strength battle; the damage adds to this trainer's total
@@ -566,12 +567,10 @@ function awardLegend(t, sp, why, force) {
 // a legendary attempt is worth more experience than a lost gym battle, and more the more damage it did: about a third
 // of the way from a loss to a training week for a typical attempt, up to most of a training week for a full defeat
 function wantsLegend(t) {
-  const L = legendState(S.legend); if (!L || S.phase !== 'season' || t.role !== 'challenger' || legendBlocked(t, L.sp) || legendFull(t)) return false;
-  const need = 8 - t.badges.length, weeksLeft = SEASON_WEEKS - S.week;
-  if (need > 0 && weeksLeft <= need + 2) return false;
+  const L = legendState(S.legend); if (!L || t.role !== 'challenger' || t.rest != null || legendBlocked(t, L.sp) || legendFull(t)) return false;
   if (topAvg(t, 3) < L.lvl - 30) return false;
   const mine = L.dmg[t.id] || 0, rank = legendRank(L), lead = rank.length ? rank[0].d : 0;
-  const tries = Math.max(1, L.until - S.week);
+  const tries = Math.max(1, L.until - S.turn);
   if (lead - mine > tries * 0.6) return false;
   const leading = rank.length && rank[0].id === t.id;
   return rand() < LEGEND_AI * (t.badges.length >= 8 ? 1.6 : 1) * (leading ? 1.5 : mine > 0 ? 1.25 : 1) * (L.attempts === 0 ? 1.3 : 1);
@@ -580,7 +579,7 @@ function wantsLegend(t) {
 function legendWeek() {
   if (S.phase !== 'season') return;
   const L = S.legend;
-  if (L && S.week + 1 >= L.until) settleLegend(`${L.sp} is about to leave ${L.town}!`);
+  if (L && S.turn + 1 >= L.until) settleLegend(`${L.sp} is about to leave ${L.town}!`);
   // gifts due (wings, Mewtwo, Arceus). A legendary only comes to its trainer out on the circuit: if they're the
   // Champion, Elite Four or a Gym Leader it waits for them (a box legendary defending the title tilts the League)
   for (const g of (S.legendGifts || []).filter(g => g.season < S.season || (g.season === S.season && g.week <= S.week + 1))) {
@@ -592,7 +591,7 @@ function legendWeek() {
     inLeague(lgOf(t), () => joinLegend(t, g.sp, g.how, g.why));
   }
   glitchWeek();
-  if (!featOn('greatlegends') || S.legend || S.legendSeason === S.season || S.week + 1 < 5 || S.week + 1 > 16) return;
+  if (!featOn('greatlegends') || S.legend || S.legendSeason === S.season || rand() >= 0.25) return; // any week of the year, at the source's yearly rate (it rolled in 12 of a year's 24 weeks)
   if (S.rayquazaDue === S.season && rand() < 0.3) { S.rayquazaDue = null; startLegend('Rayquaza'); return; }
   if ((everCaught('Dialga') || everCaught('Palkia')) && rand() < 0.02) { startLegend('Giratina'); return; }
   if ((everCaught('Reshiram') || everCaught('Zekrom')) && rand() < 0.02) { startLegend('Kyurem'); return; }
@@ -621,15 +620,15 @@ function glitchWeek() {
   // leaving mid-season: never during the League, never as a trainer's last Pokémon
   for (const t of leagueTrainers()) {
     if (['retired', 'prospect'].includes(t.role) || !t.team || t.team.length <= 1) continue;
-    const m = t.team.find(x => isGlitch(x.sp)); if (!m || rand() >= GLITCH_LEAVE) continue;
+    const m = t.team.find(x => isGlitch(x.sp)); if (!m || rand() >= GLITCH_LEAVE * EVENT_PACE) continue;
     const from = ((m.partners || []).slice(-1)[0] || { from: S.season }).from, seasons = (S.season || 1) - from + 1;
-    farewell(t, m, `glitched away mid-season`);
+    farewell(t, m, `glitched away`);
     t.team = t.team.filter(x => x !== m);
-    news(`${dn(t)}'s Missingno flickered, broke apart into static and was gone, partway through its ${seasons === 1 ? 'first' : glitchOrd(seasons)} season with them.`, 'title', t.id);
+    news(`${dn(t)}'s Missingno flickered, broke apart into static and was gone, partway through its ${seasons === 1 ? 'first' : glitchOrd(seasons)} year with them.`, 'title', t.id);
     if (STAFF_ROLES.includes(t.role)) backfillElite(t, m);
   }
-  if (S.week + 1 < 3 || S.week + 1 > 20 || !greatFree('Missingno') || rand() >= GLITCH_CHANCE) return;
-  const pool = challengers().filter(t => t.team.length && !legendBlocked(t, 'Missingno') && !legendFull(t));
+  if (!greatFree('Missingno') || rand() >= GLITCH_CHANCE * 18 / YEAR_WEEKS) return;
+  const pool = challengers().filter(t => t.team.length && t.rest == null && !legendBlocked(t, 'Missingno') && !legendFull(t));
   if (!pool.length) return;
   // poor performers weigh up to four times as much: fewest badges, then worst record this season
   const score = t => t.badges.length * 3 + (t.weekLog || []).filter(e => e && e.won).length;
@@ -642,7 +641,7 @@ function glitchWeek() {
 const glitchOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 // rivals: winning a rival battle can draw the heroes of the Slumbering Weald
 function weald(w) {
-  if (!featOn('greatlegends') || S.wealdSeason === S.season || rand() >= 0.08) return;
+  if (!featOn('greatlegends') || S.wealdSeason === S.season || rand() >= 0.08 * EVENT_PACE) return;
   const f = ['Zacian', 'Zamazenta'].filter(greatFree); if (!f.length || legendFull(w)) return;
   S.wealdSeason = S.season;
   joinLegend(w, pick(f), 'chosen', `Drawn by a rivalry fought out in full, the Slumbering Weald stirred.`);
@@ -657,7 +656,7 @@ function legendOffseason(L, awards) {
   // v184: a trainer already holding a legendary, or with one on its way, is passed over; the gift goes to the next in line
   const field = [...new Set([...S.challengers, ...L.entries.map(e => e.id)])].map(T).filter(x => x && x.role !== 'retired' && x.team && x.team.length);
   const open = x => x && !legendFull(x);
-  const bySeason = (except) => field.filter(x => open(x) && !(except || []).includes(x.id)).sort((a, b) => seasonScore(b, L) - seasonScore(a, L));
+  const bySeason = (except) => field.filter(x => open(x) && !(except || []).includes(x.id)).sort((a, b) => seasonScore(b) - seasonScore(a));
   const give = (t, sp, how, why, note) => { gifts.push({ id: t.id, sp, how, season: next, week: ri(3, 14), why }); news(note, 'title', t.id); return t; };
   let silver = null;
   if (greatFree('Lugia') && !pending('Lugia')) {
@@ -688,9 +687,9 @@ function legendOffseason(L, awards) {
   const kos = x => x.team.reduce((a, m) => a + (m.ss && m.ss.season === S.season ? m.ss.ko : 0), 0);
   for (const g of shuffle(CHARACTER_GIFTS)) {
     if (!greatFree(g.sp) || pending(g.sp) || rand() >= CHARACTER_CHANCE) continue;
-    const t = pickBy(g.rank(x => ({ wins: wins(x), kos: kos(x), score: seasonScore(x, L) })), g.keep && (x => g.keep(x, L)));
+    const t = pickBy(g.rank(x => ({ wins: wins(x), kos: kos(x), score: seasonScore(x) })), g.keep && (x => g.keep(x, L)));
     if (!t) continue;
-    give(t, g.sp, 'chosen', g.why(t), `${g.sign(t)} ${g.sp} may come to ${dn(t)} next season.`);
+    give(t, g.sp, 'chosen', g.why(t), `${g.sign(t)} ${g.sp} may come to ${dn(t)} in the new year.`);
   }
   // Rayquaza follows a season in which Groudon or Kyogre was caught
   if (S.greatCaught && ['Groudon', 'Kyogre'].some(sp => S.greatCaught[sp] && S.greatCaught[sp].season === S.season) && greatFree('Rayquaza')) S.rayquazaDue = next;
@@ -709,11 +708,11 @@ const CHARACTER_GIFTS = [
   { sp: 'Volcanion', rank: s => x => s(x).kos, sign: t => `Steam rose from the mountains: Volcanion has heard of ${t.name}, who scored the most knockouts this season.`, why: t => `Drawn by ${t.name}'s knockouts,` },
   { sp: 'Victini', rank: s => x => s(x).wins, sign: t => `Victini, the Victory Pokémon, has been following ${t.name}, who won the most battles this season.`, why: t => `Drawn by ${t.name}'s run of victories,` },
   { sp: 'Marshadow', rank: s => x => (x.weekLog || []).filter(w => w.road && w.road.won).length, sign: t => `A shadow has been trailing ${t.name}, the road's top battler this season.`, why: t => `Stepping out of ${t.name}'s shadow,` },
-  { sp: 'Zeraora', keep: x => x.badges.length >= 8 && x.badgeWeek, rank: s => x => -(x.badgeWeek || 99), sign: t => `Zeraora was seen racing alongside ${t.name}, the fastest through the badge circuit this season.`, why: t => `Drawn by ${t.name}'s speed,` },
+  { sp: 'Zeraora', keep: x => x.badges.length >= 8 && x.badgeWeek, rank: s => x => -(x.badgeWeek || 99), sign: t => `Zeraora was seen racing alongside ${t.name}, the fastest through the badge circuit this year.`, why: t => `Drawn by ${t.name}'s speed,` },
   { sp: 'Magearna', rank: s => x => ovr(x), sign: t => `An old machine has been sent to ${t.name}, the circuit's best-rated challenger.`, why: t => `Built for a trainer like ${t.name},` },
-  { sp: 'Meloetta', rank: s => x => s(x).score, sign: t => `A melody follows ${t.name}, who had the best season of any challenger.`, why: t => `Drawn by ${t.name}'s season,` },
+  { sp: 'Meloetta', rank: s => x => s(x).score, sign: t => `A melody follows ${t.name}, who had the best year of any challenger.`, why: t => `Drawn by ${t.name}'s season,` },
   { sp: 'Jirachi', rank: s => x => rand(), sign: t => `The Millennium Comet passed overhead, and ${t.name}'s wish was the one Jirachi heard.`, why: t => `Granting ${t.name}'s wish,` },
-  { sp: 'Celebi', rank: s => x => improved(x), sign: t => `Celebi passed through time to see ${t.name}, who came further this season than anyone.`, why: t => `Travelling through time to meet ${t.name},` },
+  { sp: 'Celebi', rank: s => x => improved(x), sign: t => `Celebi passed through time to see ${t.name}, who came further this year than anyone.`, why: t => `Travelling through time to meet ${t.name},` },
   { sp: 'Diancie', keep: x => x.team.some(m => m.sp === 'Carbink'), rank: s => x => s(x).score, sign: t => `Diancie heard that ${t.name} looks after a Carbink.`, why: t => `Looking for the trainer who cares for Carbink,` },
 ];
 // ================= WILD LEGENDARY EVENTS (v182) =================
@@ -726,7 +725,7 @@ const CHARACTER_GIFTS = [
 //    weeks, changing the weather in every battle and powering up one type. The legendary inside it chooses the
 //    challenger who won the most battles during the storm (at least STORM_MIN), whatever their type.
 const ROAMERS = ['Raikou', 'Entei', 'Suicune', 'Latias', 'Latios', 'Okidogi', 'Munkidori', 'Fezandipiti'];
-const ROAM_WEEKS = [7, 9], ROAM_CHANCE = 0.6, ROAM_FIRST = 2, ROAM_LAST = 15;
+const ROAM_WEEKS = [7, 9], ROAM_CHANCE = 0.6, ROAM_FIRST = 2, ROAM_LAST = YEAR_WEEKS - 4;
 const ROAM_MEET = 0.25; // chance a challenger exploring near its town finds it among the week's wild Pokémon
 const ROAM_STORY = {
   Raikou: 'Thunder cracked over {town} out of a clear sky. Raikou is roaming the region.',
@@ -743,14 +742,14 @@ const nearTown = t => (t.badges.length < 8 ? t.badges.length : null);
 // the odds a challenger exploring this week finds the roamer: full near its town, half one town away, a third with all
 // eight badges (they're anywhere on the road), none further off
 function roamChance(t) {
-  const R = S.roamer; if (!R || t.role !== 'challenger' || !t.team.length || legendBlocked(t, R.sp) || legendFull(t) || !greatFree(R.sp)) return 0;
+  const R = S.roamer; if (!R || t.role !== 'challenger' || t.rest != null || !t.team.length || legendBlocked(t, R.sp) || legendFull(t) || !greatFree(R.sp)) return 0;
   const near = nearTown(t), gap = near === null ? null : Math.abs(near - R.town);
   if (gap !== null && gap > 1) return 0;
   return ROAM_MEET * (gap === null ? 0.35 : gap === 1 ? 0.5 : 1);
 }
 function startRoamer(sp) {
   const town = ri(0, S.gyms.length - 1);
-  S.roamer = { sp, town, from: S.week + 2, until: Math.min(SEASON_WEEKS, S.week + 1 + ri(ROAM_WEEKS[0], ROAM_WEEKS[1])), seen: 0, trail: [town] };
+  S.roamer = { sp, town, from: S.turn + 2, until: S.turn + 1 + ri(ROAM_WEEKS[0], ROAM_WEEKS[1]), seen: 0, trail: [town] };
   S.roamSeason = S.season;
   news(`${ROAM_STORY[sp].replace('{town}', townName(town))} Challengers exploring on the way to ${townName(town)} Gym may find it among the wild Pokémon.`, 'title');
   logSky(`${sp} began roaming near ${townName(town)}`);
@@ -773,7 +772,7 @@ function roamWeek() {
   if (S.phase !== 'season') return;
   const R = S.roamer;
   if (R) {
-    if (S.week + 1 >= R.until || !greatFree(R.sp)) {
+    if (S.turn + 1 >= R.until || !greatFree(R.sp)) {
       S.roamer = null;
       news(`${R.sp} has left the region${R.seen ? `, after being spotted by ${R.seen} explorer${R.seen === 1 ? '' : 's'}` : ''}. It may roam here again one day.`, 'title');
       logSky(`${R.sp} left the region uncaught`);
@@ -835,15 +834,17 @@ function stormFx(s) {
   return bits.filter(Boolean).join(', and ');
 }
 const STORM_WEEKS = 4, STORM_MIN = 3, STORM_CHANCE = 0.75, LANDORUS_CHANCE = 0.25;
+// each storm keeps its own part of the year: the source's weeks of a 24-week season, on a 48-week year
+const stormAt = sp => STORMS[sp].at.map(w => w * 2);
 const stormOn = () => S.phase === 'season' && S.storm ? STORMS[S.storm.sp] : null;
 // every attack of the storm's type hits harder while it lasts
 function stormMul(ty, phys) { const s = stormOn(); if (!s || s.mul === 1) return 1; if (s.cat) return (s.cat === 'P') === !!phys ? s.mul : 1; return ty === s.type ? s.mul : 1; }
 function startStorm(sp, why) {
   const s = STORMS[sp];
-  S.storm = { sp, type: s.type, from: S.week + 2, until: Math.min(SEASON_WEEKS, S.week + 1 + STORM_WEEKS), w: {}, ko: {} };
+  S.storm = { sp, type: s.type, from: S.turn + 2, until: S.turn + 1 + STORM_WEEKS, w: {}, ko: {} };
   S.stormSeason = S.season;
   if (sp === 'Tornadus' || sp === 'Thundurus') S.forcesStorm = S.season;
-  news(`${why || s.story} ${s.name} until week ${S.storm.until}: ${stormFx(s)}. ${sp} will choose the challenger who wins the most battles while it lasts.`, 'title');
+  news(`${why || s.story} ${s.name} until ${turnDate(S.storm.until)}: ${stormFx(s)}. ${sp} will choose the challenger who wins the most battles while it lasts.`, 'title');
   logSky(`${s.name}: ${sp} brought it over the region`);
 }
 // battles won (and knockouts, to settle ties) by challengers while the storm lasts, every kind of battle counted.
@@ -866,11 +867,11 @@ function settleStorm(force) {
 }
 function stormWeek() {
   if (S.phase !== 'season') return;
-  if (S.storm) { if (S.week + 1 >= S.storm.until) settleStorm(S.week + 1 >= SEASON_WEEKS); return; }
+  if (S.storm) { if (S.turn + 1 >= S.storm.until) settleStorm(false); return; }
   if (!featOn('storms')) return;
   const wk = S.week + 2; // the week it would begin
   // Landorus comes to calm the skies after Tornadus or Thundurus has stormed this season
-  if (S.forcesStorm === S.season && S.stormSeason === S.season && S.landorusSeason !== S.season && wk <= STORMS.Landorus.at[1] && greatFree('Landorus') && rand() < LANDORUS_CHANCE) { S.landorusSeason = S.season; startStorm('Landorus'); return; }
+  if (S.forcesStorm === S.season && S.stormSeason === S.season && S.landorusSeason !== S.season && wk <= stormAt('Landorus')[1] && greatFree('Landorus') && rand() < LANDORUS_CHANCE) { S.landorusSeason = S.season; startStorm('Landorus'); return; }
   // each season may have one storm (about three seasons in four), planned when the season starts: which one, and a
   // week in its own part of the year, so the winter blizzard is as likely as the spring storms
   if (S.stormSeason === S.season) return;
@@ -879,10 +880,10 @@ function stormWeek() {
     let sp = ok.length && rand() < STORM_CHANCE ? pick(ok) : null;
     const gal = sp && Object.keys(STORMS).find(k => STORMS[k].galar === sp);
     if (gal && greatFree(gal) && rand() < GALAR_STORM) sp = gal;
-    S.stormPlan = { season: S.season, sp, wk: sp ? ri(Math.max(STORMS[sp].at[0], S.week + 2), Math.max(STORMS[sp].at[1], S.week + 2)) : null };
+    S.stormPlan = { season: S.season, sp, wk: sp ? ri(Math.max(stormAt(sp)[0], S.week + 2), Math.max(stormAt(sp)[1], S.week + 2)) : null };
   }
   const P = S.stormPlan;
-  if (P.sp && wk >= P.wk) { if (greatFree(P.sp) && wk <= STORMS[P.sp].at[1] + 1) startStorm(P.sp); else S.stormSeason = S.season; }
+  if (P.sp && wk >= P.wk) { if (greatFree(P.sp) && wk <= stormAt(P.sp)[1] + 1) startStorm(P.sp); else S.stormSeason = S.season; }
 }
 // a short record of the region's legendary sightings, newest first
 function logSky(text) { (S.skyLog = S.skyLog || []).unshift({ season: S.season, week: S.week + 1, text }); S.skyLog.length = Math.min(S.skyLog.length, 40); }
@@ -895,7 +896,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // the League that actually lists a trainer (circuit or post); falls back to their tag. Used before anything that
@@ -935,8 +936,8 @@ function leagueTrainers() { return Object.values(S.trainers).filter(inLg); }
 // put every trainer the bound League holds on its books
 function stampLeague() { for (const id of [...S.challengers, ...staffIds()]) { const t = T(id); if (t) t.lg = S.lg || 0; } }
 // how many challengers a League's circuit holds
-const CIRCUIT_SIZE = 24;
-const START_TEAM = 3; // Pokémon a challenger may register at the start of a season
+const CIRCUIT_SIZE = 24; // the founding field of a League. A circuit has no cap (0.4.0): everyone who wants to challenge does
+const START_TEAM = 3; // Pokémon a challenger sets out with on each run (their best; a tuning dial)
 // positions held (Gym Leader, Elite Four, Champion), for the Trainers tab
 function postPlace(t, role) {
   if (role === 'leader') { const i = S.gyms.findIndex(g => g.leader === t.id); return i >= 0 ? `${townName(i)} Gym` : 'Gym'; }
@@ -944,24 +945,101 @@ function postPlace(t, role) {
   if (role === 'gymtrainer') { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return i >= 0 ? `${townName(i)} Gym (gym trainer)` : 'Gym trainer'; }
   return 'Champion';
 }
-const curSeason = () => S.phase === 'season' || S.phase === 'league' ? S.season : S.season + 1;
+const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) p.to = Math.max(p.from, S.season || 1); }
 function openPost(t, role) { closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); }
-// season points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, 3 per title defense
-function trainerPoints(t, L) {
-  let p = t.badges ? t.badges.length : 0;
-  if (L) {
-    const e = L.entries.find(x => x.id === t.id);
-    if (e) p += 3 + Math.min(4, e.stage) * 2 + (e.stage === 5 ? 10 : 0);
-  }
-  return p;
+// year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
+// every run of the year as they happen (yearOf(t).pts)
+function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
+// ================= THE WEEK =================
+// One continuous world (0.4.0). Every challenger is on their own clock: they set out on a run, take on the gyms
+// with three tries at each, take on the Elite Four and Champion once they have eight badges and are ready, and
+// rest between runs. Nothing waits for a season to end.
+const READY_WEEKS = 3;        // weeks a challenger with eight badges may spend filling their team before the Elite Four
+const REST_WEEKS = [6, 10];   // rest between runs at the same League
+const REST_OLDER = 40;        // from this age a challenger rests two weeks longer
+const REST_QUICK = [2, 3];    // rest before a run at a different League, after a run that reached the Elite Four
+const TOUR_CHANCE = 0.5;      // a challenger who reached the Elite Four takes their next run to another League this often (provisional)
+const GIVE_UP_RUNS = 3;       // this many runs in a row that ended earlier than a typical run...
+const GIVE_UP_CHANCE = 0.35;  // ...and a challenger gives up this often, at the end of each further early run (set so the field settles at 30 to 40)
+const GIVE_UP_GRACE = 2;      // nobody gives up in their first two years on the circuit
+const GIVE_UP_MOVE = 0.25;    // with other Leagues to go to, this often they try one of those instead of retiring
+const FOUNDING_STAGGER = 7;   // a founding field sets out over this many weeks
+const TITLE_LOGS = 8;         // title battles kept for replay
+// how many weeks into their run a challenger is (0 while resting or off the circuit)
+const runWeeks = t => (t && t.role === 'challenger' && t.rest == null && t.runStart != null ? S.turn - t.runStart : 0);
+// the bound League's running record of the year: League runs (entries), titles conceded, runs that ended on three
+// losses, and how far the best challenger has got
+function yearLeague() {
+  if (!S.league) S.league = { season: S.season, entries: [], logs: [], conceded: [], startChamp: S.champion, out: 0, runs: 0, best: 0, bestId: null };
+  return S.league;
 }
-// ================= SEASON =================
+// a trainer's own tally of the year (it starts afresh by itself when the year changes)
+function yearOf(t) { if (!t.yr || t.yr.season !== S.season) t.yr = { season: S.season, b: 0, st: null, pts: 0, runs: 0 }; return t.yr; }
+// how far a challenger has got: 0 to 8 badges, 9 to 12 Elite Four members beaten, 13 the title
+function noteDepth(t, d) {
+  const L = yearLeague(), y = yearOf(t);
+  y.b = Math.max(y.b, t.badges.length);
+  if (d > L.best) { L.best = d; L.bestId = t.id; }
+}
+// why a sim should pause for the player (the first reason of the week wins): a title conceded, a post that fell
+// vacant, the New Year report
+function stopFor(why, text) { if (!S.stop) S.stop = { why, text: text || '' }; }
+// a change to the world, kept for the year's review
+function noteChange(text) { (S.yearChanges = S.yearChanges || []).push(nLeagues() > 1 ? `${lgShort(S.lg || 0)}: ${text}` : text); }
+// a challenger sets out on a run: no badges, fresh tries, and their best START_TEAM Pokémon
+function setOut(t) {
+  autoEquip(t);
+  t.badges = []; t.badgeWeek = null; t.gymStage = 0; t.gymTries = 0; t.rest = null; t.ready = 0; t.mega = null;
+  t.runStart = S.turn; t.runs = (t.runs || 0) + 1;
+  for (const m of t.team) m.form = (m.form || 0) * 0.3;
+  if (t.team.length > START_TEAM) applyRegistration(t, bestThree(t));
+  setTeamLevel(t, GYM_LV[0]);
+  yearLeague().runs++; yearOf(t).runs++;
+}
+// a run is over, on a third loss at one gym (stage is null) or after the Elite Four and Champion. The challenger
+// may leave the circuit here; otherwise they rest, then set out again from the first gym.
+function endRun(t, entry, stage) {
+  const L = yearLeague(), depth = t.badges.length + (stage || 0);
+  t.last = { season: S.season, week: S.week, badges: t.badges.length, stage: stage == null ? null : stage };
+  if (stage == null) { L.out++; entry.out = true; }
+  // a run that ended earlier than a typical run at this League (a running average) counts as an early one
+  const typical = S.runAvg == null ? depth : S.runAvg;
+  S.runAvg = S.runAvg == null ? depth : S.runAvg * 0.97 + depth * 0.03;
+  t.early = stage == null && depth <= typical ? (t.early || 0) + 1 : 0;
+  // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
+  if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
+  // weak challengers give up: several early runs in a row, and they retire or try their luck at another League
+  if (t.early >= GIVE_UP_RUNS && (t.seasons || 0) >= GIVE_UP_GRACE && !comebackProtected(t) && rand() < GIVE_UP_CHANCE) {
+    const n = t.early;
+    if (nLeagues() > 1 && rand() < GIVE_UP_MOVE && leagueMove(t, true)) t.early = 0;
+    else { retire(t, `after ${n} runs in a row that ended early`); if (t.role !== 'challenger') return; }
+  }
+  // between runs a challenger may change Leagues. One who reached the Elite Four and goes to a different League
+  // has a quick turnaround; the longer rest only keeps a challenger from trying the same League over and over.
+  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE);
+  t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
+}
+// a challenger moves to another League's circuit between runs: a Triple Crown chaser or a Globetrotter when its
+// matchups suit them clearly better, anyone when `keen`
+function leagueMove(t, keen) {
+  if (nLeagues() < 2 || t.role !== 'challenger') return false;
+  const from = lgOf(t);
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) })).sort((a, b) => b.gain - a.gain)[0];
+  if (!best) return false;
+  const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
+  if (!pulled && !keen) return false;
+  shiftLeague(t, best.i);
+  inLeague(best.i, () => news(`${dn(t)} moved from the ${leagueName(from)} to the ${leagueName(best.i)}.`, 'move', t.id));
+  return true;
+}
 function doAction(t, act) {
   if (act === 'seek' && (t.role !== 'challenger' || !S.legend || legendBlocked(t, S.legend.sp))) act = 'train';
   const entry = { wk: S.week + 1, act };
   if (act === 'seek') {
     legendBattle(t, entry);
+  } else if (act === 'league' && t.role === 'challenger' && t.badges.length >= 8) {
+    leagueRun(t, entry);
   } else if (act === 'challenge' && t.role === 'challenger' && t.badges.length < 8) {
     gymTry(t, entry);
   } else if (act === 'explore') {
@@ -980,15 +1058,16 @@ function doAction(t, act) {
     entry.act = 'train';
     for (const m of t.team) m.fr = Math.min(255, (m.fr ?? 70) + Math.round((1 + Math.round(t.r.bnd / 50)) * temperFr(m)));
   }
+  if (t.role !== 'challenger') return entry; // they retired when their run ended
   // the whole team stands at the level of the trainer's next battle (new catches and new badges included)
-  if (t.role === 'challenger') setTeamLevel(t, challengerLevel(t));
+  setTeamLevel(t, challengerLevel(t));
   entry.learned = []; t.learned = [];
   t.weekLog.push(entry);
   return entry;
 }
 // One try at a gym: the gym trainers still standing, then the leader, healed between battles, every battle at the
-// gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the season's three tries
-// at this gym; the third loss ends the challenger's season.
+// gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the run's three tries
+// at this gym; the third loss ends the run.
 function gymTry(t, entry) {
   const g = t.badges.length, gym = S.gyms[g], lvl = GYM_LV[g];
   const line = (gym.trainers || []).map(T).filter(Boolean).concat([T(gym.leader)]);
@@ -1006,50 +1085,101 @@ function gymTry(t, entry) {
       t.career.gymL++; gym.w++; gym.streak = 0;
       if (isLeader) gym.lw = (gym.lw || 0) + 1; else foe.career.gymW = (foe.career.gymW || 0) + 1;
       t.gymTries = (t.gymTries || 0) + 1;
-      if (t.gymTries >= GYM_TRIES) { t.out = S.week + 1; entry.out = true; news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their season is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); }
+      if (t.gymTries >= GYM_TRIES) { news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
     }
     if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; }
   }
   t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
   t.gymStage = 0; t.gymTries = 0;
+  yearOf(t).pts++; noteDepth(t, t.badges.length);
   gymLost(g, t);
-  if (t.badges.length === 8) { t.badgeWeek = S.week + 1; earnMega(t); }
+  if (t.badges.length === 8) {
+    t.badgeWeek = S.turn - t.runStart + 1; t.ready = 0; earnMega(t);
+    news(`${dn(t)} completed the badge circuit in ${t.badgeWeek} weeks and will take on the Elite Four.`, 'circuit', t.id);
+  }
   gymItemOffer(t, g, T(gym.leader));
 }
-function simWeek() {
-  eachLeague(leagueWeek);
-  S.week++;
-  eachLeague(() => { maybeWormhole(); maybeOutbreak(); });
-  if (S.week >= SEASON_WEEKS) {
-    S.phase = 'league';
-    const q = eachLeague(() => challengers().filter(t => t.badges.length === 8).length);
-    news(nLeagues() > 1 ? `The regular season is over. ${q.map((n, i) => `${lgShort(i)} ${n}`).join(', ')} trainers qualified for their Leagues.` : `The regular season is over. ${q[0]} trainers qualified for the Pokémon League.`, 'league');
+// One run at the Elite Four and the Champion, as soon as a challenger with eight badges is ready. Every battle is at
+// a set level for both sides, six against (up to) six, healed between battles; a loss to anyone ends it. The Champion
+// keeps the seat whatever happens: a challenger who beats them is credited with a title, and it is a title conceded.
+function leagueRun(q, entry) {
+  const L = yearLeague(), y = yearOf(q);
+  for (const id of [...S.e4, S.champion]) { const s = T(id); if (s) eliteMega(s); }
+  if (hasMega(q) && !megaHolder(q)) assignMegaStone(q);
+  q.career.leagueApps++; y.pts += 3;
+  const e = { id: q.id, stage: 0, lostTo: null, week: S.week };
+  let ok = true;
+  for (let i = 0; i < 4; i++) {
+    const foe = T(S.e4[i]);
+    setTeamLevel(q, E4_LV[i]);
+    if (itemsOn()) autoEquip(q, foe);
+    const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`);
+    if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
+    y.pts += 2; noteDepth(q, 9 + i);
   }
+  if (ok) {
+    e.stage = 4; // through the Elite Four: the title match
+    const champ = T(S.champion);
+    setTeamLevel(q, champLv());
+    if (itemsOn()) autoEquip(q, champ);
+    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`);
+    r.when = { season: S.season, week: S.week };
+    L.logs.push(r); if (L.logs.length > TITLE_LOGS) L.logs.shift();
+    if (r.winner === 0) {
+      e.stage = 5; y.pts += 10; noteDepth(q, 13);
+      q.career.titles++;
+      (q.titleSeasons = q.titleSeasons || []).push(S.season); (q.titleLgs = q.titleLgs || []).push(S.lg || 0); (q.titleAges = q.titleAges || []).push({ season: S.season, age: q.age });
+      champ.career.conceded = (champ.career.conceded || 0) + 1;
+      L.conceded.push(q.id); S.lastTitle = S.turn;
+      const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the Champion's seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
+      news(msg, 'title', q.id); stopFor('title', msg);
+    } else {
+      e.lostTo = champ.id; champ.career.defenses++;
+      news(`${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id);
+    }
+  } else news(`${dn(q)}'s run at the ${S.lgName} ended against ${dn(T(e.lostTo))} of the Elite Four.`, 'title', q.id);
+  L.entries.push(e);
+  y.st = Math.max(y.st == null ? -1 : y.st, e.stage);
+  // a deep League run (reaching the last Elite Four member or further) earns a rare item
+  if (itemsOn() && e.stage >= 3) {
+    let k = rollItem(3); for (let i = 0; i < 20 && ITEMS[k].tier < 2; i++) k = rollItem(3);
+    bagAdd(q, k); autoEquip(q);
+  }
+  entry.league = e.stage; if (e.lostTo) entry.opp = e.lostTo;
+  endRun(q, entry, e.stage);
 }
-// one League's week
+// one week of the whole world
+function simWeek() {
+  S.stop = null;
+  eachLeague(leagueWeek);
+  birthdays();
+  arrivals();
+  S.week++; S.turn = (S.turn || 0) + 1;
+  eachLeague(() => { maybeWormhole(); maybeOutbreak(); });
+  if (S.week >= YEAR_WEEKS) newYear();
+}
+// one League's week: every challenger who is out on a run acts; one whose rest is over sets out again
 function leagueWeek() {
-  for (const id of shuffle(S.challengers)) { const t = T(id); if (!t.out) doAction(t, aiAction(t)); }
+  for (const id of shuffle(S.challengers)) {
+    const t = T(id); if (!t || t.role !== 'challenger' || !S.challengers.includes(id)) continue;
+    if (t.rest == null && t.runStart == null) t.rest = S.turn; // new to the circuit
+    if (t.rest != null) { if (S.turn < t.rest) continue; setOut(t); }
+    doAction(t, aiAction(t));
+  }
   roadBattles();
   checkBonds();
   legendWeek();
   roamWeek();
   stormWeek();
-  for (const t of challengers()) {
-    const last = t.weekLog[t.weekLog.length - 1];
-    if (last && last.won && t.badges.length === 8) news(`${dn(t)} completed the badge circuit in week ${S.week + 1}.`, 'circuit', t.id);
-  }
+}
+// newcomers set out one at a time through the year, and anyone without a place takes one: a circuit has no cap
+function arrivals() {
+  const every = Math.round(YEAR_WEEKS / NEWCOMERS_PER_LEAGUE);
+  if (S.week % every === Math.floor(every / 2)) fillCircuits(makeNewcomers(nLeagues()));
+  if (S.freeAgents.length) fillCircuits(S.freeAgents.slice());
 }
 
-// ================= LEAGUE =================
-function runLeague() {
-  eachLeague(() => leagueFinals());
-  S.worlds = null;
-  if (nLeagues() > 1) worldChampionship();
-  S.phase = 'offseason';
-  offseason();
-  worldGrowth();
-}
 // ---------- World Championship: the Champions of every League meet once the Leagues are done ----------
 function worldBattle(a, b, round, W) {
   // fought on neutral ground: no League's weather or meta stats carry over
@@ -1085,72 +1215,7 @@ function worldChampionship() {
   t.career.worlds = (t.career.worlds || 0) + 1; (t.worldSeasons = t.worldSeasons || []).push(S.season);
   (S.worldHist = S.worldHist || []).push({ season: S.season, winner: f.w, runner: f.l, winnerName: dn(t), runnerName: dn(T(f.l)), winnerLg: lgOf(t), runnerLg: lgOf(T(f.l)), entrants: champs.slice() });
   S.worlds = W;
-  news(`${dn(t)}, Champion of the ${leagueName(lgOf(t))}, won the Season ${S.season} World Championship, beating ${dn(T(f.l))} of the ${leagueName(lgOf(T(f.l)))} in the final!`, 'title', t.id);
-}
-function leagueFinals() {
-  const qs = challengers().filter(t => t.badges.length === 8).sort((a, b) => a.badgeWeek - b.badgeWeek || ovr(b) - ovr(a));
-  S.wormhole = null; S.outbreak = null;
-  if (S.legend) settleLegend(`The season is over and ${S.legend.sp} is leaving.`, true);
-  if (S.storm) settleStorm(true);
-  if (S.roamer) { news(`The season is over, and ${S.roamer.sp} has left the region.`, 'title'); logSky(`${S.roamer.sp} left the region uncaught`); S.roamer = null; }
-  settleMegaStones();
-  // every battle of the League is at a set level for both sides, six against (up to) six. One run each: a loss
-  // to anyone ends it. The Champion keeps the seat whatever happens; every challenger who beats them is credited
-  // with a title, and each one is a title conceded by the League.
-  const L = { entries: [], logs: [], startChamp: S.champion, conceded: [] };
-  for (const q of qs) {
-    q.career.leagueApps++;
-    const e = { id: q.id, stage: 0, lostTo: null };
-    let ok = true;
-    for (let i = 0; i < 4; i++) {
-      const foe = T(S.e4[i]);
-      setTeamLevel(q, E4_LV[i]);
-      if (itemsOn()) autoEquip(q, foe);
-      const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`);
-      if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
-    }
-    if (ok) e.stage = 4; // through the Elite Four: a title match to come
-    L.entries.push(e);
-  }
-  // every Elite Four run is done before anyone challenges the Champion; then the finalists go in order of their
-  // season's gym record, worst first and best last (more gym losses = worse; ties: finished the circuit later, lower OVR)
-  const gymRec = t => { const w = t.weekLog.filter(x => x.won === true).length, l = t.weekLog.filter(x => x.won === false).length; return { w, l }; };
-  const finalists = L.entries.filter(e => e.stage === 4).map(e => ({ e, q: T(e.id), r: gymRec(T(e.id)) }))
-    .sort((x, y) => (y.r.l - x.r.l) || ((x.r.w / Math.max(1, x.r.w + x.r.l)) - (y.r.w / Math.max(1, y.r.w + y.r.l))) || ((y.q.badgeWeek ?? 99) - (x.q.badgeWeek ?? 99)) || (ovr(x.q) - ovr(y.q)));
-  L.titleOrder = finalists.map(f => ({ id: f.q.id, w: f.r.w, l: f.r.l }));
-  for (const { e, q } of finalists) {
-    const champ = T(S.champion);
-    setTeamLevel(q, champLv());
-    if (itemsOn()) autoEquip(q, champ);
-    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`);
-    L.logs.push(r);
-    if (r.winner === 0) {
-      e.stage = 5;
-      q.career.titles++;
-      (q.titleSeasons = q.titleSeasons || []).push(S.season); (q.titleLgs = q.titleLgs || []).push(S.lg || 0); (q.titleAges = q.titleAges || []).push({ season: S.season, age: q.age });
-      champ.career.conceded = (champ.career.conceded || 0) + 1;
-      L.conceded.push(q.id);
-      news(`${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the Champion's seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this season.`, 'title', q.id);
-    } else {
-      e.stage = 4; e.lostTo = champ.id; champ.career.defenses++;
-      news(`${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id);
-    }
-  }
-  if (!qs.length) news('Nobody completed the badge circuit.', 'title');
-  // a deep League run (reaching the last Elite Four member or further) earns a rare item
-  if (itemsOn()) for (const e of L.entries) {
-    const q = T(e.id); if (!q || e.stage < 3 || q.role !== 'challenger') continue;
-    let k = rollItem(3); for (let i = 0; i < 20 && ITEMS[k].tier < 2; i++) k = rollItem(3);
-    bagAdd(q, k); autoEquip(q);
-  }
-  for (const q of qs) setTeamLevel(q, E4_LV[0]);
-  // the season's wall report: how far the best challenger got (0 to 8 badges, 9 to 12 for each Elite Four member
-  // beaten, 13 for beating the Champion), badges conceded, titles conceded
-  const depth = t => { const e = L.entries.find(x => x.id === t.id); return t.badges.length + (e ? e.stage : 0); };
-  const best = challengers().slice().sort((a, b) => depth(b) - depth(a) || (a.badgeWeek ?? 99) - (b.badgeWeek ?? 99))[0];
-  L.report = { badges: S.gyms.reduce((a, g) => a + g.l, 0), titles: L.conceded.length, best: best ? depth(best) : 0, bestId: best ? best.id : null, out: challengers().filter(t => t.out).length, field: S.challengers.length };
-  news(L.report.titles ? `Season ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Season ${S.season} wall report: a perfect season! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
-  S.league = L;
+  news(`${dn(t)}, Champion of the ${leagueName(lgOf(t))}, won the Year ${S.season} World Championship, beating ${dn(T(f.l))} of the ${leagueName(lgOf(T(f.l)))} in the final!`, 'title', t.id);
 }
 // how far a challenger got, in words (see L.report.best)
 function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <= 12 ? `beat ${d - 8} of the Elite Four` : 'won the title'; }
@@ -1176,7 +1241,7 @@ function retireHere(t, why) {
   if (t.id === S.champion && t.role === 'champion') return;
   if (t.role === 'retired') return;
   if (founderProtected(t) || comebackProtected(t)) {
-    if (['leader', 'e4', 'exchamp'].includes(t.role)) { closePost(t); t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; if (!S.challengers.includes(t.id)) S.challengers.push(t.id); news(`${dn(t)}, ${founderProtected(t) ? "the League's founding Champion" : 'back from a long run as a Gym Leader'}, isn't ready to retire and returns to the badge circuit.`, 'move', t.id); }
+    if (['leader', 'e4', 'exchamp'].includes(t.role)) { closePost(t); t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1; if (!S.challengers.includes(t.id)) S.challengers.push(t.id); news(`${dn(t)}, ${founderProtected(t) ? "the League's founding Champion" : 'back from a long run as a Gym Leader'}, isn't ready to retire and returns to the badge circuit.`, 'move', t.id); }
     return;
   }
   const was = dn(t);
@@ -1211,11 +1276,12 @@ function dryStreak(t) {
   for (const h of (t.seasonHist || []).slice().reverse()) { if (t.reinvented && h.season <= t.reinvented) break; if (h.badges === 8) break; n++; }
   return n;
 }
+// returns why they will retire (at the end of their run), or null
 function crossroads(t) {
-  if (t.role !== 'challenger' || t.famous || comebackProtected(t) || t.age > CROSSROADS_MAX_AGE || dryStreak(t) < CROSSROADS_SEASONS || rand() >= CROSSROADS_CHANCE) return false;
-  if (rand() < CROSSROADS_RETIRE) { retire(t, `after ${dryStreak(t)} seasons without completing the badge circuit`); return true; }
+  if (t.role !== 'challenger' || t.famous || comebackProtected(t) || t.age > CROSSROADS_MAX_AGE || dryStreak(t) < CROSSROADS_SEASONS || rand() >= CROSSROADS_CHANCE) return null;
+  if (rand() < CROSSROADS_RETIRE) return `after ${dryStreak(t)} years without completing the badge circuit`;
   reinvent(t);
-  return false;
+  return null;
 }
 function reinvent(t) {
   const was = dn(t), oldSpec = t.specialty;
@@ -1238,7 +1304,7 @@ function reinvent(t) {
     if (got) t.team.push(got);
   }
   t.reinvented = S.season; (t.classHist = t.classHist || []).push({ season: S.season, from: was, to: dn(t), spec: ty, fromSpec: oldSpec || null });
-  const msg = `${was} hit a wall after ${CROSSROADS_SEASONS}+ seasons without completing the badge circuit and reinvented themselves as ${dn(t)}, a ${ty}-type specialist${got ? ` (new partner: ${got.sp})` : ''}. Every rating went up a little.`;
+  const msg = `${was} hit a wall after ${CROSSROADS_SEASONS}+ years without completing the badge circuit and reinvented themselves as ${dn(t)}, a ${ty}-type specialist${got ? ` (new partner: ${got.sp})` : ''}. Every rating went up a little.`;
   news(msg, 'move', t.id);
 }
 function careerSpan(t) { if (!t.span) t.span = ri(15, 20); return t.span; }
@@ -1253,7 +1319,7 @@ const retiresOnLosingPost = t => !comebackProtected(t) && !slamProtected(t) && t
 function returnToCircuit(t, why) {
   closePost(t);
   if (t.role === 'challenger') return;
-  t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0;
+  t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1;
   if (!S.challengers.includes(t.id)) S.challengers.push(t.id);
   news(`${t.name} ${why} and will return to the badge circuit.`, 'move', t.id);
 }
@@ -1268,7 +1334,7 @@ function seatChallenge(cand, slot, changes, how) {
   setTeamLevel(cand, E4_LV[slot]);
   const res = setBattle(cand, inc, E4_LV[slot], 'league', `Elite Four seat challenge · ${dn(inc)}`);
   res.seat = { slot, cand: cand.id, inc: inc.id };
-  if (S.league) S.league.logs.push(res);
+  yearLeague().logs.push(res);
   if (res.winner === 0) {
     const incName = inc.name;
     const fate = retireOrReturn(inc, `lost Elite Four seat #${slot + 1} to ${cand.name}`);
@@ -1284,14 +1350,6 @@ function seatChallenge(cand, slot, changes, how) {
 function weakestSeat() { let wi = 0; S.e4.forEach((x, i) => { if (ovr(T(x)) - T(x).age / 6 < ovr(T(S.e4[wi])) - T(S.e4[wi]).age / 6) wi = i; }); return wi; }
 
 
-// a trainer without a place on a circuit: sits out, and may get back on when there is room
-function toFreeAgent(t, why) { const i = homeLeague(t); t.lg = i; inLeague(i, () => toFreeAgentHere(t, why)); }
-function toFreeAgentHere(t, why) {
-  S.challengers = S.challengers.filter(x => x !== t.id);
-  t.role = 'free'; t.freeSince = S.season;
-  if (!S.freeAgents.includes(t.id)) S.freeAgents.push(t.id);
-  news(`${dn(t)} ${why} and is now a free agent.`, 'move', t.id);
-}
 // The meta: the five species that performed best this season on the circuit. Only challengers' Pokémon count (Gym
 // Leaders and the Elite Four are who has to answer it), and a species needs 8+ battles; ranked by knockouts per
 // battle, with wins as a tiebreak.
@@ -1324,20 +1382,16 @@ const fixedStaff = () => !!(S.cfg && S.cfg.staffBoost != null);
 function bestCandidate(exclude) {
   return challengers().filter(t => !exclude.includes(t.id) && !comebackProtected(t) && t.age >= 17 && t.seasons >= 2 && ovr(t) >= 58).sort((a, b) => ovr(b) + b.career.badges / 4 - ovr(a) - a.career.badges / 4)[0];
 }
-function offseason() {
-  const changes = [];
-  eachLeague(i => {
-    const ch = [];
-    leagueOffseason(ch);
-    changes.push(...(nLeagues() > 1 ? ch.map(x => `${lgShort(i)}: ${x}`) : ch));
-  });
-  checkGrandSlams();
-  slamReturns(changes);
-  legendDepartures();
-  // --- aging & progression
-  const prog = {};
+// ================= THE WORLD'S SLOW CHANGES =================
+// Spread through the year (0.4.0). Every trainer has a birthday week: they grow a year older and their ratings
+// move then, and that is when retirement is decided. A challenger out on a run retires when it ends; staff leave
+// at once, and the post is filled at once. Only the wall report, the awards, the meta report and the bans wait
+// for New Year.
+const bweek = t => (t.bw != null ? t.bw : (t.bw = (t.id * 13) % YEAR_WEEKS));
+function birthdays() {
+  const prog = S.yearProgress = S.yearProgress || {};
   for (const t of Object.values(S.trainers)) {
-    if (['retired', 'prospect'].includes(t.role)) continue;
+    if (t.role === 'retired' || t.role === 'prospect' || bweek(t) !== S.week) continue;
     const before = { ...t.r, ovr: ovr(t) };
     t.age++;
     for (const k of RK) {
@@ -1359,146 +1413,195 @@ function offseason() {
     t.pot = Math.max(t.pot, ovr(t));
     if (t.age > (hasTrait(t, 'lateBloomer') ? 32 : 26)) t.pot = ovr(t);
     prog[t.id] = { before, after: { ...t.r, ovr: ovr(t) } };
+    // --- retiring: with age (50+ and past their career length), after a long dry spell, or for poor ratings
+    if (t.role === 'challenger') {
+      inLeague(homeLeague(t), () => {
+        careerSpan(t);
+        let why = rand() < ageRetireChance(t) ? `after ${t.seasons} years` : crossroads(t);
+        if (!why && t.seasons >= 5 && ovr(t) < 38 && rand() < 0.25) why = 'from competition';
+        if (!why) return;
+        if (t.rest != null) retire(t, why); else t.leaving = why; // out on a run: they see it through first
+      });
+    } else if (t.role === 'free') {
+      if (rand() < ageRetireChance(t)) retire(t, `after ${t.seasons} years`);
+      else if (S.season - (t.freeSince || S.season) >= 3 && rand() < 0.5) retire(t, 'after three years off the circuit');
+    } else if (STAFF_ROLES.includes(t.role)) {
+      inLeague(homeLeague(t), () => { if (rand() < ageRetireChance(t)) staffRetires(t); });
+    }
   }
-  S.progress = prog;
-  // --- trainers retire with age (50+ and past their career length) or long-term poor results
-  eachLeague(() => {
-  for (const t of challengers()) {
-    careerSpan(t);
-    if (rand() < ageRetireChance(t)) { retire(t, `after ${t.seasons} seasons`); continue; }
-    if (crossroads(t)) continue;
-    if (t.seasons >= 5 && ovr(t) < 38 && rand() < 0.25) retire(t, 'from competition');
-  }
-  // the circuit holds CIRCUIT_SIZE challengers; when it is over that, the weakest lose their place
-  // (a Gym Leader back for a title run keeps their place through their guaranteed seasons)
-  const field = challengers().filter(t => t.returned !== S.season && !comebackProtected(t)).sort((a, b) => circuitValue(a) - circuitValue(b));
-  while (S.challengers.length > CIRCUIT_SIZE && field.length) toFreeAgent(field.shift(), 'lost their place on the circuit');
-  S.stats = { ko: {}, use: {} };
-  });
-  for (const id of S.freeAgents.slice()) {
-    const t = T(id); if (!t || t.role !== 'free') continue;
-    if (rand() < ageRetireChance(t)) retire(t, `after ${t.seasons} seasons`);
-    else if (S.season - (t.freeSince || S.season) >= 3 && rand() < 0.5) retire(t, 'after three seasons off the circuit');
-  }
-  S.changes = changes;
 }
-// one League's part of the offseason: champions, gyms, the Elite Four and the meta
-function leagueOffseason(changes) {
-  const L = S.league;
+// a member of staff retires and the post is filled at once, the same automatic way as before (hiring and
+// promotion become the player's in stage 2)
+function staffRetires(t) {
+  const changes = [];
+  if (t.role === 'leader') {
+    const i = S.gyms.findIndex(g => g.leader === t.id); if (i < 0) return;
+    retire(t, 'after a long career');
+    fillGym(i, changes); staffGym(i);
+  } else if (t.role === 'gymtrainer') {
+    const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); if (i < 0) return;
+    const g = S.gyms[i]; g.trainers[g.trainers.indexOf(t.id)] = null;
+    retire(t, `from ${townName(i)} Gym`); staffGym(i);
+    changes.push(`${t.name} retired from ${townName(i)} Gym, and a new gym trainer was taken on.`);
+  } else if (t.role === 'e4') {
+    const i = S.e4.indexOf(t.id); if (i < 0) return;
+    retire(t, 'from the Elite Four');
+    const nt = outsiderE4(i);
+    changes.push(`${t.name} stepped down; ${nt.name} (${typeLabel(nt)}) joins the Elite Four.`);
+    news(changes[changes.length - 1], 'move', nt.id);
+  } else if (t.role === 'champion') {
+    // the Champion only leaves by retiring with age. For now the strongest Elite Four member moves up
+    // automatically and an outsider takes their seat (promotion becomes the player's decision in stage 2).
+    const seat = S.e4.map((id, i) => i).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0], m = T(S.e4[seat]);
+    t.role = 'exchamp'; retire(t, `as Champion of the ${S.lgName}`);
+    S.e4[seat] = null; installElite(m, 'champion');
+    const nt = outsiderE4(seat);
+    changes.push(`Champion ${t.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${seat + 1}.`);
+    news(changes[changes.length - 1], 'title', m.id);
+  }
+  for (const c of changes) noteChange(c);
+  if (changes.length) stopFor('vacancy', changes[0]);
+}
+// a vacant gym goes to the circuit's best challenger or to an outsider
+function fillGym(i, changes) {
+  const cand = bestCandidate([]);
+  let nl;
+  if (cand && !fixedStaff() && rand() < 0.7) {
+    changes.push(`${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
+    S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
+    nl = cand;
+  } else {
+    // sometimes the outsider is a famous trainer of the right type
+    const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
+    nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(52 + i * 2), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(52 + i * 2), role: 'leader' });
+    changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
+    installElite(nl, 'leader', i);
+  }
+  news(changes[changes.length - 1], 'move', nl.id);
+}
+
+// ================= NEW YEAR =================
+// The year is the unit the wall is scored on: a perfect year is one with no title conceded, and the streak counts
+// perfect years. At New Year each League's wall report goes into its history, the awards are given, the meta
+// report and the ban vote are settled, and the World Championship is held. Nothing else stops.
+function newYear() {
+  const changes = S.yearChanges || []; S.yearChanges = [];
+  eachLeague(i => {
+    const ch = [];
+    leagueNewYear(ch);
+    changes.push(...(nLeagues() > 1 ? ch.map(x => `${lgShort(i)}: ${x}`) : ch));
+  });
+  checkGrandSlams();
+  slamReturns(changes);
+  legendDepartures();
+  S.worlds = null;
+  if (nLeagues() > 1) worldChampionship();
+  S.changes = changes; S.progress = S.yearProgress || {}; S.yearProgress = {};
+  settleBanVote();
+  for (const t of Object.values(S.trainers)) if (t.role !== 'retired' && t.role !== 'prospect') { t.seasons = (t.seasons || 0) + 1; t.weekLog = []; }
+  S.season++; S.week = 0; S.dexSeason = {};
+  eachLeague(() => {
+    S.lastLeague = S.league; S.league = null;
+    if (S.lastLeague) S.lastLeague.logs = S.lastLeague.logs.slice(-TITLE_LOGS);
+    enforceBans();
+    S.gyms.forEach(g => { g.w = 0; g.l = 0; });
+    S.stats = { ko: {}, use: {} };
+    for (const id of staffIds()) { const t = T(id); t.badges = []; relevelElite(t); }
+  });
+  worldGrowth();
+  const circ = eachLeague(() => S.challengers.length);
+  news(`Year ${S.season} begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers on the circuit'}.`, 'league');
+  stopFor('newyear', `Year ${S.season - 1} is over.`);
+}
+// one League's New Year: the wall report, the awards, the gyms' year and the meta
+function leagueNewYear(changes) {
+  const L = yearLeague();
   const deepest = L.entries.filter(e => e.stage < 5).sort((a, b) => b.stage - a.stage)[0];
   const meta = metaMons();
   buildBanBallot();
+  // the year's wall report: titles and badges conceded, how far the best challenger got (0 to 8 badges, 9 to 12
+  // for each Elite Four member beaten, 13 for beating the Champion), runs that ended on three losses
+  const best = T(L.bestId);
+  L.report = { badges: S.gyms.reduce((a, g) => a + g.l, 0), titles: L.conceded.length, best: L.best, bestId: L.bestId, out: L.out, runs: L.runs, field: S.challengers.length };
+  news(L.report.titles ? `Year ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Year ${S.season} wall report: a perfect year! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
   S.history.push({
     season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
-    titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, field: L.report.field, winners: L.conceded.slice(),
+    titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
     qualifiers: L.entries.length, metaMons: meta,
   });
+  // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
   for (const id of ran) {
-    const t = T(id); const e = L.entries.find(x => x.id === id);
-    t.seasonHist.push({ season: S.season, lg: S.lg || 0, badges: t.badges.length, stage: e ? e.stage : null, ovr: ovr(t), pts: trainerPoints(t, L) });
+    const t = T(id); if (!t || t.role === 'retired') continue;
+    const y = yearOf(t);
+    t.seasonHist.push({ season: S.season, lg: S.lg || 0, badges: Math.max(y.b, t.role === 'challenger' && t.rest == null ? t.badges.length : 0), stage: y.st, ovr: ovr(t), pts: y.pts, runs: y.runs });
   }
-  if (!ran.has(S.champion)) T(S.champion).seasonHist.push({ season: S.season, lg: S.lg || 0, role: 'champion', ovr: ovr(T(S.champion)), pts: trainerPoints(T(S.champion), L) });
-  // season awards
+  if (!ran.has(S.champion)) T(S.champion).seasonHist.push({ season: S.season, lg: S.lg || 0, role: 'champion', ovr: ovr(T(S.champion)), pts: 0 });
+  // the year's awards
   { const aw = seasonAwards(L); S.history[S.history.length - 1].awards = aw;
-    if (aw.length) news(`Season ${S.season} awards: ${aw.map(a => `${AWARDS[a.k].name}, ${a.sp ? a.name + "'s " + a.sp : a.name}`).join('; ')}.`, 'title');
+    if (aw.length) news(`Year ${S.season} awards: ${aw.map(a => `${AWARDS[a.k].name}, ${a.sp ? a.name + "'s " + a.sp : a.name}`).join('; ')}.`, 'title');
     legendOffseason(L, aw); }
 
-  // --- gym leaders
-  // gyms ranked by how often they held this season (rotation changes each gym's difficulty, so it's relative)
+  // --- the gyms' year
   const holdOf = g => { const p = g.w + g.l; return p ? g.w / p : 1; }, holdRank = S.gyms.map(holdOf).sort((a, b) => b - a);
   S.gyms.forEach((g, i) => {
     const t = T(g.leader); const played = g.w + g.l; const hold = played ? g.w / played : 1;
     g.hist.push({ season: S.season, w: g.w, l: g.l, leader: t.id });
-    let leave = null;
-    let stepDown = false;
-    // a poor season = the gym held fewer than 30% of 6+ challenges. Only three in a row costs a leader the gym.
-    const poor = played >= 6 && hold < 0.3;
+    // a poor year = the gym held fewer than 30% of 12+ tries. (Three in a row cost a leader the gym in the source;
+    // switched off with AUTO_STAFF_MOVES.)
+    const poor = played >= 12 && hold < 0.3;
     if (g.poorFor !== t.id) { g.poorFor = t.id; g.poor = 0; }
     g.poor = poor ? (g.poor || 0) + 1 : 0;
-    // an exceptional season: one of the three best-holding gyms of the season (5+ challenges; v157, was two). After 6–8
-    // of them in a row a leader wants another shot at the title (a third of the time after 6, half after 7, always by 8)
-    // and returns to the circuit, sharper
-    const wall = played >= 5 && holdRank.indexOf(hold) <= 2;
+    // an exceptional year: one of the three best-holding gyms (10+ tries). After 6 to 8 of them in a row a leader
+    // wants another shot at the title and returns to the circuit, sharper (switched off with AUTO_STAFF_MOVES)
+    const wall = played >= 10 && holdRank.indexOf(hold) <= 2;
     t.wallStreak = wall ? (t.wallStreak || 0) + 1 : 0;
-    let comeback = false;
-    // a comeback comes before any age check: they want back in, whatever their age
+    let leave = null, stepDown = false, comeback = false;
     if (AUTO_STAFF_MOVES && wall && t.wallStreak >= COMEBACK_MIN && rand() < (COMEBACK_ODDS[t.wallStreak - COMEBACK_MIN] ?? 1)) { leave = 'comeback'; comeback = true; }
-    else if (rand() < ageRetireChance(t)) leave = 'after a long career';
-    else if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor seasons at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
+    else if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
     if (comeback) {
       const n = t.wallStreak;
       for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
       t.noRetireUntil = (S.season || 0) + 1 + COMEBACK_GUARD; t.wallStreak = 0;
       t.comebacks = (t.comebacks || []).concat([{ season: S.season, gym: townName(i), seasons: n, lg: S.lg || 0 }]);
       g.leader = null;
-      returnToCircuit(t, `has held ${townName(i)} Gym through ${n} outstanding seasons in a row (${g.w}–${g.l} this year) and wants a shot at the title. They step down`);
-      changes.push(`${dn(t)} stepped down from ${townName(i)} Gym after ${n} outstanding seasons to chase the title.`);
+      returnToCircuit(t, `has held ${townName(i)} Gym through ${n} outstanding years in a row (${g.w}–${g.l} this year) and wants a shot at the title. They step down`);
+      changes.push(`${dn(t)} stepped down from ${townName(i)} Gym after ${n} outstanding years to chase the title.`);
     }
     if (!leave) {
-      if (played >= 5 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this season.`); }
-      else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor season and the League will replace them' : ''}.`); }
+      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
+      else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor year and the League will replace them' : ''}.`); }
       return;
     }
     if (comeback) { /* already back on the circuit */ }
     else if (stepDown && !retiresOnLosingPost(t)) { g.leader = null; returnToCircuit(t, `stepped down as ${townName(i)} Gym Leader ${leave}`); }
     else retire(t, leave);
-    const cand = bestCandidate([]);
-    let nl;
-    if (cand && !fixedStaff() && rand() < 0.7) {
-      changes.push(`${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
-      S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
-      nl = cand;
-    } else {
-      // sometimes the outsider is a famous trainer of the right type
-      const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
-      nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(52 + i * 2), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(52 + i * 2), role: 'leader' });
-      changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
-      installElite(nl, 'leader', i);
-    }
-    news(changes[changes.length - 1], 'move', nl.id);
+    fillGym(i, changes);
   });
+  // every gym is brought back to two trainers of its leader's type
+  S.gyms.forEach((g, i) => staffGym(i));
 
-  // --- gym trainers: the old retire, and every gym is brought back to two trainers of its leader's type
-  S.gyms.forEach((g, i) => {
-    for (const id of g.trainers || []) { const t = T(id); if (t && t.role === 'gymtrainer' && rand() < ageRetireChance(t)) { g.trainers[g.trainers.indexOf(id)] = null; retire(t, `from ${townName(i)} Gym`); } }
-    staffGym(i);
-  });
-
-  // --- elite four turnover
+  // --- elite four turnover (switched off with AUTO_STAFF_MOVES)
   if (AUTO_STAFF_MOVES && deepest && deepest.stage >= 3) {
     const r = T(deepest.id);
     const wi = weakestSeat();
     const weak = T(S.e4[wi]);
     if (r && r.role === 'challenger' && (ovr(r) > ovr(weak) + 2 || weak.age >= 50)) seatChallenge(r, wi, changes, ' (a deep League run)');
   }
-  S.e4.forEach(id => { const t = T(id); if (t.role === 'e4' && rand() < ageRetireChance(t)) { const i = S.e4.indexOf(id); retire(t, 'from the Elite Four'); const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some(x => x !== id && T(x) && T(x).specialty === f.spec)) : []; const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(66), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(66), role: 'e4' }); installElite(nt, 'e4', i); changes.push(`${t.name} stepped down; ${nt.name} (${typeLabel(nt)}) joins the Elite Four.`); } });
 
-  // --- the Champion only leaves by retiring with age. For now the strongest Elite Four member moves up
-  // automatically and an outsider takes their seat (promotion becomes the player's decision in stage 2).
-  { const c = T(S.champion);
-    if (rand() < ageRetireChance(c)) {
-      const seat = S.e4.map((id, i) => i).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0], m = T(S.e4[seat]);
-      c.role = 'exchamp'; retire(c, `as Champion of the ${S.lgName}`);
-      S.e4[seat] = null; installElite(m, 'champion');
-      const nt = outsiderE4(seat);
-      changes.push(`Champion ${c.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${seat + 1}.`);
-      news(changes[changes.length - 1], 'title', m.id);
-    } }
-
-  // --- the meta report. Staff no longer swap in off-type counters for the season's top Pokémon: how a League
+  // --- the meta report. Staff no longer swap in off-type counters for the year's top Pokémon: how a League
   // answers the meta is to be redesigned (design doc, open items), and until then a gym stays on its type.
   if (meta.length) {
     S.metaMons = meta; S.meta = null;
-    changes.push(`Season ${S.season}'s top performers on the circuit: ${meta.join(', ')}.`);
+    changes.push(`Year ${S.season}'s top performers on the circuit: ${meta.join(', ')}.`);
     news(`Meta report: ${meta.join(', ')} knocked out the most opponents per battle on the circuit.`, 'meta');
   }
 }
 
 
 // ================= WORLD STRUCTURE =================
-// New Leagues can open as the seasons go by, each in the next region.
+// New Leagues can open as the years go by, each in the next region.
 const MAX_LEAGUES = LEAGUE_SETS.length, LEAGUE_GAP = [8, 12];
 const regionOf = i => (S.regionOrder && S.regionOrder[i] != null ? S.regionOrder[i] : i);
 const nextRegionName = () => nLeagues() < MAX_LEAGUES ? LEAGUE_SETS[regionOf(nLeagues())].name : null;
@@ -1507,28 +1610,29 @@ function scheduleLeague() {
 }
 // open the next region's League: gyms, Elite Four, a Champion and (when the newcomers arrive) a circuit of challengers
 function openNewLeague() {
-  if (nLeagues() >= MAX_LEAGUES || S.phase !== 'offseason') return null;
+  if (nLeagues() >= MAX_LEAGUES) return null;
   const i = nLeagues(), reg = LEAGUE_SETS[regionOf(i)];
   S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regionOf(i), lgName: reg.name });
   if (S.cfg) S.cfg.leagues = nLeagues();
   inLeague(i, () => foundLeague());
-  S.leagueOpened = { i, season: S.season + 1 };
+  S.leagueOpened = { i, season: S.season };
   S.nextLeague = null; scheduleLeague();
-  inLeague(i, () => news(`The ${reg.name} opens for Season ${S.season + 1}, with its own gyms, Elite Four and Champion.`, 'league'));
+  // its founding field: a class of newcomers of its own, setting out over the first weeks
+  for (const id of makeNewcomers(CIRCUIT_SIZE)) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
+  inLeague(i, () => news(`The ${reg.name} opens in Year ${S.season}, with its own gyms, Elite Four and Champion.`, 'league'));
   return i;
 }
-// after each offseason: announce a League a season ahead, and open it when its time comes
+// each New Year: announce a League a year ahead, and open it when its time comes
 function worldGrowth() {
-  if (S.phase !== 'offseason') return;
   scheduleLeague();
   const n = S.nextLeague;
   if (!n || nLeagues() >= MAX_LEAGUES) return;
-  if (n.season <= S.season + 1) openNewLeague();
-  else if (!n.told && n.season === S.season + 2) { n.told = true; news(`A new League is coming: the ${nextRegionName()} will open in Season ${n.season}.`, 'league'); }
+  if (n.season <= S.season) openNewLeague();
+  else if (!n.told && n.season === S.season + 1) { n.told = true; news(`A new League is coming: the ${nextRegionName()} will open in Year ${n.season}.`, 'league'); }
 }
 // ---------- god mode: open a League by hand, and edit any trainer ----------
 const godOn = () => !!(S && S.cfg && S.cfg.god);
-function godOpenLeague() { if (!godOn()) return 'God mode is off.'; if (nLeagues() >= MAX_LEAGUES) return 'Every region is already open.'; if (S.phase !== 'offseason') return 'Open a League in the offseason.'; return openNewLeague() == null ? 'Could not open a League.' : null; }
+function godOpenLeague() { if (!godOn()) return 'God mode is off.'; if (nLeagues() >= MAX_LEAGUES) return 'Every region is already open.'; return openNewLeague() == null ? 'Could not open a League.' : null; }
 function godEdit(id, field, v) {
   if (!godOn()) return 'God mode is off.';
   const t = T(id); if (!t) return 'No such trainer.';

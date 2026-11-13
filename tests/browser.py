@@ -1,4 +1,4 @@
-# Plays three seasons through the real page in a headless browser: the setup screen, every view in every phase,
+# Plays three years through the real page in a headless browser: the setup screen, every view at several points of each year,
 # the trainer and Pokémon cards, the glossary, the menu, god mode, the sim dialog, a battle replay and a reload from
 # the save. Usage: python3 tests/browser.py "$PWD/dist/Pokémon League Builder.html"
 import asyncio, sys, json
@@ -27,22 +27,34 @@ async def run(path):
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
             click('[data-act=menu]'); if (!document.querySelector('.sheet-menu')) log.push('FAIL ' + tag + ' no menu'); click('[data-act=close]'); } catch (e) { log.push('FAIL ' + tag + ' cards: ' + e.message); } };
-          let guard = 0; const seen = {};
+          // three years through the real controls: a few single weeks, a couple of months, then to New Year (which
+          // stops early when a title is conceded or a post falls vacant, so it is pressed until the year turns)
+          let guard = 0; const seen = {}; let watched = false, stopsSeen = 0;
           while (S.season < 4 && guard++ < 400) {
-            const ph = S.phase;
-            if (!seen[ph + S.season]) { seen[ph + S.season] = 1; tour(ph + S.season); cards(ph + S.season); }
+            const tag = 'y' + S.season + (S.week < 3 ? 'early' : S.week < 12 ? 'spring' : 'late');
+            if (!seen[tag]) { seen[tag] = 1; tour(tag); cards(tag); go('circuit'); }
             try {
-              if (ph === 'season') { if (S.week < 3) click('[data-act=playweek]'); else { click('[data-act=autoseasonask]'); click('[data-act=autoseason]'); } }
-              else if (ph === 'league') { click('[data-act=runleague]'); if (view !== 'recap') log.push('FAIL no recap after the League');
-                if (click('[data-act=watch]')) { if (!document.querySelector('.sheet-battle')) log.push('FAIL no battle replay'); else log.push('watched a title battle'); click('[data-act=bskip]'); click('[data-act=close]'); } }
-              else if (ph === 'offseason') { go('god'); if (click('[data-act=godpick]')) { const n = document.querySelector('#ge-age'); if (n) { n.value = '33'; click('[data-act=godsave]'); log.push('god saved'); } }
-                if (S.season === 2 && click('[data-act=godleague]')) log.push('god opened a League: now ' + nLeagues());
-                click('[data-act=nextseason]'); }
-            } catch (e) { log.push('FAIL step ' + ph + ': ' + e.message); break; }
+              const y = S.season, w = S.week;
+              if (w < 3) { click('[data-act=playweek]'); if (S.week !== w + 1) log.push('FAIL Next week did not move one week'); }
+              else if (w < 11) { click('[data-act=playmonth]'); if (S.season === y && S.week === w) log.push('FAIL Next month did not move'); if (S.season === y && S.week - w < 4) stopsSeen++; }
+              else {
+                if (S.season === 2 && !seen.god) { seen.god = 1; go('god'); if (click('[data-act=godpick]')) { const n = document.querySelector('#ge-age'); if (n) { n.value = '33'; click('[data-act=godsave]'); log.push('god saved'); } }
+                  if (click('[data-act=godleague]')) log.push('god opened a League midyear: now ' + nLeagues()); go('circuit'); }
+                click('[data-act=playyear]');
+                if (S.season === y && S.week === w) log.push('FAIL To New Year did not move');
+                if (S.season !== y) { if (view !== 'recap') log.push('FAIL no year in review at New Year'); if (S.week !== 0) log.push('FAIL New Year is not week 0');
+                  if (!/in review/.test(document.querySelector('#main').textContent)) log.push('FAIL the year in review is empty'); }
+                else stopsSeen++;
+              }
+              if (!watched && click('[data-act=watch]')) { if (!document.querySelector('.sheet-battle')) log.push('FAIL no battle replay'); else { watched = true; log.push('watched a title battle'); } click('[data-act=bskip]'); click('[data-act=close]'); }
+            } catch (e) { log.push('FAIL step ' + tag + ': ' + e.message); break; }
           }
-          // the sim dialog, one season
+          if (S.history.length !== 3) log.push('FAIL history has ' + S.history.length + ' years after three');
+          if (!/Year 4/.test(document.querySelector('header').textContent)) log.push('FAIL the header does not show the year');
+          log.push('early stops: ' + stopsSeen + ' · field ' + S.challengers.length + ' · resting ' + S.challengers.filter(id => T(id).rest != null).length);
+          // the sim dialog, one year
           click('[data-act=simmany]'); click('[data-act=simmanyn][data-v="1"]'); click('[data-act=simmanygo]');
-          log.push('season ' + S.season + ' phase ' + S.phase + ' leagues ' + nLeagues() + ' ver ' + UPDATES[0].ver + ' key ' + SAVE_KEY);
+          log.push('year ' + S.season + ' week ' + S.week + ' leagues ' + nLeagues() + ' ver ' + UPDATES[0].ver + ' key ' + SAVE_KEY);
           return log; }""")
         await pg.wait_for_timeout(4000)
         after = await pg.evaluate("""() => { const done = !!(modal && modal.done); document.querySelector('[data-act=simmanyclose]') && document.querySelector('[data-act=simmanyclose]').click(); save(); return { done, season: S.season, phase: S.phase, n: Object.keys(S.trainers).length }; }""")
