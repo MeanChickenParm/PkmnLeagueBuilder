@@ -884,19 +884,57 @@ const staffQ = q => q + ((S.cfg && S.cfg.staffBoost) || 0);
 function staffGym(i) {
   const g = S.gyms[i], L = T(g.leader); if (!L) return;
   g.trainers = g.trainers || [];
+  // a gym under an acting leader runs one gym trainer short until the post is filled (0.6.0): nobody is let go, and
+  // only a gym down to fewer than that takes someone on
+  if (g.acting) {
+    const have = g.trainers.filter(id => T(id) && T(id).role === 'gymtrainer').length;
+    if (have >= GYM_TRAINERS - 1) return;
+    let k = g.trainers.findIndex(id => !(T(id) && T(id).role === 'gymtrainer')); if (k < 0) k = g.trainers.length;
+    fillGymTrainer(i, k, L);
+    return;
+  }
   for (let k = 0; k < GYM_TRAINERS; k++) {
     const cur = T(g.trainers[k]);
     if (cur && cur.role === 'gymtrainer' && gymFits(cur, L)) continue;
     g.trainers[k] = null;
     if (cur && cur.role === 'gymtrainer') retire(cur, `when ${townName(i)} Gym changed type`);
-    const ty = specTypes(L);
-    const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
-    t.lg = S.lg || 0;
-    g.trainers[k] = t.id;
-    openPost(t, 'gymtrainer');
-    t.team = staffPicks(t, GYM_LV[i], GYM_SIZE[i] - 1).map(m => stamp(m, 'assigned'));
-    relevelElite(t);
+    fillGymTrainer(i, k, L);
   }
+}
+// gym trainer place k at gym i: the best fitting challenger on the circuit takes it when there is one (0.6.0),
+// otherwise the game makes one
+function fillGymTrainer(i, k, L) {
+  const g = S.gyms[i];
+  const c = circuitGymTrainer(L);
+  if (c) { takeGymTrainer(c, i, k); return; }
+  const ty = specTypes(L);
+  const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  t.lg = S.lg || 0;
+  g.trainers[k] = t.id;
+  openPost(t, 'gymtrainer');
+  t.team = staffPicks(t, GYM_LV[i], GYM_SIZE[i] - 1).map(m => stamp(m, 'assigned'));
+  relevelElite(t);
+}
+// the circuit's best challenger who would fit a gym under leader L (none in the wall report's fixed tiers)
+function circuitGymTrainer(L) {
+  if (fixedStaff()) return null;
+  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length)
+    .sort((a, b) => ovr(b) - ovr(a))[0] || null;
+}
+// a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
+// their own type and the rest of the team is built for the post
+function takeGymTrainer(t, i, k) {
+  const g = S.gyms[i], size = GYM_SIZE[i] - 1, mixed = !t.specialty;
+  dropFromCircuits(t.id);
+  t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0;
+  g.trainers[k] = t.id;
+  openPost(t, 'gymtrainer');
+  const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(2, size - 1));
+  for (const m of t.team) if (!keep.includes(m)) farewell(t, m, 'left behind on becoming a gym trainer');
+  const fresh = staffPicks(t, GYM_LV[i], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });
+  t.team = keep.concat(fresh.map(m => stamp(m, 'assigned')));
+  relevelElite(t);
+  news(`${dn(t)} left the circuit to become a gym trainer at ${townName(i)} Gym.`, 'move', t.id);
 }
 // everyone who holds a post in the bound League
 function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }
