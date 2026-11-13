@@ -1212,8 +1212,11 @@ function newWorld(cfg = {}) {
   S.leagues = [null]; S.lg = 0;
   S.region = regions[0]; S.lgName = LEAGUE_SETS[regions[0]].name;
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
-  for (let li = 0; li < S.cfg.leagues; li++) inLeague(li, () => foundLeague());
-  foundingField();
+  // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
+  if (cfg.hand) S.cfg.hand = true;
+  for (let li = 0; li < S.cfg.leagues; li++) inLeague(li, () => (li === 0 && S.cfg.hand ? prepFounding() : foundLeague()));
+  if (S.cfg.hand) return;
+  foundingField(Array.from({ length: nLeagues() }, (_, i) => i));
   startWorld();
 }
 // one League's founding staff: eight Gym Leaders, the Elite Four and a Champion
@@ -1329,21 +1332,105 @@ function checkGrandSlams() {
   }
 }
 const MOVE_EDGE = 0.35; // how much better another League's matchups must look to a Triple Crown chaser or a Globetrotter (see leagueMove)
-// the founding field: experienced trainers with no recorded League history fill every circuit
-function foundingField() {
-  const ids = [];
-  for (let i = 0; i < CIRCUIT_SIZE * nLeagues(); i++) {
-    // older, better rated, more evolved Pokémon than a newcomer
-    const exp = ri(1, 5);
-    const t = newTrainer({ age: ri(12, 16) + exp, quality: ri(36, 56) + exp * 2, role: 'free' });
-    starterTeam(t, 9);
-    { const o = wildOffers(t)[0]; if (o) t.team.push(stamp(makeMon(o.sp, 35), 'caught')); }
-    t.team.forEach(m => { m.lvl = Math.max(m.lvl, 16 + exp * 6); evolveMon(m, t.specialty); });
-    S.freeAgents.push(t.id); ids.push(t.id);
+// a founding trainer's team: older, better rated, more evolved Pokémon than a newcomer
+function fieldTeam(t, exp) {
+  starterTeam(t, 9);
+  { const o = wildOffers(t)[0]; if (o) t.team.push(stamp(makeMon(o.sp, 35), 'caught')); }
+  t.team.forEach(m => { m.lvl = Math.max(m.lvl, 16 + exp * 6); evolveMon(m, t.specialty); });
+}
+function fieldTrainer() {
+  const exp = ri(1, 5);
+  const t = newTrainer({ age: ri(12, 16) + exp, quality: ri(36, 56) + exp * 2, role: 'free' });
+  fieldTeam(t, exp);
+  return t;
+}
+// the founding field: experienced trainers with no recorded League history fill the circuits of the Leagues listed
+function foundingField(lgs) {
+  for (const li of lgs) for (let i = 0; i < CIRCUIT_SIZE; i++) {
+    const t = fieldTrainer();
+    joinCircuit(t, li); t.rest = ri(0, FOUNDING_STAGGER); t.early = 0;
   }
   news(`The ${nLeagues() > 1 ? 'World Circuit' : S.lgName} has been founded${nLeagues() > 1 ? `: ${eachLeague(() => S.lgName).join(', ')}` : ''}.`, 'league');
-  fillCircuits(ids, FOUNDING_STAGGER);
   scheduleLeague();
 }
-
-if (typeof module !== 'undefined') module.exports = { godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+// ================= FOUNDING BY HAND (0.6.0) =================
+// The player's League (League 0 in a world made with cfg.hand) is staffed by hand. The game makes a pool of founding
+// candidates (about three per senior post, at the strength the game would found with, a few stars and a handful of
+// famous trainers) and the founding field. The player places the 13 senior posts from either group; everyone not
+// placed starts on the circuit, and each gym's two gym trainers are then taken from the circuit (staffGym).
+const FOUND_PER_POST = 3, FOUND_STARS = 3, FOUND_FAMOUS = [4, 6];
+const handOn = () => !!(S && S.cfg && S.cfg.hand);
+// is the bound League the player's own (staffed by hand, with vacancies that wait)?
+const playerLeague = () => handOn() && (S.lg || 0) === 0 && !fixedStaff();
+function prepFounding() {
+  const cities = regionCities(S.region);
+  for (let i = 0; i < 8; i++) S.gyms.push({ leader: null, city: cities[i].id, w: 0, l: 0, hist: [] });
+  S.e4 = [null, null, null, null]; S.champion = null;
+  const slots = [];
+  for (let i = 0; i < 8; i++) for (let k = 0; k < FOUND_PER_POST; k++) slots.push({ q: 50 + i * 2.2, age: [22, 50] });
+  for (let i = 0; i < 4; i++) for (let k = 0; k < FOUND_PER_POST; k++) slots.push({ q: 64 + i, age: [26, 50] });
+  for (let k = 0; k < FOUND_PER_POST; k++) slots.push({ q: 72, age: [24, 40] });
+  for (let k = 0; k < FOUND_STARS; k++) slots.push({ q: ri(76, 82), age: [24, 40] });
+  const famAt = new Set(shuffle(slots.map((_, i) => i)).slice(0, ri(FOUND_FAMOUS[0], FOUND_FAMOUS[1])));
+  const cands = [];
+  slots.forEach((sl, i) => {
+    const fam = famAt.has(i) && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 16) : [];
+    let t;
+    if (fam.length) t = makeFamous(pick(fam), 'free', staffQ(sl.q), 30);
+    else { t = newTrainer({ age: ri(sl.age[0], sl.age[1]), quality: staffQ(sl.q), role: 'free', specialty: rand() < 0.06 ? null : pick(TYPES) }); fieldTeam(t, 5); }
+    cands.push(t.id);
+  });
+  const field = []; for (let i = 0; i < CIRCUIT_SIZE; i++) field.push(fieldTrainer().id);
+  S.founding = { cands, field, champion: null, e4: [null, null, null, null], gyms: Array(8).fill(null) };
+}
+// everyone placed so far, and the founding pool still free to place
+const foundPlaced = () => { const F = S.founding; return [F.champion, ...F.e4, ...F.gyms].filter(x => x != null); };
+function foundPool() { const F = S.founding, used = new Set(foundPlaced()); return F.cands.concat(F.field).filter(id => !used.has(id)); }
+// the types already held by the other posts (the picker flags a repeat; repeats are allowed)
+function foundTypesUsed(post, slot) {
+  const F = S.founding, out = [];
+  const add = (id, p, k) => { if (id != null && !(p === post && k === slot)) out.push(...specTypes(T(id))); };
+  add(F.champion, 'champion', 0); F.e4.forEach((id, k) => add(id, 'e4', k)); F.gyms.forEach((id, k) => add(id, 'gym', k));
+  return out;
+}
+// place trainer id at a post ('champion', 'e4' seat 0 to 3, 'gym' 0 to 7); id null clears it. A trainer placed
+// elsewhere moves here.
+function foundPlace(post, slot, id) {
+  const F = S.founding; if (!F) return false;
+  if (id != null && !F.cands.concat(F.field).includes(id)) return false;
+  if (id != null) { if (F.champion === id) F.champion = null; F.e4 = F.e4.map(x => (x === id ? null : x)); F.gyms = F.gyms.map(x => (x === id ? null : x)); }
+  if (post === 'champion') F.champion = id;
+  else if (post === 'e4' && slot >= 0 && slot < 4) F.e4[slot] = id;
+  else if (post === 'gym' && slot >= 0 && slot < 8) F.gyms[slot] = id;
+  else return false;
+  return true;
+}
+// "Fill the rest for me": the best available trainer for each empty post, Champion first, then the Elite Four from
+// seat 4 down, then the gyms from 8 down, preferring a type not yet held when two are close
+function foundingFill() {
+  const F = S.founding; if (!F) return;
+  const score = (t, post, slot) => ovr(t) - (specTypes(t).some(x => foundTypesUsed(post, slot).includes(x)) ? 6 : 0);
+  const best = (post, slot) => foundPool().map(T).sort((a, b) => score(b, post, slot) - score(a, post, slot))[0];
+  const fill = (post, slot) => { const t = best(post, slot); if (t) foundPlace(post, slot, t.id); };
+  if (F.champion == null) fill('champion', 0);
+  for (let k = 3; k >= 0; k--) if (F.e4[k] == null) fill('e4', k);
+  for (let k = 7; k >= 0; k--) if (F.gyms[k] == null) fill('gym', k);
+}
+// open the League: install the placed staff, put everyone else on the circuit, take on the gym trainers, and start
+// the world. Any post still empty is filled for the player first.
+function finishFounding() {
+  const F = S.founding; if (!F) return;
+  inLeague(0, () => {
+    foundingFill();
+    F.gyms.forEach((id, i) => installElite(T(id), 'leader', i));
+    F.e4.forEach((id, i) => { const t = T(id); installElite(t, 'e4', i); if (t.famous) news(`${t.name} has joined the ${S.lgName} as a member of the Elite Four.`, 'move', t.id); });
+    const c = T(F.champion); c.foundingChamp = true; installElite(c, 'champion');
+    const placed = new Set(foundPlaced());
+    for (const id of F.cands.concat(F.field)) { const t = T(id); if (placed.has(id) || t.role !== 'free') continue; joinCircuit(t, 0); t.rest = ri(0, FOUNDING_STAGGER); t.early = 0; }
+    S.founding = null; delete S.founding;
+    for (let i = 0; i < 8; i++) staffGym(i);
+  });
+  foundingField(Array.from({ length: nLeagues() - 1 }, (_, i) => i + 1));
+  startWorld();
+}
+if (typeof module !== 'undefined') module.exports = { staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };

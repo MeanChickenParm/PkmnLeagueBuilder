@@ -1,10 +1,13 @@
 // invariants sim: node tests/sim.js <leagues> <growth 0/1> <years> [god 0/1]
 // Sims whole years week by week and checks the world stays consistent after every week.
 const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'));
-const [L, G, N, GOD] = process.argv.slice(2).map(Number);
-g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD });
+// HAND (0.6.0): League 0 is founded by hand (best available), staff are made to leave, and vacancies wait with acting
+// holders until they are filled
+const [L, G, N, GOD, HAND] = process.argv.slice(2).map(Number);
+g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
+if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); } g.finishFounding(); }
 const S = () => g.S, fail = [];
-let gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
+let hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
   if (s.phase !== 'season') bad('unknown phase ' + s.phase);
@@ -22,16 +25,23 @@ function check(tag) {
       const t = g.T(gym.leader); if (!t || t.role !== 'leader' || g.lgOf(t) !== i) bad('gym ' + j + ' leader is wrong'); });
     // the wall: set team sizes, two gym trainers of the leader's type per gym, six Pokémon for the Elite Four and Champion
     z.gyms.forEach((gym, j) => { const L = g.T(gym.leader); if (!L) return;
-      if (L.team.length !== g.GYM_SIZE[j]) bad('gym ' + j + ' leader fields ' + L.team.length);
+      // an acting leader is the gym's former gym trainer: one Pokémon fewer, and one gym trainer short
+      const act = !!gym.acting, gts = (gym.trainers || []).filter(x => x != null);
+      if (act !== !!L.acting) bad('gym ' + j + ' acting flags disagree');
+      if (act && !(s.vacancies || []).some(v => v.post === 'leader' && v.slot === j) && i === 0) bad('gym ' + j + ' acting with no vacancy');
+      if (L.team.length !== g.GYM_SIZE[j] - (act ? 1 : 0)) bad('gym ' + j + ' leader fields ' + L.team.length);
       for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
-      if ((gym.trainers || []).length !== g.GYM_TRAINERS) bad('gym ' + j + ' has ' + (gym.trainers || []).length + ' gym trainers');
-      for (const id of gym.trainers || []) { const t = g.T(id);
+      if (gts.length !== g.GYM_TRAINERS - (act ? 1 : 0)) bad('gym ' + j + ' has ' + gts.length + ' gym trainers' + (act ? ' (acting)' : ''));
+      for (const id of gts) { const t = g.T(id);
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
-        if (!g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
+        if (!act && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
         for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
         if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length);
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
+    if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
+    z.e4.forEach((id, k) => { const t = g.T(id); if (t && t.acting && !(s.vacancies || []).some(v => v.post === 'e4' && v.slot === k)) bad('acting Elite Four member with no vacancy'); });
+    if (i > 0 && (z.gyms.some(x => x.acting) || z.e4.some(id => g.T(id) && g.T(id).acting))) bad('a vacancy in a League not staffed by hand');
     // challengers: tries, gym trainers beaten, and Pokémon standing at the level of their next battle
     for (const id of z.challengers) { const t = g.T(id); if (!t || t.role !== 'challenger') continue;
       if ((t.gymTries || 0) > g.GYM_TRIES || (t.gymStage || 0) > g.GYM_TRAINERS) bad('tries or stage out of range for ' + t.name);
@@ -80,6 +90,9 @@ for (let i = 0; i < N; i++) {
       const t = rnd(Object.values(S().trainers).filter(x => x.role === 'challenger'));
       for (const [f, v] of [['age', 30], ['str', 99], ['pot', 90], ['name', 'Tester ' + i]]) { const w = g.godEdit(t.id, f, v); if (w) fail.push('godEdit ' + w); else gods++; }
     }
+    // a Gym Leader, an Elite Four member and the Champion leave in year 2; vacancies are filled now and then
+    if (HAND && S().season === 2 && S().week === 10) g.inLeague(0, () => { g.staffRetires(g.T(S().gyms[1].leader)); g.staffRetires(g.T(S().e4[2])); g.staffRetires(g.T(S().champion)); if ((S().vacancies || []).length < 3) fail.push('expected three vacancies, got ' + (S().vacancies || []).length); hands += S().vacancies.length; });
+    if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], c = g.inLeague(0, () => g.vacancyCands(v)); if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
     g.simWeek();
     if (S().stop) stops[S().stop.why] = (stops[S().stop.why] || 0) + 1;
     check('step');
@@ -93,5 +106,5 @@ for (let i = 0; i < N; i++) {
 const h = S().history;
 console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') : 'ok', 'leagues', g.nLeagues(), 'year', S().season, 'trainers', Object.keys(S().trainers).length, 'cities', Object.keys(S().cities).length,
   'Elite Four runs/year', (h.reduce((a, x) => a + x.qualifiers, 0) / Math.max(1, h.length)).toFixed(1), 'perfect years', Math.round(h.filter(x => !x.titles).length / Math.max(1, h.length) * 100) + '%', 'badges conceded/year', (h.reduce((a, x) => a + x.badges, 0) / Math.max(1, h.length)).toFixed(1),
-  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods);
+  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length);
 process.exit(fail.length ? 1 : 0);

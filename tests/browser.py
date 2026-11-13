@@ -20,9 +20,22 @@ async def run(path):
           click('[data-act=updates]'); click('[data-act=nav]');
           click('[data-act=setgod][data-v="1"]');
           document.querySelectorAll('[data-act=newworld]')[2].click();
-          if (!S || S.phase !== 'season' || S.season !== 1) { log.push('FAIL the world did not start'); return log; }
+          // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
+          if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
+          if (document.querySelectorAll('[data-act=foundsel]').length !== 13) log.push('FAIL the founding screen does not list 13 posts');
+          if (!document.querySelector('[data-act=foundgo]').disabled) log.push('FAIL Open the League is not disabled with empty posts');
+          click('[data-act=foundsel][data-k=gym][data-v="0"]'); click('[data-act=foundshow][data-v=field]');
+          { const id = +document.querySelector('[data-act=foundpick]').dataset.id; click('[data-act=foundpick]'); if (S.founding.gyms[0] !== id) log.push('FAIL picking a trainer did not place them'); if (!S.founding.field.includes(id)) log.push('FAIL the founding field filter'); }
+          click('[data-act=foundclear][data-k=gym][data-v="0"]'); if (S.founding.gyms[0] != null) log.push('FAIL Clear did not clear the post');
+          click('[data-act=foundshow][data-v=all]'); click('[data-act=foundpick]');
+          if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the founding screen shows undefined');
+          click('[data-act=foundfill]'); if (document.querySelector('[data-act=foundgo]').disabled) log.push('FAIL Fill the rest left posts empty');
+          const placedChamp = S.founding.champion; click('[data-act=foundgo]');
+          if (!S || S.founding || S.phase !== 'season' || S.season !== 1) { log.push('FAIL the world did not start'); return log; }
+          if (S.champion !== placedChamp) log.push('FAIL the Champion placed is not the Champion');
+          if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
-          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates'];
+          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -40,6 +53,17 @@ async def run(path):
               else {
                 if (S.season === 2 && !seen.god) { seen.god = 1; go('god'); if (click('[data-act=godpick]')) { const n = document.querySelector('#ge-age'); if (n) { n.value = '33'; click('[data-act=godsave]'); log.push('god saved'); } }
                   if (click('[data-act=godleague]')) log.push('god opened a League midyear: now ' + nLeagues()); go('circuit'); }
+                // 0.6.0: a Gym Leader and an Elite Four member leave; the posts wait with acting holders, then are filled
+                if (S.season === 2 && !seen.vac) { seen.vac = 1; inLeague(0, () => { announceStepDown(T(S.gyms[4].leader)); staffRetires(T(S.gyms[2].leader)); staffRetires(T(S.e4[1])); }); viewLg = 0; go('gyms');
+                  const txt = document.querySelector('#main').textContent;
+                  if (!/waiting for you/.test(txt) || !/Acting/.test(txt) || !/Steps down/.test(txt)) log.push('FAIL vacancies or step-downs not shown');
+                  if (!inLeague(0, () => T(S.gyms[2].leader).acting && S.gyms[2].trainers.filter(Boolean).length === 1)) log.push('FAIL no acting leader at gym 3');
+                  click('[data-act=hire][data-v="0"]'); if (view !== 'hire' || !document.querySelector('[data-act=hirepick]')) log.push('FAIL no hiring page');
+                  click('[data-act=hirefit]'); click('[data-act=hirefit]'); click('[data-act=hirepick]');
+                  click('[data-act=hireauto][data-v="0"]');
+                  if ((S.vacancies || []).length) log.push('FAIL vacancies left open: ' + S.vacancies.length);
+                  if (inLeague(0, () => S.gyms[2].acting || S.gyms[2].trainers.filter(Boolean).length !== 2 || S.e4.some(id => T(id).acting))) log.push('FAIL posts not filled properly');
+                  log.push('filled two vacancies'); go('circuit'); }
                 click('[data-act=playyear]');
                 if (S.season === y && S.week === w) log.push('FAIL To New Year did not move');
                 if (S.season !== y) { if (view !== 'recap') log.push('FAIL no year in review at New Year'); if (S.week !== 0) log.push('FAIL New Year is not week 0');

@@ -17,7 +17,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The meta response is to be redesigned.** Staff no longer add counters for the year's top Pokémon; newcomers still lean toward counter types, and ban replacements still favour them. The owner wants it recontextualized rather than automated off top performers.
 - **Untyped leaders are rare and have no counterweight.** Outsiders appointed to gyms are always typed; only a promoted untyped challenger leads a mixed gym. Whether specialists should get anything in return was left for later (the owner chose nothing for now).
 - **Team builder dials** (`SCOUT_BST`, `scoutShare`, `STRAT_NOISE`, `TRAIN_IV`, `trainCare`) were set by eye in 0.3.0; since 0.5.0 they read ratings through `bld()`, offset by `BUILD_PAR`. How wide the gap between strong and poor staff should be has not been looked at.
-- **Manual staff placement at setup.** The owner expects to place staff by hand when founding a League (stage 1b-2 staffing screens).
 - **Everstone** now simply holds a Pokémon in its current form at every level.
 - **Legendary encounters** still set the legendary's level from the challengers' levels, which are now their next gym's level. It works, but was not looked at closely.
 - **Interim Champion** boards and profile lines are still in the interface but nothing creates an Interim Champion any more. Remove them when the records pages are next touched.
@@ -26,8 +25,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from the continuous world (0.4.0)
 - **Internal names still say season.** `S.season` is the year, and `seasonHist`, `titleSeasons`, `t.seasons`, `seasonAwards`, `legendOffseason`, `BAN_MAX_SEASONS` and friends all count years. Renaming them is safe but touches hundreds of lines; do it when a chat has room.
-- **Sims stop for any League.** `stopFor` pauses a sim for a title conceded or a vacant post in any League, because there is no player's League yet. Narrow it to the player's League with the staffing screens (1b-2).
-- **Provisional rules reviewed in 0.5.0** (design doc 4.1): all confirmed or changed except two. A vacant post is still filled at once, automatically, until the player can fill it (stage 1b-2, open item 11). Career length should vary more, by factors such as age and ratings (owner, Nov 13): stage 2.
+- **Career length** should vary more, by factors such as age and ratings (owner, Nov 13): stage 2.
 - **The field is older and larger since 0.5.0** (give-up after three years, at 0.2): about 50 to 75 a League. The sim check's alarm moved from 80 to 120. Watch save size and speed with several Leagues.
 - **The year in review shows last year only** and no week-by-week story. The full report is stage 1b-2.
 - **Gym battles still can't be watched**, and only the last eight title battles of a year are kept.
@@ -37,3 +35,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
+
+## Left over from founding by hand (0.6.0)
+- **Balance not measured.** The founding field is larger (36), unplaced founding candidates (strong trainers) join the circuit, gym trainers come from the circuit's best, and staff rarely leave now. None of it has been through the wall report (the owner: balance waits). The report founds Leagues automatically; a hand-placed line was offered and declined for now.
+- **Old staff in rival Leagues.** Staff step down only after 10+ years in posts and past their career length, and nobody replaces poor staff yet, so rival Leagues will keep ageing staff whose ratings fall. Replacing staff is stage 2 (the player's decisions; AI Leagues need their own rule).
+- **An acting leader fights under their own type.** They share at least one type with the leader who left, but a dual-type gym can narrow to one type, and the remaining gym trainer may share no type with the acting leader while acting.
+- **Vacancy outsiders are role `prospect`** until the post is filled (then the unpicked join the circuit). A save with an open vacancy carries them.
+- **Promotion is partial.** A vacancy can be filled by any of your gym trainers, but not by a Gym Leader moving to the Elite Four (that would open a second vacancy). Promotion and competition for seats are stage 2.
+- **The founding screen shows ratings, not teams.** A candidate's Pokémon are rebuilt for the post anyway; the profile card can't open during founding.
+- **The multi-year sim fills your vacancies for you** (best candidate) because nobody is there to choose.

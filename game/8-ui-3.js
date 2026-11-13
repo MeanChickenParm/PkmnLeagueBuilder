@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 6, ver: '0.6.0', date: 'November 13, 2026', time: '5:45 PM ET', title: 'Found your League by hand', items: [
+    "You now found your League yourself. After choosing a region you place its Champion, four Elite Four members and eight Gym Leaders. You can pick from about 40 candidates the game finds (with a few stars and a handful of famous trainers among them) and from the founding field. Each trainer shows their type, age, OVR and all five ratings, and a type that another post already holds is flagged. Repeats are allowed.",
+    "A gym's type is still its leader's class. Each gym takes on two gym trainers from the circuit, the best challengers who share a type with the leader, and the game makes one only when nobody fits. Anyone you don't place sets out as a challenger. The founding field is larger (36 instead of 24), so the circuit stays full.",
+    "Fill the rest for me places the best available trainer in every empty post, preferring types that aren't taken yet. Your choices are saved as you go, and Back to setup starts again.",
+    "Staff now step down only after a long career: once they are past their career length and have held posts for at least ten years. They announce it a year ahead with a news item, a stop and a Steps down tag, and they leave on their next birthday.",
+    "When a Gym Leader or Elite Four member leaves your League, the post waits for you. Until you choose, the gym's stronger gym trainer is acting leader (the gym runs one gym trainer short), or a stand-in holds the Elite Four seat. The Champion's seat is never empty: the strongest Elite Four member moves up, and their seat is the one that waits.",
+    "To fill a post, choose from everyone on the circuit, your own gym trainers and two outsiders, or press Fill it for me. Open posts and coming departures are listed at the top of the circuit and gym pages. Rival Leagues still fill their posts at once, and the multi-year sim fills yours for you.",
+    "The sim now stops only for your own League (and for New Year).",
+  ] },
   { id: 5, ver: '0.5.0', date: 'November 13, 2026', time: '4:30 PM ET', title: 'The wall, tuned', items: [
     "The wall is tuned. Every League's staff now build their teams as a trainer 45 rating points weaker would have before. Scouting, Strategy and Training still decide how good a team is, and the gap between strong and poor staff is unchanged, but no League is close to unbeatable any more. Even a League with excellent staff should expect to let a few trainers through each year, and a perfect year is now a rare feat.",
     "The Elite Four and Champion are still one run: a single loss ends it. Only an excellent challenger gets through all five battles.",
@@ -203,7 +212,9 @@ function render() {
   const app = $('#app');
   if (S) fixView();
   if (!S) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">New world</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button><button class="btn ghost" data-act="updates">Updates${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div></div></header>` + embedNote() + (view === 'updates' ? `<main class="wrap" id="main">${viewUpdates()}</main>` : viewSetup()); if (view === 'updates') applyFolds(app, 'updates'); return; }
+  if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
+  if (view === 'hire') useLeague(0);
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -215,6 +226,7 @@ function render() {
   if (view === 'trainers') v = viewTrainers();
   if (view === 'recap') v = viewRecap();
   if (view === 'god') v = viewGod();
+  if (view === 'hire') v = viewHire();
   if (view === 'updates') v = viewUpdates();
   app.innerHTML = header() + nav() + embedNote() + `<main class="wrap" id="main">${lgBar()}${v}</main><div id="toast" class="toast" role="status" hidden></div>`;
   applyFolds(app, foldScope());
@@ -258,7 +270,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -359,7 +371,18 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Year 1 is underway.`); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
+    case 'foundshow': foundShow = el.dataset.v; render(); break;
+    case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
+    case 'foundclear': foundPlace(el.dataset.k, +el.dataset.v, null); foundSel = { post: el.dataset.k, slot: +el.dataset.v }; save(); render(); break;
+    case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
+    case 'foundgo': finishFounding(); view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Year 1 is underway.`); break;
+    case 'foundquit': saveSeq++; S = null; view = 'circuit'; foundSel = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} render(); break;
+    case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
+    case 'hirefit': hireFit = !hireFit; render(); break;
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v); if (v && fillVacancy(v, +el.dataset.id)) { save(); go('gyms'); toast(`${dn(T(+el.dataset.id))} takes the post: ${name}.`); } break; }
+    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v); if (v && autoFillVacancy(v)) { save(); go('gyms'); toast(`${name} is filled.`); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;
     case 'profile': modal = { kind: 'profile', id: +el.dataset.id, back: recBack() }; renderModal(); break;
