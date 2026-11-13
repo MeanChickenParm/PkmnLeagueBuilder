@@ -73,7 +73,7 @@ function legendDepartures() {
       farewell(t, m, `moved on after ${seasons} season${seasons === 1 ? '' : 's'}`);
       t.team = t.team.filter(x => x !== m);
       inLeague(homeLeague(t), () => news(`${m.sp} moved on from ${dn(t)} after ${seasons} season${seasons === 1 ? '' : 's'} together. It will wait in the ${leagueName(m.lgHome ?? (S.lg || 0))} for a new partner.`, 'title', t.id));
-      if (['leader', 'e4', 'champion'].includes(t.role)) inLeague(lgOf(t), () => backfillElite(t, m));
+      if (STAFF_ROLES.includes(t.role)) inLeague(lgOf(t), () => backfillElite(t, m));
     }
   }
 }
@@ -120,7 +120,6 @@ function backfillElite(t, gone) {
 }
 
 // ================= SEASON =================
-function gymAceLevel(i) { const t = T(S.gyms[i].leader); return Math.max(...t.team.map(m => m.lvl)); }
 function challengers() { return S.challengers.map(T); }
 
 const SHINY_CHANCE = 0.004; // per wild Pokémon offered
@@ -320,36 +319,14 @@ function aiActionBase(t) {
     const time = t.badges.length >= 8 || SEASON_WEEKS - S.week > 8 - t.badges.length + 2;
     if (fits && time && rand() < 0.55) return 'explore';
   }
-  if (t.role === 'champion') return t.team.length < 6 || rand() < 0.2 ? 'explore' : 'train';
-  const b = t.badges.length, weeksLeft = SEASON_WEEKS - S.week, need = 8 - b;
-  const n = t.team.length;
+  // with no levels to gain, a season is spent building a roster and taking on the gyms: a challenger wants at
+  // least as many Pokémon as the next gym's leader fields, and keeps looking for more now and then
+  const b = t.badges.length, n = t.team.length;
   if (b >= 8) return n < 6 && rand() < 0.6 ? 'explore' : 'train';
-  if (weeksLeft <= need + 1) return 'challenge';
-  // build the roster first: trainers want five or six Pokémon before the later gyms
-  if (n < 4 && rand() < 0.85) return 'explore';
-  if (n < 5 && b >= 2 && rand() < 0.7) return 'explore';
-  const conf = topAvg(t, 3) - gymAceLevel(b) + (t.r.str - 50) / 18 + (rand() * 4 - 2);
-  if (conf >= -2.5) return 'challenge';
-  return n < 6 && rand() < 0.5 ? 'explore' : 'train';
-}
-// every level gain is scaled by this (balance carried over from the source game; to be retuned for the wall)
-const GROWTH_PACE = 0.9;
-function gainLevels(t, amt) {
-  const evos = [];
-  const capOf = m => t.role === 'champion' ? (m.cap || champLv() + 2) : 100;
-  amt *= GROWTH_PACE;
-  const top = Math.max(...t.team.map(m => m.lvl));
-  for (const m of t.team) {
-    // newer, lower-level Pokémon catch up faster (shared experience)
-    const mult = m.lvl < top - PACE.catchUpGap ? PACE.catchUpMult : 1;
-    const before = Math.floor(m.lvl);
-    const a = amt * monGrowth(m) * temperGrowth(m, t.team);
-    m.lvl = Math.min(capOf(m), mult > 1 ? Math.min(top, m.lvl + a * mult) : m.lvl + a);
-    ensureMon(m);
-    for (const e of evolveMon(m, t.specialty)) evos.push(e);
-    for (const [n, old] of refreshMoves(m)) (t.learned = t.learned || []).push([m.sp, n, old]);
-  }
-  return evos;
+  if (SEASON_WEEKS - S.week <= 8 - b) return 'challenge';
+  if (n < Math.min(6, GYM_SIZE[b]) && rand() < 0.85) return 'explore';
+  if (n < 6 && rand() < 0.25) return 'explore';
+  return rand() < 0.1 ? 'train' : 'challenge';
 }
 // ================= SEASON AWARDS =================
 // Handed out when the League ends. Trainers and Pokémon keep them (t.awards, m.awards), and each season's winners
@@ -587,7 +564,6 @@ function awardLegend(t, sp, why, force) {
 // trainer it has left); not when gyms can't wait; not when they're too far behind the leader to catch up
 // a legendary attempt is worth more experience than a lost gym battle, and more the more damage it did: about a third
 // of the way from a loss to a training week for a typical attempt, up to most of a training week for a full defeat
-const legendXp = (t, dealt) => PACE.loss + Math.max(0, trainGain(t) - PACE.loss) * (0.35 + 0.5 * clamp(dealt, 0, 1));
 function wantsLegend(t) {
   const L = legendState(S.legend); if (!L || S.phase !== 'season' || t.role !== 'challenger' || legendBlocked(t, L.sp) || legendFull(t)) return false;
   const need = 8 - t.badges.length, weeksLeft = SEASON_WEEKS - S.week;
@@ -649,7 +625,7 @@ function glitchWeek() {
     farewell(t, m, `glitched away mid-season`);
     t.team = t.team.filter(x => x !== m);
     news(`${dn(t)}'s Missingno flickered, broke apart into static and was gone, partway through its ${seasons === 1 ? 'first' : glitchOrd(seasons)} season with them.`, 'title', t.id);
-    if (['leader', 'e4', 'champion'].includes(t.role)) backfillElite(t, m);
+    if (STAFF_ROLES.includes(t.role)) backfillElite(t, m);
   }
   if (S.week + 1 < 3 || S.week + 1 > 20 || !greatFree('Missingno') || rand() >= GLITCH_CHANCE) return;
   const pool = challengers().filter(t => t.team.length && !legendBlocked(t, 'Missingno') && !legendFull(t));
@@ -956,7 +932,7 @@ const lgShort = i => leagueName(i).replace(' League', '');
 // trainers on this League's circuit and in its posts
 function leagueTrainers() { return Object.values(S.trainers).filter(inLg); }
 // put every trainer the bound League holds on its books
-function stampLeague() { for (const id of [...S.challengers, ...S.e4, S.champion, ...S.gyms.map(g => g.leader)]) { const t = T(id); if (t) t.lg = S.lg || 0; } }
+function stampLeague() { for (const id of [...S.challengers, ...staffIds()]) { const t = T(id); if (t) t.lg = S.lg || 0; } }
 // how many challengers a League's circuit holds
 const CIRCUIT_SIZE = 24;
 const START_TEAM = 3; // Pokémon a challenger may register at the start of a season
@@ -964,6 +940,7 @@ const START_TEAM = 3; // Pokémon a challenger may register at the start of a se
 function postPlace(t, role) {
   if (role === 'leader') { const i = S.gyms.findIndex(g => g.leader === t.id); return i >= 0 ? `${townName(i)} Gym` : 'Gym'; }
   if (role === 'e4') { const i = S.e4.indexOf(t.id); return i >= 0 ? `Elite Four #${i + 1}` : 'Elite Four'; }
+  if (role === 'gymtrainer') { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return i >= 0 ? `${townName(i)} Gym (gym trainer)` : 'Gym trainer'; }
   return 'Champion';
 }
 const curSeason = () => S.phase === 'season' || S.phase === 'league' ? S.season : S.season + 1;
@@ -974,7 +951,7 @@ function trainerPoints(t, L) {
   let p = t.badges ? t.badges.length : 0;
   if (L) {
     const e = L.entries.find(x => x.id === t.id);
-    if (e) p += 3 + Math.min(4, e.stage) * 2 + (e.stage === 5 ? (e.interim ? 5 : 10) : 0);
+    if (e) p += 3 + Math.min(4, e.stage) * 2 + (e.stage === 5 ? 10 : 0);
   }
   return p;
 }
@@ -982,29 +959,10 @@ function trainerPoints(t, L) {
 function doAction(t, act) {
   if (act === 'seek' && (t.role !== 'challenger' || !S.legend || legendBlocked(t, S.legend.sp))) act = 'train';
   const entry = { wk: S.week + 1, act };
-  const lvBefore = new Map(t.team.map(m => [m.uid, m.lvl]));
-  let evos = [];
   if (act === 'seek') {
     legendBattle(t, entry);
-    evos = gainLevels(t, entry.legend ? legendXp(t, entry.legend.dealt / 100) : PACE.loss);
   } else if (act === 'challenge' && t.role === 'challenger' && t.badges.length < 8) {
-    const g = t.badges.length, gym = S.gyms[g], leader = T(gym.leader);
-    const autoItems = itemsOn();
-    if (autoItems) autoEquip(t, leader); // items picked for this gym
-    const res = battle(t, leader, 'gym', `${townName(g)} Gym · Badge ${g + 1}`);
-    if (autoItems) autoEquip(t); // back to the everyday set (Lucky Egg and the like)
-    entry.gym = g; entry.won = res.winner === 0; entry.opp = leader.id;
-    if (entry.won) {
-      t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
-      gymLost(g, t);
-      if (t.badges.length === 8) { t.badgeWeek = S.week + 1; earnMega(t); }
-      gymItemOffer(t, g, leader);
-      evos = gainLevels(t, PACE.win);
-    } else {
-      t.career.gymL++; gym.w++; gym.streak = 0;
-      evos = gainLevels(t, PACE.loss);
-    }
-    entry.left = res.sides[0].left;
+    gymTry(t, entry);
   } else if (act === 'explore') {
     const m = aiCatch(t);
     const ob = activeOutbreak();
@@ -1017,21 +975,46 @@ function doAction(t, act) {
     { const found = exploreFind(t); if (found) entry.found = found; }
     // the wormhole closes once its trainer has explored there, caught or not
     if (S.wormhole && S.wormhole.id === t.id) { const w = S.wormhole; S.wormhole = null; if (!m || m.sp !== w.sp) catchNews(`${w.sp} slipped back through the Ultra Wormhole before ${t.name} could catch it.`, 'circuit', t.id); }
-    evos = gainLevels(t, PACE.explore);
   } else {
     entry.act = 'train';
     for (const m of t.team) m.fr = Math.min(255, (m.fr ?? 70) + Math.round((1 + Math.round(t.r.bnd / 50)) * temperFr(m)));
-    evos = gainLevels(t, trainGain(t));
   }
-  evos = evos.concat(gainLevels(t, PACE.travel));
-  entry.learned = (t.learned || []).map(([sp, n, old]) => `${sp}: ${n}${old ? ` (replaced ${old})` : ''}`);
-  t.learned = [];
-  entry.evos = evos.length;
-  entry.evoNames = evos.map(([a, b]) => a + ' → ' + b);
-  const kept = t.team.filter(m => lvBefore.has(m.uid));
-  entry.gain = kept.length ? Math.round(kept.reduce((a, m) => a + m.lvl - lvBefore.get(m.uid), 0) / kept.length * 10) / 10 : 0;
+  // the whole team stands at the level of the trainer's next battle (new catches and new badges included)
+  if (t.role === 'challenger') setTeamLevel(t, challengerLevel(t));
+  entry.learned = []; t.learned = [];
   t.weekLog.push(entry);
   return entry;
+}
+// One try at a gym: the gym trainers still standing, then the leader, healed between battles, every battle at the
+// gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the season's three tries
+// at this gym; the third loss ends the challenger's season.
+function gymTry(t, entry) {
+  const g = t.badges.length, gym = S.gyms[g], lvl = GYM_LV[g];
+  const line = (gym.trainers || []).map(T).filter(Boolean).concat([T(gym.leader)]);
+  setTeamLevel(t, lvl);
+  entry.gym = g; entry.won = true; entry.tryNo = (t.gymTries || 0) + 1;
+  for (let k = Math.min(t.gymStage || 0, line.length - 1); k < line.length; k++) {
+    const foe = line[k], isLeader = k === line.length - 1;
+    const autoItems = itemsOn();
+    if (autoItems) autoEquip(t, foe); // items picked for this battle
+    const res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`);
+    if (autoItems) autoEquip(t);
+    entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
+    if (res.winner !== 0) {
+      entry.won = false;
+      t.career.gymL++; gym.w++; gym.streak = 0;
+      if (isLeader) gym.lw = (gym.lw || 0) + 1; else foe.career.gymW = (foe.career.gymW || 0) + 1;
+      t.gymTries = (t.gymTries || 0) + 1;
+      if (t.gymTries >= GYM_TRIES) { t.out = S.week + 1; entry.out = true; news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their season is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); }
+      return;
+    }
+    if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; }
+  }
+  t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
+  t.gymStage = 0; t.gymTries = 0;
+  gymLost(g, t);
+  if (t.badges.length === 8) { t.badgeWeek = S.week + 1; earnMega(t); }
+  gymItemOffer(t, g, T(gym.leader));
 }
 function simWeek() {
   eachLeague(leagueWeek);
@@ -1045,7 +1028,7 @@ function simWeek() {
 }
 // one League's week
 function leagueWeek() {
-  for (const id of shuffle(S.challengers)) { const t = T(id); doAction(t, aiAction(t)); }
+  for (const id of shuffle(S.challengers)) { const t = T(id); if (!t.out) doAction(t, aiAction(t)); }
   roadBattles();
   checkBonds();
   legendWeek();
@@ -1110,15 +1093,19 @@ function leagueFinals() {
   if (S.storm) settleStorm(true);
   if (S.roamer) { news(`The season is over, and ${S.roamer.sp} has left the region.`, 'title'); logSky(`${S.roamer.sp} left the region uncaught`); S.roamer = null; }
   settleMegaStones();
-  const L = { entries: [], logs: [], startChamp: S.champion, dethroned: [] };
+  // every battle of the League is at a set level for both sides, six against (up to) six. One run each: a loss
+  // to anyone ends it. The Champion keeps the seat whatever happens; every challenger who beats them is credited
+  // with a title, and each one is a title conceded by the League.
+  const L = { entries: [], logs: [], startChamp: S.champion, conceded: [] };
   for (const q of qs) {
     q.career.leagueApps++;
     const e = { id: q.id, stage: 0, lostTo: null };
     let ok = true;
     for (let i = 0; i < 4; i++) {
       const foe = T(S.e4[i]);
+      setTeamLevel(q, E4_LV[i]);
       if (itemsOn()) autoEquip(q, foe);
-      const r = battle(q, foe, 'league', `Elite Four · ${dn(foe)}`);
+      const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`);
       if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
     }
     if (ok) e.stage = 4; // through the Elite Four: a title match to come
@@ -1132,89 +1119,41 @@ function leagueFinals() {
   L.titleOrder = finalists.map(f => ({ id: f.q.id, w: f.r.w, l: f.r.l }));
   for (const { e, q } of finalists) {
     const champ = T(S.champion);
+    setTeamLevel(q, champLv());
     if (itemsOn()) autoEquip(q, champ);
-    const r = battle(q, champ, 'title', `Championship · ${dn(champ)}`);
+    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`);
     L.logs.push(r);
     if (r.winner === 0) {
       e.stage = 5;
-      news(`${dn(q)} defeated ${dn(champ)} and is the new Champion of the ${S.lgName}!`, 'title', q.id);
-      champ.role = 'exchamp'; champ.dethronedBy = q.id;
-      S.challengers = S.challengers.filter(x => x !== q.id);
       q.career.titles++;
       (q.titleSeasons = q.titleSeasons || []).push(S.season); (q.titleLgs = q.titleLgs || []).push(S.lg || 0); (q.titleAges = q.titleAges || []).push({ season: S.season, age: q.age });
-      installElite(q, 'champion');
-      L.dethroned.push(champ.id);
-      (L.titleWins = L.titleWins || []).push({ id: q.id, beat: champ.id, beatName: champ.name, asName: `${q.cls} ${q.name}` });
+      champ.career.conceded = (champ.career.conceded || 0) + 1;
+      L.conceded.push(q.id);
+      news(`${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the Champion's seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this season.`, 'title', q.id);
     } else {
       e.stage = 4; e.lostTo = champ.id; champ.career.defenses++;
       news(`${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id);
     }
   }
-  // nobody reached the Champion: an unbeaten Elite Four member (at least one League win, no losses) gets the title shot
-  if (!L.entries.some(e => e.stage >= 4)) eliteChallenge(L);
-  else if (!qs.length) news('Nobody completed the badge circuit, so the Champion kept the title by default.', 'title');
-  settleInterimChampions(L);
+  if (!qs.length) news('Nobody completed the badge circuit.', 'title');
   // a deep League run (reaching the last Elite Four member or further) earns a rare item
   if (itemsOn()) for (const e of L.entries) {
     const q = T(e.id); if (!q || e.stage < 3 || q.role !== 'challenger') continue;
     let k = rollItem(3); for (let i = 0; i < 20 && ITEMS[k].tier < 2; i++) k = rollItem(3);
     bagAdd(q, k); autoEquip(q);
   }
+  for (const q of qs) setTeamLevel(q, E4_LV[0]);
+  // the season's wall report: how far the best challenger got (0 to 8 badges, 9 to 12 for each Elite Four member
+  // beaten, 13 for beating the Champion), badges conceded, titles conceded
+  const depth = t => { const e = L.entries.find(x => x.id === t.id); return t.badges.length + (e ? e.stage : 0); };
+  const best = challengers().slice().sort((a, b) => depth(b) - depth(a) || (a.badgeWeek ?? 99) - (b.badgeWeek ?? 99))[0];
+  L.report = { badges: S.gyms.reduce((a, g) => a + g.l, 0), titles: L.conceded.length, best: best ? depth(best) : 0, bestId: best ? best.id : null, out: challengers().filter(t => t.out).length, field: S.challengers.length };
+  news(L.report.titles ? `Season ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Season ${S.season} wall report: a perfect season! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
   S.league = L;
 }
+// how far a challenger got, in words (see L.report.best)
+function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <= 12 ? `beat ${d - 8} of the Elite Four` : 'won the title'; }
 
-// a title only counts if the trainer still holds it when the League ends. Anyone who won it and then lost it
-// in the same League is an Interim Champion for that season instead.
-function settleInterimChampions(L) {
-  for (const w of L.titleWins || []) {
-    const t = T(w.id);
-    if (w.id === S.champion) continue;
-    const lostTo = L.titleWins.find(x => x.beat === w.id);
-    t.career.titles = Math.max(0, t.career.titles - 1);
-    { const keep = (t.titleSeasons || []).map((s, i) => s !== S.season); t.titleLgs = (t.titleLgs || []).filter((_, i) => keep[i] !== false); t.titleSeasons = (t.titleSeasons || []).filter((_, i) => keep[i]); }
-    t.titleAges = (t.titleAges || []).filter(x => x.season !== S.season);
-    const by = lostTo ? T(lostTo.id) : T(S.champion);
-    (t.interim = t.interim || []).push({ season: S.season, lg: S.lg || 0, beat: w.beat, beatName: w.beatName, lostTo: by.id, lostToName: lostTo ? lostTo.asName : dn(by) });
-    const p = (t.posts || []).slice().reverse().find(x => x.role === 'champion'); if (p) p.interim = true;
-    const e = L.entries.find(x => x.id === w.id); if (e) e.interim = true;
-    news(`${t.name}'s reign was short: they took the title from ${T(w.beat).name} but lost it to ${T(lostTo ? lostTo.id : S.champion).name} in the same League. They go down as Interim Champion for Season ${S.season}.`, 'title', t.id);
-  }
-}
-function eliteChallenge(L) {
-  const rec = S.e4.map((id, i) => ({ id, i, w: L.entries.filter(e => e.lostTo === id).length, l: L.entries.filter(e => e.stage > i).length }));
-  const best = rec.filter(r => r.w > 0 && r.l === 0).sort((a, b) => b.w - a.w || b.i - a.i)[0];
-  if (!best) { news(L.entries.length ? 'No challenger reached the Champion, and no Elite Four member went unbeaten, so the Champion kept the title.' : 'Nobody completed the badge circuit, so the Champion kept the title by default.', 'title'); return; }
-  const m = T(best.id), c = T(S.champion), seat = best.i;
-  news(`No challenger reached the Champion. ${dn(m)} went unbeaten (${best.w}–0) and earned a shot at the title. Both teams fight at the same level, six Pokémon each.`, 'title', m.id);
-  // for the challenge the League lends a short team Pokémon of the member's type until they have six; they keep
-  // them only if they win (a Champion fields six), otherwise they go back to the League after the battle
-  const lent = [];
-  if (m.team.length < 6) {
-    const lines = new Set(m.team.map(x => LINE[x.sp])), L0 = Math.max(...m.team.map(x => Math.floor(x.lvl)));
-    for (const x of buildEliteTeam(m.specialty, L0, 6 - m.team.length + 4, !m.specialty)) { if (m.team.length >= 6) break; if (lines.has(LINE[x.sp])) continue; lines.add(LINE[x.sp]); stamp(x, 'assigned'); m.team.push(x); lent.push(x); }
-  }
-  const r = battle(m, c, 'title', `Elite Four title challenge · ${dn(c)} · equal level`, { equal: true });
-  r.eliteChallenge = true; L.logs.push(r); L.e4Shot = { id: m.id, seat, won: r.winner === 0 };
-  if (r.winner !== 0) m.team = m.team.filter(x => !lent.includes(x));
-  if (r.winner !== 0) {
-    c.career.defenses++;
-    news(`${dn(c)} turned back ${dn(m)}'s challenge and kept the title.`, 'title', c.id);
-    return;
-  }
-  const mName = dn(m), cName = dn(c);
-  m.career.titles++; (m.titleSeasons = m.titleSeasons || []).push(S.season); (m.titleLgs = m.titleLgs || []).push(S.lg || 0); (m.titleAges = m.titleAges || []).push({ season: S.season, age: m.age });
-  c.dethronedBy = m.id;
-  S.e4[seat] = null;
-  installElite(m, 'champion');
-  if (retiresOnLosingPost(c)) {
-    c.role = 'exchamp'; retire(c, 'after losing the title to their own Elite Four');
-    const nt = outsiderE4(seat);
-    news(`${mName} defeated ${cName} and is the new Champion! ${c.name} retired, and ${nt.name} (${nt.specialty}) fills Elite Four seat #${seat + 1}.`, 'title', m.id);
-  } else {
-    installElite(c, 'e4', seat);
-    news(`${mName} defeated ${cName} and is the new Champion! ${c.name} takes their place in Elite Four seat #${seat + 1}.`, 'title', m.id);
-  }
-}
 // a new Elite Four member from outside the circuit (sometimes a famous trainer)
 function outsiderE4(i) {
   const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
@@ -1325,7 +1264,8 @@ function retireOrReturn(t, why) {
 // candidate challenges the member in E4 seat `slot`; returns true if the candidate takes the seat
 function seatChallenge(cand, slot, changes, how) {
   const inc = T(S.e4[slot]);
-  const res = battle(cand, inc, 'league', `Elite Four seat challenge · ${dn(inc)}`);
+  setTeamLevel(cand, E4_LV[slot]);
+  const res = setBattle(cand, inc, E4_LV[slot], 'league', `Elite Four seat challenge · ${dn(inc)}`);
   res.seat = { slot, cand: cand.id, inc: inc.id };
   if (S.league) S.league.logs.push(res);
   if (res.winner === 0) {
@@ -1442,7 +1382,8 @@ function leagueOffseason(changes) {
   const meta = metaMons();
   buildBanBallot();
   S.history.push({
-    season: S.season, champ: S.champion, champWasNew: L.startChamp !== S.champion, prevChamp: L.startChamp,
+    season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
+    titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
     qualifiers: L.entries.length, metaMons: meta,
   });
@@ -1456,25 +1397,6 @@ function leagueOffseason(changes) {
   { const aw = seasonAwards(L); S.history[S.history.length - 1].awards = aw;
     if (aw.length) news(`Season ${S.season} awards: ${aw.map(a => `${AWARDS[a.k].name}, ${a.sp ? a.name + "'s " + a.sp : a.name}`).join('; ')}.`, 'title');
     legendOffseason(L, aw); }
-
-  // --- dethroned champions: the weaker ones go back to the circuit; the others challenge for an Elite Four seat
-  for (const id of L.dethroned) {
-    const c = T(id);
-    if (retiresOnLosingPost(c)) {
-      retire(c, 'after losing the championship');
-      changes.push(`Former Champion ${c.name} retired after losing the title.`);
-    } else if (ovr(c) < 62) {
-      closePost(c); c.role = 'challenger'; c.lg = S.lg || 0; if (!S.challengers.includes(c.id)) S.challengers.push(c.id);
-      changes.push(`${dn(c)} lost the crown and returns to the circuit.`);
-      news(changes[changes.length - 1], 'move', c.id);
-    } else {
-      if (!seatChallenge(c, weakestSeat(), changes, ', the former Champion,')) {
-        retireOrReturn(c, 'lost the title and then a seat challenge');
-        changes.push(`Former Champion ${c.name} returns to the badge circuit.`);
-      }
-    }
-    if (c.role === 'challenger') (S.slamReturn = S.slamReturn || []).push(c.id);
-  }
 
   // --- gym leaders
   // gyms ranked by how often they held this season (rotation changes each gym's difficulty, so it's relative)
@@ -1531,6 +1453,12 @@ function leagueOffseason(changes) {
     news(changes[changes.length - 1], 'move', nl.id);
   });
 
+  // --- gym trainers: the old retire, and every gym is brought back to two trainers of its leader's type
+  S.gyms.forEach((g, i) => {
+    for (const id of g.trainers || []) { const t = T(id); if (t && t.role === 'gymtrainer' && rand() < ageRetireChance(t)) { g.trainers[g.trainers.indexOf(id)] = null; retire(t, `from ${townName(i)} Gym`); } }
+    staffGym(i);
+  });
+
   // --- elite four turnover
   if (deepest && deepest.stage >= 3) {
     const r = T(deepest.id);
@@ -1539,6 +1467,18 @@ function leagueOffseason(changes) {
     if (r && r.role === 'challenger' && (ovr(r) > ovr(weak) + 2 || weak.age >= 50)) seatChallenge(r, wi, changes, ' (a deep League run)');
   }
   S.e4.forEach(id => { const t = T(id); if (t.role === 'e4' && rand() < ageRetireChance(t)) { const i = S.e4.indexOf(id); retire(t, 'from the Elite Four'); const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some(x => x !== id && T(x) && T(x).specialty === f.spec)) : []; const nt = fam.length ? makeFamous(pick(fam), 'e4', 66, E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: 66, role: 'e4' }); installElite(nt, 'e4', i); changes.push(`${t.name} stepped down; ${nt.name} (${nt.specialty}) joins the Elite Four.`); } });
+
+  // --- the Champion only leaves by retiring with age. For now the strongest Elite Four member moves up
+  // automatically and an outsider takes their seat (promotion becomes the player's decision in stage 2).
+  { const c = T(S.champion);
+    if (rand() < ageRetireChance(c)) {
+      const seat = S.e4.map((id, i) => i).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0], m = T(S.e4[seat]);
+      c.role = 'exchamp'; retire(c, `as Champion of the ${S.lgName}`);
+      S.e4[seat] = null; installElite(m, 'champion');
+      const nt = outsiderE4(seat);
+      changes.push(`Champion ${c.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${nt.specialty}) fills Elite Four seat #${seat + 1}.`);
+      news(changes[changes.length - 1], 'title', m.id);
+    } }
 
   // --- meta shift: elite trainers with nothing that hits one of the season's top Pokémon hard add a counter for it
   if (meta.length) {

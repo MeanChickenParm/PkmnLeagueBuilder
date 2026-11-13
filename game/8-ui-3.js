@@ -1,5 +1,19 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 2, ver: '0.2.0', date: 'November 12, 2026', time: '9:45 PM ET', title: 'The wall: set levels, three tries and gym trainers', items: [
+    "Every battle on the circuit is now fought at a set level for both sides: gyms at 16, 24, 32, 41, 51, 61, 70 and 77, the Elite Four at 81, 84, 87 and 89, and the Champion at 96. Nobody can out-level a gym any more, so gym 1 can be a wall too.",
+    "Challengers' Pokémon no longer have levels of their own. Each one takes the form and moves it would have at the level of its trainer's next battle, so a trainer with a Charizard meets gym 1 with a Charmander. Challengers spend the season building a team and taking on the gyms. The Lucky Egg is gone, since there are no levels to gain.",
+    "A challenger fields as many Pokémon as the trainer in front of them, picked for the matchup. A higher Strategy rating picks better.",
+    "Gym teams are bigger at the early gyms: 3, 3, 4, 4, 5, 5, 6 and 6 Pokémon. Every Elite Four member now fields six.",
+    "Every gym has two gym trainers of the leader's type, each with one Pokémon fewer than the leader. A challenger must beat both, then the leader, and is healed between battles. A gym trainer already beaten stays beaten. Gym trainers are placed automatically for now.",
+    "Three tries per gym. A loss to a gym trainer or the leader costs one, and a third loss at the same gym ends that challenger's season. The circuit page shows each challenger's tries left, or the week they went out.",
+    "Your Champion keeps the seat when beaten. The winner is credited with a title and stays a challenger, and the League records a title conceded. If several challengers beat the Champion in one season, each win counts.",
+    "The Champion now leaves only by retiring with age; the strongest Elite Four member moves up, automatically for now. The Elite Four title shot and the Interim Champion rule are gone.",
+    "Gym rotation is removed: leaders and their gym trainers stay at their gym.",
+    "New wall report on the History page: perfect seasons (no title conceded) and the streak, and for each season the titles and badges conceded and how far the best challenger got. The Gyms page shows each gym's set level, its gym trainers and its record of tries turned back and badges conceded.",
+    "Saves from 0.1.0 can't be loaded, because the rules of the world changed. Start a new League.",
+    "Nothing is balanced yet. These rules are measured, not tuned; tuning comes with the next version.",
+  ] },
   { id: 1, ver: '0.1.0', date: 'November 12, 2026', time: '9:03 PM ET', title: 'The seed: a world that runs on its own', items: [
     "Pokémon League Builder starts here, seeded from Pokémon League GM 2.0.2. It has its own save, its own version numbers and this fresh changelog. The two games don't share saves.",
     "You don't run a League yet. For now the world runs itself: 24 challengers travel the badge circuit each season, and the Gym Leaders, the Elite Four and the Champion try to stop them. You pick the region, play or sim the seasons, and watch.",

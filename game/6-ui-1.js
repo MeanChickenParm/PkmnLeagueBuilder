@@ -168,10 +168,11 @@ const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type spec
 function ovrPill(t) { const o = ovr(t); const c = o >= 70 ? 'hi' : o >= 55 ? 'mid' : 'lo'; return `<span class="ovr ${c}">${o}</span>`; }
 function roleLabel(t) {
   const r = roleHere(t);
-  return nLeagues() > 1 && ['leader', 'e4', 'champion', 'challenger'].includes(t.role) ? `${r} · ${leagueName(lgOf(t))}` : r;
+  return nLeagues() > 1 && [...STAFF_ROLES, 'challenger'].includes(t.role) ? `${r} · ${leagueName(lgOf(t))}` : r;
 }
 function roleHere(t) {
   if (t.role === 'leader') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => g.leader === t.id); return `${townName(i)} Gym Leader`; });
+  if (t.role === 'gymtrainer') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return `${townName(i)} Gym trainer`; });
   return { challenger: 'Challenger', e4: 'Elite Four', champion: 'Champion', retired: 'Retired', exchamp: 'Former Champion', prospect: 'Newcomer', free: 'Free agent' }[t.role] || t.role;
 }
 function badgeRow(t, big) { return inLeague(lgOf(t), () => badgeRowHere(t, big)); }
@@ -494,7 +495,7 @@ function viewCustom() {
       <p class="muted small" id="cf-leadhint">To give the lead a few options, separate them with a slash: Pikachu / Pichu.</p>
       <p class="muted small">One of these is picked each time they debut. Fill in up to 6, or leave them empty to start with just the lead.</p>
       <div class="cf-grid six">${d.second.map((v, i) => `<input class="cf-in cf-second" value="${esc(v)}" list="cf-species" autocomplete="off" aria-label="Second Pokémon option ${i + 1}">`).join('')}</div>
-      <p class="muted small">Like the built-in famous trainers, they start with two Pokémon and build the rest of their team as they go. First-stage Pokémon evolve as they level up. Legendaries, mythicals, Paradox Pokémon and Ultra Beasts aren't allowed, and each Pokémon must come from a different evolution line.</p>
+      <p class="muted small">Like the built-in famous trainers, they start with two Pokémon and build the rest of their team as they go. Each Pokémon takes the form it would have at the level of its trainer's next battle. Legendaries, mythicals, Paradox Pokémon and Ultra Beasts aren't allowed, and each Pokémon must come from a different evolution line.</p>
       ${cfErrs.length ? `<ul class="warn cf-errs">${cfErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
       ${cfMsg ? `<p class="cf-msg">${esc(cfMsg)}</p>` : ''}
       <div class="confirm-row"><button class="btn primary" data-act="cfsave">${editing ? 'Save changes' : 'Add trainer'}</button><button class="btn" data-act="cfclear">${editing ? 'Cancel editing' : 'Clear form'}</button></div>
@@ -751,7 +752,7 @@ function careerExtras(t) {
 function profileBody(t, full) {
   const sh = t.seasonHist.slice().reverse();
   const c = t.career;
-  const elite = ['leader', 'e4', 'champion'].includes(t.role);
+  const elite = STAFF_ROLES.includes(t.role);
   return `<div class="profile">
     <section class="panel tcard"><div class="tcard-top">${trPortrait(t)}<div class="tcard-id"><div class="eyebrow">${t.famous ? '★ Famous trainer' + (famousTags(t).length ? ' (' + famousTags(t).map(k => FAMOUS_TAG_LABELS[k]).join(', ') + ')' : '') + ' · ' : ''}${roleLabel(t)} · Age ${t.age}${t.hof ? ' · Hall of Fame' : ''}</div>${cardName(t)}<div class="spec">${specLine(t)}<span class="muted"> · ${LEAD_STYLES[leadStyle(t)]}</span>${elite ? ` · formerly ${t.cls}` : ''}${traitChip(t)}</div>${rivalLine(t)}</div>
       <div class="tcard-ovr"><span>${ovr(t)}</span><small>OVR${t.role !== 'retired' ? ' · POT ' + t.pot : ''}</small></div></div>

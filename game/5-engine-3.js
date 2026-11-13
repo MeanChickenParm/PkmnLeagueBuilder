@@ -1159,7 +1159,7 @@ function enforceBans() {
     if (!out.length) continue;
     const top = Math.max(...t.team.map(m => m.lvl));
     for (const m of out) pullBanned(t, m);
-    if (['leader', 'e4', 'champion'].includes(t.role)) banReplace(t, out);
+    if (STAFF_ROLES.includes(t.role)) banReplace(t, out);
     else if (!t.team.length) {
       const o = wildOffers(t)[0];
       if (o) { const nm = stamp(makeMon(o.sp, Math.max(5, Math.floor(top) - 2)), 'caught'); t.team.push(nm); news(`With all of their Pokémon banned in the ${S.lgName}, ${dn(t)} caught ${nm.sp} to keep going.`, 'move', t.id); }
@@ -1192,7 +1192,7 @@ function banReplace(t, outs) {
   if (ins.length) news(`With ${outs.map(m => m.sp).join(' and ')} banned in the ${S.lgName}, the League gave ${dn(t)} ${ins.join(', ')}.`, 'move', t.id);
 }
 // Before each season every challenger registers at most three Pokémon: they keep their strongest.
-function bestThree(t) { const v = m => (isSpecial(m) ? 10000 : 0) + SP[m.sp].bst * (1 + (onSpec(t, m.sp) ? 0.1 : 0)); return t.team.slice().sort((a, b) => v(b) - v(a)).slice(0, START_TEAM).map(m => m.uid); }
+function bestThree(t) { const v = m => (isSpecial(m) ? 10000 : 0) + SP[m.top && SP[m.top] ? m.top : m.sp].bst * (1 + (onSpec(t, m.top && SP[m.top] ? m.top : m.sp) ? 0.1 : 0)); return t.team.slice().sort((a, b) => v(b) - v(a)).slice(0, START_TEAM).map(m => m.uid); }
 function applyRegistration(t, uids) {
   const keep = t.team.filter(m => uids.includes(m.uid)).slice(0, START_TEAM);
   if (!keep.length) return;
@@ -1204,19 +1204,17 @@ function startSeason() {
   S.season++; S.week = 0; S.phase = 'season'; S.dexSeason = {}; S.changes = null; S.progress = null; S.worlds = null;
   eachLeague(() => {
     S.league = null;
-    if (S.season > 1 && featOn('rotation')) rotateGyms();
     enforceBans();
     S.gyms.forEach(g => { g.w = 0; g.l = 0; g.streak = 0; g.foes = []; g.lastSwap = null; });
     for (const t of challengers()) {
       autoEquip(t);
-      t.badges = []; t.badgeWeek = null; t.weekLog = [];
+      t.badges = []; t.badgeWeek = null; t.weekLog = []; t.out = null; t.gymStage = 0; t.gymTries = 0;
       for (const m of t.team) m.form = (m.form || 0) * 0.3;
-      const base = 10 + Math.min(8, t.seasons * 2);
       if (t.team.length > START_TEAM) applyRegistration(t, bestThree(t));
-      t.team.forEach((m, i) => { m.lvl = base - (i === 0 ? 0 : 1); refreshMoves(m); });
+      setTeamLevel(t, GYM_LV[0]);
       t.seasons++;
     }
-    for (const id of [S.champion, ...S.e4, ...S.gyms.map(g => g.leader)]) { const t = T(id); t.weekLog = []; t.badges = []; t.seasons = (t.seasons || 0) + 1; relevelElite(t); }
+    for (const id of staffIds()) { const t = T(id); t.weekLog = []; t.badges = []; t.seasons = (t.seasons || 0) + 1; relevelElite(t); }
   });
   for (const id of S.freeAgents) { const t = T(id); if (t && t.role === 'free') t.seasons = (t.seasons || 0) + 1; }
   const circ = eachLeague(() => S.challengers.length);
@@ -1224,7 +1222,7 @@ function startSeason() {
 }
 
 function newWorld(cfg = {}) {
-  S = { version: 1, season: 0, week: 0, phase: 'offseason', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
+  S = { version: SAVE_VERSION, season: 0, week: 0, phase: 'offseason', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
   S.cfg = { leagues: [1, 2, 3, 4].includes(cfg.leagues) ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // v185: the league's Pokédex is fixed now, for good
@@ -1254,6 +1252,7 @@ function foundLeague() {
     S.gyms.push({ leader: null, city: cities[i].id, w: 0, l: 0, hist: [] });
     const t = newTrainer({ age: ri(22, 50), quality: 50 + i * 2.2, role: 'leader', specialty: types[i] });
     installElite(t, 'leader', i);
+    staffGym(i);
   }
   const e4t = types.slice(8, 12);
   for (let i = 0; i < 4; i++) {
@@ -1389,4 +1388,4 @@ function foundingField() {
   scheduleLeague();
 }
 
-if (typeof module !== 'undefined') module.exports = { godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startSeason, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, monGrowth, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, rotateGyms, fitGymTeam, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, simOneSeason, autoStep, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, temperGrowth, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, PACE, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, runLeague, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, nextSeason, newcomersArrive, fillCircuits, circuitValue, makeNewcomers, challengerLeagueMoves, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, toFreeAgent, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startSeason, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, simOneSeason, autoStep, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, runLeague, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, nextSeason, newcomersArrive, fillCircuits, circuitValue, makeNewcomers, challengerLeagueMoves, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, toFreeAgent, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
