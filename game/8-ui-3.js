@@ -1,5 +1,15 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 3, ver: '0.3.0', date: 'November 13, 2026', time: '9:50 AM ET', title: 'Gym types from the class, and staff who build their own teams', items: [
+    "A gym's type is now its leader's class. A dual-type leader keeps both types: a Rock/Flying leader leads a Rock/Flying gym. A leader with no type focus (an Ace Trainer or a Veteran) leads a gym with a mixed team.",
+    "Gym trainers follow the leader. In a typed gym each gym trainer shares at least one type with the leader and fields Pokémon of their own class's types, so a Rock/Flying gym can have a Rock/Fighting or a Flying/Fairy gym trainer. In an untyped gym they can be of any class. Gym trainers can now have a dual-type class too.",
+    "Staff build their own teams, and their ratings decide how well. Scouting sets how strong the Pokémon they can find. Strategy decides how well the team fits together (fewer shared weaknesses, answers to what beats their type) and how many of their Pokémon hold an item. Training raises each Pokémon: better IVs, and more often a nature that suits it and coverage moves that cover its weak spots. Bond and Nerve still act inside the battle.",
+    "Gym teams stay on their type. A leader on a losing streak, a ban replacement or a returning former Pokémon now always comes from the leader's own types, so a Fire gym can no longer end up with no Fire Pokémon.",
+    "The meta report still names the season's top Pokémon, but the Gym Leaders and Elite Four no longer swap in off-type counters for them. How a League answers the meta will be redesigned.",
+    "Staff now leave only by retiring with age. A leader is no longer replaced after three poor seasons, a leader no longer returns to the circuit after a long run of strong ones, and a challenger no longer takes an Elite Four seat after a deep League run. These come back later as your decisions.",
+    "Gym weather now comes from the gym: the first of its leader's types that brings weather sets it for every battle there, gym trainers included.",
+    "Not tuned yet. Strong staff now hold the wall far better than poor staff, and the wall is still too strong overall. Tuning waits for the next change to how the calendar works.",
+  ] },
   { id: 2, ver: '0.2.0', date: 'November 12, 2026', time: '9:45 PM ET', title: 'The wall: set levels, three tries and gym trainers', items: [
     "Every battle on the circuit is now fought at a set level for both sides: gyms at 16, 24, 32, 41, 51, 61, 70 and 77, the Elite Four at 81, 84, 87 and 89, and the Champion at 96. Nobody can out-level a gym any more, so gym 1 can be a wall too.",
     "Challengers' Pokémon no longer have levels of their own. Each one takes the form and moves it would have at the level of its trainer's next battle, so a trainer with a Charizard meets gym 1 with a Charmander. Challengers spend the season building a team and taking on the gyms. The Lucky Egg is gone, since there are no levels to gain.",

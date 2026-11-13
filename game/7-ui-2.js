@@ -24,12 +24,12 @@ function viewGyms() {
   const ch = T(S.champion);
   return `<section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">${ch.career.defenses} defenses · ${ch.career.conceded || 0} title${(ch.career.conceded || 0) === 1 ? '' : 's'} conceded · keeps the seat when beaten</span></div>${eliteCard(ch, `${S.lgName} Champion`)}</section>
   <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order, each at a set level for both sides (${E4_LV.join(', ')}; the Champion at ${champLv()})</span></div><div class="elite-grid">${S.e4.map((id, i) => eliteCard(T(id), `Elite Four #${i + 1} · ${T(id).career.e4Wins} career wins`)).join('')}</div></section>
-  <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">Every battle is at the gym's set level for both sides, and a challenger fields as many Pokémon as the trainer in front of them. They must beat both gym trainers, then the leader, and get ${GYM_TRIES} tries a season at each gym. Record is tries turned back–badges conceded this season. A season holding under 30% of 6+ tries is a poor season; three in a row and the League replaces the leader.</span></div><div class="elite-grid">${S.gyms.map((g, i) => g.leader ? eliteCard(T(g.leader), `Badge ${i + 1} · ${townName(i)} · Lv ${GYM_LV[i]}`, `${gymWeatherTag(T(g.leader))}${g.poorFor === g.leader && g.poor ? `<span class="tag notice" title="Three poor seasons in a row and the League replaces the leader">${g.poor} poor season${g.poor > 1 ? 's' : ''}</span>` : ''}<span class="rec">${g.w}–${g.l}</span>`, gymTrainerList(g, i)) : `<article class="elite"><div class="eyebrow">Badge ${i + 1} · ${townName(i)}</div><p class="muted">Vacant</p></article>`).join('')}</div></section>${banCard()}`;
+  <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">Every battle is at the gym's set level for both sides, and a challenger fields as many Pokémon as the trainer in front of them. They must beat both gym trainers, then the leader, and get ${GYM_TRIES} tries a season at each gym. Record is tries turned back–badges conceded this season. A gym's type is its leader's class; a leader with no type focus fields a mixed team. Staff build their own teams: Scouting finds stronger Pokémon, Strategy fits the team together, Training raises each Pokémon.</span></div><div class="elite-grid">${S.gyms.map((g, i) => g.leader ? eliteCard(T(g.leader), `Badge ${i + 1} · ${townName(i)} · Lv ${GYM_LV[i]}`, `${gymWeatherTag(T(g.leader))}<span class="rec">${g.w}–${g.l}</span>`, gymTrainerList(g, i)) : `<article class="elite"><div class="eyebrow">Badge ${i + 1} · ${townName(i)}</div><p class="muted">Vacant</p></article>`).join('')}</div></section>${banCard()}`;
 }
 function gymTrainerList(g, i) {
   const ts = (g.trainers || []).map(T).filter(Boolean);
   if (!ts.length) return '';
-  return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · ${GYM_SIZE[i] - 1} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${tname(t.id)} ${ovrPill(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>`;
+  return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · ${GYM_SIZE[i] - 1} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${tname(t.id)} ${specChips(t)} ${ovrPill(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>`;
 }
 // the wall report: the headline (perfect seasons and the streak) and each season's line
 function wallReport() {
@@ -713,7 +713,7 @@ const GLOSS_TERMS = {
     ['Badge circuit', 'The eight gyms challengers work through each season. Eight badges qualify a trainer for the League.'],
     ['Set level', `Every battle on the circuit is fought at a set level for both sides: gyms ${GYM_LV.join(', ')}, the Elite Four ${E4_LV.join(', ')}, the Champion ${CHAMP_LV}. Challengers' Pokémon have no levels of their own: each one takes the form and moves it would have at the level of its trainer's next battle, so nobody can out-level a gym.`],
     ['Who fights', "A challenger fields as many Pokémon as the trainer in front of them, picked for the matchup. A trainer with a higher Strategy rating picks better."],
-    ['Gym trainers', `Each gym has ${GYM_TRAINERS} gym trainers of the leader's type, each with one Pokémon fewer than the leader. A challenger must beat them, then the leader, and is healed between battles. A gym trainer already beaten stays beaten.`],
+    ['Gym trainers', `Each gym has ${GYM_TRAINERS} gym trainers, each with one Pokémon fewer than the leader. A typed leader's gym trainers share at least one type with them and field their own class's types; an untyped leader's can be of any class. A challenger must beat them, then the leader, and is healed between battles. A gym trainer already beaten stays beaten.`],
     ['Tries', `A challenger gets ${GYM_TRIES} tries at each gym in a season. A loss to a gym trainer or the leader costs one. A third loss at the same gym ends their season.`],
     ['Perfect season', 'A season in which no challenger beats your Champion. The wall report on the History page counts them, with badges conceded and how far the best challenger got.'],
     ['Elite Four', 'Four battles in a row at the League, then the Champion. One loss ends the run.'],
@@ -722,11 +722,10 @@ const GLOSS_TERMS = {
     ['Triple Crown', 'Champion of three different Leagues across a career. A trainer with titles in 2+ Leagues gets 3 extra seasons before age can retire them.'],
     ['Hall of Fame', 'Retired trainers who won a title.'],
     ['Hall of Shame', "Records nobody wants: worst win rates, longest losing streaks and the like."],
-    ['Meta', 'The five best-performing species of the season. Gyms and newcomers adapt to counter them.'],
+    ['Meta', 'The five best-performing species of the season. Newcomers lean toward types that counter them.'],
     ['Rival', 'Two challengers who keep meeting in close road battles.'],
     ['Nemesis', 'Someone a trainer has lost to five times or more without a win.'],
     ['Crossroads', 'After 10 seasons without finishing the circuit, a trainer may retire or reinvent themselves with a new class.'],
-    ['Gym Leader comeback', 'A leader with 6–8 outstanding seasons in a row may return to the circuit, sharper, with five guaranteed seasons.'],
     ['Legacy trainer', 'The child of a decorated retiree, setting out as a challenger with their parent\'s type.'],
     ['Famous trainer', 'Characters from the games, anime and optional packs, who keep their own type and signature Pokémon.'],
     ['Season awards', Object.values(AWARDS).map(a => a.name).join(', ') + '.'],

@@ -87,7 +87,8 @@ function backfillElite(t, gone) {
   const onTeam = new Set(); for (const x of Object.values(S.trainers)) for (const m of x.team || []) onTeam.add(m.uid);
   while (t.team.length < slot.size) {
     const lines = new Set(t.team.map(m => LINE[m.sp]));
-    const fits = sp => SP[sp] && !lines.has(LINE[sp]) && !isLegendLine(sp) && !SP[sp].legend && !SP[sp].ub && !bannedIn(sp, S.lg || 0);
+    const gymStaff = (t.role === 'leader' || t.role === 'gymtrainer') && !!t.specialty;
+    const fits = sp => SP[sp] && !lines.has(LINE[sp]) && !isLegendLine(sp) && !SP[sp].legend && !SP[sp].ub && !bannedIn(sp, S.lg || 0) && (!gymStaff || onSpec(t, sp));
     const score = (sp, st, left) => (onSpec(t, sp) ? 1000 : 0) + Math.min(200, (st && st.b) || 0) + (left || 0) / 100 + SP[sp].bst / 1000;
     let back = null, how = '';
     const bench = (t.bench || []).filter(m => fits(m.sp));
@@ -110,7 +111,7 @@ function backfillElite(t, gone) {
       onTeam.add(back.uid); t.team.push(back);
       news(`${back.sp} is back on ${dn(t)}'s team, taking the spot ${gone.sp} left${how === 'bench' ? ' (it had been set aside)' : how ? ' ' + how : ''}.`, 'move', t.id);
     } else {
-      const fresh = buildEliteTeam(t.specialty, slot.lvl, 4, t.role === 'champion').filter(m => !lines.has(LINE[m.sp]))[0];
+      const fresh = staffPicks(t, slot.lvl, 1, { lines, team: t.team, mixed: t.role === 'champion' || !t.specialty })[0];
       if (!fresh) break;
       stamp(fresh, 'assigned'); t.team.push(fresh);
       news(`${dn(t)} had no former Pokémon to bring back, so the League assigned ${fresh.sp} to fill the spot ${gone.sp} left.`, 'move', t.id);
@@ -997,7 +998,7 @@ function gymTry(t, entry) {
     const foe = line[k], isLeader = k === line.length - 1;
     const autoItems = itemsOn();
     if (autoItems) autoEquip(t, foe); // items picked for this battle
-    const res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`);
+    const res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)));
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
     if (res.winner !== 0) {
@@ -1157,7 +1158,7 @@ function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <=
 // a new Elite Four member from outside the circuit (sometimes a famous trainer)
 function outsiderE4(i) {
   const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
-  const nt = fam.length ? makeFamous(pick(fam), 'e4', 66, E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: 66, role: 'e4' });
+  const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(66), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(66), role: 'e4' });
   installElite(nt, 'e4', i);
   return nt;
 }
@@ -1314,6 +1315,12 @@ function counterTypesFor(mons) {
 // what the current meta counters are (older saves stored a single type in S.meta)
 function metaCounters() { if (S.metaMons && S.metaMons.length) return counterTypesFor(S.metaMons); return S.meta && TYPES.includes(S.meta) ? TYPES.filter(a => effOne(a, S.meta) === 2) : []; }
 // a Gym Leader back on the circuit for a title run isn't offered a gym again during their guaranteed seasons
+// The source's performance moves are switched off until the player decides them (design doc, open items): a leader
+// replaced after three poor seasons, a leader returning to the circuit after a run of strong ones, and a challenger
+// taking an Elite Four seat after a deep League run. Staff leave only by retiring with age.
+const AUTO_STAFF_MOVES = false;
+// the wall report sims Leagues whose staff all come from one quality tier, so no challenger walks into a post
+const fixedStaff = () => !!(S.cfg && S.cfg.staffBoost != null);
 function bestCandidate(exclude) {
   return challengers().filter(t => !exclude.includes(t.id) && !comebackProtected(t) && t.age >= 17 && t.seasons >= 2 && ovr(t) >= 58).sort((a, b) => ovr(b) + b.career.badges / 4 - ovr(a) - a.career.badges / 4)[0];
 }
@@ -1417,9 +1424,9 @@ function leagueOffseason(changes) {
     t.wallStreak = wall ? (t.wallStreak || 0) + 1 : 0;
     let comeback = false;
     // a comeback comes before any age check: they want back in, whatever their age
-    if (wall && t.wallStreak >= COMEBACK_MIN && rand() < (COMEBACK_ODDS[t.wallStreak - COMEBACK_MIN] ?? 1)) { leave = 'comeback'; comeback = true; }
+    if (AUTO_STAFF_MOVES && wall && t.wallStreak >= COMEBACK_MIN && rand() < (COMEBACK_ODDS[t.wallStreak - COMEBACK_MIN] ?? 1)) { leave = 'comeback'; comeback = true; }
     else if (rand() < ageRetireChance(t)) leave = 'after a long career';
-    else if (g.poor >= 3) { leave = `after three straight poor seasons at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
+    else if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor seasons at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
     if (comeback) {
       const n = t.wallStreak;
       for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
@@ -1431,7 +1438,7 @@ function leagueOffseason(changes) {
     }
     if (!leave) {
       if (played >= 5 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this season.`); }
-      else if (poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor season and the League will replace them' : ''}.`); }
+      else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor season and the League will replace them' : ''}.`); }
       return;
     }
     if (comeback) { /* already back on the circuit */ }
@@ -1439,15 +1446,15 @@ function leagueOffseason(changes) {
     else retire(t, leave);
     const cand = bestCandidate([]);
     let nl;
-    if (cand && rand() < 0.7) {
-      changes.push(`${dn(cand)} left the circuit to lead ${townName(i)} Gym (${specOf(cand)}).`);
+    if (cand && !fixedStaff() && rand() < 0.7) {
+      changes.push(`${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
       S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
       nl = cand;
     } else {
       // sometimes the outsider is a famous trainer of the right type
       const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
-      nl = fam.length ? makeFamous(pick(fam), 'leader', 52 + i * 2, GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: 52 + i * 2, role: 'leader' });
-      changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${nl.specialty}).`);
+      nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(52 + i * 2), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(52 + i * 2), role: 'leader' });
+      changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
       installElite(nl, 'leader', i);
     }
     news(changes[changes.length - 1], 'move', nl.id);
@@ -1460,13 +1467,13 @@ function leagueOffseason(changes) {
   });
 
   // --- elite four turnover
-  if (deepest && deepest.stage >= 3) {
+  if (AUTO_STAFF_MOVES && deepest && deepest.stage >= 3) {
     const r = T(deepest.id);
     const wi = weakestSeat();
     const weak = T(S.e4[wi]);
     if (r && r.role === 'challenger' && (ovr(r) > ovr(weak) + 2 || weak.age >= 50)) seatChallenge(r, wi, changes, ' (a deep League run)');
   }
-  S.e4.forEach(id => { const t = T(id); if (t.role === 'e4' && rand() < ageRetireChance(t)) { const i = S.e4.indexOf(id); retire(t, 'from the Elite Four'); const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some(x => x !== id && T(x) && T(x).specialty === f.spec)) : []; const nt = fam.length ? makeFamous(pick(fam), 'e4', 66, E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: 66, role: 'e4' }); installElite(nt, 'e4', i); changes.push(`${t.name} stepped down; ${nt.name} (${nt.specialty}) joins the Elite Four.`); } });
+  S.e4.forEach(id => { const t = T(id); if (t.role === 'e4' && rand() < ageRetireChance(t)) { const i = S.e4.indexOf(id); retire(t, 'from the Elite Four'); const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some(x => x !== id && T(x) && T(x).specialty === f.spec)) : []; const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(66), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(66), role: 'e4' }); installElite(nt, 'e4', i); changes.push(`${t.name} stepped down; ${nt.name} (${typeLabel(nt)}) joins the Elite Four.`); } });
 
   // --- the Champion only leaves by retiring with age. For now the strongest Elite Four member moves up
   // automatically and an outsider takes their seat (promotion becomes the player's decision in stage 2).
@@ -1476,30 +1483,16 @@ function leagueOffseason(changes) {
       c.role = 'exchamp'; retire(c, `as Champion of the ${S.lgName}`);
       S.e4[seat] = null; installElite(m, 'champion');
       const nt = outsiderE4(seat);
-      changes.push(`Champion ${c.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${nt.specialty}) fills Elite Four seat #${seat + 1}.`);
+      changes.push(`Champion ${c.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${seat + 1}.`);
       news(changes[changes.length - 1], 'title', m.id);
     } }
 
-  // --- meta shift: elite trainers with nothing that hits one of the season's top Pokémon hard add a counter for it
+  // --- the meta report. Staff no longer swap in off-type counters for the season's top Pokémon: how a League
+  // answers the meta is to be redesigned (design doc, open items), and until then a gym stays on its type.
   if (meta.length) {
-    const adapters = [];
-    for (const id of featOn('meta') ? S.gyms.map(g => g.leader).filter(Boolean).concat(S.e4) : []) {
-      const t = T(id); if (!t || t.team.length < 3) continue;
-      const open = meta.filter(sp => !t.team.some(m => monTypes(m).some(ty => effVs(ty, sp) >= 2)));
-      if (!open.length || rand() > 0.6) continue;
-      const target = pick(open), ctr = TYPES.filter(a => effVs(a, target) >= 2);
-      const slot = eliteSlot(t);
-      if (!slot) continue;
-      const cands = [...new Set(BASES.map(b => formAt(b, slot.lvl)))].filter(f => SP[f].types.some(ty => ctr.includes(ty)) && SP[f].bst <= 320 + slot.lvl * 6 && !t.team.some(m => LINE[m.sp] === LINE[f]));
-      if (!cands.length) continue;
-      const nm = stamp(makeMon(pick(cands), slot.lvl), 'assigned');
-      if (t.team.length >= slot.size) { farewell(t, t.team[0], 'replaced to counter the meta'); t.team.splice(0, 1); }
-      t.team.unshift(nm); relevelElite(t);
-      adapters.push(`${dn(t)} (${nm.sp}, for ${target})`);
-    }
     S.metaMons = meta; S.meta = null;
-    changes.push(`Season ${S.season}'s top performers on the circuit: ${meta.join(', ')}.${adapters.length ? ' Adding counters next season: ' + adapters.join(', ') + '.' : ''}`);
-    news(`Meta report: ${meta.join(', ')} knocked out the most opponents per battle on the circuit. ${adapters.length} elite trainer${adapters.length === 1 ? ' is' : 's are'} adding counters.`, 'meta');
+    changes.push(`Season ${S.season}'s top performers on the circuit: ${meta.join(', ')}.`);
+    news(`Meta report: ${meta.join(', ')} knocked out the most opponents per battle on the circuit.`, 'meta');
   }
 }
 
