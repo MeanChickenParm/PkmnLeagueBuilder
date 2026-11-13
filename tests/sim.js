@@ -21,10 +21,12 @@ function check(tag) {
     // the wall: set team sizes, two gym trainers of the leader's type per gym, six Pokémon for the Elite Four and Champion
     z.gyms.forEach((gym, j) => { const L = g.T(gym.leader); if (!L) return;
       if (L.team.length !== g.GYM_SIZE[j]) bad('gym ' + j + ' leader fields ' + L.team.length);
+      for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
       if ((gym.trainers || []).length !== g.GYM_TRAINERS) bad('gym ' + j + ' has ' + (gym.trainers || []).length + ' gym trainers');
       for (const id of gym.trainers || []) { const t = g.T(id);
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
-        if (s.phase === 'season' && t.specialty !== L.specialty) bad('gym ' + j + ' trainer type ' + t.specialty + ' in a ' + L.specialty + ' gym');
+        if (s.phase === 'season' && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
+        for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
         if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length);
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);

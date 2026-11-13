@@ -1,5 +1,13 @@
 // ================= HALCYON LEAGUE ENGINE =================
-const rand = Math.random;
+// every random draw in the engine goes through rand(); seedRandom(n) makes a run repeatable (the wall report uses it),
+// seedRandom() goes back to the browser's own randomness
+let RNG = Math.random;
+const rand = () => RNG();
+function seedRandom(seed) {
+  if (seed == null) { RNG = Math.random; return; }
+  let a = seed >>> 0;
+  RNG = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 const ri = (a, b) => a + Math.floor(rand() * (b - a + 1));
 const pick = a => a[Math.floor(rand() * a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -162,7 +170,7 @@ const FEATURES = [
     ['bond', 'Battle Bond', 'Long-time partners at max friendship can transform after a knockout in League battles.'],
     ['road', 'Road battles and rivalries', 'Challengers run into each other between gyms; rivalries and nemeses grow from it.'],
     ['gymadapt', 'Gym Leaders adapt', 'A Gym Leader on a losing streak swaps a Pokémon to counter what is beating them.'],
-    ['meta', 'Meta response', "Elite trainers and new prospects counter the season's top Pokémon."] ] },
+    ['meta', 'Meta response', "New prospects counter the season's top Pokémon."] ] },
   { group: 'World', items: [
     ['legacy', 'Legacy trainers', "Notable retirees' children set out as challengers years later."],
     ['extclasses', 'Extended trainer classes', "Trainer classes made for this game that aren't in the Pokémon games, such as Storm Chaser, Lamplighter, Locksmith and Desert Nomad. They're mostly dual-type specialists covering type pairs the games' classes don't. Off: only classes from the games are handed out."],
@@ -364,12 +372,6 @@ function dn(t) {
   if (t.famous && /^(Elite Four|Champion)$/.test(t.cls)) return 'Ace Trainer ' + t.name;
   return t.cls + ' ' + t.name;
 }
-function dominantType(team) {
-  const c = {};
-  for (const m of team) for (const ty of SP[m.sp].types) c[ty] = (c[ty] || 0) + monPower(m);
-  return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || pick(TYPES);
-}
-function specOf(t) { return t.specialty || dominantType(t.team); }
 
 // ================= INDIVIDUAL POKÉMON =================
 // Natures from the games. Battles here use one attack stat and one defense stat,
@@ -564,14 +566,14 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     career: { badges: 0, gymW: 0, gymL: 0, leagueApps: 0, titles: 0, defenses: 0, e4Wins: 0 },
     seasonHist: [], joined: S.season,
   };
-  assignClass(t, age, ['challenger', 'prospect', 'free'].includes(role));
+  assignClass(t, age, true);
   // advanced option: every trainer the game creates is a famous trainer, while any are free
   const f = S.cfg && S.cfg.allFamous && !noFamous ? chooseFamous(role, t.specialty) : null;
   if (f) {
     const ver = chooseFamous.ver || 1;
     t.name = famName(f, ver); t.famKey = f.name; if (ver > 1) t.famVer = ver;
     t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
-    if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; if (role !== 'leader') t.spec2 = f.spec2 || null; }
+    if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; t.spec2 = f.spec2 || null; }
     S.famousUsed.push(t.name);
   }
   t.trait = (t.famous && (f && f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[famBase(t)])) || rollTrait();
@@ -658,20 +660,78 @@ function eliteSlot(t) {
   }
   return null;
 }
-function buildEliteTeam(type, L, size, mixed) {
-  let cap = 300 + L * 6.2;
-  let pool = [];
-  for (let tries = 0; tries < 4 && pool.length < size; tries++) {
+// ---------- the staff team builder ----------
+// A post's team is built by the trainer who holds it, and their ratings decide how well:
+//   Scouting: how strong the Pokémon they can find (the ceiling on a pick's base stats);
+//   Strategy: how the team fits together (few shared weaknesses, answers to what beats their type), and how many
+//             of their Pokémon hold an item;
+//   Training: each Pokémon's own quality (IVs, a nature that suits it, the coverage moves it learns).
+// Bond and Nerve act inside the battle. A typed trainer only ever picks Pokémon of their own type or types, so a
+// gym stays on its type; an untyped trainer (Ace Trainer, Veteran) picks from every type.
+// The builder is centred on a rating of 50: a trainer with 50s builds about what the old builder did (any of the
+// stronger 60% of their type, picked at random, with ordinary IVs).
+const SCOUT_BST = 1.6;   // base-stat ceiling per point of Scouting above or below 50
+const STRAT_NOISE = 5;   // how much a trainer with no Strategy misjudges a pick (in the units of fitScore)
+const TRAIN_IV = 2.5;    // points of Training per point of IV: above 50 it lifts the worst roll, below 50 it lowers the best
+// the share of what they can find that a trainer looks at, strongest first: 60% at Scouting 50, 30% at 80, 90% at 20
+const scoutShare = t => clamp(1.1 - t.r.sct / 100, 0.25, 0.9);
+// how often a trainer gives a Pokémon a fitting nature and the right coverage moves: never at Training 40, always at 100
+const trainCare = t => clamp((t.r.trn - 40) / 60, 0, 1);
+const typeLabel = t => specTypes(t).join('/') || 'mixed';
+// species a trainer could field at level L: on their type, under their Scouting ceiling, best first
+function staffPool(t, L, mixed, need) {
+  const ty = mixed ? [] : specTypes(t);
+  let cap = 300 + L * 6.2 + (t.r.sct - 50) * SCOUT_BST, pool = [];
+  for (let tries = 0; tries < 10 && pool.length < need; tries++) {
     const set = new Set();
-    for (const b of BASES) { const f = formAt(b, L, type); const s = SP[f]; if (s.bst <= cap && (mixed || s.types.includes(type)) && !bannedIn(f, S.lg || 0)) set.add(f); }
-    pool = [...set]; cap += 60;
+    for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
+    pool = [...set]; cap += 40;
   }
   pool.sort((a, b) => SP[b].bst - SP[a].bst);
-  let chosen = shuffle(pool.slice(0, Math.max(size + 2, Math.ceil(pool.length * 0.6)))).slice(0, size);
-  if (mixed && type) { const spec = pool.filter(p => SP[p].types.includes(type)); if (spec.length && !chosen.some(c => SP[c].types.includes(type))) chosen[0] = spec[0]; }
-  while (chosen.length < size) chosen.push(pick(pool.length ? pool : BASES));
-  chosen.sort((a, b) => SP[a].bst - SP[b].bst);
-  return chosen.map((sp, i) => makeMon(sp, L - (size - 1 - i)));
+  return pool.slice(0, Math.max(need, Math.ceil(pool.length * scoutShare(t))));
+}
+// how well a species fits a team that is already weak[type] deep in each weakness; threats are the types that
+// beat the trainer's own type
+function fitScore(sp, weak, threats) {
+  let v = SP[sp].bst / 100;
+  const types = SP[sp].types;
+  for (const a of TYPES) {
+    const e = types.reduce((m, d) => m * effOne(a, d), 1), th = threats.includes(a) ? 1.5 : 1, n = weak[a] || 0;
+    if (e >= 2) v -= 0.35 * th * (1 + n) * (e >= 4 ? 1.5 : 1);
+    else if (e < 1 && (n || th > 1)) v += 0.25 * th * (n + (th > 1 ? 1 : 0));
+    // it hits back at the type that troubles the team
+    if ((n || th > 1) && types.some(x => effOne(x, a) >= 2)) v += 0.3;
+  }
+  return v;
+}
+// n new Pokémon for trainer t at level L, none from an evolution line in opts.lines, fitted around opts.team
+function staffPicks(t, L, n, opts = {}) {
+  const lines = new Set(opts.lines || []), out = [];
+  let pool = staffPool(t, L, opts.mixed, n + lines.size + 3).filter(sp => !lines.has(LINE[sp]));
+  const weak = {}, addWeak = sp => { for (const a of TYPES) if (SP[sp].types.reduce((m, d) => m * effOne(a, d), 1) >= 2) weak[a] = (weak[a] || 0) + 1; };
+  (opts.team || []).forEach(m => addWeak(m.sp));
+  const own = opts.mixed ? [] : specTypes(t);
+  const threats = TYPES.filter(a => own.some(d => effOne(a, d) >= 2));
+  const noise = (100 - t.r.str) / 100 * STRAT_NOISE;
+  while (out.length < n && pool.length) {
+    const best = pool.map(sp => [sp, fitScore(sp, weak, threats) + (rand() - 0.5) * 2 * noise]).sort((a, b) => b[1] - a[1])[0][0];
+    out.push(staffMon(t, best, L)); addWeak(best);
+    pool = pool.filter(sp => LINE[sp] !== LINE[best]);
+  }
+  return out;
+}
+// one Pokémon raised by trainer t: Training sets its IVs and how often it gets a nature that suits it and the two
+// coverage moves that answer its own weaknesses
+function staffMon(t, sp, L) {
+  const d = Math.round((t.r.trn - 50) / TRAIN_IV), lo = clamp(d, 0, 20), hi = 31 + clamp(d, -15, 0), care = trainCare(t);
+  const m = { uid: uid(), sp, lvl: L, iv: ivSet(() => ri(lo, hi)) };
+  if (rand() < care) { const cat = moveCat(m, sp); if (cat) m.nat = pick(cat === 'P' ? ['Adamant', 'Jolly'] : ['Modest', 'Timid']); }
+  if (rand() < care) {
+    const bad = TYPES.filter(a => SP[sp].types.reduce((x, d) => x * effOne(a, d), 1) >= 2);
+    const val = c => bad.filter(a => effOne(c.t, a) >= 2).length;
+    m.cov = coverOptions(sp).map((c, i) => [c, val(c) - i / 10]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]).sort((a, b) => a.lv - b.lv);
+  }
+  return ensureMon(m);
 }
 // ---------- gym leaders adapt ----------
 // A Gym Leader who loses several challenges in a row rethinks their team before the next challenger: the Pokémon
@@ -695,7 +755,7 @@ function adaptGym(i) {
   // how well a Pokémon handles the types that have been winning: hits them hard, and isn't hit hard by them
   const vs = sp => { let sc = 0; for (const [ty, c] of Object.entries(foes)) sc += c / n * (bestMult(SP[sp].types, [ty]) - bestMult([ty], SP[sp].types)); return sc; };
   const lines = new Set(L.team.map(m => LINE[m.sp]));
-  const cands = buildEliteTeam(L.specialty, slot.lvl, 8, false).filter(m => !lines.has(LINE[m.sp]));
+  const cands = staffPicks(L, slot.lvl, 8, { lines });
   if (!cands.length) return;
   const best = cands.sort((a, b) => vs(b.sp) + SP[b.sp].bst / 900 - vs(a.sp) - SP[a.sp].bst / 900)[0];
   // drop the one doing least this season (knockouts minus faints), never their strongest
@@ -773,9 +833,9 @@ function relevelElite(t) {
 }
 function installElite(t, role, slotIndex) {
   if (t.famousTeam && !t.team.length) t.team = signatureTeam(t, 20);
-  t.specialty = specOf(t);
-  // a gym has one type, so a dual specialist who takes a gym leads it with their primary type
-  if (role === 'leader') t.spec2 = null;
+  // a post's type is its holder's class: a dual specialist keeps both types, and an untyped trainer (Ace Trainer,
+  // Veteran) stays untyped and fields a mixed team
+  const mixed = !t.specialty;
   t.role = role; t.lg = S.lg || 0;
   dropFromCircuits(t.id);
   if (role === 'leader') S.gyms[slotIndex].leader = t.id;
@@ -787,11 +847,10 @@ function installElite(t, role, slotIndex) {
     while (t.team.length < 6) t.team.push(stamp(makeMon(pick(BASES), slot.lvl), 'assigned'));
   } else if (role === 'e4' && t.team.length >= 3) {
     // a new Elite Four member keeps the whole team they qualified with; the League only tops up a short team
-    if (t.team.length < slot.size) { const have = new Set(t.team.map(m => LINE[m.sp])); buildEliteTeam(t.specialty, slot.lvl, slot.size - t.team.length + 3, false).filter(m => !have.has(LINE[m.sp]) && have.add(LINE[m.sp])).slice(0, slot.size - t.team.length).forEach(m => t.team.push(stamp(m, 'assigned'))); }
+    if (t.team.length < slot.size) staffPicks(t, slot.lvl, slot.size - t.team.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
   } else {
-    const keep = t.team.filter(m => onSpec(t, m.sp) || isSpecial(m)).sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, Math.min(2, slot.size - 1));
-    const have = new Set(keep.map(m => LINE[m.sp]));
-    const fresh = buildEliteTeam(t.specialty, slot.lvl, slot.size - keep.length + 3, role === 'champion').filter(m => !have.has(LINE[m.sp]) && have.add(LINE[m.sp])).slice(0, slot.size - keep.length);
+    const keep = t.team.filter(m => mixed || onSpec(t, m.sp) || isSpecial(m)).sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, Math.min(2, slot.size - 1));
+    const fresh = staffPicks(t, slot.lvl, slot.size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed: mixed || role === 'champion' });
     for (const m of t.team) if (!keep.includes(m)) farewell(t, m, `left behind on becoming ${role === 'e4' ? 'Elite Four' : role === 'leader' ? 'Gym Leader' : 'Champion'}`);
     fresh.forEach(m => stamp(m, 'assigned'));
     t.team = keep.concat(fresh);
@@ -799,22 +858,30 @@ function installElite(t, role, slotIndex) {
   relevelElite(t);
 }
 // ---------- gym trainers ----------
-// Two per gym, of the leader's type, placed automatically for now. A trainer whose type no longer fits the gym
-// (a new leader of another type) is let go and replaced.
+// Two per gym, placed automatically for now. A gym's type is its leader's class: a typed leader's gym trainers
+// must share at least one type with them (a Rock/Flying gym can use a Rock/Fighting or a Flying/Fairy trainer), and
+// an untyped leader's gym trainers can be of any class. Each fields Pokémon of their own class's types. A trainer
+// who no longer fits (a new leader of another type) is let go and replaced.
 const STAFF_ROLES = ['leader', 'gymtrainer', 'e4', 'champion'];
+function gymFits(t, L) { const ty = specTypes(L); return !ty.length || specTypes(t).some(x => ty.includes(x)); }
+// the type whose weather a gym has: the first of its leader's types that brings one
+const gymWeatherType = L => specTypes(L).find(ty => GYM_WEATHER[ty]) || null;
+// what a new staff member's ratings centre on; the wall report shifts it to sim stronger and weaker Leagues
+const staffQ = q => q + ((S.cfg && S.cfg.staffBoost) || 0);
 function staffGym(i) {
   const g = S.gyms[i], L = T(g.leader); if (!L) return;
   g.trainers = g.trainers || [];
   for (let k = 0; k < GYM_TRAINERS; k++) {
     const cur = T(g.trainers[k]);
-    if (cur && cur.role === 'gymtrainer' && cur.specialty === L.specialty) continue;
+    if (cur && cur.role === 'gymtrainer' && gymFits(cur, L)) continue;
     g.trainers[k] = null;
     if (cur && cur.role === 'gymtrainer') retire(cur, `when ${townName(i)} Gym changed type`);
-    const t = newTrainer({ age: ri(16, 34), quality: 42 + i * 2, role: 'gymtrainer', specialty: L.specialty, noFamous: true });
-    t.spec2 = null; t.lg = S.lg || 0;
+    const ty = specTypes(L);
+    const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+    t.lg = S.lg || 0;
     g.trainers[k] = t.id;
     openPost(t, 'gymtrainer');
-    t.team = buildEliteTeam(t.specialty, GYM_LV[i], GYM_SIZE[i] - 1, false).map(m => stamp(m, 'assigned'));
+    t.team = staffPicks(t, GYM_LV[i], GYM_SIZE[i] - 1).map(m => stamp(m, 'assigned'));
     relevelElite(t);
   }
 }
@@ -832,10 +899,10 @@ function pickSquad(t, foe) {
   return t.team.filter(m => best.has(m));
 }
 // a battle on the circuit: both sides at the post's set level, the challenger fielding as many as the post does
-function setBattle(t, foe, lvl, stakes, title) {
+function setBattle(t, foe, lvl, stakes, title, gymType) {
   const full = t.team;
   t.team = pickSquad(t, foe);
-  try { return battle(t, foe, stakes, title, { equal: lvl }); } finally { t.team = full; }
+  try { return battle(t, foe, stakes, title, gymType !== undefined ? { equal: lvl, gymType } : { equal: lvl }); } finally { t.team = full; }
 }
 
 // ================= BATTLE =================
@@ -1088,7 +1155,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   // per-Pokémon tallies for this battle, by team index
   const tally = sides.map(sd => sd.mons.map(() => ({ out: false, ko: 0, f: 0, dmg: 0 })));
   // the field: a gym's own weather, else the region's (events, legendaries); weather abilities and moves replace it
-  let weather = (featOn('abilities') && stakes === 'gym' ? GYM_WEATHER[tB.specialty] : null) || regionWeather();
+  let weather = (featOn('abilities') && stakes === 'gym' ? GYM_WEATHER[opts.gymType !== undefined ? opts.gymType : tB.specialty] : null) || regionWeather();
   if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
   if (opts.ruleNote) ev.push({ k: 'note', s: -1, txt: opts.ruleNote, cls: 'weather' });
   const note = (si, i, txt, extra = {}) => ev.push(Object.assign({ k: 'note', s: si, i, txt }, extra));
@@ -1896,6 +1963,8 @@ function eliteItems(t) {
   let n = t.team.length;
   if (t.role === 'leader') { const gi = S.gyms.findIndex(g => g.leader === t.id); n = gi < 3 ? 0 : Math.min(t.team.length, gi - 2); }
   if (t.role === 'gymtrainer') { const gi = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); n = gi < 4 ? 0 : Math.min(t.team.length, gi - 3); }
+  // a sharp strategist gets one more of their Pokémon an item, a poor one one fewer
+  if (t.role === 'leader' || t.role === 'gymtrainer') n = clamp(n + (t.r.str >= 75 ? 1 : t.r.str < 45 ? -1 : 0), 0, t.team.length);
   const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone');
   const order = t.team.slice().sort((a, b) => b.lvl - a.lvl || SP[b.sp].bst - SP[a.sp].bst).slice(0, n);
   const held = new Set();

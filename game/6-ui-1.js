@@ -115,7 +115,7 @@ function abilityBlock(m) {
   const hid = a && A.H === a && m.abSlot === 'H', dab = a && m.deltaAb === a, rab = a && m.radAb === a;
   return `<div class="eyebrow">Ability</div><p>${a ? `<b>${a}</b>${rab ? ' <span class="tag radiant" title="An ability its species never has, stronger than any it does, from its Radiant nature">✧ Radiant ability</span>' : dab ? ' <span class="tag delta" title="An ability its species never has, from its Delta nature">Δ Unusual ability</span>' : hid ? ' <span class="tag gold">Hidden ability</span>' : ''} <span class="muted small">· ${ABILITIES[a]}</span>` : `<span class="muted">No ability yet</span> <span class="muted small">(${[A[0], A[1], A.H].filter(Boolean).join(', ') || '—'} not in the game yet)</span>`}</p>`;
 }
-const gymWeatherTag = L => abOn() && L && GYM_WEATHER[L.specialty] ? ` <span class="tag weather" title="Battles at this gym take place in this weather">${WEATHER_NAME[GYM_WEATHER[L.specialty]]}</span>` : '';
+const gymWeatherTag = L => abOn() && L && gymWeatherType(L) ? ` <span class="tag weather" title="Battles at this gym take place in this weather">${WEATHER_NAME[GYM_WEATHER[gymWeatherType(L)]]}</span>` : '';
 // ---------- held items ----------
 const itemTag = m => itemsOn() && m && m.item && ITEMS[m.item] ? ` <span class="tag item" title="${esc(ITEMS[m.item].desc)}">◆ ${ITEMS[m.item].name}</span>` : '';
 const itemChip = k => `<span class="itemchip t${ITEMS[k].tier}" title="${esc(ITEMS[k].desc)}">${ITEMS[k].name}</span>`;
