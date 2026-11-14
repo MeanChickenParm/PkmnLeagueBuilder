@@ -947,7 +947,7 @@ function postPlace(t, role) {
 }
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) p.to = Math.max(p.from, S.season || 1); }
-function openPost(t, role) { closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); }
+function openPost(t, role) { closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1028,6 +1028,12 @@ function endRun(t, entry, stage) {
   t.early = stage == null && depth <= typical ? (t.early || 0) + 1 : 0;
   // a challenger who accepted a post takes it up now (0.9.0): no retiring, giving up or changing Leagues; they rest
   // until the week's hiring is settled
+  if (t.hired && stage === 5 && rand() < BACKOUT_CHANCE) {
+    // (0.10.0) a title on their last run before arriving: half the time they back out
+    const h = t.hired; cancelIncoming(h, `${t.name} won the title on their last run and backed out`);
+    t.hired = null; t.hireDue = false;
+    stopFor('ambition', `${dn(t)} won the title and backed out of becoming ${hireTarget(h)}.`);
+  }
   if (t.hired) { t.hireDue = true; t.leaving = null; t.rest = S.turn + 1; return; }
   // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
   if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
@@ -1189,6 +1195,7 @@ function simWeek() {
   S.stop = null;
   eachLeague(leagueWeek);
   hireArrivals();
+  eachLeague(ambitionWeek);
   birthdays();
   arrivals();
   S.week++; S.turn = (S.turn || 0) + 1;
@@ -1278,7 +1285,7 @@ function retireHere(t, why) {
   if (t.id === S.champion && t.role === 'champion') return;
   if (t.role === 'retired') return;
   if (founderProtected(t) || comebackProtected(t)) {
-    if (['leader', 'e4', 'exchamp'].includes(t.role)) { closePost(t); t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1; if (!S.challengers.includes(t.id)) S.challengers.push(t.id); news(`${dn(t)}, ${founderProtected(t) ? "the League's founding Champion" : 'back from a long run as a Gym Leader'}, isn't ready to retire and returns to the badge circuit.`, 'move', t.id); }
+    if (['leader', 'e4', 'exchamp', 'gymtrainer'].includes(t.role)) { closePost(t); t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1; if (!S.challengers.includes(t.id)) S.challengers.push(t.id); news(`${dn(t)}, ${founderProtected(t) ? "the League's founding Champion" : 'back from a long run as a Gym Leader'}, isn't ready to retire and returns to the badge circuit.`, 'move', t.id); }
     return;
   }
   const was = dn(t);
@@ -1344,14 +1351,24 @@ function reinvent(t) {
   const msg = `${was} hit a wall after ${CROSSROADS_SEASONS}+ years without completing the badge circuit and reinvented themselves as ${dn(t)}, a ${ty}-type specialist${got ? ` (new partner: ${got.sp})` : ''}. Every rating went up a little.`;
   news(msg, 'move', t.id);
 }
-function careerSpan(t) { if (!t.span) t.span = ri(15, 20); return t.span; }
+// (0.10.0) a career's length: set by the age a trainer started at (young starters run longest), stretched by strong
+// ratings and a title (up to CAREER_MERIT years) and by long service in posts (a year per five, up to CAREER_SERVICE)
+const CAREER_MERIT = 3, CAREER_SERVICE = 2;
+function careerBase(t) {
+  if (!t.span) { const s = t.age - (t.seasons || 0); t.span = s <= 14 ? ri(22, 30) : s <= 24 ? ri(18, 26) : s <= 34 ? ri(14, 22) : ri(8, 16); }
+  return t.span;
+}
+function careerSpan(t) {
+  const o = ovr(t), merit = (o >= 80 ? 2 : o >= 72 ? 1 : 0) + ((t.career && t.career.titles) ? 1 : 0);
+  return careerBase(t) + Math.min(CAREER_MERIT, merit) + Math.min(CAREER_SERVICE, Math.floor(postYears(t) / 5));
+}
 function ageRetireChance(t) { if (comebackProtected(t) || slamProtected(t) || t.age < 50 || (t.seasons || 0) < careerSpan(t)) return 0; return clamp((t.age - 48) * 0.1, 0.1, 0.9); }
 // Losing a post (Champion, Elite Four, or stepping down as a Gym Leader): over 45 with a career of 10+ seasons they retire,
 // otherwise they go back to the circuit.
 const POST_RETIRE_AGE = 45, POST_RETIRE_CAREER = 10;
-// Gym Leader comebacks: after COMEBACK_MIN straight exceptional seasons, these odds per season (then certain); five
-// guaranteed seasons on the circuit afterwards
-const COMEBACK_MIN = 6, COMEBACK_ODDS = [1 / 3, 1 / 2], COMEBACK_GUARD = 5;
+// a member of staff who leaves for another run as a challenger is guaranteed five years on the circuit (0.10.0: the
+// ambition replaces the source's automatic Gym Leader comeback)
+const COMEBACK_GUARD = 5;
 const retiresOnLosingPost = t => !comebackProtected(t) && !slamProtected(t) && t.age > POST_RETIRE_AGE && (t.seasons || 0) >= POST_RETIRE_CAREER;
 function returnToCircuit(t, why) {
   closePost(t);
@@ -1461,7 +1478,7 @@ function birthdays() {
       else if (S.season - (t.freeSince || S.season) >= 3 && rand() < 0.5) retire(t, 'after three years off the circuit');
     } else if (STAFF_ROLES.includes(t.role)) {
       // 0.6.0: staff step down only after a long career, announced a year ahead; they leave on the next birthday
-      inLeague(homeLeague(t), () => { if (t.stepDown != null) staffRetires(t); else if (!t.acting && rand() < stepDownChance(t)) announceStepDown(t); });
+      inLeague(homeLeague(t), () => { if (t.stepDown != null) staffRetires(t); else if (!t.acting && rand() < stepDownChance(t)) announceStepDown(t); else if (!t.acting) driftAmbition(t); });
     }
   }
 }
@@ -1472,8 +1489,10 @@ function birthdays() {
 const STEP_DOWN_YEARS = 10;
 function postYears(t) { return (t.posts || []).reduce((a, p) => a + Math.max(0, (p.to == null ? curSeason() : p.to) - p.from), 0); }
 function stepDownChance(t) {
-  if ((t.seasons || 0) < careerSpan(t) || postYears(t) < STEP_DOWN_YEARS) return 0;
-  return clamp(0.25 + (t.age - 50) * 0.05, 0.15, 0.8);
+  const over = (t.seasons || 0) - careerSpan(t);
+  if (over < 0 || postYears(t) < STEP_DOWN_YEARS) return 0;
+  // (0.10.0) the odds rise with each year past their career length, and a little with age past 50
+  return clamp(0.2 + over * 0.1 + Math.max(0, t.age - 50) * 0.03, 0.2, 0.8);
 }
 // a post in words, for news and the picker
 function postName(t) {
@@ -1484,7 +1503,7 @@ function postName(t) {
   return '';
 }
 function announceStepDown(t) {
-  t.stepDown = S.turn + YEAR_WEEKS;
+  t.stepDown = S.turn + YEAR_WEEKS; t.quit = null;
   const msg = `${dn(t)} (${postName(t)}) will step down in ${weekName(S.week)} of Year ${S.season + 1}, after ${t.seasons} years.`;
   news(msg, 'move', t.id); noteChange(msg);
   if (t.role !== 'gymtrainer') stopFor('stepdown', msg);
@@ -1573,13 +1592,16 @@ function vacancyCands(v, opts = {}) {
   });
   if (!opts.noStaff) S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && !(v.post === 'e4' && k === v.slot)) out.push({ t, from: 'e4', seat: k }); });
   for (const id of v.outsiders || []) if (T(id) && T(id).role === 'prospect') out.push({ t: T(id), from: 'outsider' });
+  // (0.10.0) a member of staff may refuse the move (a step down, or a sideways move when they want to stay put)
+  for (const c of out) if (c.from === 'leader' || c.from === 'e4') c.refuse = refusal(c.t, v.post, v.slot);
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // fill vacancy v with trainer id (in the player's League). Unpicked outsiders go on to the circuit.
 function fillVacancy(v, id, opts = {}) {
   return inLeague(0, () => {
     const t = T(id); if (!t || !(S.vacancies || []).includes(v)) return false;
-    if (!vacancyCands(v).some(c => c.t === t) && !(opts.hired && t.role === 'challenger')) return false;
+    const cand = vacancyCands(v).find(c => c.t === t);
+    if ((!cand || cand.refuse) && !(opts.hired && t.role === 'challenger')) return false;
     // anyone else who had accepted this post isn't coming now (0.9.0)
     if (v.incoming != null && v.incoming !== id) cancelIncoming(v, `${t.name} took the post`);
     v.incoming = null; t.hired = null; t.hireDue = false;
@@ -1636,7 +1658,17 @@ function autoFillVacancy(v) {
     return false;
   });
 }
-function fillAllVacancies() { for (const v of (S.vacancies || []).slice()) autoFillVacancy(v); }
+// the multi-year sim (nobody there to choose): a member of staff who wants promotion and is within PROMOTE_EDGE OVR of
+// the best newcomer moves up (0.10.0), and the post they leave is filled the same way; everything else as Fill it for me
+function fillAllVacancies() {
+  for (let n = 0; n < 30; n++) {
+    const open = (S.vacancies || []).filter(v => v.incoming == null);
+    if (!open.length) return;
+    let did = false;
+    for (const v of open) { if (!(S.vacancies || []).includes(v)) continue; if (promoteForVacancy(v) || autoFillVacancy(v)) did = true; }
+    if (!did) return;
+  }
+}
 // ---------- staffing at will (0.7.0) ----------
 // In the player's League any Gym Leader, Elite Four member or gym trainer can be let go, moved or swapped at any
 // time, with no cost or limit before money exists. A senior post that someone leaves opens as a vacancy with an
@@ -1669,9 +1701,13 @@ function vacate(t) {
 const GRUDGE_CHANCE = 0.15;
 function letGo(t, was) {
   t.letGoAt = S.turn; // the automatic gym trainer pick leaves them alone for a year
+  t.quit = null;
+  // (0.10.0) someone who asked for another run goes on it
+  if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
+  t.wish = null;
   if (t.stepDown != null) {
     t.stepDown = null;
-    if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; return 'grudge'; }
+    if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; return grudgeAway(t); }
     retire(t, `after being let go as ${was}`); return 'retired';
   }
   return retireOrReturn(t, `was let go as ${was}`);
@@ -1697,7 +1733,7 @@ function releaseStaff(id) {
 function swapStaff(a, b) {
   return inLeague(0, () => {
     const A = T(a), B = T(b), pa = postOf(A), pb = postOf(B);
-    if (!pa || !pb || a === b || pa.post !== pb.post || !['leader', 'e4'].includes(pa.post) || A.acting || B.acting) return false;
+    if (!pa || !pb || a === b || pa.post !== pb.post || !['leader', 'e4'].includes(pa.post) || A.acting || B.acting || swapRefusal(A, B)) return false;
     let text;
     if (pa.post === 'leader') {
       S.gyms[pa.slot].leader = null; S.gyms[pb.slot].leader = null;
@@ -1727,6 +1763,7 @@ function gymTrainerCands(i) {
     const hl = T(h.leader); if (j !== i && hl && !hl.acting && gymFits(hl, L)) out.push({ t: hl, from: 'leader', gym: j });
   });
   S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && gymFits(t, L)) out.push({ t, from: 'e4', seat: k }); });
+  for (const c of out) if (['gym', 'leader', 'e4'].includes(c.from)) c.refuse = refusal(c.t, 'gymtrainer', i);
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
@@ -1736,7 +1773,7 @@ function placeGymTrainer(i, k, id, opts = {}) {
   return inLeague(0, () => {
     const g = S.gyms[i], t = T(id), old = T((g.trainers || [])[k]);
     if (!t || k < 0 || k >= GYM_TRAINERS || (g.acting && !old) || old === t) return false;
-    if (opts.hired ? !(t.role === 'challenger' && T(g.leader) && gymFits(t, T(g.leader))) : !gymTrainerCands(i).some(c => c.t === t)) return false;
+    if (opts.hired ? !(t.role === 'challenger' && T(g.leader) && gymFits(t, T(g.leader))) : !gymTrainerCands(i).some(c => c.t === t && !c.refuse)) return false;
     // anyone else who had accepted this place isn't coming now (0.9.0)
     if (g.incoming && g.incoming[k] != null && g.incoming[k] !== id) cancelIncoming({ post: 'gymtrainer', slot: i, k }, `${t.name} took the place`);
     if (g.incoming) g.incoming[k] = null;
@@ -1915,6 +1952,8 @@ function rivalHire(min, exclude = []) {
 // outsider (sometimes famous)
 function rivalE4(i) {
   const c = rivalHire(E4_HIRE_MIN);
+  const own = promoteWithin('e4', i, c ? ovr(c) - PROMOTE_EDGE : E4_HIRE_MIN - PROMOTE_EDGE);
+  if (own) { const ch = []; moveUpWithin(own, 'e4', i, ch); ch.forEach(noteChange); return own; }
   if (!c) return outsiderE4(i);
   if (c.role === 'retired') unretire(c);
   S.challengers = S.challengers.filter(x => x !== c.id);
@@ -1966,6 +2005,9 @@ function replacePoorStaff(changes, worstSeat) {
 function fillGym(i, changes) {
   // (0.9.0) the best of the League's circuit and the recent retirees at GYM_HIRE_MIN, else an outsider
   const cand = rivalHire(GYM_HIRE_MIN);
+  // (0.10.0) a member of staff who wants promotion and is nearly as good comes first
+  const own = promoteWithin('leader', i, cand ? ovr(cand) - PROMOTE_EDGE : GYM_HIRE_MIN - PROMOTE_EDGE);
+  if (own) { moveUpWithin(own, 'leader', i, changes); return; }
   let nl;
   if (cand) {
     const back = cand.role === 'retired'; if (back) unretire(cand);
@@ -1980,6 +2022,195 @@ function fillGym(i, changes) {
     installElite(nl, 'leader', i);
   }
   news(changes[changes.length - 1], 'move', nl.id);
+}
+
+// ================= AMBITIONS (0.10.0, stage 2b) =================
+// Each member of staff has one ambition (design doc 4.5): promotion (a gym trainer wants a gym, a Gym Leader a later
+// gym or the Elite Four, an Elite Four member a higher seat; seat #4 wants the Champion's seat and waits without a
+// clock until seat challenges exist), stay put, or another run as a challenger. It is set when they take a post, from
+// age, ratings, post and record, and can change on a birthday. Promotion waits AMB_WAIT_YEARS in the post; ignored,
+// a senior member announces they are leaving (QUIT_NOTICE weeks) and leaves with a grudge, and a gym trainer just
+// goes. Another run comes as a request: let them go, or they leave anyway RUN_HOLD weeks after asking. The Champion
+// always stays put. Staff refuse a step down (unless their record is poor) and, when they want to stay put or want
+// another run, a sideways move or a swap. All numbers are provisional.
+const AMB_WAIT_YEARS = 3, AMB_RESTLESS_YEARS = 2, QUIT_NOTICE = 12, RUN_HOLD = YEAR_WEEKS, COMEBACK_STREAK = 5;
+const AMB_DRIFT = 0.12, GRUDGE_AWAY = 0.5, BACKOUT_CHANCE = 0.5, PROMOTE_EDGE = 5;
+// how senior a post is: every gym trainer's place is the same; later gyms and higher seats are bigger posts
+const rankOf = (post, slot) => post === 'gymtrainer' ? 0 : post === 'leader' ? 10 + slot : post === 'e4' ? 20 + slot : 30;
+function pickAmbition(t, role, slot) {
+  if (role === 'champion') return 'stay';
+  const o = ovr(t), titled = !!(t.career && t.career.titles);
+  let up = Math.max(0.15, 1 + (o - 60) / 15 + (t.age < 30 ? 0.5 : 0) - (t.age >= 45 ? 0.8 : 0));
+  if (role === 'e4' && slot === 3) up *= 0.7;
+  const stay = 1 + (t.age >= 40 ? 0.8 : 0) + (t.age >= 50 ? 1 : 0);
+  const run = role !== 'gymtrainer' && t.age < 36 && !titled && o >= 62 ? 0.15 : 0;
+  const r = rand() * (up + stay + run);
+  return r < up ? 'up' : r < up + stay ? 'stay' : 'run';
+}
+// a new post: a new ambition, its clock starting now (a move up answers promotion; any move cancels a notice)
+function setAmbition(t, role) {
+  if (!STAFF_ROLES.includes(role)) { t.wish = null; t.quit = null; return; }
+  const p = postOf(t);
+  t.wish = { k: pickAmbition(t, role, p ? p.slot : 0), since: S.turn }; t.quit = null;
+}
+// on a birthday: a Gym Leader with COMEBACK_STREAK outstanding years in a row may want another run; promotion fades
+// with age; now and then the ambition simply changes
+function driftAmbition(t) {
+  if (!t.wish || t.quit || t.role === 'champion' || t.stepDown != null) return;
+  const a = t.wish;
+  if (a.k === 'run') return;
+  if (t.role === 'leader' && (t.wallStreak || 0) >= COMEBACK_STREAK && t.age < 50 && rand() < 1 / 3) { t.wish = { k: 'run', since: S.turn, streak: t.wallStreak }; return; }
+  if (a.k === 'up' && t.age >= 45 && rand() < 0.25) { t.wish = { k: 'stay', since: S.turn }; return; }
+  if (rand() < AMB_DRIFT) { const p = postOf(t), k = pickAmbition(t, t.role, p ? p.slot : 0); if (k !== a.k) t.wish = { k, since: S.turn }; }
+}
+// does this ambition have a clock? (Elite Four seat #4 wanting the Champion's seat waits until seat challenges exist)
+function ambClock(t) { const p = postOf(t); return !!(t.wish && t.wish.k === 'up' && p && p.post !== 'champion' && !(p.post === 'e4' && p.slot === S.e4.length - 1)); }
+// the turn promotion runs out (null when there is no clock)
+const ambDue = t => ambClock(t) ? t.wish.since + AMB_WAIT_YEARS * YEAR_WEEKS : null;
+const restless = t => ambClock(t) && S.turn - t.wish.since >= AMB_RESTLESS_YEARS * YEAR_WEEKS;
+const ambWho = t => t.role === 'gymtrainer' ? 'a gym of their own' : t.role === 'e4' && postOf(t) && postOf(t).slot === S.e4.length - 1 ? "the Champion's seat" : t.role === 'e4' ? 'a higher seat' : t.role === 'leader' && postOf(t) && postOf(t).slot === S.gyms.length - 1 ? 'a seat on the Elite Four' : 'a bigger post';
+// once a week, in each League: requests for another run, promotion running out, and notices running out
+function ambitionWeek() {
+  if (fixedStaff()) return;
+  const mine = playerLeague();
+  for (const id of staffIds()) {
+    const t = T(id);
+    if (!t || t.acting || t.stepDown != null || t.role === 'champion' || !postOf(t)) continue;
+    if (!t.wish) setAmbition(t, t.role);
+    const a = t.wish;
+    if (t.quit) { if (S.turn >= t.quit.at) staffQuits(t); continue; }
+    if (a.k === 'run') {
+      if (a.asked == null) {
+        a.asked = S.turn;
+        const msg = `${dn(t)} (${postName(t)}) wants another run as a challenger${a.streak ? ` after ${a.streak} outstanding years in a row` : ''}${mine ? `. Let them go, or they leave anyway on ${turnDate(S.turn + RUN_HOLD)}` : ''}.`;
+        news(msg, 'move', t.id); noteChange(msg);
+        if (mine) stopFor('ambition', msg);
+      }
+      if (!mine) { staffQuits(t); continue; }
+      if (S.turn >= a.asked + RUN_HOLD - QUIT_NOTICE) announceQuit(t, a.asked + RUN_HOLD);
+    } else if (ambClock(t) && S.turn >= ambDue(t)) {
+      if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE);
+    }
+  }
+}
+function announceQuit(t, at) {
+  t.quit = { at, k: t.wish ? t.wish.k : 'up' };
+  const msg = t.quit.k === 'run' ? `${dn(t)} (${postName(t)}) will leave for another run as a challenger on ${turnDate(at)}, unless you let them go sooner.`
+    : `${dn(t)} (${postName(t)}) has waited ${AMB_WAIT_YEARS} years for ${ambWho(t)} and will leave on ${turnDate(at)} unless promoted.`;
+  news(msg, 'move', t.id); noteChange(msg);
+  if (playerLeague()) stopFor('ambition', msg);
+}
+// a member of staff leaves over their ambition: in the player's League the post opens with an acting holder (a gym
+// trainer's place is refilled at once); elsewhere it is filled at once
+function staffQuits(t) {
+  const p = postOf(t); if (!p || p.post === 'champion') return;
+  const k = t.quit ? t.quit.k : t.wish ? t.wish.k : 'up', was = postName(t), mine = playerLeague();
+  t.quit = null;
+  if (mine) vacate(t);
+  else { closePost(t); if (p.post === 'leader') S.gyms[p.slot].leader = null; else if (p.post === 'e4') S.e4[p.slot] = null; else S.gyms[p.slot].trainers[p.k] = null; }
+  const fate = k === 'run' ? comeback(t, was) : leaveUnhappy(t, was);
+  const changes = [];
+  if (p.post === 'gymtrainer') staffGym(p.slot);
+  else if (!mine) { if (p.post === 'leader') { fillGym(p.slot, changes); staffGym(p.slot); } else rivalE4(p.slot); }
+  const text = k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
+    : `${t.name} left ${was}, tired of waiting for ${p.post === 'gymtrainer' ? 'a gym of their own' : 'promotion'}${fate === 'retired' ? ', and retired' : fate === 'away' ? `, and took their grudge to the ${leagueName(lgOf(t))}` : ', and returns to the circuit holding a grudge'}.`;
+  news(text, 'move', t.id); noteChange(text); changes.forEach(noteChange);
+  if (mine && p.post !== 'gymtrainer') stopFor('vacancy', `${text} ${p.post === 'leader' ? `${dn(T(S.gyms[p.slot].leader))} is acting leader` : `${T(S.e4[p.slot]).name} stands in`} until you choose.`);
+}
+// off on another run as a challenger, sharper for it, and guaranteed COMEBACK_GUARD years on the circuit
+function comeback(t, was) {
+  for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
+  t.noRetireUntil = (S.season || 0) + 1 + COMEBACK_GUARD;
+  t.comebacks = (t.comebacks || []).concat([{ season: S.season, post: was, seasons: t.wallStreak || 0, lg: S.lg || 0 }]);
+  t.wallStreak = 0; t.wish = null; t.quit = null; t.letGoAt = S.turn;
+  returnToCircuit(t, `left ${was} for another shot at the title`);
+  return 'comeback';
+}
+// left over an ignored ambition: retired if over 45 with ten years behind them, otherwise back to the circuit with a
+// grudge (with another League open, half the time to that League's circuit, where it may hire them)
+function leaveUnhappy(t, was) {
+  t.wish = null; t.letGoAt = S.turn;
+  if (retiresOnLosingPost(t)) { retire(t, `after leaving ${was}`); return 'retired'; }
+  returnToCircuit(t, `left ${was} unhappy`); t.grudge = S.season;
+  return grudgeAway(t);
+}
+function grudgeAway(t) {
+  if (nLeagues() < 2 || rand() >= GRUDGE_AWAY) return 'grudge';
+  const from = homeLeague(t), to = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== from));
+  shiftLeague(t, to);
+  return 'away';
+}
+// ---- refusing moves ----
+// a poor record (two poor years in a row at a gym, or the Elite Four's worst record two years running): they would
+// rather take a step down than be let go
+function poorRecord(t) {
+  const p = postOf(t); if (!p) return false;
+  if (p.post === 'leader') { const g = S.gyms[p.slot]; return g.poorFor === t.id && (g.poor || 0) >= 2; }
+  return p.post === 'e4' && (t.e4Poor || 0) >= 2;
+}
+// a move to a bigger kind of post, or to a later gym or higher seat, is up (it answers promotion); to a smaller kind of
+// post (Elite Four to a gym, a gym to a gym trainer's place) is a step down; anything else is sideways
+function moveKind(t, post, slot) {
+  const p = postOf(t); if (!p) return null;
+  const a = rankOf(p.post, p.slot), b = rankOf(post, slot);
+  if (p.post === post) return b > a ? 'up' : 'side';
+  return b > a ? 'up' : 'down';
+}
+// why member of staff t won't move to this post, or null: everyone takes a move up; a step down is refused unless
+// their record is poor; a sideways move by someone who wants to stay put or wants another run
+function refusal(t, post, slot) {
+  if (!t || !STAFF_ROLES.includes(t.role) || t.acting) return null;
+  const k = moveKind(t, post, slot);
+  if (!k || k === 'up' || poorRecord(t)) return null;
+  if (k === 'down') return 'refuses a step down';
+  const a = t.wish && t.wish.k;
+  return a === 'stay' ? 'wants to stay put' : a === 'run' ? 'wants another run' : null;
+}
+// a swap needs both to agree: someone who wants to stay put (or another run) refuses any swap, and a step down is
+// refused as above
+function swapRefusal(A, B) {
+  const pa = postOf(A), pb = postOf(B); if (!pa || !pb) return null;
+  for (const [X, to] of [[A, pb], [B, pa]]) {
+    if (poorRecord(X)) continue;
+    const a = X.wish && X.wish.k;
+    if (a === 'stay' || a === 'run') return `${X.name} ${a === 'stay' ? 'wants to stay put' : 'wants another run'}`;
+    const r = refusal(X, to.post, to.slot); if (r) return `${X.name} ${r}`;
+  }
+  return null;
+}
+// ---- promotion from within ----
+// the League's own staff who want promotion and would be moving up into this post, best first, at OVR min or better
+function promoteWithin(post, slot, min) {
+  if (playerLeague() || fixedStaff()) return null;
+  return staffIds().map(T).filter(t => t && !t.acting && t.stepDown == null && t.wish && t.wish.k === 'up' && t.role !== 'champion' && moveKind(t, post, slot) === 'up' && ovr(t) >= min)
+    .sort((a, b) => ovr(b) - ovr(a))[0] || null;
+}
+// a rival League moves its own member of staff up into a post, and fills the post they leave at once
+function moveUpWithin(t, post, slot, changes) {
+  const p = postOf(t), was = postName(t);
+  closePost(t);
+  if (p.post === 'gymtrainer') S.gyms[p.slot].trainers[p.k] = null;
+  else if (p.post === 'leader') S.gyms[p.slot].leader = null;
+  else if (p.post === 'e4') S.e4[p.slot] = null;
+  installElite(t, post, slot);
+  changes.push(`${dn(t)} was promoted from ${was} to ${post === 'leader' ? `${townName(slot)} Gym Leader (${typeLabel(t)})` : `Elite Four seat #${slot + 1}`}.`);
+  news(changes[changes.length - 1], 'move', t.id);
+  if (p.post === 'gymtrainer') staffGym(p.slot);
+  else if (p.post === 'leader') { fillGym(p.slot, changes); staffGym(p.slot); }
+  else rivalE4(p.slot);
+  if (post === 'leader') staffGym(slot);
+}
+// the multi-year sim in the player's League: the best member of staff who wants promotion and would move up into
+// vacancy v, if within PROMOTE_EDGE OVR of the best newcomer (and willing); the post they leave opens next
+function promoteForVacancy(v) {
+  if (v.incoming != null) return false;
+  return inLeague(0, () => {
+    const cs = vacancyCands(v);
+    const ext = cs.find(c => ['circuit', 'retired', 'outsider'].includes(c.from));
+    const own = cs.filter(c => ['gym', 'leader', 'e4'].includes(c.from) && !c.refuse && c.t.wish && c.t.wish.k === 'up' && moveKind(c.t, v.post, v.slot) === 'up' && c.t.stepDown == null)[0];
+    if (!own || (ext && ovr(own.t) < ovr(ext.t) - PROMOTE_EDGE)) return false;
+    return fillVacancy(v, own.t.id);
+  });
 }
 
 // ================= NEW YEAR =================
@@ -2070,29 +2301,18 @@ function leagueNewYear(changes) {
     const poor = played >= 12 && hold < 0.3;
     if (g.poorFor !== t.id) { g.poorFor = t.id; g.poor = 0; }
     g.poor = poor ? (g.poor || 0) + 1 : 0;
-    // an exceptional year: one of the three best-holding gyms (10+ tries). After 6 to 8 of them in a row a leader
-    // wants another shot at the title and returns to the circuit, sharper (switched off with AUTO_STAFF_MOVES)
+    // an exceptional year: one of the three best-holding gyms (10+ tries). (0.10.0) After COMEBACK_STREAK of them in a
+    // row a leader's ambition may turn to another run as a challenger (driftAmbition, on their birthday)
     const wall = played >= 10 && holdRank.indexOf(hold) <= 2;
     t.wallStreak = wall ? (t.wallStreak || 0) + 1 : 0;
-    let leave = null, stepDown = false, comeback = false;
-    if (AUTO_STAFF_MOVES && wall && t.wallStreak >= COMEBACK_MIN && rand() < (COMEBACK_ODDS[t.wallStreak - COMEBACK_MIN] ?? 1)) { leave = 'comeback'; comeback = true; }
-    else if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
-    if (comeback) {
-      const n = t.wallStreak;
-      for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
-      t.noRetireUntil = (S.season || 0) + 1 + COMEBACK_GUARD; t.wallStreak = 0;
-      t.comebacks = (t.comebacks || []).concat([{ season: S.season, gym: townName(i), seasons: n, lg: S.lg || 0 }]);
-      g.leader = null;
-      returnToCircuit(t, `has held ${townName(i)} Gym through ${n} outstanding years in a row (${g.w}–${g.l} this year) and wants a shot at the title. They step down`);
-      changes.push(`${dn(t)} stepped down from ${townName(i)} Gym after ${n} outstanding years to chase the title.`);
-    }
+    let leave = null, stepDown = false;
+    if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
     if (!leave) {
       if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
       else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor year and the League will replace them' : ''}.`); }
       return;
     }
-    if (comeback) { /* already back on the circuit */ }
-    else if (stepDown && !retiresOnLosingPost(t)) { g.leader = null; returnToCircuit(t, `stepped down as ${townName(i)} Gym Leader ${leave}`); }
+    if (stepDown && !retiresOnLosingPost(t)) { g.leader = null; returnToCircuit(t, `stepped down as ${townName(i)} Gym Leader ${leave}`); }
     else retire(t, leave);
     fillGym(i, changes);
   });

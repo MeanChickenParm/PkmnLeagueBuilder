@@ -13,6 +13,8 @@ async def run(path):
         await pg.goto('file://' + path); await pg.wait_for_timeout(500)
         out = await pg.evaluate("""() => {
           // 0.9.0: pick a candidate who takes a post at once (not a challenger, who gets an offer, and not senior staff)
+          // (0.10.0) staff can now leave over their ambitions, so a scripted step starts with no vacancy already open
+          const clearVac = () => inLeague(0, () => { for (let n = 0; n < 20 && (S.vacancies || []).length; n++) { const v = S.vacancies[0]; if (v.incoming != null) withdrawOffer(v.incoming); const o = (v.outsiders || []).find(x => T(x) && T(x).role === 'prospect'); if (!o || !fillVacancy(v, o)) break; } });
           const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^Circuit/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
           const log = [], click = sel => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
           if (!document.querySelector('[data-act=newworld]')) log.push('FAIL no region cards on the setup screen');
@@ -56,7 +58,7 @@ async def run(path):
                 if (S.season === 2 && !seen.god) { seen.god = 1; go('god'); if (click('[data-act=godpick]')) { const n = document.querySelector('#ge-age'); if (n) { n.value = '33'; click('[data-act=godsave]'); log.push('god saved'); } }
                   if (click('[data-act=godleague]')) log.push('god opened a League midyear: now ' + nLeagues()); go('circuit'); }
                 // 0.6.0: a Gym Leader and an Elite Four member leave; the posts wait with acting holders, then are filled
-                if (S.season === 2 && !seen.vac) { seen.vac = 1; inLeague(0, () => { announceStepDown(T(S.gyms[4].leader)); staffRetires(T(S.gyms[2].leader)); staffRetires(T(S.e4[1])); }); viewLg = 0; go('gyms');
+                if (S.season === 2 && !seen.vac) { seen.vac = 1; clearVac(); inLeague(0, () => { announceStepDown(T(S.gyms[4].leader)); staffRetires(T(S.gyms[2].leader)); staffRetires(T(S.e4[1])); }); viewLg = 0; go('gyms');
                   const txt = document.querySelector('#main').textContent;
                   if (!/waiting for you/.test(txt) || !/Acting/.test(txt) || !/Steps down/.test(txt)) log.push('FAIL vacancies or step-downs not shown');
                   if (!inLeague(0, () => T(S.gyms[2].leader).acting && S.gyms[2].trainers.filter(Boolean).length === 1)) log.push('FAIL no acting leader at gym 3');
@@ -64,11 +66,11 @@ async def run(path):
                   click('[data-act=hirefit]'); click('[data-act=hirefit]'); if (!pickNow()) log.push('FAIL nobody to pick at once');
                   click('[data-act=hire][data-v="0"]'); if (!pickNow()) log.push('FAIL nobody to pick at once');
                   if ((S.vacancies || []).length) log.push('FAIL vacancies left open: ' + S.vacancies.length);
-                  if (inLeague(0, () => S.gyms[2].acting || S.gyms[2].trainers.filter(Boolean).length !== 2 || S.e4.some(id => T(id).acting))) log.push('FAIL posts not filled properly');
+                  if (inLeague(0, () => S.gyms[2].acting || S.gyms[2].trainers.filter(Boolean).length !== 2 || S.e4.some(id => T(id).acting))) log.push('FAIL posts not filled properly ' + JSON.stringify(inLeague(0, () => [S.gyms[2].acting, S.gyms[2].trainers, S.e4.map(id => T(id).acting), (S.vacancies || []).map(v => v.post + v.slot)])));
                   log.push('filled two vacancies'); go('circuit'); }
                 // 0.7.0: your staff. Let an Elite Four member go and move a Gym Leader up (their gym opens next), swap
                 // two Gym Leaders, replace a gym trainer by hand, let a gym trainer go
-                if (S.season === 2 && !seen.staff) { seen.staff = 1; viewLg = 0; go('staff');
+                if (S.season === 2 && !seen.staff) { seen.staff = 1; viewLg = 0; clearVac(); go('staff');
                   if (!/Your staff/.test(document.querySelector('#main').textContent) || document.querySelectorAll('[data-act=gtpick]').length !== 16) log.push('FAIL the staff page');
                   if (document.querySelector('[data-act=staffask][data-id="' + S.champion + '"]')) log.push('FAIL the Champion can be let go');
                   const e4 = S.e4[3]; click('[data-act=staffask][data-id="' + e4 + '"]'); click('[data-act=staffgo][data-id="' + e4 + '"]');
@@ -77,9 +79,21 @@ async def run(path):
                   if (!row) log.push('FAIL no Gym Leader among the candidates'); else { const id = +row.dataset.id; row.click();
                     if (T(S.e4[3]) !== T(id) || view !== 'hire' || !(S.vacancies || []).some(v => v.post === 'leader')) log.push('FAIL moving a Gym Leader up did not open their gym');
                     if (!pickNow()) log.push('FAIL nobody to pick at once'); }
-                  if ((S.vacancies || []).length) log.push('FAIL posts left open after the move');
-                  go('staff'); const a = S.gyms[0].leader, b2 = S.gyms[5].leader; click('[data-act=staffswap][data-id="' + a + '"]'); click('[data-act=staffswapto][data-id="' + b2 + '"]');
+                  if ((S.vacancies || []).length) log.push('FAIL posts left open after the move ' + JSON.stringify(S.vacancies.map(v => [v.post, v.slot, v.incoming])));
+                  go('staff'); const a = S.gyms[0].leader, b2 = S.gyms[5].leader;
+                  // 0.10.0: someone who wants to stay put refuses a swap; two who want promotion swap
+                  T(a).wish = { k: 'stay', since: S.turn }; click('[data-act=staffswap][data-id="' + a + '"]');
+                  if (document.querySelector('[data-act=staffswapto][data-id="' + b2 + '"]') || !/No swap: .* wants to stay put/.test(document.querySelector('#main').textContent)) log.push('FAIL a stay-put swap was offered');
+                  click('[data-act=staffswap]'); T(a).wish = { k: 'up', since: S.turn }; T(b2).wish = { k: 'up', since: S.turn }; render();
+                  if (!/Wants a /.test(document.querySelector('#main').textContent)) log.push('FAIL no ambition tags on the staff page');
+                  click('[data-act=staffswap][data-id="' + a + '"]'); click('[data-act=staffswapto][data-id="' + b2 + '"]');
                   if (S.gyms[0].leader !== b2 || S.gyms[5].leader !== a) log.push('FAIL the swap');
+                  // another run: a Gym Leader who asked is let go on their run and returns to the circuit
+                  { const r = T(S.gyms[3].leader); r.wish = { k: 'run', since: S.turn, asked: S.turn }; go('staff');
+                    if (!/Asking for another run/.test(document.querySelector('#main').textContent)) log.push('FAIL the run request is not in the notices');
+                    click('[data-act=staffask][data-id="' + r.id + '"]'); const gb = document.querySelector('[data-act=staffgo][data-id="' + r.id + '"]');
+                    if (!gb || !/on their run/.test(gb.textContent)) log.push('FAIL no Let go on their run button'); else { gb.click();
+                      if (r.role !== 'challenger' || !(r.comebacks || []).length) log.push('FAIL letting go on a run'); else log.push('let a Gym Leader go on another run'); } } go('staff');
                   click('[data-act=gtpick][data-g="1"][data-k="0"]'); const old = S.gyms[1].trainers[0];
                   // 0.9.0: the picker offers outsiders; one nobody picks sets out as a challenger
                   { const outs = (S.gyms[1].outs || []).slice(), ob = [...document.querySelectorAll('[data-act=gtplace]')].find(b => /Outsider/.test(b.closest('tr').textContent));
