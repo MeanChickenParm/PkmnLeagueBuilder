@@ -8,7 +8,7 @@ function viewCircuit() {
   <section class="panel"><div class="ph"><h2>Badge circuit${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${rows.length} challengers: ${onRun} out on a run, ${rows.length - onRun} resting. Each is on their own clock: a run starts at the first gym with their best ${START_TEAM} Pokémon and ends on a third loss at one gym or after the Elite Four.</span></div>
   <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th><th>Badges</th><th title="Gym tries won and lost this year">Gym W–L</th><th>Where they are</th><th>Pokémon</th></tr></thead><tbody>
   ${rows.map((t, i) => { const w = t.weekLog.filter(e => e.won === true).length, l = t.weekLog.filter(e => e.won === false).length;
-    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${gymStatus(t)}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
+    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}${hireTags(t)}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${gymStatus(t)}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
   </tbody></table></div></section>${skyPanel()}`;
 }
 // how a run ended, in words
@@ -62,13 +62,42 @@ function gymWatch(g, i) {
 function staffTags(t) {
   return (t.acting ? '<span class="tag notice">Acting</span> ' : '') + (t.stepDown != null ? `<span class="tag notice">Steps down ${turnDate(t.stepDown)}</span> ` : '');
 }
+// (0.9.0) on the player's circuit: a challenger who impressed the League, and one hired who comes after their run
+function hireTags(t) {
+  if (!handOn() || (S.lg || 0) !== 0) return '';
+  const imp = impressed(t);
+  return (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
+}
+// (0.9.0) a warning on a Gym Leader's poor years in a row, or an Elite Four member with the worst record of the four
+// two or more years running. In the player's League nothing happens on its own: replacing them is the player's call.
+function staffWarn(t) {
+  const p = postOf(t); if (!p) return '';
+  if (p.post === 'leader') { const g = S.gyms[p.slot]; if (g.poorFor === t.id && g.poor) return ` ${poorTag(g.poor)}`; }
+  if (p.post === 'e4' && (t.e4Poor || 0) >= 2) return ` ${e4PoorTag(t.e4Poor)}`;
+  return '';
+}
+const poorTag = n => `<span class="tag small${n >= POOR_YEARS ? ' notice' : ''}" title="Held under 30% of 12 or more tries">${n} poor year${n === 1 ? '' : 's'} in a row</span>`;
+const e4PoorTag = n => `<span class="tag small${n >= POOR_YEARS ? ' notice' : ''}" title="Stopped the smallest share of the runs that reached them">worst of the Elite Four ${n} years running</span>`;
+// a candidate row for the hiring pages: a challenger gets an offer (and may be out on a run, or have turned you down lately)
+function hireRowOf(c, warn) {
+  const t = c.t, bits = warn ? [warn] : [], imp = c.from === 'circuit' && impressed(t);
+  let label = 'Pick', off = '';
+  if (c.from === 'circuit') {
+    label = 'Offer';
+    if (!canOffer(t)) off = `turned you down · ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}`;
+    else if (t.rest == null) bits.push(`on a run: comes by ${turnDate(S.turn + HIRE_NOTICE)}`);
+  }
+  return { t, from: pickFrom(c), warn: bits.join(' · '), label, off, tags: imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '' };
+}
+// someone who accepted a post and comes after their run, with a button to withdraw the offer
+const incomingLine = (id, what) => { const t = T(id); return t && t.hired ? `<p><b>${tname(id)}</b> accepted ${what} and comes after their run, by ${turnDate(t.hired.by)} at the latest. <button class="btn small" data-act="hirewd" data-id="${id}">Withdraw the offer</button></p>` : ''; };
 // the player's League: open vacancies (with the picker) and announced departures, at the top of the circuit and gym pages
 function staffNotices() {
   if (!handOn() || (S.lg || 0) !== 0) return '';
   const vac = S.vacancies || [], going = staffIds().map(T).filter(t => t && t.stepDown != null).sort((a, b) => a.stepDown - b.stepDown);
   if (!vac.length && !going.length) return '';
   return `<section class="panel callout warnbox"><div class="ph"><div class="eyebrow">Your staff</div><button class="btn small" data-act="nav" data-v="staff">Manage your staff</button></div>
-    ${vac.length ? `<h2>${vac.length} post${vac.length === 1 ? '' : 's'} waiting for you</h2><ul class="mini">${vac.map((v, i) => `<li><span><b>${vacancyName(v)}</b> &nbsp;· vacant since ${turnDate(v.since)} · held by&nbsp;${tname(vacancyActing(v))}&nbsp;(acting)</span><span><button class="btn small primary" data-act="hire" data-v="${i}">Choose</button> <button class="btn small" data-act="hireauto" data-v="${i}">Fill it for me</button></span></li>`).join('')}</ul>
+    ${vac.length ? `<h2>${vac.length} post${vac.length === 1 ? '' : 's'} waiting for you</h2><ul class="mini">${vac.map((v, i) => `<li><span><b>${vacancyName(v)}</b> &nbsp;· vacant since ${turnDate(v.since)} · held by&nbsp;${tname(vacancyActing(v))}&nbsp;(acting)${v.incoming != null && T(v.incoming) && T(v.incoming).hired ? ` · ${tname(v.incoming)} comes by ${turnDate(T(v.incoming).hired.by)}` : ''}</span><span><button class="btn small primary" data-act="hire" data-v="${i}">Choose</button> <button class="btn small" data-act="hireauto" data-v="${i}">Fill it for me</button></span></li>`).join('')}</ul>
       <p class="muted small">Until you choose, the acting holder fights in the post. ${vac.some(v => v.post === 'leader') ? 'A gym with an acting leader runs one gym trainer short. ' : ''}</p>` : ''}
     ${going.length ? `<div class="eyebrow">Stepping down</div><ul class="mini">${going.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">leaves ${turnDate(t.stepDown)}</span></li>`).join('')}</ul>` : ''}</section>`;
 }
@@ -81,16 +110,17 @@ function viewHire() {
   if (!v) return '<section class="panel"><h2>No post is waiting</h2><p class="muted">Every post is filled.</p><button class="btn" data-act="nav" data-v="gyms">Back to the gyms</button></section>';
   const gts = v.post === 'leader' ? (S.gyms[v.slot].trainers || []).map(T).filter(t => t && !t.acting) : [];
   const fits = t => v.post === 'leader' ? gts.every(g => gymFits(g, t)) : !S.e4.some((id, k) => k !== v.slot && T(id) && !T(id).acting && specTypes(T(id)).some(x => specTypes(t).includes(x)));
-  const rows = vacancyCands(v).filter(c => !hireFit || fits(c.t));
+  const rows = vacancyCands(v).filter(c => (!hireFit || fits(c.t)) && c.t.id !== v.incoming);
   return `<section class="panel callout"><div class="eyebrow">Choose a new ${v.post === 'leader' ? 'Gym Leader' : 'Elite Four member'}</div><h2>${vacancyName(v)}</h2>
     <p>Vacant since ${turnDate(v.since)}. ${tname(vacancyActing(v))} is acting until you choose. ${v.post === 'leader' ? `The gym fights at level ${GYM_LV[v.slot]} with ${GYM_SIZE[v.slot]} Pokémon, and its type is the new leader's class; a gym trainer who shares no type with the new leader is let go and replaced from the circuit.` : `The seat fights at level ${E4_LV[v.slot]} with ${E4_SIZE} Pokémon.`} Whoever you pick builds their own team: Scouting finds stronger Pokémon, Strategy fits the team together, Training raises each Pokémon.</p>
+    ${v.incoming != null ? incomingLine(v.incoming, 'the post') : ''}
     <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div></section>
-  <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers: the ${S.lgName} circuit, your gym trainers, your other Gym Leaders and Elite Four members, and ${(v.outsiders || []).length} outsiders. A challenger or gym trainer you pick leaves their place; a Gym Leader or Elite Four member you pick leaves their post open, with an acting holder, and you choose for it next.</span></div>
-  ${pickTable(rows.map(c => ({ t: c.t, from: pickFrom(c), warn: [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : ''].filter(Boolean).join(' · ') })), 'hirepick')}</section>`;
+  <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers: the ${S.lgName} circuit, your gym trainers, your other Gym Leaders and Elite Four members, recent retirees and ${(v.outsiders || []).length} outsiders. A challenger gets an <b>offer</b>, which they can turn down (then they aren't asked again for half a year); one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while the acting holder stays. Everyone else takes the post at once: a gym trainer leaves their place, a retiree comes out of retirement, and a Gym Leader or Elite Four member leaves their post open, with an acting holder, and you choose for it next.</span></div>
+  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : ''].filter(Boolean).join(' · '))), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
-const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four' };
-const pickFrom = c => PICK_FROM[c.from] + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : '');
+const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired' };
+const pickFrom = c => PICK_FROM[c.from] + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
 // ---------- your staff (0.7.0) ----------
 // Every post of the player's League in one place: let anyone but the Champion go, swap two Gym Leaders or two Elite
 // Four members, and replace gym trainers by hand. A senior post someone leaves waits for you with an acting holder.
@@ -104,7 +134,7 @@ function staffActs(t) {
   return `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>${t.role === 'gymtrainer' ? '' : same ? ` <button class="btn small primary" data-act="staffswapto" data-id="${t.id}">Swap with ${esc(sw.name)}</button>` : ` <button class="btn small" data-act="staffswap" data-id="${t.id}">Swap</button>`}`;
 }
 function staffRow(t, label, info) {
-  return `<tr${staffSwap === t.id ? ' class="sel"' : ''}><td><b>${label}</b><div class="small muted">${info}</div></td><td>${tname(t.id)} ${staffTags(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td>${staffActs(t)}</td></tr>`;
+  return `<tr${staffSwap === t.id ? ' class="sel"' : ''}><td><b>${label}</b><div class="small muted">${info}</div></td><td>${tname(t.id)} ${staffTags(t)}${staffWarn(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td>${staffActs(t)}</td></tr>`;
 }
 function viewStaff() {
   const ch = T(S.champion), head = '<thead><tr><th>Post</th><th>Trainer</th><th>Type</th><th>Age</th><th>OVR</th><th title="Years in posts">Years</th><th></th></tr></thead>';
@@ -112,12 +142,12 @@ function viewStaff() {
     const L = T(g.leader), ts = (g.trainers || []).slice(0, GYM_TRAINERS);
     while (ts.length < GYM_TRAINERS) ts.push(null);
     return staffRow(L, `Badge ${i + 1} · ${townName(i)}`, `Lv ${GYM_LV[i]} · ${GYM_SIZE[i]} Pokémon · ${g.w}–${g.l} this year`)
-      + ts.map((id, k) => { const t = T(id);
+      + ts.map((id, k) => { const t = T(id), inc = (g.incoming || [])[k], coming = inc != null && T(inc) && T(inc).hired ? `<div class="small">Coming: ${tname(inc)} by ${turnDate(T(inc).hired.by)} <button class="btn small" data-act="hirewd" data-id="${inc}">Withdraw</button></div>` : '';
         if (!t) return `<tr class="sub"><td class="small muted">&nbsp;&nbsp;Gym trainer</td><td colspan="6" class="small muted">Left empty while the gym has an acting leader.</td></tr>`;
-        return `<tr class="sub"><td class="small">&nbsp;&nbsp;Gym trainer · ${GYM_SIZE[i] - 1} Pokémon</td><td>${tname(t.id)} ${staffTags(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td><button class="btn small" data-act="gtpick" data-g="${i}" data-k="${k}">Replace</button> ${staffAsk === t.id ? `<button class="btn small primary" data-act="staffgo" data-id="${t.id}">Let ${esc(t.name)} go</button> <button class="btn small ghost" data-act="staffask">Cancel</button>` : `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>`}</td></tr>`; }).join('');
+        return `<tr class="sub"><td class="small">&nbsp;&nbsp;Gym trainer · ${GYM_SIZE[i] - 1} Pokémon</td><td>${tname(t.id)} ${staffTags(t)}${coming}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td><button class="btn small" data-act="gtpick" data-g="${i}" data-k="${k}">Replace</button> ${staffAsk === t.id ? `<button class="btn small primary" data-act="staffgo" data-id="${t.id}">Let ${esc(t.name)} go</button> <button class="btn small ghost" data-act="staffask">Cancel</button>` : `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>`}</td></tr>`; }).join('');
   }).join('');
   return `${staffNotices()}<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Your staff</h2>
-    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes only when they step down.</p></section>
+    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes only when they step down. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
   <section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">The seat changes only when the Champion steps down</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>Champion</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `Elite Four #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">A gym's type is its leader's class; gym trainers share a type with the leader</span></div><div class="scroll"><table class="tbl">${head}<tbody>${gymRows}</tbody></table></div></section>`;
@@ -125,18 +155,19 @@ function viewStaff() {
 // choosing a gym trainer by hand
 function viewGtPick() {
   const g = S.gyms[gtSel.g], cur = T((g.trainers || [])[gtSel.k]), L = T(g.leader);
-  const rows = gymTrainerCands(gtSel.g);
+  const inc = (g.incoming || [])[gtSel.k], rows = gymTrainerCands(gtSel.g).filter(c => c.t.id !== inc);
   return `<section class="panel callout"><div class="eyebrow">Choose a gym trainer</div><h2>${townName(gtSel.g)} Gym · badge ${gtSel.g + 1}</h2>
     <p>${cur ? `${tname(cur.id)} holds this place now and is let go when you pick someone else (back to the circuit, or retired if over 45 with ten years behind them).` : 'This place is empty.'} A gym trainer fields ${GYM_SIZE[gtSel.g] - 1} Pokémon at level ${GYM_LV[gtSel.g]} and must share a type with ${dn(L)} (${typeLabel(L)}).</p>
+    ${inc != null ? incomingLine(inc, 'this place') : ''}
     <div class="confirm-row"><button class="btn" data-act="nav" data-v="staff">Back to your staff</button></div></section>
-  <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers who fit: challengers on the circuit, your other gym trainers, and Gym Leaders and Elite Four members (their post opens).</span></div>
-  ${pickTable(rows.map(c => ({ t: c.t, from: pickFrom(c), warn: c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '' })), 'gtplace')}</section>`;
+  <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers who fit: challengers on the circuit, recent retirees, outsiders, your other gym trainers, and Gym Leaders and Elite Four members (their post opens). A challenger gets an <b>offer</b>, which they can turn down; one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while ${cur ? cur.name : 'the place'} stays${cur ? ' until then' : ' empty'}. Outsiders nobody picks join the circuit.</span></div>
+  ${pickTable(rows.map(c => hireRowOf(c, c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '')), 'gtplace')}</section>`;
 }
 // a table of trainers to pick from: type, age, OVR and the five ratings, with a button per row
 function pickTable(rows, act) {
   if (!rows.length) return '<p class="muted">Nobody to show.</p>';
   return `<div class="scroll"><table class="tbl"><thead><tr><th>Trainer</th><th>From</th><th>Type</th><th>Age</th><th>OVR</th>${RK.map(k => `<th title="${RNAME[k]}">${RNAME[k].slice(0, 3)}</th>`).join('')}<th></th></tr></thead><tbody>
-  ${rows.map(({ t, from, warn }) => `<tr><td>${S.founding ? esc(dn(t)) + (t.famous ? '<span class="star" title="Famous trainer">★</span>' : '') : tname(t.id)}</td><td class="small">${from}</td><td>${specChips(t)}${warn ? ` <span class="tag notice small">${warn}</span>` : ''}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td>${RK.map(k => `<td class="num">${t.r[k]}</td>`).join('')}<td><button class="btn small primary" data-act="${act}" data-id="${t.id}">Pick</button></td></tr>`).join('')}
+  ${rows.map(({ t, from, warn, label, off, tags }) => `<tr><td>${S.founding ? esc(dn(t)) + (t.famous ? '<span class="star" title="Famous trainer">★</span>' : '') : tname(t.id)}${tags || ''}</td><td class="small">${from}</td><td>${specChips(t)}${warn ? ` <span class="tag notice small">${warn}</span>` : ''}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td>${RK.map(k => `<td class="num">${t.r[k]}</td>`).join('')}<td>${off ? `<span class="small muted">${off}</span>` : `<button class="btn small primary" data-act="${act}" data-id="${t.id}">${label || 'Pick'}</button>`}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 // ---------- founding by hand (0.6.0) ----------
@@ -644,12 +675,12 @@ function viewRecap() {
   // gyms: the leader at year's end and anyone else who led it, the gym trainers, tries turned back and badges conceded
   const watchFor = g => (S.lg || 0) === 0 ? (S.gyms[g] && S.gyms[g].watch || []).map((r, k) => ({ r, k })).filter(x => x.r.when && x.r.when.season === h.season) : [];
   const gymRows = (h.gyms || []).map((g, k) => { const tb = g.wl + g.wt, n = tb + g.l, also = g.lead.filter(id => id !== g.leader), w = watchFor(k);
-    return `<tr><td class="num">${k + 1}</td><td>${townName(k)}<div class="muted small">${g.type || '—'}</div></td><td>${g.leader != null && T(g.leader) ? tname(g.leader) : '—'}${g.acting ? ' <span class="tag">acting</span>' : ''}${also.length ? `<div class="muted small">also led by ${names(also)}</div>` : ''}<div class="muted small">Gym trainers: ${names(g.gt) || 'none'}</div></td>
+    return `<tr><td class="num">${k + 1}</td><td>${townName(k)}<div class="muted small">${g.type || '—'}</div></td><td>${g.leader != null && T(g.leader) ? tname(g.leader) : '—'}${g.acting ? ' <span class="tag">acting</span>' : ''}${g.poor ? ' ' + poorTag(g.poor) : ''}${also.length ? `<div class="muted small">also led by ${names(also)}</div>` : ''}<div class="muted small">Gym trainers: ${names(g.gt) || 'none'}</div></td>
       <td class="num">${g.wt}</td><td class="num">${g.wl}</td><td class="num">${g.l}</td><td class="num">${n ? Math.round(100 * tb / n) + '%' : '—'}</td>
       <td>${w.map(x => `<button class="btn small" data-act="watchgym" data-g="${k}" data-i="${x.k}">${esc(x.r.sides[0].name)}</button>`).join(' ')}</td></tr>`; }).join('');
   const seatName = k => k < 4 ? `Elite Four #${k + 1}` : 'Champion';
   const seatRows = (h.seats || []).map((st, k) => { const also = st.held.filter(id => id !== st.id);
-    return `<tr><td>${seatName(k)}</td><td>${st.id != null && T(st.id) ? tname(st.id) : '—'}${st.acting ? ' <span class="tag">acting</span>' : ''}${also.length ? `<div class="muted small">also held by ${names(also)}</div>` : ''}</td><td class="small">${st.type || '—'}</td><td class="num">${st.faced}</td><td class="num">${st.stopped}</td><td class="num">${st.faced - st.stopped}</td></tr>`; }).join('');
+    return `<tr><td>${seatName(k)}</td><td>${st.id != null && T(st.id) ? tname(st.id) : '—'}${st.acting ? ' <span class="tag">acting</span>' : ''}${(st.poor || 0) >= 2 ? ' ' + e4PoorTag(st.poor) : ''}${also.length ? `<div class="muted small">also held by ${names(also)}</div>` : ''}</td><td class="small">${st.type || '—'}</td><td class="num">${st.faced}</td><td class="num">${st.stopped}</td><td class="num">${st.faced - st.stopped}</td></tr>`; }).join('');
   const stageCells = s => [0, 1, 2, 3, 4].map(k => `<td class="st ${s > k ? 'w' : s === k ? 'l' : ''}">${s > k ? 'W' : s === k ? 'L' : ''}</td>`).join('');
   const nav = `<div class="segs setup-segs">${i > 0 ? `<button class="seg" data-act="repyear" data-v="${all[i - 1].season}">‹ Year ${all[i - 1].season}</button>` : ''}<button class="seg on" aria-pressed="true">Year ${h.season}</button>${!latest ? `<button class="seg" data-act="repyear" data-v="${all[i + 1].season}">Year ${all[i + 1].season} ›</button><button class="seg" data-act="repyear" data-v="latest">Latest</button>` : ''}</div>`;
   const ran = latest ? Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12) : [];
@@ -894,6 +925,9 @@ const GLOSS_TERMS = {
     ['Founding', 'When you found your League you place its Champion, Elite Four and eight Gym Leaders by hand, from candidates the game finds and the founding field. Everyone you don\'t place sets out as a challenger, and gym trainers are taken from the circuit.'],
     ['Stepping down', `A member of staff only steps down after a long career: past their career length and at least ${STEP_DOWN_YEARS} years in posts. They announce it a year ahead and leave on their next birthday.`],
     ['Your staff', 'On the Your staff page you can let any Gym Leader, Elite Four member or gym trainer go, swap two Gym Leaders or two Elite Four members, and pick gym trainers yourself, at any time. A Gym Leader\'s or Elite Four seat that someone leaves waits for you with an acting holder. Picking someone who already holds a post moves them, and their old post opens next. The Champion changes only by stepping down.'],
+    ['Hiring', `Anyone you can hire right now: challengers on your circuit, your own staff, trainers who retired in the last ${RETIREE_YEARS} years (under ${RETIREE_MAX_AGE} and still OVR ${RETIREE_MIN_OVR}+), and outsiders the game finds for the post. A challenger gets an offer and can turn it down; then they aren't asked again for half a year. One out on a run who accepts finishes the run first, for up to ${HIRE_NOTICE} weeks, and the post's holder stays until they arrive. Everyone else takes the post at once. Outsiders nobody picks set out as challengers. Rival Leagues hire from their own circuits, recent retirees and outsiders.`],
+    ['Impressed', `A challenger on your circuit who reached the Elite Four, or won ${IMPRESS_BADGES} or more badges in a run, this year or last. Worth an offer.`],
+    ['Poor years', `A Gym Leader's year is poor when the gym held under 30% of 12 or more tries; an Elite Four member's warning counts the years in a row they stopped the smallest share of the runs that reached them. Rival Leagues replace a Gym Leader after ${POOR_YEARS} poor years in a row, and an Elite Four member after ${POOR_YEARS} years with the worst record if someone clearly better is free. In your League you only see the warning.`],
     ['Year report', 'Opens at New Year from the League menu, for the year just ended, and any earlier year can be opened from it or from the year\'s number in the History page\'s wall report. It leads with the trainers let through, then perfect years and the streak, how far the best challenger got and the badges conceded, each against last year, your best year (fewest let through, then fewest badges) and your average. Below: each gym (its leader at year\'s end and anyone else who led it, its gym trainers, tries turned back by the gym trainers and by the leader, badges conceded), each Elite Four seat and the Champion\'s, the year\'s ten furthest challengers and every run at the Elite Four.'],
     ['Badges conceded lately', 'Each of your gyms keeps its last three badges conceded: the battles its leader lost. Watch them from the gym\'s card on the Gyms page.'],
     ['Acting', 'When a Gym Leader or Elite Four member leaves your League, the post waits for you. Meanwhile the gym\'s stronger gym trainer stands in as acting leader (the gym runs one gym trainer short), or a stand-in holds the Elite Four seat. The Champion\'s seat is never empty: the strongest Elite Four member moves up.'],

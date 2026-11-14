@@ -1,5 +1,16 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 9, ver: '0.9.0', date: 'November 13, 2026', time: '9:36 PM ET', title: 'Hiring and turnover', items: [
+    "Hiring a challenger is now an offer. They can turn it down (and then aren't asked again for half a year); younger trainers, title winners, those doing well on a run and anyone holding a grudge are less keen. One out on a run who accepts finishes it first, for up to 8 weeks, and the post's holder (an acting holder, or the gym trainer you're replacing) stays until they arrive. You can withdraw an offer that was accepted.",
+    "Recent retirees can be hired: trainers who retired in the last three years, under 55 and still OVR 55 or better. They come out of retirement at once, and a Hall of Famer stays one.",
+    "Picking a gym trainer by hand now offers recent retirees and two outsiders of the leader's type as well. Outsiders nobody picks set out as challengers.",
+    "When a gym trainer's place is filled automatically, the best fitting challenger takes it as before, then a recent retiree who fits, and only then a new trainer.",
+    "Challengers who impressed you (reached the Elite Four, or won six or more badges in a run, this year or last) are tagged on the circuit and the hiring pages. A hired challenger shows where they're headed.",
+    "Warnings: a Gym Leader's poor years in a row (the gym held under 30% of its tries) and an Elite Four member with the worst record of the four two or more years running show on Your staff and in the year report. In your League nothing happens unless you act.",
+    "Rival Leagues now replace poor staff: a Gym Leader after three poor years in a row, and an Elite Four member after three years with the worst record of the four if someone clearly better is available. At most one gym and one seat a year.",
+    "Rival Leagues fill a vacant post with the best of their circuit and recent retirees (a challenger can turn them down too), and bring in an outsider only when nobody fits. That holds for Elite Four seats as well as gyms.",
+    "Glossary entries for Hiring, Impressed and Poor years.",
+  ] },
   { id: 8, ver: '0.8.0', date: 'November 13, 2026', time: '8:45 PM ET', title: 'The year report', items: [
     "The year report replaces the year in review. It opens at New Year from the League menu and leads with the trainers let through (who beat the Champion, and when), then perfect years and the streak, how far the best challenger got and the badges conceded.",
     "Each headline number is set against last year, your best year (fewest let through, then fewest badges) and your average so far.",
@@ -314,6 +325,16 @@ function afterMove(r, msg) {
   if (vi >= 0) { hireIdx = vi; hireFit = false; go('hire'); toast(`${msg} ${vacancyName(r)} is now waiting for you.`); }
   else { go('staff'); toast(msg); }
 }
+// what came of picking someone on a hiring page (0.9.0): taken at once, accepted for after their run, or turned down
+function hireResult(o, id, name) {
+  const t = T(id);
+  if (!o || !o.res || (o.res === 'now' && !o.r)) { render(); return; }
+  save();
+  if (o.res === 'now') afterMove(o.r, `${dn(t)} takes the post: ${name}.`);
+  else if (o.res === 'later') { go('staff'); toast(`${t.name} accepted (${name}) and comes after their run, by ${turnDate(t.hired.by)} at the latest.`); }
+  else if (o.res === 'refused') { render(); toast(`${t.name} turned the offer down.`); }
+  else render();
+}
 // ---------- actions ----------
 
 
@@ -410,14 +431,15 @@ document.addEventListener('click', ev => {
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
-    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), r = v && fillVacancy(v, +el.dataset.id); if (r) { save(); afterMove(r, `${dn(T(+el.dataset.id))} takes the post: ${name}.`); } break; }
-    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v); if (v && autoFillVacancy(v)) { save(); go('staff'); toast(`${name} is filled.`); } break; }
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id), id, name); break; }
+    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v), r = v && autoFillVacancy(v); if (r) { save(); go('staff'); toast(r === 'later' && v.incoming != null ? `${T(v.incoming).name} accepted ${name} and comes after their run.` : `${name} is filled.`); } else render(); break; }
+    case 'hirewd': { const t = T(+el.dataset.id); if (t && withdrawOffer(t.id)) { save(); render(); toast(`You withdrew the offer to ${t.name}.`); } break; }
     case 'staffask': staffAsk = el.dataset.id ? +el.dataset.id : null; staffSwap = null; render(); break;
     case 'staffgo': { const t = T(+el.dataset.id), r = t && releaseStaff(t.id); staffAsk = null; if (r) { save(); afterMove(r, `${t.name} was let go.`); } else render(); break; }
     case 'staffswap': staffSwap = el.dataset.id ? +el.dataset.id : null; staffAsk = null; render(); break;
     case 'staffswapto': { const a = staffSwap; staffSwap = null; if (a != null && swapStaff(a, +el.dataset.id)) { save(); toast(`${T(a).name} and ${T(+el.dataset.id).name} swapped posts.`); } render(); break; }
-    case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; go('gtpick'); break;
-    case 'gtplace': { const r = gtSel && placeGymTrainer(gtSel.g, gtSel.k, +el.dataset.id); if (r) { save(); afterMove(r, `${T(+el.dataset.id).name} is now a gym trainer at ${townName(gtSel.g)} Gym.`); gtSel = null; } break; }
+    case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; gymOutsiders(gtSel.g); save(); go('gtpick'); break;
+    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireForGymTrainer(gtSel.g, gtSel.k, id); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
     case 'watchgym': { const g = S.gyms[+el.dataset.g], r = g && (g.watch || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;

@@ -12,6 +12,8 @@ async def run(path):
         pg.on('console', lambda m: errs.append('CONSOLE ' + m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
         await pg.goto('file://' + path); await pg.wait_for_timeout(500)
         out = await pg.evaluate("""() => {
+          // 0.9.0: pick a candidate who takes a post at once (not a challenger, who gets an offer, and not senior staff)
+          const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^Circuit/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
           const log = [], click = sel => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
           if (!document.querySelector('[data-act=newworld]')) log.push('FAIL no region cards on the setup screen');
           if (!/Pokémon League Builder/.test(document.title + document.body.textContent)) log.push('FAIL the name is missing');
@@ -59,8 +61,8 @@ async def run(path):
                   if (!/waiting for you/.test(txt) || !/Acting/.test(txt) || !/Steps down/.test(txt)) log.push('FAIL vacancies or step-downs not shown');
                   if (!inLeague(0, () => T(S.gyms[2].leader).acting && S.gyms[2].trainers.filter(Boolean).length === 1)) log.push('FAIL no acting leader at gym 3');
                   click('[data-act=hire][data-v="0"]'); if (view !== 'hire' || !document.querySelector('[data-act=hirepick]')) log.push('FAIL no hiring page');
-                  click('[data-act=hirefit]'); click('[data-act=hirefit]'); { const r = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (r) r.click(); }
-                  click('[data-act=hireauto][data-v="0"]');
+                  click('[data-act=hirefit]'); click('[data-act=hirefit]'); if (!pickNow()) log.push('FAIL nobody to pick at once');
+                  click('[data-act=hire][data-v="0"]'); if (!pickNow()) log.push('FAIL nobody to pick at once');
                   if ((S.vacancies || []).length) log.push('FAIL vacancies left open: ' + S.vacancies.length);
                   if (inLeague(0, () => S.gyms[2].acting || S.gyms[2].trainers.filter(Boolean).length !== 2 || S.e4.some(id => T(id).acting))) log.push('FAIL posts not filled properly');
                   log.push('filled two vacancies'); go('circuit'); }
@@ -74,13 +76,26 @@ async def run(path):
                   const row = [...document.querySelectorAll('[data-act=hirepick]')].find(b => /Gym Leader ·/.test(b.closest('tr').textContent));
                   if (!row) log.push('FAIL no Gym Leader among the candidates'); else { const id = +row.dataset.id; row.click();
                     if (T(S.e4[3]) !== T(id) || view !== 'hire' || !(S.vacancies || []).some(v => v.post === 'leader')) log.push('FAIL moving a Gym Leader up did not open their gym');
-                    click('[data-act=hireauto][data-v="0"]'); }
+                    if (!pickNow()) log.push('FAIL nobody to pick at once'); }
                   if ((S.vacancies || []).length) log.push('FAIL posts left open after the move');
                   go('staff'); const a = S.gyms[0].leader, b2 = S.gyms[5].leader; click('[data-act=staffswap][data-id="' + a + '"]'); click('[data-act=staffswapto][data-id="' + b2 + '"]');
                   if (S.gyms[0].leader !== b2 || S.gyms[5].leader !== a) log.push('FAIL the swap');
                   click('[data-act=gtpick][data-g="1"][data-k="0"]'); const old = S.gyms[1].trainers[0];
-                  if (view !== 'gtpick' || !click('[data-act=gtplace]')) log.push('FAIL the gym trainer picker'); else if (S.gyms[1].trainers[0] === old) log.push('FAIL Replace did not change the gym trainer');
-                  while ((S.vacancies || []).length) click('[data-act=hireauto][data-v="0"]');
+                  // 0.9.0: the picker offers outsiders; one nobody picks sets out as a challenger
+                  { const outs = (S.gyms[1].outs || []).slice(), ob = [...document.querySelectorAll('[data-act=gtplace]')].find(b => /Outsider/.test(b.closest('tr').textContent));
+                    if (view !== 'gtpick' || !ob) log.push('FAIL the gym trainer picker has no outsiders'); else { const oid = +ob.dataset.id; ob.click();
+                      if (S.gyms[1].trainers[0] === old || S.gyms[1].trainers[0] !== oid) log.push('FAIL Replace did not change the gym trainer');
+                      if (outs.filter(x => x !== oid).some(x => T(x).role !== 'challenger')) log.push('FAIL an unpicked outsider did not join the circuit'); } }
+                  // an offer to a challenger: taken now, accepted for after their run, or turned down
+                  let og = 2, ob = null;
+                  for (; og < 8 && !ob; og++) { go('staff'); click('[data-act=gtpick][data-g="' + og + '"][data-k="0"]'); ob = [...document.querySelectorAll('[data-act=gtplace]')].find(b => b.textContent === 'Offer'); }
+                  og--;
+                  { const old2 = S.gyms[og].trainers[0];
+                    if (!ob) log.push('FAIL no Offer button'); else { const oid = +ob.dataset.id; ob.click(); const t = T(oid);
+                      if (!(S.gyms[og].trainers[0] === oid || (t.hired && S.gyms[og].incoming[0] === oid && S.gyms[og].trainers[0] === old2) || t.refusedAt === S.turn)) log.push('FAIL the offer came to nothing');
+                      log.push('offer: ' + (S.gyms[og].trainers[0] === oid ? 'taken now' : t.hired ? 'after their run' : 'turned down'));
+                      if (t.hired) { go('staff'); if (!/Coming:/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page does not show who is coming'); go('circuit'); if (!/Hired:/.test(document.querySelector('#main').textContent)) log.push('FAIL the circuit does not show the hire'); } } }
+                  for (let n = 0; n < 20; n++) { const vi = (S.vacancies || []).findIndex(v => v.incoming == null); if (vi < 0) break; go('staff'); click('[data-act=hireauto][data-v="' + vi + '"]'); }
                   go('staff'); const gt = S.gyms[6].trainers[1]; click('[data-act=staffask][data-id="' + gt + '"]'); click('[data-act=staffgo][data-id="' + gt + '"]');
                   if (S.gyms[6].trainers.filter(Boolean).length !== 2 || S.gyms[6].trainers.includes(gt)) log.push('FAIL letting a gym trainer go');
                   if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page shows undefined');
