@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 3; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0)
+const SAVE_VERSION = 4; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is

@@ -971,9 +971,24 @@ const runWeeks = t => (t && t.role === 'challenger' && t.rest == null && t.runSt
 // the bound League's running record of the year: League runs (entries), titles conceded, runs that ended on three
 // losses, and how far the best challenger has got
 function yearLeague() {
-  if (!S.league) S.league = { season: S.season, entries: [], logs: [], conceded: [], startChamp: S.champion, out: 0, runs: 0, best: 0, bestId: null };
+  if (!S.league) S.league = { season: S.season, entries: [], logs: [], conceded: [], startChamp: S.champion, out: 0, runs: 0, best: 0, bestId: null, gyms: [], seats: [[], [], [], [], []] };
   return S.league;
 }
+// the year report (0.8.0): everyone who held a place in each gym this year, and the tries each of them turned back
+function yearGym(g) {
+  const L = yearLeague(); L.gyms = L.gyms || [];
+  return L.gyms[g] = L.gyms[g] || { lead: [], gt: [], by: {}, wl: 0, wt: 0 };
+}
+const addOnce = (a, id) => { if (id != null && !a.includes(id)) a.push(id); };
+// who holds each post right now, added to the year's holders (every week, and at New Year)
+function noteHolders() {
+  const L = yearLeague();
+  S.gyms.forEach((gym, g) => { const y = yearGym(g); addOnce(y.lead, gym.leader); for (const id of gym.trainers || []) addOnce(y.gt, id); });
+  L.seats = L.seats || [[], [], [], [], []];
+  [...S.e4, S.champion].forEach((id, k) => addOnce(L.seats[k], id));
+}
+// how far a challenger got this year: 0 to 8 badges, 9 to 12 Elite Four members beaten, 13 the title
+const yearDepth = t => { const y = yearOf(t); return y.st != null ? 8 + y.st : y.b; };
 // a trainer's own tally of the year (it starts afresh by itself when the year changes)
 function yearOf(t) { if (!t.yr || t.yr.season !== S.season) t.yr = { season: S.season, b: 0, st: null, pts: 0, runs: 0 }; return t.yr; }
 // how far a challenger has got: 0 to 8 badges, 9 to 12 Elite Four members beaten, 13 the title
@@ -1098,6 +1113,7 @@ function gymTry(t, entry) {
       entry.won = false;
       t.career.gymL++; gym.w++; gym.streak = 0;
       if (isLeader) gym.lw = (gym.lw || 0) + 1; else foe.career.gymW = (foe.career.gymW || 0) + 1;
+      { const yg = yearGym(g); addOnce(isLeader ? yg.lead : yg.gt, foe.id); yg.by[foe.id] = (yg.by[foe.id] || 0) + 1; if (isLeader) yg.wl++; else yg.wt++; }
       t.gymTries = (t.gymTries || 0) + 1;
       if (t.gymTries >= GYM_TRIES) { news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
@@ -1177,6 +1193,7 @@ function simWeek() {
 }
 // one League's week: every challenger who is out on a run acts; one whose rest is over sets out again
 function leagueWeek() {
+  noteHolders();
   for (const id of shuffle(S.challengers)) {
     const t = T(id); if (!t || t.role !== 'challenger' || !S.challengers.includes(id)) continue;
     if (t.rest == null && t.runStart == null) t.rest = S.turn; // new to the circuit
@@ -1756,6 +1773,21 @@ function newYear() {
   news(`Year ${S.season} begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers on the circuit'}.`, 'league');
   stopFor('newyear', `Year ${S.season - 1} is over.`);
 }
+// the year report's detail (0.8.0), kept in the year's history entry: each gym (its leader at year's end, everyone
+// who led it or was a gym trainer there, tries turned back by gym trainers and by the leader, badges conceded),
+// each Elite Four seat and the Champion's (everyone who held it, runs faced and stopped), every run at the Elite Four
+// ([id, week, stage]) and the year's ten furthest challengers ([id, how far, runs])
+function yearDetail(L) {
+  noteHolders();
+  const gyms = S.gyms.map((gym, g) => { const y = yearGym(g), t = T(gym.leader);
+    return { leader: gym.leader, type: t ? typeLabel(t) : '', acting: !!gym.acting, lead: y.lead.slice(), gt: y.gt.slice(), by: { ...y.by }, wl: y.wl, wt: y.wt, l: gym.l }; });
+  const seats = [...S.e4, S.champion].map((id, k) => { const t = T(id);
+    return { id, type: t ? typeLabel(t) : '', acting: !!(t && t.acting), held: (L.seats[k] || []).slice(), faced: L.entries.filter(e => e.stage >= k).length, stopped: L.entries.filter(e => e.stage === k).length }; });
+  const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
+  const top = [...ran].map(T).filter(t => t && (t.role === 'challenger' || t.role === 'retired') && t.yr && t.yr.season === S.season && (t.yr.runs || yearDepth(t)))
+    .map(t => [t.id, yearDepth(t), t.yr.runs || 0, ovr(t)]).sort((a, b) => b[1] - a[1] || b[3] - a[3]).slice(0, 10).map(x => x.slice(0, 3));
+  return { gyms, seats, runsE4: L.entries.map(e => [e.id, e.week, e.stage]), top };
+}
 // one League's New Year: the wall report, the awards, the gyms' year and the meta
 function leagueNewYear(changes) {
   const L = yearLeague();
@@ -1771,7 +1803,7 @@ function leagueNewYear(changes) {
     season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta,
+    qualifiers: L.entries.length, metaMons: meta, ...yearDetail(L),
   });
   // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);

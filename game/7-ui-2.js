@@ -177,7 +177,7 @@ function wallReport() {
   return `<section class="panel"><div class="ph"><h2>Wall report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">A trainer let through is a title conceded; a perfect year is one with none</span></div>
   <p><b>${total}</b> trainer${total === 1 ? '' : 's'} let through in ${h.length} year${h.length === 1 ? '' : 's'} · <b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} · current streak <b>${streak}</b> · longest <b>${best}</b> · ${avg(x => x.badges)} badges conceded a year · ${avg(x => x.titles)} let through a year · ${wallStanding()}</p>
   <div class="scroll"><table class="tbl"><thead><tr><th>Year</th><th>Result</th><th>Titles conceded</th><th>Badges conceded</th><th>Runs</th><th>Reached the Elite Four</th><th>Out on three losses</th><th>Best challenger</th></tr></thead><tbody>
-  ${h.slice().reverse().map(x => `<tr><td class="num">${x.season}</td><td>${x.titles ? '<span class="tag notice">Conceded</span>' : '<span class="tag gold">Perfect</span>'}</td><td>${x.titles ? x.winners.map(tname).join(', ') : '—'}</td><td class="num">${x.badges}</td><td class="num">${x.runs ?? '—'}</td><td class="num">${x.qualifiers}</td><td class="num">${x.out}</td><td>${x.bestId ? tname(x.bestId) + ` <span class="muted">(${depthName(x.best)})</span>` : '—'}</td></tr>`).join('')}
+  ${h.slice().reverse().map(x => `<tr><td class="num"><button class="tlink" data-act="repyear" data-v="${x.season}" title="Open the Year ${x.season} report">${x.season}</button></td><td>${x.titles ? '<span class="tag notice">Conceded</span>' : '<span class="tag gold">Perfect</span>'}</td><td>${x.titles ? x.winners.map(tname).join(', ') : '—'}</td><td class="num">${x.badges}</td><td class="num">${x.runs ?? '—'}</td><td class="num">${x.qualifiers}</td><td class="num">${x.out}</td><td>${x.bestId ? tname(x.bestId) + ` <span class="muted">(${depthName(x.best)})</span>` : '—'}</td></tr>`).join('')}
   </tbody></table></div></section>`;
 }
 // ---------- trainers page ----------
@@ -616,21 +616,65 @@ function awardsPanel(h, title) {
 }
 // ---------- recap ----------
 
+// ---------- the year report (0.8.0) ----------
+// One year of the bound League: trainers let through first, then the perfect years and the streak, how far the best
+// challenger got and the badges conceded, each against last year, the best year and the average; then each gym,
+// each Elite Four seat and the Champion's, the year's ten furthest challengers and every run at the Elite Four.
+// It opens at New Year (it replaced the year in review) and any year can be opened from it or the History page.
+let repYear = null; // the year shown; null is the latest
 function viewRecap() {
-  const L = S.lastLeague, h = S.history[S.history.length - 1]; if (!L || !h) return viewCircuit();
-  const ran = Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12);
-  return `${worldPanel()}<div class="grid-office"><div class="col">
-    <section class="panel callout"><div class="eyebrow">Year ${h.season} in review${nLeagues() > 1 ? ' · ' + S.lgName : ''}</div><h2>${h.titles ? `${h.titles} title${h.titles === 1 ? '' : 's'} conceded` : 'A perfect year'}</h2>
-      <p>${h.titles ? `${h.winners.map(tname).join(', ')} beat the Champion. ` : 'Nobody took the title. '}${h.badges} badges conceded over ${h.runs} runs; ${h.qualifiers} run${h.qualifiers === 1 ? '' : 's'} reached the Elite Four and ${h.out} ended on a third loss at a gym.${h.bestId && T(h.bestId) ? ` ${tname(h.bestId)} got furthest (${depthName(h.best)}).` : ''}${h.metaMons && h.metaMons.length ? ` The year's top performers on the circuit: ${h.metaMons.join(', ')}.` : ''}</p></section>
-    ${awardsPanel(h)}
-    <section class="panel"><div class="ph"><h3>Runs at the Elite Four</h3></div>${L.entries.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>When</th><th>Trainer</th><th>E4 #1</th><th>#2</th><th>#3</th><th>#4</th><th>Final</th></tr></thead><tbody>
-      ${L.entries.map(e => `<tr><td class="small">${weekShort(e.week)}</td><td>${tname(e.id)}</td>${[0, 1, 2, 3, 4].map(k => `<td class="st ${e.stage > k ? 'w' : e.stage === k ? 'l' : ''}">${e.stage > k ? 'W' : e.stage === k ? 'L' : ''}</td>`).join('')}</tr>`).join('')}
-      </tbody></table></div>` : '<p class="muted">Nobody completed the badge circuit.</p>'}
-      ${L.logs.length ? `<div class="logs">${L.logs.map((r, i) => `<button class="btn small" data-act="watch" data-i="${i}" data-y="last">${r.title}: ${r.sides[0].name}</button>`).join('')}</div>` : ''}
-    </section>
-    <section class="panel"><div class="ph"><h3>How the world changed</h3></div><ul class="changes">${(S.changes || []).map(c => `<li>${c}</li>`).join('') || '<li>A quiet year.</li>'}</ul></section>
+  const all = S.history.filter(x => x.titles != null);
+  if (!all.length) return viewCircuit();
+  const at = all.findIndex(x => x.season === repYear), i = at >= 0 ? at : all.length - 1, h = all[i];
+  const latest = i === all.length - 1, upTo = all.slice(0, i + 1), prev = all[i - 1];
+  const L = latest ? S.lastLeague : null;
+  let streak = 0; for (let k = i; k >= 0 && !all[k].titles; k--) streak++;
+  const perfect = upTo.filter(x => !x.titles).length;
+  const best = upTo.slice().sort((a, b) => a.titles - b.titles || a.badges - b.badges || a.season - b.season)[0];
+  // each headline measure against last year, the best year and the average so far (lower is better unless `up`)
+  const measures = [['Trainers let through', x => x.titles], ['Badges conceded', x => x.badges], ['Furthest a challenger got', x => x.best, d => depthName(d)],
+    ['Runs begun', x => x.runs || 0, null, 0], ['Runs that reached the Elite Four', x => x.qualifiers], ['Runs ended on a third loss', x => x.out, null, 1]];
+  const delta = (v, p, up) => { if (p == null || v === p || up === 0) return ''; const good = up ? v > p : v < p; return ` <span class="small ${good ? 'dgood' : 'dbad'}">${v > p ? '▲' : '▼'}${Math.abs(v - p)}</span>`; };
+  const cmp = `<div class="scroll"><table class="tbl"><thead><tr><th></th><th>Year ${h.season}</th><th>Last</th><th>Best${best ? ` <span class="muted small">(Y${best.season})</span>` : ''}</th><th>Average <span class="muted small">(${upTo.length} yr${upTo.length === 1 ? '' : 's'})</span></th></tr></thead><tbody>
+    ${measures.map(([label, f, fmt, up]) => { const v = f(h), w = fmt || (x => x), p = prev ? f(prev) : null;
+      return `<tr><td>${label}</td><td><b>${w(v)}</b>${fmt ? '' : delta(v, p, up)}</td><td>${prev ? w(p) : '<span class="muted">—</span>'}</td><td>${best === h ? '<span class="tag gold">this year</span>' : w(f(best))}</td><td class="num">${fmt ? '' : (upTo.reduce((a, x) => a + f(x), 0) / upTo.length).toFixed(1)}</td></tr>`; }).join('')}
+    </tbody></table></div>`;
+  const won = (h.runsE4 || []).filter(r => r[2] === 5);
+  const names = ids => ids.filter(id => T(id)).map(tname).join(', ');
+  // gyms: the leader at year's end and anyone else who led it, the gym trainers, tries turned back and badges conceded
+  const watchFor = g => (S.lg || 0) === 0 ? (S.gyms[g] && S.gyms[g].watch || []).map((r, k) => ({ r, k })).filter(x => x.r.when && x.r.when.season === h.season) : [];
+  const gymRows = (h.gyms || []).map((g, k) => { const tb = g.wl + g.wt, n = tb + g.l, also = g.lead.filter(id => id !== g.leader), w = watchFor(k);
+    return `<tr><td class="num">${k + 1}</td><td>${townName(k)}<div class="muted small">${g.type || '—'}</div></td><td>${g.leader != null && T(g.leader) ? tname(g.leader) : '—'}${g.acting ? ' <span class="tag">acting</span>' : ''}${also.length ? `<div class="muted small">also led by ${names(also)}</div>` : ''}<div class="muted small">Gym trainers: ${names(g.gt) || 'none'}</div></td>
+      <td class="num">${g.wt}</td><td class="num">${g.wl}</td><td class="num">${g.l}</td><td class="num">${n ? Math.round(100 * tb / n) + '%' : '—'}</td>
+      <td>${w.map(x => `<button class="btn small" data-act="watchgym" data-g="${k}" data-i="${x.k}">${esc(x.r.sides[0].name)}</button>`).join(' ')}</td></tr>`; }).join('');
+  const seatName = k => k < 4 ? `Elite Four #${k + 1}` : 'Champion';
+  const seatRows = (h.seats || []).map((st, k) => { const also = st.held.filter(id => id !== st.id);
+    return `<tr><td>${seatName(k)}</td><td>${st.id != null && T(st.id) ? tname(st.id) : '—'}${st.acting ? ' <span class="tag">acting</span>' : ''}${also.length ? `<div class="muted small">also held by ${names(also)}</div>` : ''}</td><td class="small">${st.type || '—'}</td><td class="num">${st.faced}</td><td class="num">${st.stopped}</td><td class="num">${st.faced - st.stopped}</td></tr>`; }).join('');
+  const stageCells = s => [0, 1, 2, 3, 4].map(k => `<td class="st ${s > k ? 'w' : s === k ? 'l' : ''}">${s > k ? 'W' : s === k ? 'L' : ''}</td>`).join('');
+  const nav = `<div class="segs setup-segs">${i > 0 ? `<button class="seg" data-act="repyear" data-v="${all[i - 1].season}">‹ Year ${all[i - 1].season}</button>` : ''}<button class="seg on" aria-pressed="true">Year ${h.season}</button>${!latest ? `<button class="seg" data-act="repyear" data-v="${all[i + 1].season}">Year ${all[i + 1].season} ›</button><button class="seg" data-act="repyear" data-v="latest">Latest</button>` : ''}</div>`;
+  const ran = latest ? Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12) : [];
+  return `${latest ? worldPanel() : ''}${nav}<div class="grid-office"><div class="col">
+    <section class="panel callout"><div class="eyebrow">Year ${h.season} report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</div>
+      <h2>${h.titles ? `${h.titles} trainer${h.titles === 1 ? '' : 's'} let through` : 'A perfect year'}</h2>
+      <p>${h.titles ? `${won.length ? won.map(r => `${tname(r[0])} <span class="muted small">${weekShort(r[1])}</span>`).join(', ') : names(h.winners)} beat the Champion. ` : 'Nobody took the title. '}${streak ? `<b>${streak}</b> perfect year${streak === 1 ? '' : 's'} in a row. ` : ''}${perfect !== streak ? `<b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} in ${upTo.length}.` : ''}
+      ${h.bestId && T(h.bestId) ? `${tname(h.bestId)} got furthest (${depthName(h.best)}). ` : ''}${h.badges} badges conceded over ${h.runs} runs; ${h.qualifiers} run${h.qualifiers === 1 ? '' : 's'} reached the Elite Four and ${h.out} ended on a third loss at a gym.${h.metaMons && h.metaMons.length ? ` The year's top performers on the circuit: ${h.metaMons.join(', ')}.` : ''}</p>
+      ${L && L.logs.length ? `<div class="logs">${L.logs.map((r, k) => `<button class="btn small" data-act="watch" data-i="${k}" data-y="last">${r.title}: ${r.sides[0].name}</button>`).join('')}</div>` : ''}</section>
+    <section class="panel"><div class="ph"><h3>Against other years</h3><span class="muted">Best year: fewest let through, then fewest badges</span></div>${cmp}</section>
   </div><div class="col side">
-    <section class="panel"><div class="ph"><h3>Development</h3><span class="muted">Highest rated, on their birthday last year</span></div>${ran.map(t => { const p = S.progress[t.id]; return `<div class="devrow"><div>${tname(t.id)}<div class="muted small">Age ${t.age}</div></div><div class="ovr-change"><span>${p.before.ovr}</span><span class="arrow">→</span><b>${p.after.ovr}</b></div></div>`; }).join('') || '<p class="muted">No trainers.</p>'}</section>
+    <section class="panel"><div class="ph"><h3>Furthest challengers</h3><span class="muted">The year's top ten</span></div>${(h.top || []).length ? `<div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>How far</th><th>Runs</th></tr></thead><tbody>
+      ${h.top.map((x, k) => `<tr><td class="num">${k + 1}</td><td>${tname(x[0])}</td><td class="small">${x[1] === 13 ? '<span class="tag notice">won the title</span>' : depthName(x[1])}</td><td class="num">${x[2]}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nobody ran this year.</p>'}</section>
+  </div></div>
+    <section class="panel"><div class="ph"><h3>The gyms</h3><span class="muted">Tries turned back by the gym trainers and by the leader, badges conceded, and the share of tries the gym held</span></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Gym</th><th>Leader and gym trainers</th><th>Trainers</th><th>Leader</th><th>Badges</th><th>Held</th><th></th></tr></thead><tbody>${gymRows}</tbody></table></div></section>
+    <section class="panel"><div class="ph"><h3>The Elite Four and the Champion</h3><span class="muted">One run: a loss anywhere ends it</span></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Held by</th><th>Type</th><th>Runs faced</th><th>Stopped</th><th>Got past</th></tr></thead><tbody>${seatRows}</tbody></table></div></section>
+  <div class="grid-office"><div class="col">
+    <section class="panel"><div class="ph"><h3>Runs at the Elite Four</h3></div>${(h.runsE4 || []).length ? `<div class="scroll"><table class="tbl"><thead><tr><th>When</th><th>Trainer</th><th>E4 #1</th><th>#2</th><th>#3</th><th>#4</th><th>Final</th></tr></thead><tbody>
+      ${h.runsE4.map(r => `<tr><td class="small">${weekShort(r[1])}</td><td>${tname(r[0])}</td>${stageCells(r[2])}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nobody completed the badge circuit.</p>'}</section>
+    ${awardsPanel(h)}
+    ${latest ? `<section class="panel"><div class="ph"><h3>How the world changed</h3></div><ul class="changes">${(S.changes || []).map(c => `<li>${c}</li>`).join('') || '<li>A quiet year.</li>'}</ul></section>` : ''}
+  </div><div class="col side">
+    ${latest ? `<section class="panel"><div class="ph"><h3>Development</h3><span class="muted">Highest rated, on their birthday last year</span></div>${ran.map(t => { const p = S.progress[t.id]; return `<div class="devrow"><div>${tname(t.id)}<div class="muted small">Age ${t.age}</div></div><div class="ovr-change"><span>${p.before.ovr}</span><span class="arrow">→</span><b>${p.after.ovr}</b></div></div>`; }).join('') || '<p class="muted">No trainers.</p>'}</section>` : ''}
   </div></div>`;
 }
 
@@ -850,6 +894,7 @@ const GLOSS_TERMS = {
     ['Founding', 'When you found your League you place its Champion, Elite Four and eight Gym Leaders by hand, from candidates the game finds and the founding field. Everyone you don\'t place sets out as a challenger, and gym trainers are taken from the circuit.'],
     ['Stepping down', `A member of staff only steps down after a long career: past their career length and at least ${STEP_DOWN_YEARS} years in posts. They announce it a year ahead and leave on their next birthday.`],
     ['Your staff', 'On the Your staff page you can let any Gym Leader, Elite Four member or gym trainer go, swap two Gym Leaders or two Elite Four members, and pick gym trainers yourself, at any time. A Gym Leader\'s or Elite Four seat that someone leaves waits for you with an acting holder. Picking someone who already holds a post moves them, and their old post opens next. The Champion changes only by stepping down.'],
+    ['Year report', 'Opens at New Year from the League menu, for the year just ended, and any earlier year can be opened from it or from the year\'s number in the History page\'s wall report. It leads with the trainers let through, then perfect years and the streak, how far the best challenger got and the badges conceded, each against last year, your best year (fewest let through, then fewest badges) and your average. Below: each gym (its leader at year\'s end and anyone else who led it, its gym trainers, tries turned back by the gym trainers and by the leader, badges conceded), each Elite Four seat and the Champion\'s, the year\'s ten furthest challengers and every run at the Elite Four.'],
     ['Badges conceded lately', 'Each of your gyms keeps its last three badges conceded: the battles its leader lost. Watch them from the gym\'s card on the Gyms page.'],
     ['Acting', 'When a Gym Leader or Elite Four member leaves your League, the post waits for you. Meanwhile the gym\'s stronger gym trainer stands in as acting leader (the gym runs one gym trainer short), or a stand-in holds the Elite Four seat. The Champion\'s seat is never empty: the strongest Elite Four member moves up.'],
     ['Tries', `A challenger gets ${GYM_TRIES} tries at each gym on a run. A loss to a gym trainer or the leader costs one. A third loss at the same gym ends the run: they rest, then start again from the first gym with no badges.`],
