@@ -8,6 +8,7 @@ g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
 if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); } g.finishFounding(); }
 const S = () => g.S, fail = [];
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
+const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 let hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -37,7 +38,7 @@ function check(tag) {
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
         if (!act && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
         for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
-        if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length);
+        if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired);
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
     if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
@@ -57,6 +58,16 @@ function check(tag) {
     if (i === 0) for (const v of s.vacancies || []) { const a = g.T(v.post === 'leader' ? z.gyms[v.slot].leader : z.e4[v.slot]); if (!a || !a.acting) bad('a vacancy with no acting holder'); }
     { const all = [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])].filter(x => x != null); if (new Set(all).size !== all.length) bad('someone holds two posts'); }
     z.gyms.forEach(x => { if ((x.watch || []).length > g.GYM_WATCH) bad('too many kept battles'); if ((x.trainers || []).length > g.GYM_TRAINERS) bad('too many gym trainer places'); });
+    // ambitions (0.10.0): every member of staff in a post has one; the Champion stays put; promotion runs out on
+    // time (a notice, or a gym trainer gone); notices and requests for another run are within their limits
+    for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])].filter(x => x != null)) { const t = g.T(id); if (!t || t.acting) continue;
+      if (!t.wish || !['up', 'stay', 'run'].includes(t.wish.k)) { bad('no ambition: ' + t.name + ' ' + t.role); continue; }
+      if (t.role === 'champion' && t.wish.k !== 'stay') bad('a Champion wants ' + t.wish.k);
+      if (t.quit && (t.quit.at < s.turn || t.quit.at - s.turn > g.RUN_HOLD)) bad('a notice out of range: ' + t.name);
+      if (t.quit && t.stepDown != null) bad('leaving and stepping down at once: ' + t.name);
+      if (t.quit) amb.quit.add(t.id);
+      if (t.wish.k === 'run' && t.wish.asked != null) { amb.asked.add(t.id); if (s.turn - t.wish.asked > g.RUN_HOLD) bad('held past a year: ' + t.name); }
+      if (g.ambClock(t) && t.stepDown == null && !t.quit && s.turn > g.ambDue(t) + 1) bad('promotion overdue with no notice: ' + t.name + ' ' + t.role); }
     if (i > 0 && (z.gyms.some(x => x.acting) || z.e4.some(id => g.T(id) && g.T(id).acting))) bad('a vacancy in a League not staffed by hand');
     // challengers: tries, gym trainers beaten, and Pokémon standing at the level of their next battle
     for (const id of z.challengers) { const t = g.T(id); if (!t || t.role !== 'challenger') continue;
@@ -115,9 +126,12 @@ for (let i = 0; i < N; i++) {
       if (Math.random() < 0.04 && seniors.length) { const t = rnd(seniors.concat((z.gyms[rnd([0, 1, 2, 3, 4, 5, 6, 7])].trainers || []).map(g.T).filter(Boolean)));
         const r = g.releaseStaff(t.id); if (!r) fail.push('releaseStaff refused ' + t.role); else { moves.let++; if (!['challenger', 'retired'].includes(t.role)) fail.push('let go but role ' + t.role); } }
       if (Math.random() < 0.03) { const role = rnd(['leader', 'e4']), ps = seniors.filter(t => t.role === role);
-        if (ps.length >= 2) { const a = rnd(ps), b = rnd(ps.filter(x => x !== a)); if (!g.swapStaff(a.id, b.id)) fail.push('swapStaff refused'); else moves.swap++; } }
+        if (ps.length >= 2) { const a = rnd(ps), b = rnd(ps.filter(x => x !== a)), why = g.swapRefusal(a, b), ok = g.swapStaff(a.id, b.id);
+          if (why) { amb.refusedSwap++; if (ok) fail.push('a refused swap went ahead: ' + why); } else if (!ok) fail.push('swapStaff refused'); else moves.swap++; } }
       if (Math.random() < 0.04) { const i = rnd([0, 1, 2, 3, 4, 5, 6, 7]), gy = z.gyms[i], k = (gy.trainers || []).findIndex(x => x != null);
-        const c = g.gymTrainerCands(i); if (k >= 0 && c.length) { const pick = rnd(c.slice(0, 8)).t; if (!g.placeGymTrainer(i, k, pick.id)) fail.push('placeGymTrainer refused'); else moves.gt++; } }
+        const all = g.gymTrainerCands(i), c = all.filter(x => !x.refuse), no = all.find(x => x.refuse);
+        if (no && k >= 0) { amb.refusedMove++; if (g.placeGymTrainer(i, k, no.t.id)) fail.push('a refused move went ahead'); }
+        if (k >= 0 && c.length) { const pick = rnd(c.slice(0, 8)).t; if (!g.placeGymTrainer(i, k, pick.id)) fail.push('placeGymTrainer refused'); else moves.gt++; } }
     });
     // hiring (0.9.0): offers to the circuit for vacancies and gym trainer places, outsiders and retirees, withdrawals
     if (HAND && S().season >= 2) g.inLeague(0, () => { const z = S();
@@ -130,7 +144,9 @@ for (let i = 0; i < N; i++) {
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
     const hiredBefore = new Set(Object.values(S().trainers).filter(t => t.hired).map(t => t.id));
-    if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], c = g.inLeague(0, () => g.vacancyCands(v)); if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
+    if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], all = g.inLeague(0, () => g.vacancyCands(v)), c = all.filter(x => !x.refuse), no = all.find(x => x.refuse);
+      if (no) { amb.refusedMove++; if (g.fillVacancy(v, no.t.id)) fail.push('a refused vacancy move went ahead'); }
+      else if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
     g.simWeek();
     for (const id of hiredBefore) { const t = g.T(id); if (t && !t.hired && t.role !== 'challenger') offers.arrived++; }
     if (S().stop) stops[S().stop.why] = (stops[S().stop.why] || 0) + 1;
@@ -156,5 +172,8 @@ for (let i = 0; i < N; i++) {
 const h = S().history;
 console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') : 'ok', 'leagues', g.nLeagues(), 'year', S().season, 'trainers', Object.keys(S().trainers).length, 'cities', Object.keys(S().cities).length,
   'Elite Four runs/year', (h.reduce((a, x) => a + x.qualifiers, 0) / Math.max(1, h.length)).toFixed(1), 'perfect years', Math.round(h.filter(x => !x.titles).length / Math.max(1, h.length) * 100) + '%', 'badges conceded/year', (h.reduce((a, x) => a + x.badges, 0) / Math.max(1, h.length)).toFixed(1),
-  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves), 'offers', JSON.stringify(offers), 'back from retirement', Object.values(S().trainers).filter(t => t.unretired).length, 'replaced', Object.values(S().trainers).filter(t => t.letGoAt != null).length);
+  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves), 'offers', JSON.stringify(offers), 'back from retirement', Object.values(S().trainers).filter(t => t.unretired).length, 'replaced', Object.values(S().trainers).filter(t => t.letGoAt != null).length,
+  'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
+  'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
+  'refused', amb.refusedSwap + '/' + amb.refusedMove);
 process.exit(fail.length ? 1 : 0);

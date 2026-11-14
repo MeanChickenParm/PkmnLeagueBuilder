@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 4; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0)
+const SAVE_VERSION = 5; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -668,7 +668,7 @@ function eliteSlot(t) {
   const places = [S].concat((S.leagues || []).filter(x => x && x !== S));
   for (const L of places) {
     if (t.role === 'e4') { const i = (L.e4 || []).indexOf(t.id); if (i >= 0) return { lvl: E4_LV[i], size: E4_SIZE }; }
-    if (t.role === 'leader') { const i = (L.gyms || []).findIndex(g => g.leader === t.id); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] }; }
+    if (t.role === 'leader') { const i = (L.gyms || []).findIndex(g => g.leader === t.id); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] - (t.acting ? 1 : 0) }; } // an acting leader keeps their gym trainer's team (0.10.0 fix)
     if (t.role === 'gymtrainer') { const i = (L.gyms || []).findIndex(g => (g.trainers || []).includes(t.id)); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] - 1 }; }
   }
   return null;
