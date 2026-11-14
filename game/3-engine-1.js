@@ -897,7 +897,7 @@ function staffGym(i) {
     const cur = T(g.trainers[k]);
     if (cur && cur.role === 'gymtrainer' && gymFits(cur, L)) continue;
     g.trainers[k] = null;
-    if (cur && cur.role === 'gymtrainer') retire(cur, `when ${townName(i)} Gym changed type`);
+    if (cur && cur.role === 'gymtrainer') { if (playerLeague()) letGo(cur, `${townName(i)} Gym trainer when the gym changed type`); else retire(cur, `when ${townName(i)} Gym changed type`); }
     fillGymTrainer(i, k, L);
   }
 }
@@ -918,15 +918,15 @@ function fillGymTrainer(i, k, L) {
 // the circuit's best challenger who would fit a gym under leader L (none in the wall report's fixed tiers)
 function circuitGymTrainer(L) {
   if (fixedStaff()) return null;
-  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length)
+  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .sort((a, b) => ovr(b) - ovr(a))[0] || null;
 }
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
 // their own type and the rest of the team is built for the post
-function takeGymTrainer(t, i, k) {
+function takeGymTrainer(t, i, k, how) {
   const g = S.gyms[i], size = GYM_SIZE[i] - 1, mixed = !t.specialty;
   dropFromCircuits(t.id);
-  t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0;
+  t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0; t.acting = false;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
   const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(2, size - 1));
@@ -934,7 +934,15 @@ function takeGymTrainer(t, i, k) {
   const fresh = staffPicks(t, GYM_LV[i], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });
   t.team = keep.concat(fresh.map(m => stamp(m, 'assigned')));
   relevelElite(t);
-  news(`${dn(t)} left the circuit to become a gym trainer at ${townName(i)} Gym.`, 'move', t.id);
+  // a kept Pokémon can evolve off type at the gym's level (Dartrix into Decidueye): it is replaced (0.7.0)
+  const off = t.specialty ? t.team.filter(m => !isSpecial(m) && !specFit(t, m.sp)) : [];
+  if (off.length) {
+    for (const m of off) farewell(t, m, 'left behind on becoming a gym trainer');
+    t.team = t.team.filter(m => !off.includes(m));
+    staffPicks(t, GYM_LV[i], off.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
+    relevelElite(t);
+  }
+  news(how || `${dn(t)} left the circuit to become a gym trainer at ${townName(i)} Gym.`, 'move', t.id);
 }
 // everyone who holds a post in the bound League
 function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }

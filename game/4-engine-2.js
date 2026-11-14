@@ -1069,19 +1069,29 @@ function doAction(t, act) {
   t.weekLog.push(entry);
   return entry;
 }
+// who stands in gym g's line, in order; a challenger's gym trainers beaten only count while this stays the same
+const gymLineKey = g => [...(S.gyms[g].trainers || []), S.gyms[g].leader].join(',');
+// how many gym trainers a challenger has beaten at their next gym, as things stand
+const gymStageNow = t => t.gymStage && t.gymLine === gymLineKey(t.badges.length) ? t.gymStage : 0;
+const GYM_WATCH = 3; // badges conceded kept per gym for watching
 // One try at a gym: the gym trainers still standing, then the leader, healed between battles, every battle at the
 // gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the run's three tries
 // at this gym; the third loss ends the run.
 function gymTry(t, entry) {
   const g = t.badges.length, gym = S.gyms[g], lvl = GYM_LV[g];
   const line = (gym.trainers || []).map(T).filter(Boolean).concat([T(gym.leader)]);
+  // a challenger part-way through a gym whose staff changed keeps their tries but must beat its line from the first
+  // trainer again (0.7.0)
+  const key = gymLineKey(g);
+  if (t.gymStage && t.gymLine !== key) t.gymStage = 0;
   setTeamLevel(t, lvl);
   entry.gym = g; entry.won = true; entry.tryNo = (t.gymTries || 0) + 1;
+  let res = null;
   for (let k = Math.min(t.gymStage || 0, line.length - 1); k < line.length; k++) {
     const foe = line[k], isLeader = k === line.length - 1;
     const autoItems = itemsOn();
     if (autoItems) autoEquip(t, foe); // items picked for this battle
-    const res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)));
+    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)));
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
     if (res.winner !== 0) {
@@ -1092,10 +1102,12 @@ function gymTry(t, entry) {
       if (t.gymTries >= GYM_TRIES) { news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
     }
-    if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; }
+    if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; t.gymLine = key; }
   }
   t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
-  t.gymStage = 0; t.gymTries = 0;
+  t.gymStage = 0; t.gymTries = 0; t.gymLine = null;
+  // the player's League keeps the last few badges each gym conceded, to watch (0.7.0)
+  if ((S.lg || 0) === 0 && res) { res.when = { season: S.season, week: S.week }; (gym.watch = gym.watch || []).push(res); if (gym.watch.length > GYM_WATCH) gym.watch.shift(); }
   yearOf(t).pts++; noteDepth(t, t.badges.length);
   gymLost(g, t);
   if (t.badges.length === 8) {
@@ -1504,6 +1516,7 @@ function actingLeader(i) {
   if (a) { g.trainers[g.trainers.indexOf(a.id)] = null; closePost(a); a.role = 'leader'; g.leader = a.id; openPost(a, 'leader'); relevelElite(a); }
   else { a = newTrainer({ age: ri(26, 44), quality: staffQ(48 + i * 2), role: 'leader', noFamous: true }); installElite(a, 'leader', i); }
   a.acting = true; g.acting = true;
+  staffGym(i); // a gym that had only one gym trainer left (an acting leader stepping down) takes one on (0.7.0)
   return a;
 }
 function actingE4(i) {
@@ -1513,6 +1526,8 @@ function actingE4(i) {
 }
 const VACANCY_OUTSIDERS = 2;
 function openVacancy(post, slot) {
+  // a post that opens again (its acting holder left) gets fresh outsiders; the old ones join the circuit (0.7.0)
+  for (const v of (S.vacancies || []).filter(v => v.post === post && v.slot === slot)) { const rest = (v.outsiders || []).filter(x => T(x) && T(x).role === 'prospect'); rest.forEach(x => { T(x).outsider = false; }); fillCircuits(rest); }
   S.vacancies = (S.vacancies || []).filter(v => !(v.post === post && v.slot === slot));
   const q = post === 'leader' ? 52 + slot * 2 : 66;
   const outsiders = [];
@@ -1525,11 +1540,18 @@ function openVacancy(post, slot) {
   S.vacancies.push({ post, slot, since: S.turn, outsiders });
 }
 // who can fill a vacancy: every challenger on the circuit, the League's own gym trainers (and the acting leader),
-// and the vacancy's outsiders. Best first.
-function vacancyCands(v) {
+// the vacancy's outsiders, and (0.7.0) the League's other Gym Leaders and Elite Four members: picking one of them
+// moves them, and the post they leave opens as a vacancy of its own. Acting holders of other posts and the Champion
+// can't be picked. Best first. `opts.noStaff` leaves the senior staff out ("Fill it for me" and the sims).
+function vacancyCands(v, opts = {}) {
   const out = [];
   for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16) out.push({ t, from: 'circuit' });
-  S.gyms.forEach((g, i) => { for (const id of g.trainers || []) if (T(id)) out.push({ t: T(id), from: 'gym', gym: i }); if (v.post === 'leader' && i === v.slot && g.acting) out.push({ t: T(g.leader), from: 'acting', gym: i }); });
+  S.gyms.forEach((g, i) => {
+    for (const id of g.trainers || []) if (T(id)) out.push({ t: T(id), from: 'gym', gym: i });
+    if (v.post === 'leader' && i === v.slot && g.acting) out.push({ t: T(g.leader), from: 'acting', gym: i });
+    else if (!opts.noStaff && T(g.leader) && !T(g.leader).acting) out.push({ t: T(g.leader), from: 'leader', gym: i });
+  });
+  if (!opts.noStaff) S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && !(v.post === 'e4' && k === v.slot)) out.push({ t, from: 'e4', seat: k }); });
   for (const id of v.outsiders || []) if (T(id) && T(id).role === 'prospect') out.push({ t: T(id), from: 'outsider' });
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
@@ -1539,8 +1561,9 @@ function fillVacancy(v, id) {
     const t = T(id); if (!t || !(S.vacancies || []).includes(v)) return false;
     if (!vacancyCands(v).some(c => c.t === t)) return false;
     const was = postName(t) || (t.outsider ? 'an outsider' : `the ${S.lgName} circuit`);
-    // the trainer leaves wherever they were
+    // the trainer leaves wherever they were; a Gym Leader or Elite Four member leaves a vacancy behind (0.7.0)
     if (t.role === 'challenger') dropFromCircuits(t.id);
+    const chain = (t.role === 'leader' || t.role === 'e4') && !t.acting ? vacate(t) : null;
     let gymLeft = null;
     if (t.role === 'gymtrainer') { gymLeft = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); const g = S.gyms[gymLeft]; g.trainers[g.trainers.indexOf(t.id)] = null; closePost(t); }
     t.outsider = false;
@@ -1568,12 +1591,120 @@ function fillVacancy(v, id) {
     rest.forEach(x => { T(x).outsider = false; });
     fillCircuits(rest);
     news(text, 'move', t.id); noteChange(text);
+    // the vacancy a move opened, if any, so the page can go straight to it
+    return chain && chain.vacancy ? chain.vacancy : true;
+  });
+}
+// "Fill it for me": the best candidate who doesn't hold a senior post (so nothing else opens)
+function autoFillVacancy(v) { const c = inLeague(0, () => vacancyCands(v, { noStaff: true }))[0]; return c ? fillVacancy(v, c.t.id) : false; }
+function fillAllVacancies() { for (const v of (S.vacancies || []).slice()) autoFillVacancy(v); }
+// ---------- staffing at will (0.7.0) ----------
+// In the player's League any Gym Leader, Elite Four member or gym trainer can be let go, moved or swapped at any
+// time, with no cost or limit before money exists. A senior post that someone leaves opens as a vacancy with an
+// acting holder, exactly as when staff step down. The Champion can't be replaced by hand: the seat changes only
+// when the Champion steps down (seat challenges are for stage 2).
+// the post a member of staff holds in the bound League
+function postOf(t) {
+  if (!t) return null;
+  if (t.role === 'champion' && S.champion === t.id) return { post: 'champion', slot: 0 };
+  if (t.role === 'leader') { const i = S.gyms.findIndex(g => g.leader === t.id); return i < 0 ? null : { post: 'leader', slot: i }; }
+  if (t.role === 'e4') { const i = S.e4.indexOf(t.id); return i < 0 ? null : { post: 'e4', slot: i }; }
+  if (t.role === 'gymtrainer') { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return i < 0 ? null : { post: 'gymtrainer', slot: i, k: S.gyms[i].trainers.indexOf(t.id) }; }
+  return null;
+}
+// a member of staff leaves their post (they are moving or being let go). A Gym Leader's or Elite Four seat opens
+// with an acting holder; a gym trainer's place is simply left empty for the caller to fill. Returns the post left,
+// with the vacancy it opened.
+function vacate(t) {
+  const p = postOf(t); if (!p || p.post === 'champion') return null;
+  closePost(t);
+  if (p.post === 'leader') { S.gyms[p.slot].leader = null; actingLeader(p.slot); openVacancy('leader', p.slot); }
+  else if (p.post === 'e4') { S.e4[p.slot] = null; actingE4(p.slot); openVacancy('e4', p.slot); }
+  else { const g = S.gyms[p.slot]; g.trainers[p.k] = null; }
+  if (p.post !== 'gymtrainer') p.vacancy = S.vacancies[S.vacancies.length - 1];
+  return p;
+}
+// someone let go: back to the circuit, or retired if they are over 45 with 10+ years behind them (the rule for a
+// lost post). Staff who had announced they were stepping down retire, but now and then (GRUDGE_CHANCE) take being
+// let go early as a slight and come back to the circuit to challenge the League instead.
+const GRUDGE_CHANCE = 0.15;
+function letGo(t, was) {
+  t.letGoAt = S.turn; // the automatic gym trainer pick leaves them alone for a year
+  if (t.stepDown != null) {
+    t.stepDown = null;
+    if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; return 'grudge'; }
+    retire(t, `after being let go as ${was}`); return 'retired';
+  }
+  return retireOrReturn(t, `was let go as ${was}`);
+}
+// let go of a member of staff in the player's League. Returns the vacancy it opened (a senior post), true (a gym
+// trainer, whose place is filled at once from the circuit) or false.
+function releaseStaff(id) {
+  return inLeague(0, () => {
+    const t = T(id), p = postOf(t);
+    if (!p || p.post === 'champion' || t.acting) return false;
+    const was = postName(t);
+    vacate(t);
+    const fate = letGo(t, was);
+    if (p.post === 'gymtrainer') staffGym(p.slot);
+    const where = fate === 'retired' ? 'and retired' : fate === 'grudge' ? 'and, stung, returns to the circuit to challenge the League' : 'and returns to the circuit';
+    const text = `You let ${t.name} go as ${was} ${where}.${p.post === 'leader' ? ` ${dn(T(S.gyms[p.slot].leader))} is acting leader until you choose.` : p.post === 'e4' ? ` ${T(S.e4[p.slot]).name} stands in until you choose.` : ''}`;
+    news(text, 'move', t.id); noteChange(text);
+    return p.post === 'gymtrainer' ? true : S.vacancies[S.vacancies.length - 1];
+  });
+}
+// two Gym Leaders swap gyms, or two Elite Four members swap seats, in one step. Each rebuilds their team for the new
+// post; a gym trainer who no longer fits the new leader's type is let go and replaced from the circuit.
+function swapStaff(a, b) {
+  return inLeague(0, () => {
+    const A = T(a), B = T(b), pa = postOf(A), pb = postOf(B);
+    if (!pa || !pb || a === b || pa.post !== pb.post || !['leader', 'e4'].includes(pa.post) || A.acting || B.acting) return false;
+    let text;
+    if (pa.post === 'leader') {
+      S.gyms[pa.slot].leader = null; S.gyms[pb.slot].leader = null;
+      installElite(A, 'leader', pb.slot); installElite(B, 'leader', pa.slot);
+      staffGym(pa.slot); staffGym(pb.slot);
+      text = `${dn(A)} and ${dn(B)} swapped gyms: ${A.name} now leads ${townName(pb.slot)} Gym, ${B.name} ${townName(pa.slot)} Gym.`;
+    } else {
+      S.e4[pa.slot] = null; S.e4[pb.slot] = null;
+      installElite(A, 'e4', pb.slot); installElite(B, 'e4', pa.slot);
+      text = `${dn(A)} and ${dn(B)} swapped Elite Four seats: ${A.name} is now #${pb.slot + 1}, ${B.name} #${pa.slot + 1}.`;
+    }
+    news(text, 'move', A.id); noteChange(text);
     return true;
   });
 }
-// "Fill it for me": the best candidate
-function autoFillVacancy(v) { const c = inLeague(0, () => vacancyCands(v))[0]; return c ? fillVacancy(v, c.t.id) : false; }
-function fillAllVacancies() { for (const v of (S.vacancies || []).slice()) autoFillVacancy(v); }
+// who can take gym trainer place k at gym i by the player's hand: fitting challengers on the circuit (the same rule
+// as the automatic pick), the League's other gym trainers who fit, and its Gym Leaders and Elite Four members who fit
+// (a demotion; the post they leave opens). Best first.
+function gymTrainerCands(i) {
+  const g = S.gyms[i], L = T(g.leader), out = [];
+  if (!L) return out;
+  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
+  S.gyms.forEach((h, j) => {
+    if (j !== i) for (const id of h.trainers || []) { const t = T(id); if (t && gymFits(t, L)) out.push({ t, from: 'gym', gym: j }); }
+    const hl = T(h.leader); if (j !== i && hl && !hl.acting && gymFits(hl, L)) out.push({ t: hl, from: 'leader', gym: j });
+  });
+  S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && gymFits(t, L)) out.push({ t, from: 'e4', seat: k }); });
+  return out.sort((a, b) => ovr(b.t) - ovr(a.t));
+}
+// put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
+// one short, so only a place that is held can be changed there. Returns the vacancy a moved senior member left, or
+// true, or false.
+function placeGymTrainer(i, k, id) {
+  return inLeague(0, () => {
+    const g = S.gyms[i], t = T(id), old = T((g.trainers || [])[k]);
+    if (!t || k < 0 || k >= GYM_TRAINERS || (g.acting && !old) || old === t) return false;
+    if (!gymTrainerCands(i).some(c => c.t === t)) return false;
+    const was = postName(t), p = postOf(t);
+    if (old) { const ow = postName(old); g.trainers[k] = null; closePost(old); letGo(old, ow); }
+    if (p) vacate(t);
+    takeGymTrainer(t, i, k, p ? `${dn(t)} moved from ${was} to become a gym trainer at ${townName(i)} Gym.` : null);
+    if (p && p.post === 'gymtrainer') staffGym(p.slot);
+    noteChange(`${t.name} is now a gym trainer at ${townName(i)} Gym${old ? `, in place of ${old.name}` : ''}.`);
+    return p && p.vacancy ? p.vacancy : true;
+  });
+}
 // a vacant gym goes to the circuit's best challenger or to an outsider
 function fillGym(i, changes) {
   const cand = bestCandidate([]);
