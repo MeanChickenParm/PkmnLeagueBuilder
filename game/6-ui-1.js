@@ -266,7 +266,7 @@ let navOpen = null;
 function navGroups() {
   const league = [['circuit', 'Badge circuit'], ['gyms', 'Gyms & Elite']];
   if (handOn()) league.push(['staff', 'Your staff']);
-  if (S.lastLeague) league.push(['recap', 'Year in review']);
+  if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
   league.push(['news', 'News'], ['history', 'History']);
   if (godOn()) league.push(['god', 'God mode']);
   return [

@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 8, ver: '0.8.0', date: 'November 13, 2026', time: '8:45 PM ET', title: 'The year report', items: [
+    "The year report replaces the year in review. It opens at New Year from the League menu and leads with the trainers let through (who beat the Champion, and when), then perfect years and the streak, how far the best challenger got and the badges conceded.",
+    "Each headline number is set against last year, your best year (fewest let through, then fewest badges) and your average so far.",
+    "The gyms: for each gym, its leader at year's end and anyone else who led it that year (acting leaders, swaps, moves), its gym trainers, the tries turned back by the gym trainers and by the leader, the badges conceded and the share of tries held. Badges conceded that your gyms still keep can be watched from the row.",
+    "The Elite Four and the Champion: for each seat, who held it, how many runs reached it, how many it stopped and how many got past.",
+    "The year's ten furthest challengers, every run at the Elite Four, and the year's awards.",
+    "Any past year can be opened: step back and forward from the report, or click a year's number in the History page's wall report. Every League keeps its own reports, through the League switcher.",
+    "Saves from earlier versions no longer load.",
+  ] },
   { id: 7, ver: '0.7.0', date: 'November 13, 2026', time: '7:50 PM ET', title: 'Manage your staff', items: [
     "A new page, Your staff (under League), lists every post in your League. You can change your staff at any time, with no cost or limit for now.",
     "Let go: a Gym Leader's or Elite Four seat you open waits for you with an acting holder, just as when someone steps down. Whoever you let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. Someone who had already announced they were stepping down usually just retires, but now and then they take it as a slight and come back to the circuit to challenge you.",
@@ -297,7 +306,7 @@ function lgBar() {
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.lastLeague) || (view === 'god' && !godOn()) || (['staff', 'gtpick'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
 
 // after a staffing move: a post it opened (a vacancy) goes straight to its hiring page; otherwise back to the staff page
 function afterMove(r, msg) {
@@ -309,11 +318,11 @@ function afterMove(r, msg) {
 
 
 // Move time on by up to n weeks. A step of more than a week stops early when something needs you: a title
-// conceded, a post that fell vacant, or the New Year report (which opens the year in review).
+// conceded, a post that fell vacant, or the New Year report (which opens the year report).
 function playWeeks(n) {
   const y = S.season, stop = simWeeks(n, n > 1);
   save();
-  if (S.season !== y) { go('recap'); toast(`Year ${y} is over. Here is the year in review.`); return; }
+  if (S.season !== y) { repYear = null; go('recap'); toast(`Year ${y} is over. Here is the year report.`); return; }
   render();
   toast(stop ? `Stopped in ${weekName(S.week)}: ${stop.text}` : `It is now ${weekName(S.week)}, Year ${S.season}.`);
 }
@@ -398,6 +407,7 @@ document.addEventListener('click', ev => {
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': finishFounding(); view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Year 1 is underway.`); break;
     case 'foundquit': saveSeq++; S = null; view = 'circuit'; foundSel = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} render(); break;
+    case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
     case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), r = v && fillVacancy(v, +el.dataset.id); if (r) { save(); afterMove(r, `${dn(T(+el.dataset.id))} takes the post: ${name}.`); } break; }

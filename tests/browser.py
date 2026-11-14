@@ -86,10 +86,17 @@ async def run(path):
                   if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page shows undefined');
                   log.push('managed staff'); go('circuit'); }
                 if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
+                if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];
+                  if (!old) log.push('FAIL no year links on the History page'); else { const yv = old.dataset.v; old.click(); const tx = document.querySelector('#main').textContent;
+                    if (view !== 'recap' || !tx.includes('Year ' + yv + ' report')) log.push('FAIL an earlier year report did not open');
+                    if (document.querySelectorAll('#main .tbl')[2].querySelectorAll('tbody tr').length !== 8) log.push('FAIL the year report has no row per gym');
+                    if (/undefined|NaN|\[object/.test(tx)) log.push('FAIL the year report shows undefined');
+                    if (!click('[data-act=repyear][data-v=latest]') || !document.querySelector('#main').textContent.includes('Year ' + S.history[S.history.length - 1].season + ' report')) log.push('FAIL Latest did not go back');
+                    seen.repyear = 1; log.push('opened an earlier year report'); } go('circuit'); }
                 click('[data-act=playyear]');
                 if (S.season === y && S.week === w) log.push('FAIL To New Year did not move');
                 if (S.season !== y) { if (view !== 'recap') log.push('FAIL no year in review at New Year'); if (S.week !== 0) log.push('FAIL New Year is not week 0');
-                  if (!/in review/.test(document.querySelector('#main').textContent)) log.push('FAIL the year in review is empty'); }
+                  if (!/Year \d+ report/.test(document.querySelector('#main').textContent) || !document.querySelectorAll('#main .tbl').length) log.push('FAIL the year report is empty'); }
                 else stopsSeen++;
               }
               if (!watched && click('[data-act=watch]')) { if (!document.querySelector('.sheet-battle')) log.push('FAIL no battle replay'); else { watched = true; log.push('watched a title battle'); } click('[data-act=bskip]'); click('[data-act=close]'); }

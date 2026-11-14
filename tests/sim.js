@@ -115,6 +115,17 @@ for (let i = 0; i < N; i++) {
   }
   if (guard >= 400) fail.push('stuck in year ' + S().season);
   if (S().history.length !== S().season - 1) fail.push('history has ' + S().history.length + ' years at the start of year ' + S().season);
+  // the year report's detail (0.8.0), in every League
+  g.eachLeague(li => { const x = S().history[S().history.length - 1]; if (!x) return; const tag = 'year report L' + li + ' Y' + x.season + ': ';
+    if (!x.gyms || x.gyms.length !== 8 || !x.seats || x.seats.length !== 5 || !x.top || !x.runsE4) { fail.push(tag + 'detail missing'); return; }
+    x.gyms.forEach((gd, k) => { const gh = (S().gyms[k].hist || []).find(y => y.season === x.season);
+      if (!gh || gh.w !== gd.wl + gd.wt || gh.l !== gd.l) fail.push(tag + 'gym ' + k + ' counts differ');
+      if (!gd.lead.includes(gd.leader)) fail.push(tag + 'gym ' + k + ' year-end leader not among its leaders');
+      if (Object.values(gd.by).reduce((a, n) => a + n, 0) !== gd.wl + gd.wt) fail.push(tag + 'gym ' + k + ' tries by holder differ'); });
+    if (x.runsE4.length !== x.qualifiers || x.seats[0].faced !== x.qualifiers) fail.push(tag + 'Elite Four runs differ');
+    if (x.seats.reduce((a, st) => a + st.stopped, 0) + x.titles !== x.qualifiers) fail.push(tag + 'seats stopped plus titles differ from runs');
+    x.seats.forEach((st, k) => { if (!st.held.includes(st.id)) fail.push(tag + 'seat ' + k + ' holder not among its holders'); });
+    if (x.top.length > 10 || x.top.some((r, k) => k && r[1] > x.top[k - 1][1]) || (x.titles && x.top[0][1] !== 13)) fail.push(tag + 'top ten wrong'); });
   check('s' + S().season);
 }
 // a reloaded save keeps running
