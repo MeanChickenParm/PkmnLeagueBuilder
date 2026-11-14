@@ -12,7 +12,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from the wall rules (0.2.0)
 - **Tuned in 0.5.0 with `BUILD_PAR`** (design doc 3.5). The four agreed dials (`START_TEAM`, squad picking, gym trainers, tries per gym) stay where they were; they barely move the wall. Retune `BUILD_PAR` if later changes (staffing by hand, hiring, money) shift the balance.
-- **Staff moves.** The performance moves are switched off (`AUTO_STAFF_MOVES`): no leader is replaced for poor years, no comeback, no Elite Four seat won by a deep run. Vacancies from retirement are still filled automatically and at once (`staffRetires`), sometimes by the circuit's best challenger. To be figured out with staffing (stage 1b-2 and 2), including competition inside a League for a Champion or Elite Four seat. The leftover code (`g.poor`, `wallStreak`, `COMEBACK_*`, `seatChallenge`) waits for that decision.
+- **Staff moves.** Since 0.9.0 rival Leagues replace poor staff (`replacePoorStaff`). Still switched off (`AUTO_STAFF_MOVES`): a strong leader's comeback to the circuit (`wallStreak`, `COMEBACK_*`; stage 2b, ambitions) and an Elite Four seat won by a deep run (`seatChallenge`; stage 2c).
 - **The meta response is to be redesigned.** Staff no longer add counters for the year's top Pokémon; newcomers still lean toward counter types, and ban replacements still favour them. The owner wants it recontextualized rather than automated off top performers.
 - **Untyped leaders are rare and have no counterweight.** Outsiders appointed to gyms are always typed; only a promoted untyped challenger leads a mixed gym. Whether specialists should get anything in return was left for later (the owner chose nothing for now).
 - **Team builder dials** (`SCOUT_BST`, `scoutShare`, `STRAT_NOISE`, `TRAIN_IV`, `trainCare`) were set by eye in 0.3.0; since 0.5.0 they read ratings through `bld()`, offset by `BUILD_PAR`. How wide the gap between strong and poor staff should be has not been looked at.
@@ -36,7 +36,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from founding by hand (0.6.0)
 - **Balance not measured.** The founding field is larger (36), unplaced founding candidates (strong trainers) join the circuit, gym trainers come from the circuit's best, and staff rarely leave now. None of it has been through the wall report (the owner: balance waits). The report founds Leagues automatically; a hand-placed line was offered and declined for now.
-- **Old staff in rival Leagues.** Staff step down only after 10+ years in posts and past their career length, and nobody replaces poor staff yet, so rival Leagues will keep ageing staff whose ratings fall. Replacing staff is stage 2 (the player's decisions; AI Leagues need their own rule).
 - **An acting leader fights under their own type.** They share at least one type with the leader who left, but a dual-type gym can narrow to one type, and the remaining gym trainer may share no type with the acting leader while acting.
 - **Vacancy outsiders are role `prospect`** until the post is filled (then the unpicked join the circuit). A save with an open vacancy carries them.
 - **The founding screen shows ratings, not teams.** A candidate's Pokémon are rebuilt for the post anyway; the profile card can't open during founding.
@@ -45,7 +44,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## Left over from the staffing screen (0.7.0)
 - **The Champion can't be replaced by hand.** The owner wants the seat to change through challenges from Elite Four members (their own League's or others') and maybe high-performing Gym Leaders, long term (stage 2, with competition for seats).
 - **A grudge is only flavour so far.** Staff let go after announcing they were stepping down sometimes return to the circuit (`GRUDGE_CHANCE` 0.15, provisional). The owner's idea: they might also try to take a post in another League. That needs rival Leagues hiring (stage 2/4). `t.grudge` records the year.
-- **Gym trainer picks have no outsiders.** Replacing a gym trainer by hand offers the circuit, other gym trainers and senior staff who fit, but no outsiders the game makes (vacancies for senior posts still offer two).
 - **No cost or limit on staffing moves** before money exists (owner, Nov 13). Morale and ambitions are stage 2.
 - **Swapping teams.** A swap or move rebuilds the trainer's team with `installElite` (keeps up to two on-type Pokémon at a gym; an Elite Four newcomer keeps a team of three or more and is topped up to six), so a Gym Leader moving up to the Elite Four keeps their gym team.
 - **Saves from 0.6.0 mid-gym:** a challenger part-way through a gym when the save was made starts that gym's line again once (they have no `gymLine` yet). Harmless.
@@ -56,3 +54,13 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **History grows with the years.** Each year's history entry now carries the report's detail (a few KB a year per League). Watch save size in long worlds with several Leagues.
 - **Comparisons with other Leagues** wait for rival Leagues (stage 4): the report compares a year only with the same League's last year, best year and average.
 - **Best challengers who moved League mid-year** are not in the top ten of the League they left.
+
+## Left over from hiring and turnover (0.9.0)
+- **All the numbers are provisional:** the refusal odds (`acceptsOffer`), `HIRE_NOTICE` 8, `REFUSED_WEEKS` 24, the retiree limits (3 years, under 55, OVR 55+), `GYM_HIRE_MIN` 58, `E4_HIRE_MIN` 64, `E4_HIRE_EDGE` 5, `POOR_YEARS` 3 and the 30% poor-year line. Balance is unmeasured: rival Leagues now hire their circuit's best every time and replace poor staff.
+- **Staff in posts always accept a move,** and retirees and outsiders always accept. Refusing moves comes with ambitions (stage 2b).
+- **Rival Leagues' refusals aren't remembered:** a challenger who turns a rival League down can be asked again at once; only the player's refusals start the half-year wait.
+- **Retirees don't age or change while retired;** their age catches up when they return, their ratings don't.
+- **"Impressed" reads the trainer's own year tally,** which can include runs at another League if they moved mid-year.
+- **Offers are to your own circuit only.** Other Leagues' circuits wait for stage 4.
+- **A hire who wins the title on their last run still comes.** Whether a title winner can back out is for ambitions (2b).
+- **Career length by factors** moved to stage 2b, with ambitions.
