@@ -1,5 +1,16 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 11, ver: '0.11.0', date: 'November 14, 2026', time: '12:09 AM ET', title: 'Seat challenges', items: [
+    "Seats can now be won in battle. At New Year each League holds at most one challenge for the Champion's seat and one for an Elite Four seat.",
+    "An Elite Four member who wants promotion, has held the seat in two calendar years and didn't have the worst record of the four can challenge the Champion. A Gym Leader who wants promotion and whose gym was one of the year's three best-holding, or a challenger who reached the Elite Four this year and is clearly stronger than the seat's holder (or whose holder is 50 or older), can challenge the weakest Elite Four seat.",
+    "A challenge is one battle at the seat's level. The challenger fields a team built for the seat, and keeps it if they win. A beaten Champion takes the winner's Elite Four seat; a beaten Elite Four member takes over the winning Gym Leader's gym, or goes back to the circuit (or retires) if a challenger beat them.",
+    "In your League each challenge waits for your answer: approve or refuse it from the staff notices or the year report, within four weeks (unanswered, it goes ahead). A member of staff whose challenge you refuse, or who loses, turns restless: their promotion clock moves a year on. Anyone who challenged waits two years to try again. The Champion still can't be replaced by hand.",
+    "Elite Four members' wish for promotion now has a clock for every seat, seat #4 included, since the Champion's seat can be challenged for.",
+    "Every challenge shows as news, stops the sim in your League, and appears in a new Seat challenges section of the year report. The last six challenge battles of each League are kept to watch. Rival Leagues hold their challenges at once, and the multi-year sim approves yours.",
+    "Fixed: a legendary joining a gym trainer or Gym Leader was added on top of their team, so they could field one Pokémon more than the gym allows.",
+    "Fixed: a challenger who won the title and was hired by a League later that year dropped out of the year report's top ten.",
+    "A glossary entry for Seat challenges. Saves from earlier versions no longer load.",
+  ] },
   { id: 10, ver: '0.10.0', date: 'November 13, 2026', time: '10:13 PM ET', title: 'Ambitions', items: [
     "Every member of staff now has an ambition: promotion (a gym trainer wants a gym of their own, a Gym Leader a later gym or the Elite Four, an Elite Four member a higher seat), staying put, or another run as a challenger. It is set when they take a post, from their age, ratings, post and record, and can change on a birthday. The Champion always stays put. It shows on Your staff, the hiring pages and their profile.",
     "Promotion waits three years in the post, and shows as Restless in the last. Then a Gym Leader or Elite Four member gives 12 weeks' notice (a news item, a stop and a line in the staff notices) and leaves unless you promote them; the post opens with an acting holder, as when someone steps down. A gym trainer just goes, and their place is refilled. Seat #4 of the Elite Four wants the Champion's seat and waits for it.",
@@ -480,6 +491,8 @@ document.addEventListener('click', ev => {
       save(); render(); toast(errs[0] || 'Saved.'); break; }
     case 'godrolesel': godRole = el.dataset.k; godPick = null; render(); break;
     case 'watchworld': { const m = S.worlds && S.worlds.matches[+el.dataset.i]; if (m) { modal = { kind: 'battle', r: m.log }; renderModal(); } break; }
+    case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
+    case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;
     case 'bspeed': setBattleSpeed(el.dataset.v); break;

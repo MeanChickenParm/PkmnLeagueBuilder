@@ -114,6 +114,22 @@ async def run(path):
                   if (S.gyms[6].trainers.filter(Boolean).length !== 2 || S.gyms[6].trainers.includes(gt)) log.push('FAIL letting a gym trainer go');
                   if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page shows undefined');
                   log.push('managed staff'); go('circuit'); }
+                // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at
+                // once and recorded), refuse one for an Elite Four seat, and find both in the year report with a Watch button
+                if (S.season === 3 && !seen.chal) { seen.chal = 1; viewLg = 0; clearVac();
+                  const h = S.history[S.history.length - 1], e = 0, champ0 = S.champion, cand = S.e4[e];
+                  S.chalPending = [{ k: 'champ', cand, inc: S.champion, slot: e, from: 'e4', gym: null, season: h.season, due: S.turn + 4 },
+                    { k: 'e4', cand: S.gyms[7].leader, inc: S.e4[1], slot: 1, from: 'leader', gym: 7, season: h.season, due: S.turn + 4 }];
+                  go('staff'); if (!/Seat challenges waiting for you/.test(document.querySelector('#main').textContent)) log.push('FAIL waiting challenges not in the staff notices');
+                  const n0 = (h.chal || []).length; // the year's own challenges may already be recorded
+                  click('[data-act=chalyes][data-v="0"]'); const rec = (h.chal || [])[n0];
+                  if (!rec || rec.lapsed || rec.won == null) log.push('FAIL an approved challenge was not fought');
+                  else if (rec.won ? S.champion !== cand || T(champ0).role !== 'e4' || S.e4[e] !== champ0 : S.champion !== champ0) log.push('FAIL the challenge result did not move the right people');
+                  click('[data-act=chalno][data-v="0"]'); if ((S.chalPending || []).length || !(h.chal || []).some(c => c.refused)) log.push('FAIL refusing a challenge');
+                  repYear = h.season; go('recap'); const tx = document.querySelector('#main').textContent;
+                  if (!/Seat challenges/.test(tx) || !/refused by you/.test(tx)) log.push('FAIL the year report has no seat challenges');
+                  if (!click('[data-act=watchseat]') || !document.querySelector('.sheet-battle')) log.push('FAIL no seat challenge to watch'); click('[data-act=bskip]'); click('[data-act=close]');
+                  log.push('seat challenge: ' + (rec && rec.won ? 'challenger won' : 'defended') + ', one refused'); repYear = null; go('circuit'); }
                 if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
                 if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];
                   if (!old) log.push('FAIL no year links on the History page'); else { const yv = old.dataset.v; old.click(); const tx = document.querySelector('#main').textContent;
