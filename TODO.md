@@ -12,7 +12,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## Left over from the wall rules (0.2.0)
 - **Tuned in 0.5.0 with `BUILD_PAR`** (design doc 3.5). The four agreed dials (`START_TEAM`, squad picking, gym trainers, tries per gym) stay where they were; they barely move the wall. Retune `BUILD_PAR` if later changes (staffing by hand, hiring, money) shift the balance.
 - **Staff moves.** Since 0.9.0 rival Leagues replace poor staff (`replacePoorStaff`); since 0.10.0 the comeback is the another-run ambition. Since 0.11.0 a deep run can win an Elite Four seat in a seat challenge. Still switched off (`AUTO_STAFF_MOVES`): only the dead poor-leader branch in the New Year gym loop; remove it and the switch when that loop is next touched.
-- **The meta response is to be redesigned.** Staff no longer add counters for the year's top Pokémon; newcomers still lean toward counter types, and ban replacements still favour them. The owner wants it recontextualized rather than automated off top performers.
 - **Untyped leaders are rare and have no counterweight.** Outsiders appointed to gyms are always typed; only a promoted untyped challenger leads a mixed gym. Whether specialists should get anything in return was left for later (the owner chose nothing for now).
 - **Team builder dials** (`SCOUT_BST`, `scoutShare`, `STRAT_NOISE`, `TRAIN_IV`, `trainCare`) were set by eye in 0.3.0; since 0.5.0 they read ratings through `bld()`, offset by `BUILD_PAR`. How wide the gap between strong and poor staff should be has not been looked at.
 - **Everstone** now simply holds a Pokémon in its current form at every level.
@@ -75,3 +74,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Approval is per challenge.** A standing League rule (challenges on or off, who may challenge) was offered and not chosen.
 - **A Gym Leader who wins a seat keeps the team they challenged with** (topped up to six); the beaten Elite Four member taking their gym builds a gym team as on any move.
 - **The year's title winner hired mid-year** now stays in the year report's top ten (fixed in 0.11.0; it could fail the sim's top-ten check since 0.9.0).
+
+## Left over from steers and the meta (0.12.0)
+- **All the numbers are provisional:** the steer weights in `steerScore` (×8 for bulk and power, the cover and counter weights), `steerFollow` ((Strategy − 30)/50, 0.2 to 1), `STEER_EDGE` 0.25, `KEEP_CORE` 4, `META_MONTHS` 3 (the trend), `META_LOG` 24, `META_MIN_B` 8, `TREND_SHIFT` 3 (plus a new top counter type), the signature bonus (2 × follow) and the off-type pool (6, under the Scouting ceiling + 40). Balance is unmeasured: steered and countering staff teams change the wall, and rival Leagues counter by rule.
+- **The trend-shift stop** comes about three to four times a year in the hand-placed sim. Watch whether that's too often once the game is playable.
+- **The ranch rework (the owner, Nov 14):** the ranch is to come back, reworked entirely, as a League's own pool of Pokémon, in a different way from Pokémon League GM. It bears on steers (what staff pick from). Not designed yet; no stage assigned.
+- **Steers act only on team building.** Battle style (lead order) stays `acelast` for all staff; a battle steer was offered and not chosen.
+- **Rival Leagues' steers are a simple rule** (counter when their type answers, else Balanced). Each League's own aim (5.5) waits for stage 4.
+- **Only the meta readings are monthly;** the year's meta report at New Year (`metaMons`) still drives newcomers' counter types (the owner chose to keep that), the History column and the ban ballot's year.
+- **Off-type Pokémon go when the steer stops countering,** one a month; a Gym Leader who moves keeps none (they are left behind like any off-type Pokémon).

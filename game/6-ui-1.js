@@ -267,6 +267,7 @@ function navGroups() {
   const league = [['circuit', 'Badge circuit'], ['gyms', 'Gyms & Elite']];
   if (handOn()) league.push(['staff', 'Your staff']);
   if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
+  league.push(['meta', 'Meta']);
   league.push(['news', 'News'], ['history', 'History']);
   if (godOn()) league.push(['god', 'God mode']);
   return [
@@ -770,7 +771,7 @@ function profileBody(t, full) {
     <section class="panel"><div class="ph"><h3>Team</h3><span class="muted">${t.team.length}/6${walkingPartner(t) ? ' · walks with ' + walkingPartner(t).sp : ''}</span></div>${t.team.map(m => monRow(m, t.id)).join('') || '<p class="muted">No Pokémon.</p>'}</section>
     ${(t.alumni || []).length ? `<section class="panel"><div class="ph"><h3>Former Pokémon</h3><span class="muted">${t.alumni.length}</span></div><div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Last Lv</th><th>Record</th><th>KOs</th><th>Left</th></tr></thead><tbody>${t.alumni.map((a, i) => `<tr><td><button class="tlink" data-act="alum" data-t="${t.id}" data-i="${i}">${a.sp}</button></td><td class="num">${a.lvl}</td><td class="num">${wl(a.st)}</td><td class="num">${a.st.ko}</td><td class="muted small">S${a.left} · ${a.why}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
     ${careerExtras(t)}
-    <section class="panel"><div class="ph"><h3>Career</h3><span class="muted">${t.role === 'retired' ? `Retired in Year ${t.retiredSeason} after ${t.seasons || 0} years` : `Year ${(t.seasons || 0) + 1} of their career${t.role === 'challenger' ? ` · ${t.runs || 0} run${t.runs === 1 ? '' : 's'}${t.rest != null && t.last ? `, last one ${lastRunText(t)}` : ''}` : ''}${t.age >= 45 && t.role === 'challenger' ? ` · could retire for age from ${Math.max(50, t.age + Math.max(0, careerSpan(t) - (t.seasons || 0)))}` : ''}${STAFF_ROLES.includes(t.role) ? ` · career length ${careerSpan(t)} years${wishTag(t)}` : ''}`}</span></div>
+    <section class="panel"><div class="ph"><h3>Career</h3><span class="muted">${t.role === 'retired' ? `Retired in Year ${t.retiredSeason} after ${t.seasons || 0} years` : `Year ${(t.seasons || 0) + 1} of their career${t.role === 'challenger' ? ` · ${t.runs || 0} run${t.runs === 1 ? '' : 's'}${t.rest != null && t.last ? `, last one ${lastRunText(t)}` : ''}` : ''}${t.age >= 45 && t.role === 'challenger' ? ` · could retire for age from ${Math.max(50, t.age + Math.max(0, careerSpan(t) - (t.seasons || 0)))}` : ''}${STAFF_ROLES.includes(t.role) ? ` · career length ${careerSpan(t)} years · steer: ${inLeague(lgOf(t), () => steerName(steerOf(t)))}${wishTag(t)}` : ''}`}</span></div>
       <div class="stats">
         <div><b>${recOf(t).w}–${recOf(t).l}</b><small>All battles</small></div><div><b>${recOf(t).lw + recOf(t).tw}–${recOf(t).ll + recOf(t).tl}</b><small>League &amp; title</small></div>
         <div><b>${c.badges}</b><small>Badges</small></div><div><b>${c.gymW}–${c.gymL}</b><small>Gym record as challenger</small></div>

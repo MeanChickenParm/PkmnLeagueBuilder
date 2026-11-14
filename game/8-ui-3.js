@@ -1,5 +1,16 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 12, ver: '0.12.0', date: 'November 14, 2026', time: '10:15 AM ET', title: 'Steers and the meta', items: [
+    "Steer how your staff build their teams. Each Gym Leader's gym, each Elite Four seat and the Champion's seat can have a steer: Balanced, Counter the trend, Counter the year's meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. A League line covers every post without one, and gym trainers follow their gym's steer. Set them on Your staff in any week.",
+    "A steer belongs to the post, so a new holder follows it too. Everyone follows a steer, as closely as their Strategy allows, and each steer trades a little raw strength for what it asks.",
+    "Teams follow a steer one Pokémon a month, swapping the Pokémon that fits it worst for a better fit. Someone new to a post builds to the steer at once.",
+    "The meta is now read every month: the trend (the circuit's top performers of the last 12 weeks) and the year (last year plus this year so far). The new Meta page shows both, the types that answer them, which of your posts can answer them on their own type, and a button to counter on those posts. The sim stops when the trend shifts.",
+    "A trainer steered to counter the meta may field one Pokémon off their type that answers it.",
+    "Keep their own Pokémon stops the monthly swaps. A move keeps up to four of the trainer's own Pokémon instead of two, and a famous trainer works their signature Pokémon back in, one a month.",
+    "Rival Leagues steer themselves: a gym that can answer the trend on its type counters it, and so does an Elite Four member or Champion who can answer the year's meta. Everyone else stays Balanced.",
+    "A staff member who loses a Pokémon to a ban now leans toward the meta's counters only when their post is steered to counter it. A Gym Leader's swap after a losing streak is unchanged, and newcomers still lean toward types that counter the year's top performers.",
+    "The year report shows each gym's and seat's steer, the League line and the trend at the year's end. The profile shows a staff member's steer. Glossary entries for Steers and The meta.",
+    "Saves from earlier versions can't be loaded." ] },
   { id: 11, ver: '0.11.0', date: 'November 14, 2026', time: '12:09 AM ET', title: 'Seat challenges', items: [
     "Seats can now be won in battle. At New Year each League holds at most one challenge for the Champion's seat and one for an Elite Four seat.",
     "An Elite Four member who wants promotion, has held the seat in two calendar years and didn't have the worst record of the four can challenge the Champion. A Gym Leader who wants promotion and whose gym was one of the year's three best-holding, or a challenger who reached the Elite Four this year and is clearly stronger than the seat's holder (or whose holder is 50 or older), can challenge the weakest Elite Four seat.",
@@ -281,6 +292,7 @@ function render() {
   if (view === 'god') v = viewGod();
   if (view === 'hire') v = viewHire();
   if (view === 'staff') v = viewStaff();
+  if (view === 'meta') v = viewMeta();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
   app.innerHTML = header() + nav() + embedNote() + `<main class="wrap" id="main">${lgBar()}${v}</main><div id="toast" class="toast" role="status" hidden></div>`;
@@ -325,7 +337,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'gtpick'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'gtpick'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -492,6 +504,7 @@ document.addEventListener('click', ev => {
     case 'godrolesel': godRole = el.dataset.k; godPick = null; render(); break;
     case 'watchworld': { const m = S.worlds && S.worlds.matches[+el.dataset.i]; if (m) { modal = { kind: 'battle', r: m.log }; renderModal(); } break; }
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
+    case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(0, () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;
@@ -544,6 +557,7 @@ document.addEventListener('input', e => {
 });
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
+  if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(0, () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
   if (e.target && e.target.id === 'imgfile' && e.target.files && e.target.files[0]) { imgPickFile(e.target.files[0]); return; }
   if (e.target && e.target.id === 'imgpackfile' && e.target.files && e.target.files.length) { imgImport(e.target.files).then(() => render()); return; }
   if (e.target && e.target.id === 'dx-legend') { dxSyncChecks(); return; }

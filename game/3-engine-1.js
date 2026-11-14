@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 6; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 7; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -731,9 +731,16 @@ function staffPicks(t, L, n, opts = {}) {
   const own = opts.mixed ? [] : specTypes(t);
   const threats = TYPES.filter(a => own.some(d => effOne(a, d) >= 2));
   const noise = (100 - bld(t, 'str')) / 100 * STRAT_NOISE;
+  // (0.12.0) the post's steer shifts what the builder favours, as closely as the trainer's Strategy allows; a counter
+  // steer lets a typed trainer field one Pokémon off their type that answers the meta
+  const steer = opts.steer || steerOf(t), fol = steerFollow(t), meta = steerMeta(steer), sig = steer === 'keep' ? signatureLines(t) : null;
+  let off = new Set();
+  if (isCounter(steer) && meta.length && !opts.mixed && !opts.noOff && own.length && !(opts.team || []).some(m => m.offType)) { off = new Set(offTypePool(t, L, meta).filter(sp => !lines.has(LINE[sp]))); pool = pool.concat([...off]); }
+  const steerV = sp => (steer === 'bal' ? 0 : fol * steerScore(steer, sp, weak, meta)) + (sig && sig.has(LINE[sp]) ? 2 * fol : 0);
   while (out.length < n && pool.length) {
-    const best = pool.map(sp => [sp, fitScore(sp, weak, threats) + (rand() - 0.5) * 2 * noise]).sort((a, b) => b[1] - a[1])[0][0];
-    out.push(staffMon(t, best, L)); addWeak(best);
+    const best = pool.map(sp => [sp, fitScore(sp, weak, threats) + steerV(sp) + (rand() - 0.5) * 2 * noise]).sort((a, b) => b[1] - a[1])[0][0];
+    const m = staffMon(t, best, L); out.push(m); addWeak(best);
+    if (off.has(best)) { m.offType = true; pool = pool.filter(sp => !off.has(sp)); }
     pool = pool.filter(sp => LINE[sp] !== LINE[best]);
   }
   return out;
@@ -773,7 +780,7 @@ function adaptGym(i) {
   // how well a Pokémon handles the types that have been winning: hits them hard, and isn't hit hard by them
   const vs = sp => { let sc = 0; for (const [ty, c] of Object.entries(foes)) sc += c / n * (bestMult(SP[sp].types, [ty]) - bestMult([ty], SP[sp].types)); return sc; };
   const lines = new Set(L.team.map(m => LINE[m.sp]));
-  const cands = staffPicks(L, slot.lvl, 8, { lines });
+  const cands = staffPicks(L, slot.lvl, 8, { lines, noOff: L.team.some(m => m.offType) });
   if (!cands.length) return;
   const best = cands.sort((a, b) => vs(b.sp) + SP[b.sp].bst / 900 - vs(a.sp) - SP[a.sp].bst / 900)[0];
   // drop the one doing least this season (knockouts minus faints), never their strongest
@@ -862,7 +869,8 @@ function installElite(t, role, slotIndex) {
     // a new Elite Four member keeps the whole team they qualified with; the League only tops up a short team
     if (t.team.length < slot.size) staffPicks(t, slot.lvl, slot.size - t.team.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
   } else {
-    const keep = t.team.filter(m => mixed || onSpec(t, m.sp) || isSpecial(m)).sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, Math.min(2, slot.size - 1));
+    // (0.12.0) under Keep their own Pokémon a move keeps up to four of their own
+    const keep = t.team.filter(m => mixed || onSpec(t, m.sp) || isSpecial(m)).sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, Math.min(steerOf(t) === 'keep' ? KEEP_CORE : 2, slot.size - 1));
     const fresh = staffPicks(t, slot.lvl, slot.size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed: mixed || role === 'champion' });
     for (const m of t.team) if (!keep.includes(m)) farewell(t, m, `left behind on becoming ${role === 'e4' ? 'Elite Four' : role === 'leader' ? 'Gym Leader' : 'Champion'}`);
     fresh.forEach(m => stamp(m, 'assigned'));
@@ -932,13 +940,13 @@ function takeGymTrainer(t, i, k, how) {
   t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0; t.acting = false;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
-  const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(2, size - 1));
+  const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(steerOf(t) === 'keep' ? KEEP_CORE : 2, size - 1));
   for (const m of t.team) if (!keep.includes(m)) farewell(t, m, 'left behind on becoming a gym trainer');
   const fresh = staffPicks(t, GYM_LV[i], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });
   t.team = keep.concat(fresh.map(m => stamp(m, 'assigned')));
   relevelElite(t);
   // a kept Pokémon can evolve off type at the gym's level (Dartrix into Decidueye): it is replaced (0.7.0)
-  const off = t.specialty ? t.team.filter(m => !isSpecial(m) && !specFit(t, m.sp)) : [];
+  const off = t.specialty ? t.team.filter(m => !isSpecial(m) && !m.offType && !specFit(t, m.sp)) : [];
   if (off.length) {
     for (const m of off) farewell(t, m, 'left behind on becoming a gym trainer');
     t.team = t.team.filter(m => !off.includes(m));
@@ -2195,6 +2203,7 @@ function recordBattle(trainers, tally, winner, stakes) {
       m.st.cl = won ? 0 : (m.st.cl || 0) + 1;
       if (m.st.cl > (m.st.wl || 0)) m.st.wl = m.st.cl;
       addStat(monSeason(m), r, won, stakes);
+      if (t.role === 'challenger') metaNote(m.sp, r, won); // (0.12.0) the meta's trend and year readings
       addStat(S.dex[m.sp] = S.dex[m.sp] || blankStat(), r, won, stakes);
       addStat(S.dexSeason[m.sp] = S.dexSeason[m.sp] || blankStat(), r, won, stakes);
       if (won && r.ko >= 3) m.best = Math.max(m.best || 0, r.ko);
