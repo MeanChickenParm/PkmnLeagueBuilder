@@ -902,11 +902,14 @@ function staffGym(i) {
   }
 }
 // gym trainer place k at gym i: the best fitting challenger on the circuit takes it when there is one (0.6.0),
-// otherwise the game makes one
+// then a recent retiree who fits (0.9.0), otherwise the game makes one
 function fillGymTrainer(i, k, L) {
   const g = S.gyms[i];
   const c = circuitGymTrainer(L);
   if (c) { takeGymTrainer(c, i, k); return; }
+  // (0.9.0) then a recent retiree who fits, then a new trainer
+  const r = hireRetirees(x => gymFits(x, L) && !(x.letGoAt != null && S.turn - x.letGoAt < YEAR_WEEKS)).sort((x, y) => ovr(y) - ovr(x))[0];
+  if (r) { unretire(r); takeGymTrainer(r, i, k, `${dn(r)} came out of retirement to become a gym trainer at ${townName(i)} Gym.`); return; }
   const ty = specTypes(L);
   const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
   t.lg = S.lg || 0;

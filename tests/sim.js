@@ -7,7 +7,7 @@ const [L, G, N, GOD, HAND] = process.argv.slice(2).map(Number);
 g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
 if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); } g.finishFounding(); }
 const S = () => g.S, fail = [];
-const moves = { let: 0, swap: 0, gt: 0 };
+const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 let hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -42,7 +42,18 @@ function check(tag) {
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
     if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
     z.e4.forEach((id, k) => { const t = g.T(id); if (t && t.acting && !(s.vacancies || []).some(v => v.post === 'e4' && v.slot === k)) bad('acting Elite Four member with no vacancy'); });
-    if (i === 0) { const held = new Set((s.vacancies || []).flatMap(v => v.outsiders || [])); for (const t of Object.values(s.trainers)) if (t.role === 'prospect' && !held.has(t.id)) bad('a stranded outsider: ' + t.name); }
+    if (i === 0) { const held = new Set((s.vacancies || []).flatMap(v => v.outsiders || []).concat(z.gyms.flatMap(x => x.outs || []))); for (const t of Object.values(s.trainers)) if (t.role === 'prospect' && !held.has(t.id)) bad('a stranded outsider: ' + t.name); }
+    // hiring (0.9.0): a challenger who accepted a post is on the circuit, out on a run, due by the notice, and the
+    // post knows they are coming (and nobody else is)
+    if (i === 0) { const coming = new Set();
+      for (const v of s.vacancies || []) if (v.incoming != null) { const t = g.T(v.incoming); coming.add(v.incoming); if (!t || !t.hired || t.hired.post !== v.post || t.hired.slot !== v.slot) bad('a vacancy waits for someone not coming'); }
+      z.gyms.forEach((gy, j) => (gy.incoming || []).forEach((id, k) => { if (id == null) return; const t = g.T(id); coming.add(id); if (!t || !t.hired || t.hired.post !== 'gymtrainer' || t.hired.slot !== j || t.hired.k !== k) bad('a gym trainer place waits for someone not coming'); }));
+      for (const t of Object.values(s.trainers)) if (t.hired) {
+        if (!coming.has(t.id)) bad('a hire no post knows about: ' + t.name);
+        if (t.role !== 'challenger' || !z.challengers.includes(t.id)) bad('a hire off the circuit: ' + t.name);
+        if (t.hireDue) bad('a hire left due: ' + t.name);
+        if (t.rest != null) bad('a resting hire: ' + t.name);
+        if (t.hired.by < s.turn || t.hired.by - s.turn > g.HIRE_NOTICE) bad('a hire past its notice: ' + t.name); } }
     if (i === 0) for (const v of s.vacancies || []) { const a = g.T(v.post === 'leader' ? z.gyms[v.slot].leader : z.e4[v.slot]); if (!a || !a.acting) bad('a vacancy with no acting holder'); }
     { const all = [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])].filter(x => x != null); if (new Set(all).size !== all.length) bad('someone holds two posts'); }
     z.gyms.forEach(x => { if ((x.watch || []).length > g.GYM_WATCH) bad('too many kept battles'); if ((x.trainers || []).length > g.GYM_TRAINERS) bad('too many gym trainer places'); });
@@ -108,8 +119,20 @@ for (let i = 0; i < N; i++) {
       if (Math.random() < 0.04) { const i = rnd([0, 1, 2, 3, 4, 5, 6, 7]), gy = z.gyms[i], k = (gy.trainers || []).findIndex(x => x != null);
         const c = g.gymTrainerCands(i); if (k >= 0 && c.length) { const pick = rnd(c.slice(0, 8)).t; if (!g.placeGymTrainer(i, k, pick.id)) fail.push('placeGymTrainer refused'); else moves.gt++; } }
     });
+    // hiring (0.9.0): offers to the circuit for vacancies and gym trainer places, outsiders and retirees, withdrawals
+    if (HAND && S().season >= 2) g.inLeague(0, () => { const z = S();
+      const tally = o => { if (o && o.res) offers[o.res] = (offers[o.res] || 0) + 1; else fail.push('an offer failed'); };
+      if ((z.vacancies || []).length && Math.random() < 0.1) { const v = rnd(z.vacancies), c = g.vacancyCands(v).filter(x => x.from === 'circuit' && g.canOffer(x.t) && x.t.id !== v.incoming); if (c.length) tally(g.hireForVacancy(v, rnd(c.slice(0, 12)).t.id)); }
+      if (Math.random() < 0.05) { const i = rnd([0, 1, 2, 3, 4, 5, 6, 7]), gy = z.gyms[i], k = (gy.trainers || []).findIndex(x => x != null);
+        if (Math.random() < 0.5) g.gymOutsiders(i);
+        const c = g.gymTrainerCands(i).filter(x => ['circuit', 'outsider', 'retired'].includes(x.from) && (x.from !== 'circuit' || g.canOffer(x.t)));
+        if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
+      if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
+    });
+    const hiredBefore = new Set(Object.values(S().trainers).filter(t => t.hired).map(t => t.id));
     if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], c = g.inLeague(0, () => g.vacancyCands(v)); if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
     g.simWeek();
+    for (const id of hiredBefore) { const t = g.T(id); if (t && !t.hired && t.role !== 'challenger') offers.arrived++; }
     if (S().stop) stops[S().stop.why] = (stops[S().stop.why] || 0) + 1;
     check('step');
   }
@@ -133,5 +156,5 @@ for (let i = 0; i < N; i++) {
 const h = S().history;
 console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') : 'ok', 'leagues', g.nLeagues(), 'year', S().season, 'trainers', Object.keys(S().trainers).length, 'cities', Object.keys(S().cities).length,
   'Elite Four runs/year', (h.reduce((a, x) => a + x.qualifiers, 0) / Math.max(1, h.length)).toFixed(1), 'perfect years', Math.round(h.filter(x => !x.titles).length / Math.max(1, h.length) * 100) + '%', 'badges conceded/year', (h.reduce((a, x) => a + x.badges, 0) / Math.max(1, h.length)).toFixed(1),
-  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves));
+  'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves), 'offers', JSON.stringify(offers), 'back from retirement', Object.values(S().trainers).filter(t => t.unretired).length, 'replaced', Object.values(S().trainers).filter(t => t.letGoAt != null).length);
 process.exit(fail.length ? 1 : 0);

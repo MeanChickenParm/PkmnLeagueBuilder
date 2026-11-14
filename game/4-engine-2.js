@@ -1026,6 +1026,9 @@ function endRun(t, entry, stage) {
   const typical = S.runAvg == null ? depth : S.runAvg;
   S.runAvg = S.runAvg == null ? depth : S.runAvg * 0.97 + depth * 0.03;
   t.early = stage == null && depth <= typical ? (t.early || 0) + 1 : 0;
+  // a challenger who accepted a post takes it up now (0.9.0): no retiring, giving up or changing Leagues; they rest
+  // until the week's hiring is settled
+  if (t.hired) { t.hireDue = true; t.leaving = null; t.rest = S.turn + 1; return; }
   // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
   if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
   // weak challengers give up: several early runs in a row, and they retire or try their luck at another League
@@ -1185,6 +1188,7 @@ function leagueRun(q, entry) {
 function simWeek() {
   S.stop = null;
   eachLeague(leagueWeek);
+  hireArrivals();
   birthdays();
   arrivals();
   S.week++; S.turn = (S.turn || 0) + 1;
@@ -1412,9 +1416,6 @@ function metaCounters() { if (S.metaMons && S.metaMons.length) return counterTyp
 const AUTO_STAFF_MOVES = false;
 // the wall report sims Leagues whose staff all come from one quality tier, so no challenger walks into a post
 const fixedStaff = () => !!(S.cfg && S.cfg.staffBoost != null);
-function bestCandidate(exclude) {
-  return challengers().filter(t => !exclude.includes(t.id) && !comebackProtected(t) && t.age >= 17 && t.seasons >= 2 && ovr(t) >= 58).sort((a, b) => ovr(b) + b.career.badges / 4 - ovr(a) - a.career.badges / 4)[0];
-}
 // ================= THE WORLD'S SLOW CHANGES =================
 // Spread through the year (0.4.0). Every trainer has a birthday week: they grow a year older and their ratings
 // move then, and that is when retirement is decided. A challenger out on a run retires when it ends; staff leave
@@ -1507,7 +1508,7 @@ function staffRetires(t) {
     const i = S.e4.indexOf(t.id); if (i < 0) return;
     retire(t, 'from the Elite Four');
     if (mine) { const a = actingE4(i); changes.push(`${t.name} stepped down from the Elite Four. ${a.name} stands in at seat #${i + 1} until you choose a new member.`); openVacancy('e4', i); }
-    else { const nt = outsiderE4(i); changes.push(`${t.name} stepped down; ${nt.name} (${typeLabel(nt)}) joins the Elite Four.`); }
+    else { const nt = rivalE4(i); changes.push(`${t.name} stepped down; ${nt.name} (${typeLabel(nt)}) joins the Elite Four.`); }
     news(changes[changes.length - 1], 'move', T(S.e4[i]).id);
   } else if (t.role === 'champion') {
     // the Champion's seat is never empty: the strongest Elite Four member moves up at once, and their seat is filled
@@ -1517,7 +1518,7 @@ function staffRetires(t) {
     t.role = 'exchamp'; retire(t, `as Champion of the ${S.lgName}`);
     S.e4[at] = null; m.acting = false; installElite(m, 'champion');
     if (mine) { const a = actingE4(at); openVacancy('e4', at); changes.push(`Champion ${t.name} stepped down. ${dn(m)} moves up from the Elite Four to become Champion; ${a.name} stands in at seat #${at + 1} until you choose a new member.`); }
-    else { const nt = outsiderE4(at); changes.push(`Champion ${t.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${at + 1}.`); }
+    else { const nt = rivalE4(at); changes.push(`Champion ${t.name} retired. ${dn(m)} moves up from the Elite Four to become Champion, and ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${at + 1}.`); }
     news(changes[changes.length - 1], 'title', m.id);
   }
   for (const c of changes) noteChange(c);
@@ -1544,6 +1545,7 @@ function actingE4(i) {
 const VACANCY_OUTSIDERS = 2;
 function openVacancy(post, slot) {
   // a post that opens again (its acting holder left) gets fresh outsiders; the old ones join the circuit (0.7.0)
+  const was = vacancyAt(post, slot), incoming = was ? was.incoming : null;
   for (const v of (S.vacancies || []).filter(v => v.post === post && v.slot === slot)) { const rest = (v.outsiders || []).filter(x => T(x) && T(x).role === 'prospect'); rest.forEach(x => { T(x).outsider = false; }); fillCircuits(rest); }
   S.vacancies = (S.vacancies || []).filter(v => !(v.post === post && v.slot === slot));
   const q = post === 'leader' ? 52 + slot * 2 : 66;
@@ -1554,7 +1556,7 @@ function openVacancy(post, slot) {
     if (!fam.length) fieldTeam(t, 5);
     t.outsider = true; outsiders.push(t.id);
   }
-  S.vacancies.push({ post, slot, since: S.turn, outsiders });
+  S.vacancies.push({ post, slot, since: S.turn, outsiders, incoming: incoming != null ? incoming : null });
 }
 // who can fill a vacancy: every challenger on the circuit, the League's own gym trainers (and the acting leader),
 // the vacancy's outsiders, and (0.7.0) the League's other Gym Leaders and Elite Four members: picking one of them
@@ -1562,7 +1564,8 @@ function openVacancy(post, slot) {
 // can't be picked. Best first. `opts.noStaff` leaves the senior staff out ("Fill it for me" and the sims).
 function vacancyCands(v, opts = {}) {
   const out = [];
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16) out.push({ t, from: 'circuit' });
+  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && (!t.hired || t.id === v.incoming)) out.push({ t, from: 'circuit' });
+  for (const t of hireRetirees()) out.push({ t, from: 'retired' });
   S.gyms.forEach((g, i) => {
     for (const id of g.trainers || []) if (T(id)) out.push({ t: T(id), from: 'gym', gym: i });
     if (v.post === 'leader' && i === v.slot && g.acting) out.push({ t: T(g.leader), from: 'acting', gym: i });
@@ -1573,11 +1576,15 @@ function vacancyCands(v, opts = {}) {
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // fill vacancy v with trainer id (in the player's League). Unpicked outsiders go on to the circuit.
-function fillVacancy(v, id) {
+function fillVacancy(v, id, opts = {}) {
   return inLeague(0, () => {
     const t = T(id); if (!t || !(S.vacancies || []).includes(v)) return false;
-    if (!vacancyCands(v).some(c => c.t === t)) return false;
-    const was = postName(t) || (t.outsider ? 'an outsider' : `the ${S.lgName} circuit`);
+    if (!vacancyCands(v).some(c => c.t === t) && !(opts.hired && t.role === 'challenger')) return false;
+    // anyone else who had accepted this post isn't coming now (0.9.0)
+    if (v.incoming != null && v.incoming !== id) cancelIncoming(v, `${t.name} took the post`);
+    v.incoming = null; t.hired = null; t.hireDue = false;
+    const was = postName(t) || (t.outsider ? 'an outsider' : t.role === 'retired' ? 'retirement' : `the ${S.lgName} circuit`);
+    if (t.role === 'retired') unretire(t);
     // the trainer leaves wherever they were; a Gym Leader or Elite Four member leaves a vacancy behind (0.7.0)
     if (t.role === 'challenger') dropFromCircuits(t.id);
     const chain = (t.role === 'leader' || t.role === 'e4') && !t.acting ? vacate(t) : null;
@@ -1613,7 +1620,22 @@ function fillVacancy(v, id) {
   });
 }
 // "Fill it for me": the best candidate who doesn't hold a senior post (so nothing else opens)
-function autoFillVacancy(v) { const c = inLeague(0, () => vacancyCands(v, { noStaff: true }))[0]; return c ? fillVacancy(v, c.t.id) : false; }
+// (0.9.0) A challenger may turn the offer down (the next best is asked) or accept mid-run (then the post waits for
+// them); a vacancy someone is already coming to is left alone. Returns 'later' when someone is coming, else what
+// fillVacancy returned.
+function autoFillVacancy(v) {
+  if (v.incoming != null) return 'later';
+  return inLeague(0, () => {
+    for (const c of vacancyCands(v, { noStaff: true })) {
+      if (c.from !== 'circuit') return fillVacancy(v, c.t.id);
+      if (!canOffer(c.t)) continue;
+      const o = offerPost({ post: v.post, slot: v.slot }, c.t);
+      if (o.res === 'now') return o.r;
+      if (o.res === 'later') return 'later';
+    }
+    return false;
+  });
+}
 function fillAllVacancies() { for (const v of (S.vacancies || []).slice()) autoFillVacancy(v); }
 // ---------- staffing at will (0.7.0) ----------
 // In the player's League any Gym Leader, Elite Four member or gym trainer can be let go, moved or swapped at any
@@ -1697,7 +1719,9 @@ function swapStaff(a, b) {
 function gymTrainerCands(i) {
   const g = S.gyms[i], L = T(g.leader), out = [];
   if (!L) return out;
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
+  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.hired && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
+  for (const t of hireRetirees(x => gymFits(x, L))) out.push({ t, from: 'retired' });
+  for (const id of g.outs || []) { const t = T(id); if (t && t.role === 'prospect' && gymFits(t, L)) out.push({ t, from: 'outsider' }); }
   S.gyms.forEach((h, j) => {
     if (j !== i) for (const id of h.trainers || []) { const t = T(id); if (t && gymFits(t, L)) out.push({ t, from: 'gym', gym: j }); }
     const hl = T(h.leader); if (j !== i && hl && !hl.acting && gymFits(hl, L)) out.push({ t: hl, from: 'leader', gym: j });
@@ -1708,26 +1732,244 @@ function gymTrainerCands(i) {
 // put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
 // one short, so only a place that is held can be changed there. Returns the vacancy a moved senior member left, or
 // true, or false.
-function placeGymTrainer(i, k, id) {
+function placeGymTrainer(i, k, id, opts = {}) {
   return inLeague(0, () => {
     const g = S.gyms[i], t = T(id), old = T((g.trainers || [])[k]);
     if (!t || k < 0 || k >= GYM_TRAINERS || (g.acting && !old) || old === t) return false;
-    if (!gymTrainerCands(i).some(c => c.t === t)) return false;
+    if (opts.hired ? !(t.role === 'challenger' && T(g.leader) && gymFits(t, T(g.leader))) : !gymTrainerCands(i).some(c => c.t === t)) return false;
+    // anyone else who had accepted this place isn't coming now (0.9.0)
+    if (g.incoming && g.incoming[k] != null && g.incoming[k] !== id) cancelIncoming({ post: 'gymtrainer', slot: i, k }, `${t.name} took the place`);
+    if (g.incoming) g.incoming[k] = null;
+    t.hired = null; t.hireDue = false;
+    const back = t.role === 'retired', outsider = t.role === 'prospect';
+    if (back) unretire(t);
+    if (outsider) { t.outsider = false; g.outs = (g.outs || []).filter(x => x !== t.id); }
     const was = postName(t), p = postOf(t);
     if (old) { const ow = postName(old); g.trainers[k] = null; closePost(old); letGo(old, ow); }
     if (p) vacate(t);
-    takeGymTrainer(t, i, k, p ? `${dn(t)} moved from ${was} to become a gym trainer at ${townName(i)} Gym.` : null);
+    takeGymTrainer(t, i, k, p ? `${dn(t)} moved from ${was} to become a gym trainer at ${townName(i)} Gym.` : back ? `${dn(t)} came out of retirement to become a gym trainer at ${townName(i)} Gym.` : outsider ? `Outsider ${dn(t)} became a gym trainer at ${townName(i)} Gym.` : null);
+    flushGymOutsiders(i);
     if (p && p.post === 'gymtrainer') staffGym(p.slot);
     noteChange(`${t.name} is now a gym trainer at ${townName(i)} Gym${old ? `, in place of ${old.name}` : ''}.`);
     return p && p.vacancy ? p.vacancy : true;
   });
 }
+// ---------- hiring (0.9.0, stage 2a) ----------
+// There is no separate hiring pool: the pool is simply everyone a League can hire right now. For the player that is
+// the League's circuit (an offer, which a challenger can turn down; one who accepts mid-run finishes the run first,
+// for up to HIRE_NOTICE weeks, while the post's current holder stays), the League's own staff (they move at once),
+// recent retirees (they come out of retirement at once) and outsiders the game makes for a post (they accept at once;
+// the ones not picked join the circuit). Rival Leagues hire from their own circuit, recent retirees and outsiders,
+// and take a challenger at once. All numbers here are provisional (design doc 4.8).
+const HIRE_NOTICE = 8, REFUSED_WEEKS = 24;
+const RETIREE_YEARS = 3, RETIREE_MAX_AGE = 55, RETIREE_MIN_OVR = 55;
+const GYM_HIRE_MIN = 58, E4_HIRE_MIN = 64, E4_HIRE_EDGE = 5, POOR_YEARS = 3, E4_POOR_MIN_RUNS = 3, GT_OUTSIDERS = 2;
+// a retired trainer's age now (birthdays stop at retirement)
+const retAge = t => t.age + Math.max(0, (S.season || 0) - (t.retiredSeason || S.season || 0));
+// recent retirees who would come back for a post: retired in the last RETIREE_YEARS years, under RETIREE_MAX_AGE now,
+// and still good enough (any League's: retirement belongs to the world)
+function hireRetirees(fit) {
+  if (fixedStaff()) return [];
+  return Object.values(S.trainers).filter(t => t.role === 'retired' && t.retiredSeason != null && (S.season || 0) - t.retiredSeason <= RETIREE_YEARS
+    && retAge(t) < RETIREE_MAX_AGE && ovr(t) >= RETIREE_MIN_OVR && t.team.length && (!fit || fit(t)));
+}
+// a retiree takes a post: back into the world, the years away added to their age. A Hall of Famer stays one.
+function unretire(t) {
+  t.age = retAge(t); t.unretired = S.season; t.retiredSeason = null; t.prevRole = null; t.lg = S.lg || 0; t.role = 'free';
+  t.leaving = null; t.stepDown = null;
+}
+// may the player offer challenger t a post now? (one who turned the League down isn't asked again for half a year)
+const canOffer = t => t.refusedAt == null || S.turn - t.refusedAt >= REFUSED_WEEKS;
+// does challenger t take the post offered? Younger trainers, title winners, those doing well on a run and anyone
+// holding a grudge are less keen; a gym trainer's place is less tempting than a seat on the Elite Four.
+function acceptsOffer(t, post) {
+  let p = 0.75;
+  if (t.age < 20) p -= 0.15; else if (t.age >= 35) p += 0.15;
+  if ((t.titleSeasons || []).length) p -= 0.25;
+  if (t.rest == null) { p -= 0.1; if (t.badges.length >= 6) p -= 0.25; }
+  if (post === 'gymtrainer') p -= 0.1; else if (post === 'e4') p += 0.1;
+  if (t.grudge != null) p -= 0.3;
+  return rand() < clamp(p, 0.1, 0.95);
+}
+// a challenger on the player's circuit who did well against the League this year or last: reached the Elite Four, or
+// won IMPRESS_BADGES badges in a run. Returns the reason in words, or null.
+const IMPRESS_BADGES = 6;
+function impressed(t) {
+  if (!t || t.role !== 'challenger') return null;
+  const y = t.yr && t.yr.season === S.season ? { b: t.yr.b, st: t.yr.st, when: 'this year' } : null;
+  const h = (t.seasonHist || [])[t.seasonHist.length - 1];
+  const p = h && h.season === S.season - 1 && (h.lg || 0) === (S.lg || 0) ? { b: h.badges, st: h.stage, when: 'last year' } : null;
+  for (const x of [y, p]) if (x) { if (x.st != null) return `reached the Elite Four ${x.when}`; if (x.b >= IMPRESS_BADGES) return `${x.b} badges in a run ${x.when}`; }
+  return null;
+}
+// what a hired challenger is coming to, in words
+function hireTarget(h) { return h.post === 'leader' ? `${townName(h.slot)} Gym Leader` : h.post === 'e4' ? `Elite Four seat #${h.slot + 1}` : `gym trainer at ${townName(h.slot)} Gym`; }
+// offer challenger t a post: target { post: 'leader'|'e4', slot } for a vacancy, { post: 'gymtrainer', slot, k } for a
+// gym trainer's place. Returns { res: 'now' | 'later' | 'refused' | 'cool', r } (r: what installing them returned).
+function offerPost(target, t) {
+  if (!canOffer(t)) return { res: 'cool' };
+  if (!acceptsOffer(t, target.post)) {
+    t.refusedAt = S.turn;
+    const msg = `${dn(t)} turned down an offer to become ${hireTarget(target)}.`;
+    news(msg, 'move', t.id); noteChange(msg);
+    return { res: 'refused' };
+  }
+  if (t.rest != null) return { res: 'now', r: installHire(target, t.id) };
+  // out on a run: they finish it first, for up to HIRE_NOTICE weeks; the post's holder stays meanwhile
+  cancelIncoming(target, `the post went to ${t.name}`);
+  t.hired = { ...target, at: S.turn, by: S.turn + HIRE_NOTICE };
+  if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; g.incoming = g.incoming || []; g.incoming[target.k] = t.id; }
+  else { const v = vacancyAt(target.post, target.slot); if (v) v.incoming = t.id; }
+  const msg = `${dn(t)} accepted an offer to become ${hireTarget(target)} and will take it up after their run (by ${turnDate(t.hired.by)} at the latest).`;
+  news(msg, 'move', t.id); noteChange(msg);
+  return { res: 'later' };
+}
+const vacancyAt = (post, slot) => (S.vacancies || []).find(v => v.post === post && v.slot === slot) || null;
+// install a hire now: a vacancy through fillVacancy, a gym trainer's place through placeGymTrainer
+function installHire(target, id) {
+  if (target.post === 'gymtrainer') return placeGymTrainer(target.slot, target.k, id, { hired: true });
+  const v = vacancyAt(target.post, target.slot);
+  return v ? fillVacancy(v, id, { hired: true }) : false;
+}
+// whoever was coming to this post isn't any more (the player chose someone else, or the post changed)
+function cancelIncoming(target, why) {
+  let id = null;
+  if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; id = (g.incoming || [])[target.k]; if (g.incoming) g.incoming[target.k] = null; }
+  else { const v = vacancyAt(target.post, target.slot); if (v) { id = v.incoming; v.incoming = null; } }
+  const t = T(id); if (!t || !t.hired) return;
+  t.hired = null; t.hireDue = false;
+  if (why) { const msg = `${dn(t)} will not become ${hireTarget(target)} after all: ${why}.`; news(msg, 'move', t.id); noteChange(msg); }
+}
+// the player withdraws an offer someone accepted
+function withdrawOffer(id) { return inLeague(0, () => { const t = T(id); if (!t || !t.hired) return false; cancelIncoming(t.hired, 'the League withdrew its offer'); return true; }); }
+// once a week (after every League's week): hired challengers whose run ended, or whose time is up, take their post
+function hireArrivals() {
+  if (!handOn()) return;
+  inLeague(0, () => {
+    for (const t of Object.values(S.trainers)) {
+      const h = t.hired; if (!h) continue;
+      const drop = why => { cancelIncoming(h, why); t.hired = null; t.hireDue = false; };
+      if (t.role !== 'challenger' || !S.challengers.includes(t.id)) { drop(`${t.name} is no longer on the circuit`); continue; }
+      if (!t.hireDue && S.turn < h.by) continue;
+      const cut = !t.hireDue && t.rest == null;
+      if (h.post === 'gymtrainer') { const g = S.gyms[h.slot], L = T(g.leader); if (!L || !gymFits(t, L) || (g.acting && !T((g.trainers || [])[h.k]))) { drop(`${townName(h.slot)} Gym changed`); continue; } }
+      else if (!vacancyAt(h.post, h.slot)) { drop('the post was filled'); continue; }
+      if (cut) { const msg = `${dn(t)} left their run with ${t.badges.length} badge${t.badges.length === 1 ? '' : 's'} to take up the post of ${hireTarget(h)}.`; news(msg, 'move', t.id); }
+      t.hired = null; t.hireDue = false; t.leaving = null;
+      const target = { ...h };
+      if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; if (g.incoming) g.incoming[target.k] = null; }
+      else { const v = vacancyAt(target.post, target.slot); if (v) v.incoming = null; }
+      installHire(target, t.id);
+    }
+  });
+}
+// a vacancy for the player: offer a circuit challenger, or install anyone else at once
+function hireForVacancy(v, id) {
+  return inLeague(0, () => {
+    const t = T(id), c = vacancyCands(v).find(x => x.t === t);
+    if (!c) return { res: false };
+    if (c.from === 'circuit') return offerPost({ post: v.post, slot: v.slot }, t);
+    return { res: 'now', r: fillVacancy(v, id) };
+  });
+}
+function hireForGymTrainer(i, k, id) {
+  return inLeague(0, () => {
+    const t = T(id), c = gymTrainerCands(i).find(x => x.t === t), g = S.gyms[i];
+    if (!c || k < 0 || k >= GYM_TRAINERS || (g.acting && !T((g.trainers || [])[k]))) return { res: false };
+    if (c.from === 'circuit') return offerPost({ post: 'gymtrainer', slot: i, k }, t);
+    return { res: 'now', r: placeGymTrainer(i, k, id) };
+  });
+}
+// outsiders for a gym trainer's place picked by hand: GT_OUTSIDERS trainers of the leader's type, made when the
+// picker opens and kept until a place at that gym is filled by hand or New Year (then they join the circuit)
+function gymOutsiders(i) {
+  return inLeague(0, () => {
+    const g = S.gyms[i], L = T(g.leader); if (!L) return [];
+    g.outs = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
+    const ty = specTypes(L);
+    while (g.outs.length < GT_OUTSIDERS) {
+      const t = newTrainer({ age: ri(18, 34), quality: staffQ(46 + i * 2), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+      fieldTeam(t, 4); t.outsider = true; g.outs.push(t.id);
+    }
+    return g.outs.slice();
+  });
+}
+function flushGymOutsiders(i) {
+  const g = S.gyms[i], rest = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
+  g.outs = null;
+  rest.forEach(x => { T(x).outsider = false; });
+  if (rest.length) fillCircuits(rest);
+}
+// ---- rival Leagues (and any League nobody staffs by hand) ----
+// the best of the League's own circuit and the recent retirees at OVR min or better; a challenger must accept the
+// offer (the next best is asked if they don't). Null when nobody fits (then the League makes an outsider).
+function rivalHire(min, exclude = []) {
+  if (fixedStaff()) return null;
+  const val = t => ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
+  const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
+    .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))).sort((a, b) => val(b) - val(a));
+  for (const t of cs) if (t.role === 'retired' || acceptsOffer(t, 'leader')) return t;
+  return null;
+}
+// a rival League's vacant Elite Four seat: the best of its circuit and the recent retirees at E4_HIRE_MIN, else an
+// outsider (sometimes famous)
+function rivalE4(i) {
+  const c = rivalHire(E4_HIRE_MIN);
+  if (!c) return outsiderE4(i);
+  if (c.role === 'retired') unretire(c);
+  S.challengers = S.challengers.filter(x => x !== c.id);
+  installElite(c, 'e4', i);
+  return c;
+}
+// the Elite Four seat with the worst record of the year (runs stopped of runs faced), from the year's history
+// entry; null in a year with fewer than E4_POOR_MIN_RUNS runs at the Elite Four. Each holder's t.e4Poor counts the
+// years in a row they had the worst record (acting holders aren't counted).
+function noteE4Records(h) {
+  if (!h || !h.seats || h.seats[0].faced < E4_POOR_MIN_RUNS) return null;
+  const seats = S.e4.map((id, k) => ({ k, t: T(id), s: h.seats[k] })).filter(x => x.t && !x.t.acting && x.s && x.s.faced);
+  if (!seats.length) return null;
+  seats.sort((a, b) => a.s.stopped / a.s.faced - b.s.stopped / b.s.faced || ovr(a.t) - ovr(b.t));
+  const worst = seats[0].t;
+  S.e4.forEach((id, k) => { const t = T(id); if (!t) return; t.e4Poor = t === worst ? (t.e4Poor || 0) + 1 : 0; if (h.seats[k]) h.seats[k].poor = t.e4Poor; });
+  return seats[0].k;
+}
+// poor staff are replaced in Leagues nobody staffs by hand (the player only gets a warning): at most one gym a year
+// (its leader held under 30% of 12+ tries POOR_YEARS years in a row) and one Elite Four seat (the worst record of the
+// four POOR_YEARS years in a row, and someone at least E4_HIRE_EDGE OVR better is available)
+function replacePoorStaff(changes, worstSeat) {
+  if (playerLeague() || fixedStaff()) return;
+  const gi = S.gyms.map((g, i) => ({ g, i, t: T(g.leader) })).filter(x => x.t && x.g.poorFor === x.t.id && (x.g.poor || 0) >= POOR_YEARS)
+    .sort((a, b) => b.g.poor - a.g.poor || a.g.w / Math.max(1, a.g.w + a.g.l) - b.g.w / Math.max(1, b.g.w + b.g.l))[0];
+  if (gi) {
+    const { g, i, t } = gi, n = g.poor;
+    g.leader = null; g.poor = 0; t.letGoAt = S.turn;
+    const fate = retireOrReturn(t, `was replaced as ${townName(i)} Gym Leader after ${n} poor years in a row`);
+    changes.push(`${dn(t)} was replaced at ${townName(i)} Gym after ${n} poor years in a row${fate === 'retired' ? ' and retired' : ''}.`);
+    fillGym(i, changes); staffGym(i);
+  }
+  if (worstSeat != null) {
+    const t = T(S.e4[worstSeat]);
+    if (t && (t.e4Poor || 0) >= POOR_YEARS) {
+      const c = rivalHire(Math.max(E4_HIRE_MIN, ovr(t) + E4_HIRE_EDGE), [t.id]);
+      if (c) {
+        S.e4[worstSeat] = null; t.e4Poor = 0; t.letGoAt = S.turn;
+        const fate = retireOrReturn(t, `lost Elite Four seat #${worstSeat + 1} after ${POOR_YEARS} years with the worst record of the four`);
+        const back = c.role === 'retired'; if (back) unretire(c);
+        S.challengers = S.challengers.filter(x => x !== c.id); installElite(c, 'e4', worstSeat);
+        changes.push(`${dn(c)}${back ? ', out of retirement,' : ''} replaced ${t.name} on the Elite Four (seat #${worstSeat + 1}) after ${POOR_YEARS} years with the worst record of the four; ${t.name} ${fate === 'retired' ? 'retired' : 'returns to the circuit'}.`);
+        news(changes[changes.length - 1], 'move', c.id);
+      }
+    }
+  }
+}
 // a vacant gym goes to the circuit's best challenger or to an outsider
 function fillGym(i, changes) {
-  const cand = bestCandidate([]);
+  // (0.9.0) the best of the League's circuit and the recent retirees at GYM_HIRE_MIN, else an outsider
+  const cand = rivalHire(GYM_HIRE_MIN);
   let nl;
-  if (cand && !fixedStaff() && rand() < 0.7) {
-    changes.push(`${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
+  if (cand) {
+    const back = cand.role === 'retired'; if (back) unretire(cand);
+    changes.push(back ? `${dn(cand)} came out of retirement to lead ${townName(i)} Gym (${typeLabel(cand)}).` : `${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
     S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
     nl = cand;
   } else {
@@ -1857,6 +2099,13 @@ function leagueNewYear(changes) {
   // every gym is brought back to two trainers of its leader's type
   S.gyms.forEach((g, i) => staffGym(i));
 
+  // --- poor years (0.9.0): each gym's run of poor years and the Elite Four's worst record go into the year's report;
+  // a League nobody staffs by hand replaces poor staff, the player only sees the warning. Gym trainer outsiders
+  // nobody picked join the circuit.
+  { const h = S.history[S.history.length - 1];
+    S.gyms.forEach((g, i) => { if (h.gyms && h.gyms[i]) h.gyms[i].poor = g.poorFor === g.leader ? g.poor || 0 : 0; });
+    replacePoorStaff(changes, noteE4Records(h));
+    S.gyms.forEach((g, i) => flushGymOutsiders(i)); }
   // --- elite four turnover (switched off with AUTO_STAFF_MOVES)
   if (AUTO_STAFF_MOVES && deepest && deepest.stage >= 3) {
     const r = T(deepest.id);
