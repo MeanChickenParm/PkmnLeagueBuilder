@@ -899,7 +899,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // the League that actually lists a trainer (circuit or post); falls back to their tag. Used before anything that
@@ -1209,6 +1209,7 @@ function simWeek() {
 // one League's week: every challenger who is out on a run acts; one whose rest is over sets out again
 function leagueWeek() {
   noteHolders();
+  if (S.week % 4 === 0 && S.turn > 0) steerMonth();
   for (const id of shuffle(S.challengers)) {
     const t = T(id); if (!t || t.role !== 'challenger' || !S.challengers.includes(id)) continue;
     if (t.rest == null && t.runStart == null) t.rest = S.turn; // new to the circuit
@@ -1563,6 +1564,144 @@ function counterTypesFor(mons) {
 }
 // what the current meta counters are (older saves stored a single type in S.meta)
 function metaCounters() { if (S.metaMons && S.metaMons.length) return counterTypesFor(S.metaMons); return S.meta && TYPES.includes(S.meta) ? TYPES.filter(a => effOne(a, S.meta) === 2) : []; }
+
+// ================= STEERS AND THE META (0.12.0, stage 2d) =================
+// A steer is a standing instruction for how a post's team is built. It belongs to the post, not to the trainer
+// (a new holder follows it too): each Gym Leader's gym (its gym trainers follow it), each Elite Four seat and the
+// Champion's, plus a League line used wherever a post has none. Everyone follows a steer; real Strategy decides how
+// closely. A steer only changes what the team builder favours, and a team follows it one Pokémon a month; someone new
+// to a post builds to it at once. All numbers are provisional (design doc 4.10).
+const STEERS = {
+  bal: ['Balanced', 'No steer: the trainer builds as they see fit.'],
+  trend: ['Counter the trend', "Answer the circuit's top performers of the last 12 weeks."],
+  year: ["Counter the year's meta", 'Answer the top performers of last year and this year so far.'],
+  bulk: ['Favour bulk', 'Prefer Pokémon with high HP and defences, at some cost in raw strength.'],
+  power: ['Hit hard', 'Prefer fast, hard-hitting Pokémon, at some cost in bulk.'],
+  cover: ['Cover weaknesses', 'Avoid stacking weaknesses, and add Pokémon that answer them.'],
+  keep: ['Keep their own Pokémon', 'Hold the team together: no monthly swaps, a move keeps up to four of their own, and a famous trainer works their signature Pokémon back in.'],
+};
+const STEER_KEYS = Object.keys(STEERS);
+const META_MONTHS = 3, META_LOG = 24, META_MIN_B = 8, STEER_EDGE = 0.25, KEEP_CORE = 4, TREND_SHIFT = 3;
+function steerState() { return S.steer = S.steer || { line: 'bal', posts: {} }; }
+// the key of the post a member of staff holds in the bound League ('champion', 'e4:2', 'gym:5')
+function postKey(t) { const p = postOf(t); return !p ? null : p.post === 'champion' ? 'champion' : p.post === 'e4' ? 'e4:' + p.slot : 'gym:' + p.slot; }
+const steerAt = key => (key && steerState().posts[key]) || steerState().line || 'bal';
+const steerOf = t => (t && STAFF_ROLES.includes(t.role) ? steerAt(postKey(t)) : 'bal');
+const steerName = s => (STEERS[s] || STEERS.bal)[0];
+// key 'line' sets the League line; s null clears a post's own steer (it then follows the line)
+function setSteer(key, s) {
+  if (s != null && !STEERS[s]) return false;
+  const st = steerState();
+  if (key === 'line') st.line = s || 'bal'; else if (s == null) delete st.posts[key]; else st.posts[key] = s;
+  return true;
+}
+// how closely a trainer follows a steer: their real Strategy (the builder's offset doesn't apply)
+const steerFollow = t => clamp((t.r.str - 30) / 50, 0.2, 1);
+const isCounter = s => s === 'trend' || s === 'year';
+const steerMeta = s => (s === 'trend' ? S.metaTrend || [] : s === 'year' ? S.metaYear || [] : []);
+// what a steer adds to a pick's score in the team builder (weak: the team's stacked weaknesses so far)
+function steerScore(s, sp, weak, meta) {
+  const b = bsOf(sp), tot = SP[sp].bst || 1, ty = SP[sp].types;
+  if (s === 'bulk') return ((b.hp + b.def + b.spd) / tot - 0.5) * 8;
+  if (s === 'power') return ((b.spe + Math.max(b.atk, b.spa)) / tot - 0.33) * 8;
+  if (s === 'cover') { let v = 0; for (const a of TYPES) { const n = weak[a] || 0; if (!n) continue; const e = ty.reduce((m, d) => m * effOne(a, d), 1); if (e >= 2) v -= 0.4 * n; else if (e < 1) v += 0.3 * n; } return v; }
+  if (isCounter(s) && meta.length) {
+    let v = 0;
+    for (const f of meta) { if (!SP[f]) continue; if (ty.some(x => effVs(x, f) >= 2)) v += 1; if (SP[f].types.some(x => ty.reduce((m, d) => m * effOne(x, d), 1) >= 2)) v -= 0.6; }
+    return v / meta.length * 3;
+  }
+  return 0;
+}
+// a countering typed trainer may field one Pokémon off their type that answers the meta: the strongest answers
+// under their Scouting ceiling
+function offTypePool(t, L, meta) {
+  const ty = specTypes(t), cap = 340 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, set = new Set();
+  for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s && s.bst <= cap && !s.types.some(x => ty.includes(x)) && !bannedIn(f, S.lg || 0)) set.add(f); }
+  return [...set].map(sp => [sp, steerScore('trend', sp, {}, meta) + SP[sp].bst / 300]).filter(x => x[1] > 2).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
+}
+// the lines of a famous trainer's signature team
+const signatureLines = t => (t.famousTeam ? new Set(signaturePicks(t.famousTeam).filter(sp => SP[sp]).map(sp => LINE[sp])) : null);
+
+// ---------- the meta: a trend and the year ----------
+// Every battle a challenger's Pokémon fight is counted for the League it is on (metaNote, called from battle()). At the
+// start of each month the month just ended goes into S.metaLog, and two readings are made: the trend (the five top
+// performers of the last three months) and the year (last full year plus this year so far). Ranked as the meta report
+// is: knockouts per battle, then wins, with 8+ battles.
+function metaNote(sp, r, won) { const now = S.metaNow = S.metaNow || {}, a = now[sp] = now[sp] || [0, 0, 0]; a[0]++; a[1] += r.ko || 0; if (won) a[2]++; }
+function metaTop(months) {
+  const agg = {};
+  for (const mo of months) for (const [sp, a] of Object.entries(mo.agg || {})) { const x = agg[sp] = agg[sp] || [0, 0, 0]; x[0] += a[0]; x[1] += a[1]; x[2] += a[2]; }
+  return Object.entries(agg).filter(([sp, a]) => SP[sp] && a[0] >= META_MIN_B).sort((x, y) => y[1][1] / y[1][0] - x[1][1] / x[1][0] || y[1][2] / y[1][0] - x[1][2] / x[1][0]).slice(0, 5).map(x => x[0]);
+}
+function metaMonth() {
+  const log = S.metaLog = S.metaLog || [];
+  log.push({ s: S.week === 0 ? S.season - 1 : S.season, w: (S.week + YEAR_WEEKS - 4) % YEAR_WEEKS, agg: S.metaNow || {} });
+  S.metaNow = {};
+  if (log.length > META_LOG) log.splice(0, log.length - META_LOG);
+  const old = S.metaTrend || [];
+  S.metaTrend = metaTop(log.slice(-META_MONTHS));
+  S.metaYear = metaTop(log.filter(x => x.s >= S.season - 1));
+  S.metaAt = S.turn;
+  const fresh = S.metaTrend.filter(sp => !old.includes(sp));
+  // a shift: three or more of the five are new and the types that answer it have changed
+  if (old.length && fresh.length >= TREND_SHIFT && counterTypesFor(old)[0] !== counterTypesFor(S.metaTrend)[0]) {
+    news(`The trend on the circuit has shifted: ${S.metaTrend.join(', ')} are the top performers of the last 12 weeks (new: ${fresh.join(', ')}).`, 'meta');
+    if (playerLeague()) stopFor('meta', `The trend has shifted: ${fresh.join(', ')} are new among the top performers.`);
+  }
+}
+// the types that answer a reading, and whether a member of staff can answer it on their own type
+const metaTypes = s => counterTypesFor(steerMeta(s));
+function answersOnType(t, s) { if (!t) return false; const c = metaTypes(s), ty = specTypes(t); return !!c.length && (!ty.length || ty.some(x => c.includes(x))); }
+// rival Leagues steer by a simple rule each month: a gym that can answer the trend on its type counters it, an Elite
+// Four member or Champion who can answer the year's meta counters that; everyone else is Balanced
+function rivalSteers() {
+  const st = steerState(); st.line = 'bal'; st.posts = {};
+  S.gyms.forEach((g, i) => { if (answersOnType(T(g.leader), 'trend')) st.posts['gym:' + i] = 'trend'; });
+  S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; });
+  if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year';
+}
+
+// ---------- following a steer, one Pokémon a month ----------
+const weakOf = team => { const w = {}; for (const m of team) for (const a of TYPES) if (SP[m.sp].types.reduce((x, d) => x * effOne(a, d), 1) >= 2) w[a] = (w[a] || 0) + 1; return w; };
+function swapMon(t, out, inn, why) {
+  farewell(t, out, why);
+  t.team = t.team.filter(m => m !== out);
+  t.team.push(inn); relevelElite(t);
+  if (playerLeague()) news(`${dn(t)} swapped ${out.sp} for ${inn.sp} (${why.replace(/^swapped out /, '')}).`, 'move', t.id);
+}
+function steerSwap(t, slot, s) {
+  const mixed = t.role === 'champion' || !t.specialty, own = mixed ? [] : specTypes(t);
+  // an off-type Pokémon stays only under a counter steer
+  const off = t.team.find(m => m.offType);
+  if (off && !isCounter(s)) {
+    const rest = t.team.filter(m => m !== off), inn = staffPicks(t, slot.lvl, 1, { lines: rest.map(m => LINE[m.sp]), team: rest, mixed, steer: 'bal' })[0];
+    if (inn) swapMon(t, off, stamp(inn, 'assigned'), 'swapped out as the steer changed');
+    return;
+  }
+  if (s === 'bal') return;
+  if (s === 'keep') {
+    // a famous trainer works one signature Pokémon back in, in place of the weakest Pokémon that isn't one
+    const sig = signatureLines(t); if (!sig) return;
+    const missing = signaturePicks(t.famousTeam).find(sp => SP[sp] && !t.team.some(m => LINE[m.sp] === LINE[sp]) && !bannedIn(sp, S.lg || 0));
+    const drop = t.team.filter(m => !sig.has(LINE[m.sp]) && !isSpecial(m)).sort((a, b) => SP[a.sp].bst - SP[b.sp].bst)[0];
+    if (missing && drop) swapMon(t, drop, stamp(makeMon(missing, slot.lvl, t.specialty), 'starter'), 'swapped out for a signature Pokémon');
+    return;
+  }
+  const threats = TYPES.filter(a => own.some(d => effOne(a, d) >= 2)), fol = steerFollow(t), meta = steerMeta(s);
+  const val = (sp, rest) => { const w = weakOf(rest); return fitScore(sp, w, threats) + fol * steerScore(s, sp, w, meta); };
+  const worst = t.team.filter(m => !isSpecial(m) && !(t.mega && t.mega.uid === m.uid)).map(m => { const rest = t.team.filter(x => x !== m); return { m, rest, v: val(m.sp, rest) }; }).sort((a, b) => a.v - b.v)[0];
+  if (!worst) return;
+  const inn = staffPicks(t, slot.lvl, 1, { lines: worst.rest.map(m => LINE[m.sp]), team: worst.rest, mixed, steer: s })[0];
+  if (!inn || LINE[inn.sp] === LINE[worst.m.sp] || val(inn.sp, worst.rest) < worst.v + STEER_EDGE) return;
+  swapMon(t, worst.m, stamp(inn, 'assigned'), `swapped out to follow the steer (${steerName(s)})`);
+}
+// the start of each month in each League: the meta readings, rival Leagues' steers, then every steered team moves
+// one Pokémon closer to its steer
+function steerMonth() {
+  metaMonth();
+  if (!playerLeague()) rivalSteers();
+  for (const id of staffIds()) { const t = T(id), slot = t && eliteSlot(t); if (slot && t.team && t.team.length) steerSwap(t, slot, steerOf(t)); }
+}
 // a Gym Leader back on the circuit for a title run isn't offered a gym again during their guaranteed seasons
 // The source's performance moves are switched off until the player decides them (design doc, open items): a leader
 // replaced after three poor seasons, a leader returning to the circuit after a run of strong ones, and a challenger
@@ -2415,7 +2554,7 @@ function leagueNewYear(changes) {
     season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta, ...yearDetail(L),
+    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L),
   });
   // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);

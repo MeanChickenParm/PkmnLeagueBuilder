@@ -39,7 +39,7 @@ async def run(path):
           if (S.champion !== placedChamp) log.push('FAIL the Champion placed is not the Champion');
           if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
-          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff'];
+          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -113,6 +113,14 @@ async def run(path):
                   go('staff'); const gt = S.gyms[6].trainers[1]; click('[data-act=staffask][data-id="' + gt + '"]'); click('[data-act=staffgo][data-id="' + gt + '"]');
                   if (S.gyms[6].trainers.filter(Boolean).length !== 2 || S.gyms[6].trainers.includes(gt)) log.push('FAIL letting a gym trainer go');
                   if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page shows undefined');
+                  // 0.12.0: steers. Set the League line and one gym's steer from Your staff, then counter from the Meta page
+                  { go('staff'); const pick = (k, v) => { const el = document.querySelector('select.steersel[data-k="' + k + '"]'); if (!el) { log.push('FAIL no steer picker for ' + k); return; } el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); };
+                    pick('line', 'bulk'); pick('gym:2', 'power');
+                    inLeague(0, () => { if (S.steer.line !== 'bulk' || S.steer.posts['gym:2'] !== 'power') log.push('FAIL steers were not set'); if (steerOf(T(S.gyms[2].trainers[0])) !== 'power' || steerOf(T(S.gyms[5].leader)) !== (S.steer.posts['gym:5'] || 'bulk')) log.push('FAIL steerOf'); });
+                    pick('gym:2', ''); inLeague(0, () => { if ('gym:2' in S.steer.posts) log.push('FAIL clearing a steer'); });
+                    go('meta'); if (!/The trend/.test(document.querySelector('#main').textContent)) log.push('FAIL the Meta page');
+                    const b = document.querySelector('[data-act=steerall][data-v=year]'); if (b) { b.click(); log.push('countered the year: ' + Object.values(inLeague(0, () => S.steer.posts)).filter(x => x === 'year').length + ' posts'); } else log.push('no year reading yet');
+                    go('trainers'); }
                   log.push('managed staff'); go('circuit'); }
                 // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at
                 // once and recorded), refuse one for an Elite Four seat, and find both in the year report with a Watch button

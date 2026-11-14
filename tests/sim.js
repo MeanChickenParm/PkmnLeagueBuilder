@@ -10,7 +10,7 @@ const S = () => g.S, fail = [];
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
-let hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
+let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
   if (s.phase !== 'season') bad('unknown phase ' + s.phase);
@@ -33,16 +33,23 @@ function check(tag) {
       if (act !== !!L.acting) bad('gym ' + j + ' acting flags disagree');
       if (act && !(s.vacancies || []).some(v => v.post === 'leader' && v.slot === j) && i === 0) bad('gym ' + j + ' acting with no vacancy');
       if (L.team.length !== g.GYM_SIZE[j] - (act ? 1 : 0)) bad('gym ' + j + ' leader fields ' + L.team.length);
-      for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
+      for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
       if (gts.length !== g.GYM_TRAINERS - (act ? 1 : 0)) bad('gym ' + j + ' has ' + gts.length + ' gym trainers' + (act ? ' (acting)' : ''));
       for (const id of gts) { const t = g.T(id);
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
         if (!act && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
-        for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
+        for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
         if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired);
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
     if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
+    // steers and the meta (0.12.0): valid steers, at most one off-type Pokémon a team, readings of five at most
+    { const st = z.steer || { line: 'bal', posts: {} };
+      if (!g.STEERS[st.line]) bad('League ' + i + ' line steer ' + st.line);
+      for (const [k, v] of Object.entries(st.posts || {})) { if (!g.STEERS[v]) bad('steer ' + v + ' on ' + k); if (!/^(champion|e4:[0-3]|gym:[0-7])$/.test(k)) bad('steer on unknown post ' + k); }
+      if ((z.metaTrend || []).length > 5 || (z.metaYear || []).length > 5) bad('a meta reading of more than five');
+      for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])]) { const t = g.T(id); if (t && t.team.filter(m => m.offType).length > 1) bad('two off-type Pokémon on ' + t.name); }
+      }
     z.e4.forEach((id, k) => { const t = g.T(id); if (t && t.acting && !(s.vacancies || []).some(v => v.post === 'e4' && v.slot === k)) bad('acting Elite Four member with no vacancy'); });
     if (i === 0) { const held = new Set((s.vacancies || []).flatMap(v => v.outsiders || []).concat(z.gyms.flatMap(x => x.outs || []))); for (const t of Object.values(s.trainers)) if (t.role === 'prospect' && !held.has(t.id)) bad('a stranded outsider: ' + t.name); }
     // hiring (0.9.0): a challenger who accepted a post is on the circuit, out on a run, due by the notice, and the
@@ -150,6 +157,8 @@ for (let i = 0; i < N; i++) {
         if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
+    // steers (0.12.0): set the League line and posts' steers now and then
+    if (HAND && Math.random() < 0.06) g.inLeague(0, () => { const keys = ['line', 'champion', 'e4:0', 'e4:3', 'gym:0', 'gym:4', 'gym:7']; if (!g.setSteer(rnd(keys), Math.random() < 0.2 ? null : rnd(g.STEER_KEYS))) fail.push('setSteer failed'); steersSet++; });
     // seat challenges (0.11.0): approve some, refuse some, leave the rest to go ahead on their own
     if (HAND && (S().chalPending || []).length && Math.random() < 0.3) { const r = Math.random();
       if (r < 0.6) { if (!g.answerChallenge(0, true)) fail.push('answerChallenge yes failed'); } else if (!g.answerChallenge(0, false)) fail.push('answerChallenge no failed'); }
@@ -190,5 +199,5 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves), 'offers', JSON.stringify(offers), 'back from retirement', Object.values(S().trainers).filter(t => t.unretired).length, 'replaced', Object.values(S().trainers).filter(t => t.letGoAt != null).length,
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
-  'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal));
+  'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','));
 process.exit(fail.length ? 1 : 0);
