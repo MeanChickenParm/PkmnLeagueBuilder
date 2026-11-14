@@ -35,7 +35,7 @@ async def run(path):
           if (S.champion !== placedChamp) log.push('FAIL the Champion placed is not the Champion');
           if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
-          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire'];
+          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -59,11 +59,33 @@ async def run(path):
                   if (!/waiting for you/.test(txt) || !/Acting/.test(txt) || !/Steps down/.test(txt)) log.push('FAIL vacancies or step-downs not shown');
                   if (!inLeague(0, () => T(S.gyms[2].leader).acting && S.gyms[2].trainers.filter(Boolean).length === 1)) log.push('FAIL no acting leader at gym 3');
                   click('[data-act=hire][data-v="0"]'); if (view !== 'hire' || !document.querySelector('[data-act=hirepick]')) log.push('FAIL no hiring page');
-                  click('[data-act=hirefit]'); click('[data-act=hirefit]'); click('[data-act=hirepick]');
+                  click('[data-act=hirefit]'); click('[data-act=hirefit]'); { const r = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (r) r.click(); }
                   click('[data-act=hireauto][data-v="0"]');
                   if ((S.vacancies || []).length) log.push('FAIL vacancies left open: ' + S.vacancies.length);
                   if (inLeague(0, () => S.gyms[2].acting || S.gyms[2].trainers.filter(Boolean).length !== 2 || S.e4.some(id => T(id).acting))) log.push('FAIL posts not filled properly');
                   log.push('filled two vacancies'); go('circuit'); }
+                // 0.7.0: your staff. Let an Elite Four member go and move a Gym Leader up (their gym opens next), swap
+                // two Gym Leaders, replace a gym trainer by hand, let a gym trainer go
+                if (S.season === 2 && !seen.staff) { seen.staff = 1; viewLg = 0; go('staff');
+                  if (!/Your staff/.test(document.querySelector('#main').textContent) || document.querySelectorAll('[data-act=gtpick]').length !== 16) log.push('FAIL the staff page');
+                  if (document.querySelector('[data-act=staffask][data-id="' + S.champion + '"]')) log.push('FAIL the Champion can be let go');
+                  const e4 = S.e4[3]; click('[data-act=staffask][data-id="' + e4 + '"]'); click('[data-act=staffgo][data-id="' + e4 + '"]');
+                  if (view !== 'hire' || !T(S.e4[3]).acting || !['challenger', 'retired'].includes(T(e4).role)) log.push('FAIL letting an Elite Four member go');
+                  const row = [...document.querySelectorAll('[data-act=hirepick]')].find(b => /Gym Leader ·/.test(b.closest('tr').textContent));
+                  if (!row) log.push('FAIL no Gym Leader among the candidates'); else { const id = +row.dataset.id; row.click();
+                    if (T(S.e4[3]) !== T(id) || view !== 'hire' || !(S.vacancies || []).some(v => v.post === 'leader')) log.push('FAIL moving a Gym Leader up did not open their gym');
+                    click('[data-act=hireauto][data-v="0"]'); }
+                  if ((S.vacancies || []).length) log.push('FAIL posts left open after the move');
+                  go('staff'); const a = S.gyms[0].leader, b2 = S.gyms[5].leader; click('[data-act=staffswap][data-id="' + a + '"]'); click('[data-act=staffswapto][data-id="' + b2 + '"]');
+                  if (S.gyms[0].leader !== b2 || S.gyms[5].leader !== a) log.push('FAIL the swap');
+                  click('[data-act=gtpick][data-g="1"][data-k="0"]'); const old = S.gyms[1].trainers[0];
+                  if (view !== 'gtpick' || !click('[data-act=gtplace]')) log.push('FAIL the gym trainer picker'); else if (S.gyms[1].trainers[0] === old) log.push('FAIL Replace did not change the gym trainer');
+                  while ((S.vacancies || []).length) click('[data-act=hireauto][data-v="0"]');
+                  go('staff'); const gt = S.gyms[6].trainers[1]; click('[data-act=staffask][data-id="' + gt + '"]'); click('[data-act=staffgo][data-id="' + gt + '"]');
+                  if (S.gyms[6].trainers.filter(Boolean).length !== 2 || S.gyms[6].trainers.includes(gt)) log.push('FAIL letting a gym trainer go');
+                  if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the staff page shows undefined');
+                  log.push('managed staff'); go('circuit'); }
+                if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
                 click('[data-act=playyear]');
                 if (S.season === y && S.week === w) log.push('FAIL To New Year did not move');
                 if (S.season !== y) { if (view !== 'recap') log.push('FAIL no year in review at New Year'); if (S.week !== 0) log.push('FAIL New Year is not week 0');
@@ -73,6 +95,7 @@ async def run(path):
               if (!watched && click('[data-act=watch]')) { if (!document.querySelector('.sheet-battle')) log.push('FAIL no battle replay'); else { watched = true; log.push('watched a title battle'); } click('[data-act=bskip]'); click('[data-act=close]'); }
             } catch (e) { log.push('FAIL step ' + tag + ': ' + e.message); break; }
           }
+          if (!seen.gymwatch) log.push('FAIL no badge conceded to watch');
           if (S.history.length !== 3) log.push('FAIL history has ' + S.history.length + ' years after three');
           if (!/Year 4/.test(document.querySelector('header').textContent)) log.push('FAIL the header does not show the year');
           log.push('early stops: ' + stopsSeen + ' · field ' + S.challengers.length + ' · resting ' + S.challengers.filter(id => T(id).rest != null).length);

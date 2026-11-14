@@ -1,5 +1,16 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 7, ver: '0.7.0', date: 'November 13, 2026', time: '7:50 PM ET', title: 'Manage your staff', items: [
+    "A new page, Your staff (under League), lists every post in your League. You can change your staff at any time, with no cost or limit for now.",
+    "Let go: a Gym Leader's or Elite Four seat you open waits for you with an acting holder, just as when someone steps down. Whoever you let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. Someone who had already announced they were stepping down usually just retires, but now and then they take it as a slight and come back to the circuit to challenge you.",
+    "Moving staff: the list of candidates for an open post now includes your other Gym Leaders and Elite Four members. Pick one and they move up, down or sideways; the post they leave opens with an acting holder, and you go straight to choosing for it. Fill it for me still picks only from the circuit, your gym trainers and outsiders, so nothing else opens.",
+    "Swap trades two Gym Leaders' gyms or two Elite Four members' seats in one step. Each builds a team for their new post, and a gym trainer who no longer shares a type with the new leader is replaced from the circuit.",
+    "Gym trainers: places still fill automatically from the circuit, but you can now Replace a gym trainer with someone you pick (a challenger, another gym trainer, or a Gym Leader or Elite Four member who fits), or let one go and have the place filled at once.",
+    "The Champion can't be replaced by hand: the seat changes only when the Champion steps down.",
+    "A challenger part-way through a gym whose staff change keeps the tries they have used, but must beat the gym's line from the first trainer again.",
+    "Badges conceded lately: each of your gyms keeps its last three badges conceded (the battles its leader lost), to watch from the gym's card on the Gyms page.",
+    "Fixes: a new gym trainer whose Pokémon would evolve off the gym's type at its level (a Dartrix becoming Decidueye in a Flying gym) gets an on-type Pokémon instead; a gym whose acting leader steps down takes on a gym trainer so it is never left with none; and the outsiders offered for a post that opens again join the circuit instead of waiting forever.",
+  ] },
   { id: 6, ver: '0.6.0', date: 'November 13, 2026', time: '5:45 PM ET', title: 'Found your League by hand', items: [
     "You now found your League yourself. After choosing a region you place its Champion, four Elite Four members and eight Gym Leaders. You can pick from about 40 candidates the game finds (with a few stars and a handful of famous trainers among them) and from the founding field. Each trainer shows their type, age, OVR and all five ratings, and a type that another post already holds is flagged. Repeats are allowed.",
     "A gym's type is still its leader's class. Each gym takes on two gym trainers from the circuit, the best challengers who share a type with the leader, and the game makes one only when nobody fits. Anyone you don't place sets out as a challenger. The founding field is larger (36 instead of 24), so the circuit stays full.",
@@ -214,7 +225,7 @@ function render() {
   if (!S) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">New world</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button><button class="btn ghost" data-act="updates">Updates${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div></div></header>` + embedNote() + (view === 'updates' ? `<main class="wrap" id="main">${viewUpdates()}</main>` : viewSetup()); if (view === 'updates') applyFolds(app, 'updates'); return; }
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (view === 'hire') useLeague(0);
+  if (['hire', 'staff', 'gtpick'].includes(view)) useLeague(0);
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -227,6 +238,8 @@ function render() {
   if (view === 'recap') v = viewRecap();
   if (view === 'god') v = viewGod();
   if (view === 'hire') v = viewHire();
+  if (view === 'staff') v = viewStaff();
+  if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
   app.innerHTML = header() + nav() + embedNote() + `<main class="wrap" id="main">${lgBar()}${v}</main><div id="toast" class="toast" role="status" hidden></div>`;
   applyFolds(app, foldScope());
@@ -270,7 +283,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'gtpick'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -284,8 +297,14 @@ function lgBar() {
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.lastLeague) || (view === 'god' && !godOn())) view = 'circuit'; }
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.lastLeague) || (view === 'god' && !godOn()) || (['staff', 'gtpick'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
 
+// after a staffing move: a post it opened (a vacancy) goes straight to its hiring page; otherwise back to the staff page
+function afterMove(r, msg) {
+  const vi = typeof r === 'object' ? (S.vacancies || []).indexOf(r) : -1;
+  if (vi >= 0) { hireIdx = vi; hireFit = false; go('hire'); toast(`${msg} ${vacancyName(r)} is now waiting for you.`); }
+  else { go('staff'); toast(msg); }
+}
 // ---------- actions ----------
 
 
@@ -381,8 +400,15 @@ document.addEventListener('click', ev => {
     case 'foundquit': saveSeq++; S = null; view = 'circuit'; foundSel = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} render(); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
-    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v); if (v && fillVacancy(v, +el.dataset.id)) { save(); go('gyms'); toast(`${dn(T(+el.dataset.id))} takes the post: ${name}.`); } break; }
-    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v); if (v && autoFillVacancy(v)) { save(); go('gyms'); toast(`${name} is filled.`); } break; }
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), r = v && fillVacancy(v, +el.dataset.id); if (r) { save(); afterMove(r, `${dn(T(+el.dataset.id))} takes the post: ${name}.`); } break; }
+    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v); if (v && autoFillVacancy(v)) { save(); go('staff'); toast(`${name} is filled.`); } break; }
+    case 'staffask': staffAsk = el.dataset.id ? +el.dataset.id : null; staffSwap = null; render(); break;
+    case 'staffgo': { const t = T(+el.dataset.id), r = t && releaseStaff(t.id); staffAsk = null; if (r) { save(); afterMove(r, `${t.name} was let go.`); } else render(); break; }
+    case 'staffswap': staffSwap = el.dataset.id ? +el.dataset.id : null; staffAsk = null; render(); break;
+    case 'staffswapto': { const a = staffSwap; staffSwap = null; if (a != null && swapStaff(a, +el.dataset.id)) { save(); toast(`${T(a).name} and ${T(+el.dataset.id).name} swapped posts.`); } render(); break; }
+    case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; go('gtpick'); break;
+    case 'gtplace': { const r = gtSel && placeGymTrainer(gtSel.g, gtSel.k, +el.dataset.id); if (r) { save(); afterMove(r, `${T(+el.dataset.id).name} is now a gym trainer at ${townName(gtSel.g)} Gym.`); gtSel = null; } break; }
+    case 'watchgym': { const g = S.gyms[+el.dataset.g], r = g && (g.watch || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;
     case 'profile': modal = { kind: 'profile', id: +el.dataset.id, back: recBack() }; renderModal(); break;
