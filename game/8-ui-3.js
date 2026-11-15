@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 13, ver: '0.13.0', date: 'November 14, 2026', time: '7:34 PM ET', title: 'Money and cities', items: [
+    "Your League has money. It comes from an entry fee for every run begun on your circuit, a wall prize at New Year that shrinks with every trainer you let through, and attractions you build. It pays your staff's salaries every week, signing fees, severance, raises, bans and buildings. The new Money page has the books.",
+    "Salaries follow the post and the trainer's OVR, reviewed each New Year; famous trainers and title winners ask more. Hiring from outside costs a signing fee and letting someone go costs severance; moves, swaps and steers within your staff are free.",
+    "Give a raise to a restless member of staff, or one who gave notice over promotion, to keep them another year (once per post). Bid over the asking pay when you make an offer to improve the odds it is taken.",
+    "The founding screen shows each candidate's pay and your wage bill. You start with a fund; there is no cap, but you can start in the red.",
+    "In the red, salaries are still paid but you can't hire from outside, ban, build or give raises until you are back above zero.",
+    "Cities: build in your gym cities and at your League's seat on the new Cities page. Training halls help staff grow, gym features give a home edge, attractions bring in money, and a scouting office at the seat brings better outsiders and better odds on offers. A city gets more slots as money is spent there. Each region has three more cities without a gym, and you can move a gym to one (everything you built in the old city is lost).",
+    "Your banlist is a paid League rule now: ban any Pokémon seen on your circuit, in any week, for one to three years, priced by how high it ranks in the meta. Up to three at once, and a ban that runs out protects that Pokémon for two years. Other Leagues still vote.",
+  ] },
   { id: 12, ver: '0.12.0', date: 'November 14, 2026', time: '10:15 AM ET', title: 'Steers and the meta', items: [
     "Steer how your staff build their teams. Each Gym Leader's gym, each Elite Four seat and the Champion's seat can have a steer: Balanced, Counter the trend, Counter the year's meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. A League line covers every post without one, and gym trainers follow their gym's steer. Set them on Your staff in any week.",
     "A steer belongs to the post, so a new holder follows it too. Everyone follows a steer, as closely as their Strategy allows, and each steer trades a little raw strength for what it asks.",
@@ -278,7 +287,7 @@ function render() {
   if (!S) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">New world</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button><button class="btn ghost" data-act="updates">Updates${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div></div></header>` + embedNote() + (view === 'updates' ? `<main class="wrap" id="main">${viewUpdates()}</main>` : viewSetup()); if (view === 'updates') applyFolds(app, 'updates'); return; }
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (['hire', 'staff', 'gtpick'].includes(view)) useLeague(0);
+  if (['hire', 'staff', 'gtpick', 'money', 'cities'].includes(view)) useLeague(0);
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -293,6 +302,8 @@ function render() {
   if (view === 'hire') v = viewHire();
   if (view === 'staff') v = viewStaff();
   if (view === 'meta') v = viewMeta();
+  if (view === 'money') v = viewMoney();
+  if (view === 'cities') v = viewCities();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
   app.innerHTML = header() + nav() + embedNote() + `<main class="wrap" id="main">${lgBar()}${v}</main><div id="toast" class="toast" role="status" hidden></div>`;
@@ -337,7 +348,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'gtpick'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -367,6 +378,7 @@ function hireResult(o, id, name) {
   if (o.res === 'now') afterMove(o.r, `${dn(t)} takes the post: ${name}.`);
   else if (o.res === 'later') { go('staff'); toast(`${t.name} accepted (${name}) and comes after their run, by ${turnDate(t.hired.by)} at the latest.`); }
   else if (o.res === 'refused') { render(); toast(`${t.name} turned the offer down.`); }
+  else if (o.res === 'broke') { render(); toast('The League is in the red: nobody new can be hired until it is back above zero.'); }
   else render();
 }
 // ---------- actions ----------
@@ -465,15 +477,20 @@ document.addEventListener('click', ev => {
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
-    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id), id, name); break; }
-    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v), r = v && autoFillVacancy(v); if (r) { save(); go('staff'); toast(r === 'later' && v.incoming != null ? `${T(v.incoming).name} accepted ${name} and comes after their run.` : `${name} is filled.`); } else render(); break; }
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
+    case 'hirebid': hireBid = +el.dataset.v; render(); break;
+    case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
+    case 'build': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = build(wh, el.dataset.k); save(); render(); toast(w || `${UPGRADES[el.dataset.k].name} built.`); break; }
+    case 'movegym': { const sel = $('#move-' + el.dataset.c), i = sel ? +sel.value : 0, w = moveGym(i, +el.dataset.c); save(); render(); toast(w || `Gym ${i + 1} moved to ${townName(i)}.`); break; }
+    case 'ban': { const w = payBan(el.dataset.sp, +el.dataset.v); save(); render(); toast(w || `${el.dataset.sp} is banned.`); break; }
+    case 'hireauto': { const v = (S.vacancies || [])[+el.dataset.v], name = v && vacancyName(v); if (booksOn() && S.fin.money < 0) { toast('The League is in the red: nobody new can be hired until it is back above zero.'); break; } const r = v && autoFillVacancy(v); if (r) { save(); go('staff'); toast(r === 'later' && v.incoming != null ? `${T(v.incoming).name} accepted ${name} and comes after their run.` : `${name} is filled.`); } else render(); break; }
     case 'hirewd': { const t = T(+el.dataset.id); if (t && withdrawOffer(t.id)) { save(); render(); toast(`You withdrew the offer to ${t.name}.`); } break; }
     case 'staffask': staffAsk = el.dataset.id ? +el.dataset.id : null; staffSwap = null; render(); break;
     case 'staffgo': { const t = T(+el.dataset.id), r = t && releaseStaff(t.id); staffAsk = null; if (r) { save(); afterMove(r, `${t.name} was let go.`); } else render(); break; }
     case 'staffswap': staffSwap = el.dataset.id ? +el.dataset.id : null; staffAsk = null; render(); break;
     case 'staffswapto': { const a = staffSwap; staffSwap = null; if (a != null && swapStaff(a, +el.dataset.id)) { save(); toast(`${T(a).name} and ${T(+el.dataset.id).name} swapped posts.`); } render(); break; }
     case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; gymOutsiders(gtSel.g); save(); go('gtpick'); break;
-    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireForGymTrainer(gtSel.g, gtSel.k, id); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
+    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireForGymTrainer(gtSel.g, gtSel.k, id, hireBid); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
     case 'watchgym': { const g = S.gyms[+el.dataset.g], r = g && (g.watch || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;

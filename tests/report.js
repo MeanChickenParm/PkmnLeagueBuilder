@@ -6,18 +6,30 @@
 //   --boost=N   every staff member is N rating points better (or worse) than the game would make them, and no
 //               challenger walks into a post, so the League's staff stay in that tier for the whole run
 //   --tiers     one line each for a strong (+15), an average (0) and a poor (-15) League, instead of the full report
+//   --hand      (0.13.0) the passive player: League 0 founded by best available (Fill the rest), vacancies filled and
+//               seat challenges approved as the multi-year sim does, steers left Balanced, money kept but never spent
 // Years in one world share its staff, so they are not independent: for a steadier number use more worlds, not
 // more years (e.g. 40 12 rather than 100 4).
 const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'));
 const pos = process.argv.slice(2).filter(a => !a.startsWith('--')), opt = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => a.slice(2).split('=')));
 const N = +pos[0] || 100, W = +pos[1] || 1;
 const seed = opt.seed === 'random' ? Math.floor(Math.random() * 1e9) : (opt.seed != null ? +opt.seed : 1);
-function run(boost) {
+const fin = { money: 0, wages: 0, inc: {}, out: {}, yrs: 0, red: 0 };
+function run(boost, hand) {
   const all = [], gyms = Array.from({ length: 8 }, () => ({ held: 0, lost: 0 }));
   for (let w = 0; w < W; w++) {
     g.seedRandom(seed * 1000 + w);
-    g.newWorld(Object.assign({ leagues: 1, growth: false }, boost == null ? {} : { staffBoost: boost }));
-    for (let i = 0; i < N; i++) g.simYear();
+    g.newWorld(Object.assign({ leagues: 1, growth: false }, boost == null ? {} : { staffBoost: boost }, hand ? { hand: true } : {}));
+    if (hand) { g.foundingFill(); g.finishFounding(); }
+    for (let i = 0; i < N; i++) {
+      if (hand) { g.approveAllChallenges(); g.fillAllVacancies(); }
+      g.simYear();
+      if (hand) { g.approveAllChallenges(); g.fillAllVacancies();
+        const f = g.S.fin, y = f.last && f.last.season === g.S.season - 1 ? f.last : null;
+        if (y) { for (const k in y.in) fin.inc[k] = (fin.inc[k] || 0) + y.in[k]; for (const k in y.out) fin.out[k] = (fin.out[k] || 0) + y.out[k]; fin.yrs++; }
+        fin.wages += g.wageBill(); if (f.money < 0) fin.red++; }
+    }
+    if (hand) fin.money += g.S.fin.money;
     for (const h of g.S.history) all.push(h);
     g.S.gyms.forEach((gym, i) => { for (const x of gym.hist) { gyms[i].held += x.w; gyms[i].lost += x.l; } });
   }
@@ -38,11 +50,11 @@ if ('tiers' in opt) {
   console.log('  (let through is the total over every year of every world; a year, badges, runs begun, runs at the Elite Four and runs out on three losses are per year; field is challengers on the circuit at New Year;');
   console.log('   best is how far the best challenger got: 8 = all badges, 12 = beat the Elite Four, 13 = won the title)');
 } else {
-  const boost = opt.boost != null ? +opt.boost : null;
-  const r = run(boost), s = stats(r), { all } = r, { n, avg, per100 } = s;
+  const boost = opt.boost != null ? +opt.boost : null, hand = 'hand' in opt;
+  const r = run(boost, hand), s = stats(r), { all } = r, { n, avg, per100 } = s;
   let streak = 0, bestStreak = 0; for (const h of all) { streak = h.titles ? 0 : streak + 1; bestStreak = Math.max(bestStreak, streak); }
   const dist = {}; for (const h of all) dist[h.best] = (dist[h.best] || 0) + 1;
-  console.log(`Wall report: ${n} years (${W} world${W === 1 ? '' : 's'} of ${N}), seed ${seed}${boost == null ? '' : `, staff ${boost >= 0 ? '+' : ''}${boost}`}`);
+  console.log(`Wall report: ${n} years (${W} world${W === 1 ? '' : 's'} of ${N}), seed ${seed}${boost == null ? '' : `, staff ${boost >= 0 ? '+' : ''}${boost}`}${hand ? ', passive player (hand-placed, best available)' : ''}`);
   console.log(`  trainers let through (titles conceded): ${all.reduce((a, h) => a + h.titles, 0)} in ${n} years, ${avg(h => h.titles).toFixed(2)} a year`);
   console.log(`  perfect years (none let through): ${per100(s.perfect)} in 100${W === 1 ? `   longest streak: ${bestStreak}` : ''}`);
   console.log(`  badges conceded per year: ${avg(h => h.badges).toFixed(1)} (${(avg(h => h.badges) / avg(h => h.runs)).toFixed(2)} a run)`);
@@ -54,4 +66,9 @@ if ('tiers' in opt) {
   console.log(`  average: ${avg(h => h.best).toFixed(1)} (8 = all badges, 12 = beat the Elite Four, 13 = won the title)`);
   console.log('  tries each gym turned back (share of all tries there):');
   console.log('    ' + s.held.map((x, i) => `#${i + 1} ${x}%`).join('  '));
+  if (hand) {
+    const per = o => Object.entries(o).map(([k, v]) => `${k} ${Math.round(v / fin.yrs).toLocaleString('en-US')}`).join(', ');
+    console.log(`  money a year: in ${per(fin.inc)}; out ${per(fin.out)}`);
+    console.log(`  wage bill a week at New Year: ${Math.round(fin.wages / (W * N)).toLocaleString('en-US')}; money at the end: ${Math.round(fin.money / W).toLocaleString('en-US')} on average; years ending in the red: ${fin.red} of ${W * N}`);
+  }
 }

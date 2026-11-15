@@ -89,7 +89,7 @@ function wishTag(t) {
   return ` <span class="tag small${rest ? ' notice' : ''}" title="${due != null ? `Leaves if not promoted by ${turnDate(due)}` : 'Waits until the seat can be challenged for'}">${rest ? 'Restless: wants ' : 'Wants '}${ambWho(t)}</span>`;
 }
 // a candidate row for the hiring pages: a challenger gets an offer (and may be out on a run, or have turned you down lately)
-function hireRowOf(c, warn) {
+function hireRowOf(c, warn, ask) {
   const t = c.t, bits = warn ? [warn] : [], imp = c.from === 'circuit' && impressed(t);
   let label = 'Pick', off = '';
   if (c.refuse) off = c.refuse;
@@ -98,7 +98,7 @@ function hireRowOf(c, warn) {
     if (!canOffer(t)) off = `turned you down · ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}`;
     else if (t.rest == null) bits.push(`on a run: comes by ${turnDate(S.turn + HIRE_NOTICE)}`);
   }
-  return { t, from: pickFrom(c), warn: bits.join(' · '), label, off, tags: (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (['leader', 'e4', 'gym'].includes(c.from) ? wishTag(t) : '') };
+  return { t, from: pickFrom(c), warn: bits.join(' · '), label, off, tags: (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (['leader', 'e4', 'gym'].includes(c.from) ? wishTag(t) : '') + (ask != null && !['leader', 'e4', 'gym', 'acting'].includes(c.from) ? payTag(ask) : '') };
 }
 // someone who accepted a post and comes after their run, with a button to withdraw the offer
 const incomingLine = (id, what) => { const t = T(id); return t && t.hired ? `<p><b>${tname(id)}</b> accepted ${what} and comes after their run, by ${turnDate(t.hired.by)} at the latest. <button class="btn small" data-act="hirewd" data-id="${id}">Withdraw the offer</button></p>` : ''; };
@@ -137,9 +137,9 @@ function viewHire() {
   return `<section class="panel callout"><div class="eyebrow">Choose a new ${v.post === 'leader' ? 'Gym Leader' : 'Elite Four member'}</div><h2>${vacancyName(v)}</h2>
     <p>Vacant since ${turnDate(v.since)}. ${tname(vacancyActing(v))} is acting until you choose. ${v.post === 'leader' ? `The gym fights at level ${GYM_LV[v.slot]} with ${GYM_SIZE[v.slot]} Pokémon, and its type is the new leader's class; a gym trainer who shares no type with the new leader is let go and replaced from the circuit.` : `The seat fights at level ${E4_LV[v.slot]} with ${E4_SIZE} Pokémon.`} Whoever you pick builds their own team: Scouting finds stronger Pokémon, Strategy fits the team together, Training raises each Pokémon.</p>
     ${v.incoming != null ? incomingLine(v.incoming, 'the post') : ''}
-    <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div></section>
+    <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div>${bidRow()}</section>
   <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers: the ${S.lgName} circuit, your gym trainers, your other Gym Leaders and Elite Four members, recent retirees and ${(v.outsiders || []).length} outsiders. A challenger gets an <b>offer</b>, which they can turn down (then they aren't asked again for half a year); one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while the acting holder stays. Everyone else takes the post at once: a gym trainer leaves their place, a retiree comes out of retirement, and a Gym Leader or Elite Four member leaves their post open, with an acting holder, and you choose for it next.</span></div>
-  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : ''].filter(Boolean).join(' · '))), 'hirepick')}</section>`;
+  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
 const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired' };
@@ -155,9 +155,11 @@ function staffActs(t) {
   const sw = staffSwap != null && T(staffSwap);
   if (sw && sw.id === t.id) return '<button class="btn small on" data-act="staffswap">Cancel swap</button>';
   const same = sw && sw.role === t.role && t.role !== 'gymtrainer', no = same && swapRefusal(sw, t);
-  return `<button class="btn small" data-act="staffask" data-id="${t.id}">${run ? 'Let go on their run' : 'Let go'}</button>${t.role === 'gymtrainer' ? '' : no ? ` <span class="small muted">No swap: ${esc(no)}</span>` : same ? ` <button class="btn small primary" data-act="staffswapto" data-id="${t.id}">Swap with ${esc(sw.name)}</button>` : ` <button class="btn small" data-act="staffswap" data-id="${t.id}">Swap</button>`}`;
+  const rz = booksOn() && canRaise(t) ? ` <button class="btn small" data-act="raise" data-id="${t.id}"${canSpend(raiseCost(t)) ? '' : ' disabled'}>Raise (${money(raiseCost(t))})</button>` : '';
+  return `<button class="btn small" data-act="staffask" data-id="${t.id}">${run ? 'Let go on their run' : 'Let go'}</button>${rz}${t.role === 'gymtrainer' ? '' : no ? ` <span class="small muted">No swap: ${esc(no)}</span>` : same ? ` <button class="btn small primary" data-act="staffswapto" data-id="${t.id}">Swap with ${esc(sw.name)}</button>` : ` <button class="btn small" data-act="staffswap" data-id="${t.id}">Swap</button>`}`;
 }
 function staffRow(t, label, info) {
+  if (booksOn()) info += ` · ${money(payOf(t))}/wk`;
   return `<tr${staffSwap === t.id ? ' class="sel"' : ''}><td><b>${label}</b><div class="small muted">${info}</div></td><td>${tname(t.id)} ${staffTags(t)}${staffWarn(t)}${wishTag(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td>${staffActs(t)}</td></tr>`;
 }
 function viewStaff() {
@@ -211,8 +213,65 @@ function viewMeta() {
     <p>The circuit's top performers: challengers' Pokémon ranked by knockouts per battle, then wins (8 or more battles). It is read at the start of every month${S.metaAt != null ? `, last on ${turnDate(S.metaAt)}` : ''}. The <b>trend</b> is the last 12 weeks and moves quickly; <b>the year</b> is last year plus this year so far and moves slowly. Answer either with a steer on <button class="tlink" data-act="nav" data-v="staff">Your staff</button>${own ? '' : ' (this League steers itself)'}. The sim stops when the trend shifts.</p></section>
     ${reading('trend', 'The trend', 'Last 12 weeks', S.metaTrend || [])}
     ${reading('year', "The year's meta", 'Last year and this year so far', S.metaYear || [])}
+    ${banPanel()}
     ${steersPanel()}`;
 }
+// ---------- money and cities (0.13.0) ----------
+// the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
+const FIN_NAMES = { entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings' };
+function finTable(y) {
+  if (!y) return '<p class="muted">Nothing yet.</p>';
+  const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
+  const tin = Object.values(y.in).reduce((a, b) => a + b, 0), tout = Object.values(y.out).reduce((a, b) => a + b, 0);
+  return `<div class="scroll"><table class="tbl"><tbody><tr><th colspan="2">In</th></tr>${row(y.in, '+') || '<tr><td colspan="2" class="muted">—</td></tr>'}<tr><th colspan="2">Out</th></tr>${row(y.out, '−') || '<tr><td colspan="2" class="muted">—</td></tr>'}<tr><td><b>Net</b></td><td class="num"><b>${money(tin - tout)}</b></td></tr></tbody></table></div>`;
+}
+function viewMoney() { return inLeague(0, viewMoney0); }
+function viewMoney0() {
+  if (!booksOn()) return '<section class="panel"><p class="muted">Only a League you staff by hand keeps books.</p></section>';
+  const f = S.fin, staff = staffIds().map(T).filter(Boolean), w = wageBill();
+  return `<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Money: ${money(f.money)}</h2>
+    <p>Your wage bill is <b>${money(w)}</b> a week (${money(w * YEAR_WEEKS)} a year). Money comes in from an entry fee of ${money(ENTRY_FEE)} for every run begun on your circuit, a wall prize at New Year (${money(150000)}, less ${money(20000)} for every trainer let through) and the attractions you build on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page. It goes on salaries (the post and the trainer's OVR, reviewed each New Year; famous trainers and title winners ask more), signing fees (${12} weeks' pay for anyone who joins your staff from outside), severance (${12} weeks' pay for anyone you let go), raises, bans and buildings. ${f.money < 0 ? '<b>You are in the red:</b> salaries are still paid, but you can\'t hire from outside, ban, build or give raises until you are back above zero.' : 'Salaries are paid even if you go into the red, but then you can\'t spend until you are back above zero.'}</p></section>
+  <div class="grid-office"><section class="panel"><div class="ph"><h2>Year ${f.yr ? f.yr.season : S.season} so far</h2></div>${finTable(f.yr)}</section>
+  <section class="panel"><div class="ph"><h2>Last year</h2></div>${finTable(f.last)}</section></div>
+  <section class="panel"><div class="ph"><h2>Salaries</h2><span class="muted">A week. A <b>raise</b> keeps a restless member of staff (or one who gave notice over promotion) another year, once per post: ${12} weeks' pay now and a fifth more after.</span></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Trainer</th><th>OVR</th><th>Pay</th><th></th></tr></thead><tbody>
+    ${staff.map(t => `<tr><td class="small">${postName(t)}</td><td>${tname(t.id)}${wishTag(t)}</td><td>${ovrPill(t)}</td><td class="num">${money(payOf(t))}${t.payMul > 1 ? ' <span class="small muted">(+' + Math.round((t.payMul - 1) * 100) + '%)</span>' : ''}</td><td>${canRaise(t) ? `<button class="btn small" data-act="raise" data-id="${t.id}"${canSpend(raiseCost(t)) ? '' : ' disabled'}>Raise (${money(raiseCost(t))})</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div></section>
+  <section class="panel"><div class="ph"><h2>Ledger</h2><span class="muted">Everything but the weekly salaries, entry fees and attractions</span></div>
+    ${f.log.length ? `<div class="scroll"><table class="tbl"><tbody>${f.log.map(x => `<tr><td class="small muted">${turnDate(x.turn)}</td><td>${esc(x.text)}</td><td class="num">${x.amt >= 0 ? '+' : ''}${money(x.amt)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}</section>`;
+}
+// the Cities page: the seat, the gym cities and the cities with no gym of yours
+function viewCities() { return inLeague(0, viewCities0); }
+function viewCities0() {
+  if (!booksOn()) return '<section class="panel"><p class="muted">Only a League you staff by hand builds in cities.</p></section>';
+  const places = myPlaces(), gymOpts = S.gyms.map((g, i) => `<option value="${i}">Gym ${i + 1} · ${townName(i)}</option>`).join('');
+  const card = p => {
+    const where = p.seat ? 'seat' : p.gym;
+    const built = p.b.map(x => `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv}</li>`).join('');
+    const acts = p.none ? `<div class="confirm-row"><select id="move-${p.c.id}" aria-label="Gym to move">${gymOpts}</select><button class="btn small" data-act="movegym" data-c="${p.c.id}"${canSpend(MOVE_FEE) ? '' : ' disabled'}>Move it here (${money(MOVE_FEE)})</button></div>`
+      : `<div class="confirm-row">${Object.keys(UPGRADES).map(k => { const ck = buildCheck(where, k); if (ck.why) return ''; return `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}">${ck.lv > 1 ? `${UPGRADES[k].name} to level ${ck.lv}` : `Build ${UPGRADES[k].name.toLowerCase()}`} (${money(ck.cost)})</button>`; }).join('')}</div>`;
+    return `<section class="panel"><div class="ph"><h2>${esc(p.name)}</h2><span class="muted">${p.seat ? 'League seat: the Elite Four and the Champion' : p.none ? 'No gym of yours' : `Gym ${p.gym + 1}${T(S.gyms[p.gym].leader) ? ' · ' + typeLabel(T(S.gyms[p.gym].leader)) : ''}`} · ${p.b.length} of ${p.slots} slot${p.slots === 1 ? '' : 's'} used${p.c ? ` · ${money(Object.values(p.c.spent || {}).reduce((a, b) => a + b, 0))} spent here` : ''}</span></div>
+      ${built ? `<ul>${built}</ul>` : ''}${acts}</section>`;
+  };
+  return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>
+    <p>Build in your gym cities and at your League's seat. A city starts with one slot and gets a second once ${money(60000)} has been spent there and a third at ${money(180000)}; the seat has three. Each upgrade has three levels (${money(25000)}, ${money(50000)}, ${money(100000)}). ${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost.</p></section>
+    ${places.map(card).join('')}`;
+}
+// the paid banlist, on the Meta page of your League
+function banPanel() {
+  if (!booksOn() || !playerLeague()) return '';
+  const cands = banCands(), act = paidBans(), prot = (S.banProt || []).filter(p => p.until > S.turn);
+  return `<section class="panel"><div class="ph"><h2>Your banlist</h2><span class="muted">${act.length} of ${BAN_PAID_MAX} bans in force · ${money(S.fin.money)}</span></div>
+    <p class="small">Ban any Pokémon seen on your circuit (with what it evolves from and into), in any week, for one to three years. It binds both sides: challengers let theirs go and your staff get replacements. The price per year follows its rank among your circuit's performers over the last two years: three times the base for the top one, down to the base. A ban that runs out protects that Pokémon for two years.</p>
+    ${act.length ? `<p>${act.map(b => `<b>${esc(b.sp)}</b> until ${turnDate(b.until)}`).join(' · ')}</p>` : ''}
+    ${prot.length ? `<p class="small muted">Protected: ${prot.map(p => `${esc(p.sp)} until ${turnDate(p.until)}`).join(' · ')}</p>` : ''}
+    ${cands.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Pokémon</th><th>Type</th><th>Battles</th><th>KOs a battle</th><th>A year</th><th></th></tr></thead><tbody>
+    ${cands.slice(0, 20).map(c => `<tr><td class="num">${c.rank}</td><td>${esc(c.sp)}</td><td>${chips(SP[c.sp].types)}</td><td class="num">${c.b}</td><td class="num">${c.ko}</td><td class="num">${money(c.price)}</td><td>${c.banned ? '<span class="tag notice small">banned</span>' : c.prot ? '<span class="tag small">protected</span>' : act.length >= BAN_PAID_MAX ? '' : [1, 2, 3].map(n => `<button class="btn small" data-act="ban" data-sp="${esc(c.sp)}" data-v="${n}"${canSpend(c.price * n) ? '' : ' disabled'}>${n}y</button>`).join(' ')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Nothing seen on your circuit yet.</p>'}</section>`;
+}
+let hireBid = 0;
+const bidRow = () => booksOn() ? `<div class="segs">${BIDS.map(b => `<button class="seg${hireBid === b ? ' on' : ''}" data-act="hirebid" data-v="${b}" aria-pressed="${hireBid === b}">${b ? `Bid +${b * 100}%` : 'Asking pay'}</button>`).join('')}</div><p class="small muted">A bid over the asking pay makes a challenger likelier to take your offer, and they keep the higher pay.</p>` : '';
+const payTag = ask => booksOn() ? ` <span class="small muted">${money(ask)}/wk</span>` : '';
 // choosing a gym trainer by hand
 function viewGtPick() {
   const g = S.gyms[gtSel.g], cur = T((g.trainers || [])[gtSel.k]), L = T(g.leader);
@@ -220,9 +279,9 @@ function viewGtPick() {
   return `<section class="panel callout"><div class="eyebrow">Choose a gym trainer</div><h2>${townName(gtSel.g)} Gym · badge ${gtSel.g + 1}</h2>
     <p>${cur ? `${tname(cur.id)} holds this place now and is let go when you pick someone else (back to the circuit, or retired if over 45 with ten years behind them).` : 'This place is empty.'} A gym trainer fields ${GYM_SIZE[gtSel.g] - 1} Pokémon at level ${GYM_LV[gtSel.g]} and must share a type with ${dn(L)} (${typeLabel(L)}).</p>
     ${inc != null ? incomingLine(inc, 'this place') : ''}
-    <div class="confirm-row"><button class="btn" data-act="nav" data-v="staff">Back to your staff</button></div></section>
+    <div class="confirm-row"><button class="btn" data-act="nav" data-v="staff">Back to your staff</button></div>${bidRow()}</section>
   <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers who fit: challengers on the circuit, recent retirees, outsiders, your other gym trainers, and Gym Leaders and Elite Four members (their post opens). A challenger gets an <b>offer</b>, which they can turn down; one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while ${cur ? cur.name : 'the place'} stays${cur ? ' until then' : ' empty'}. Outsiders nobody picks join the circuit.</span></div>
-  ${pickTable(rows.map(c => hireRowOf(c, c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '')), 'gtplace')}</section>`;
+  ${pickTable(rows.map(c => hireRowOf(c, c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '', askFor(c.t, 'gymtrainer', 0))), 'gtplace')}</section>`;
 }
 // a table of trainers to pick from: type, age, OVR and the five ratings, with a button per row
 function pickTable(rows, act) {
@@ -248,7 +307,7 @@ function viewFounding() {
   return `<main class="wrap setup" id="main"><section class="panel callout"><div class="eyebrow">Founding the ${S.lgName}</div><h1>Place your staff</h1>
     <p>Choose a Champion, four Elite Four members and eight Gym Leaders. You can pick from ${F.cands.length} candidates the game has found and the ${F.field.length} trainers of the founding field. A gym's type is its leader's class, and each gym takes on two gym trainers from the circuit who share a type with the leader. Everyone you don't place sets out as a challenger.</p>
     <div class="confirm-row"><button class="btn" data-act="foundfill">Fill the rest for me</button><button class="btn primary" data-act="foundgo"${left ? ' disabled' : ''}>${left ? `${left} post${left === 1 ? '' : 's'} to fill` : `Open the ${S.lgName}`}</button><button class="btn ghost" data-act="foundquit">Back to setup</button></div></section>
-  <section class="panel"><div class="ph"><h2>Posts</h2><span class="muted">Pick a post, then a trainer for it. Ratings: Strategy, Training, Bond, Scouting, Nerve.</span></div>
+  <section class="panel"><div class="ph"><h2>Posts</h2><span class="muted">Pick a post, then a trainer for it. Ratings: Strategy, Training, Bond, Scouting, Nerve.${booksOn() ? ` You start with ${money(START_FUND)}; your senior staff's pay comes to <b>${money(posts.reduce((a, p) => a + (p.id != null ? askFor(T(p.id), p.post === 'gym' ? 'leader' : p.post, p.slot) : 0), 0))}</b> a week (gym trainers add about ${money(16 * 35)}). There is no cap, but you can start in the red.` : ''}</span></div>
   <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Battles</th><th>Trainer</th><th>Type</th><th>OVR</th><th></th></tr></thead><tbody>
   ${posts.map(p => { const t = p.id != null ? T(p.id) : null, on = sel === p, dup = t && specTypes(t).some(x => foundTypesUsed(p.post, p.slot).includes(x));
     return `<tr${on ? ' class="sel"' : ''}><td><b>${p.label}</b></td><td class="small">${p.info}</td><td>${t ? esc(dn(t)) + (t.famous ? '<span class="star">★</span>' : '') : '<span class="muted">empty</span>'}</td><td>${t ? specChips(t) + (dup ? ' <span class="tag notice small">repeated type</span>' : '') : ''}</td><td>${t ? ovrPill(t) : ''}</td>
@@ -256,7 +315,7 @@ function viewFounding() {
   </tbody></table></div></section>
   ${sel ? `<section class="panel" id="found-pool"><div class="ph"><h2>Choose: ${sel.label}</h2><span class="muted">${sel.info}. ${pool.length} trainers free, best first.</span></div>
     <div class="segs setup-segs">${[['all', 'Everyone'], ['cands', 'Candidates'], ['field', 'Founding field']].map(([k, l]) => `<button class="seg${foundShow === k ? ' on' : ''}" data-act="foundshow" data-v="${k}" aria-pressed="${foundShow === k}">${l}</button>`).join('')}</div>
-    ${pickTable(pool.map(t => ({ t, from: group(t.id), warn: specTypes(t).some(x => used.includes(x)) ? 'type already placed' : '' })), 'foundpick')}</section>` : ''}</main>`;
+    ${pickTable(pool.map(t => ({ t, from: group(t.id), warn: specTypes(t).some(x => used.includes(x)) ? 'type already placed' : '', tags: payTag(askFor(t, sel.post === 'gym' ? 'leader' : sel.post, sel.slot)) })), 'foundpick')}</section>` : ''}</main>`;
 }
 // the wall report: the headline (trainers let through, then perfect years and the streak) and each year's line
 function wallReport() {
@@ -690,10 +749,10 @@ function banHistory() {
   const line = (label, html) => html ? `<div><span class="bh-l">${label}</span>${html}</div>` : '';
   return `<section class="panel"><div class="ph"><h2>Banlists${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${Object.keys(banCounts()).length} Pokémon banned in all</span></div>
   <div class="banhist">${seasons.map(sn => `<div class="bh-row"><div class="bh-s">Year ${sn + 1}</div>
-    ${line('Banned', items(sn, 'ban', e => `<b>${e.sp}</b> <span class="muted small" title="${e.ty} of ${e.tn} trainers">${e.pct}%${e.len ? ` · ${e.len} year${e.len === 1 ? '' : 's'}` : ''}</span>`))}
+    ${line('Banned', items(sn, 'ban', e => e.paid != null ? `<b>${e.sp}</b> <span class="muted small">paid ${money(e.paid)} · ${e.len} year${e.len === 1 ? '' : 's'}</span>` : `<b>${e.sp}</b> <span class="muted small" title="${e.ty} of ${e.tn} trainers">${e.pct}%${e.len ? ` · ${e.len} year${e.len === 1 ? '' : 's'}` : ''}</span>`))}
     ${line('Lifted', items(sn, 'lift', e => `${e.sp} <span class="muted small">time up</span>`))}
     ${line('Banlist', forceAt[sn].length ? forceAt[sn].map(sp => `<span class="bh-i">${monMini(sp)}${sp}</span>`).join(' ') : '<span class="muted">none</span>')}</div>`).join('')}</div>
-  <p class="fine">Each ban shows the share of the League's trainers who voted for it, then its length. Each ban runs its full length (1 to ${BAN_MAX_SEASONS} seasons), then lifts.</p></section>`;
+  <p class="fine">Each voted ban shows the share of the League's trainers who voted for it, then its length; a paid ban shows its price. Each ban runs its full length (1 to ${BAN_MAX_SEASONS} seasons), then lifts.</p></section>`;
 }
 
 // ---------- awards ----------
@@ -996,6 +1055,10 @@ const GLOSS_TERMS = {
     ['Career length', 'Set by the age a trainer started at: those who start young have the longest careers (about 22 to 30 years from age 10 to 14), late starters the shortest (about 8 to 16 from 35). Strong ratings and a title add up to three years, and long service in posts up to two more.'],
     ['Ambitions', `Each member of staff has one: promotion (a gym trainer wants a gym, a Gym Leader a later gym or the Elite Four, an Elite Four member a higher seat; seat #4 wants the Champion's seat and waits), stay put, or another run as a challenger. It is set when they take a post and can change on a birthday. Promotion waits ${AMB_WAIT_YEARS} years in the post and shows as Restless in the last; then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves with a grudge unless promoted (a gym trainer just goes). The Champion always stays put.`],
     ['Another run', `A Gym Leader with ${COMEBACK_STREAK} outstanding years in a row (now and then anyone younger without a title) may ask to go back to the circuit as a challenger. Let them go (they come back sharper and can be hired again), or they leave anyway a year after asking.`],
+    ['Money', 'Only your League keeps books (rival Leagues will with stage 4). In: an entry fee for every run begun on your circuit, a wall prize at New Year that shrinks with every trainer let through, and attractions. Out: salaries every week (the post and the trainer\'s OVR, reviewed each New Year), signing fees for anyone joining from outside, severance for anyone let go, raises, bans and buildings. In the red, salaries are still paid but nothing new can be bought. The Money page has the books.'],
+    ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
+    ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff gain ratings on birthdays), gym features (a home edge), attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers). A city gets more slots as money is spent there. Moving a gym to a city with none loses what you built in the old one.'],
+    ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
     ['Steers', 'A standing instruction for how a post\'s team is built: Balanced, Counter the trend, Counter the year\'s meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. Set on Your staff for each Gym Leader\'s gym (its gym trainers follow it), each Elite Four seat and the Champion, plus a League line for posts with none. It belongs to the post, so a new holder follows it. Everyone follows a steer, as closely as their Strategy allows; it trades some raw strength for what it asks. A team moves one Pokémon closer each month, and someone new to a post builds to it at once. A countering trainer may field one Pokémon off their type. Rival Leagues steer themselves: posts that can answer the meta on their type counter it.'],
     ['The meta', 'The circuit\'s top performers, read at the start of every month: the trend (the last 12 weeks) and the year (last year plus this year so far). Only challengers\' Pokémon count. The Meta page shows both, the types that answer them and which of your posts can answer them on their own type. The sim stops when the trend shifts. Newcomers still lean toward types that counter the year\'s top performers.'],
     ['Seat challenges', 'At New Year a League holds at most one challenge for the Champion\'s seat and one for an Elite Four seat. An Elite Four member who wants promotion, has held the seat in two calendar years and didn\'t have the worst record of the four can challenge the Champion. A Gym Leader who wants promotion and whose gym was one of the three best-holding of the year, or a challenger who reached the Elite Four this year and is clearly stronger than the seat\'s holder (or whose holder is 50 or older), can challenge the weakest Elite Four seat. It is one battle at the seat\'s level, the challenger with a team built for the seat. A beaten Champion takes the winner\'s Elite Four seat; a beaten Elite Four member takes the winning Gym Leader\'s gym, or returns to the circuit if a challenger beat them. In your League you approve or refuse each challenge within four weeks (unanswered, it goes ahead). A member of staff whose challenge is refused or lost turns restless, and anyone who challenged waits two years to try again. Rival Leagues hold their challenges at once.'],
