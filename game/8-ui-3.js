@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 17, ver: '0.17.0', date: 'November 15, 2026', time: '7:30 PM ET', title: 'Contenders, prestige and a League of your own', items: [
+    "Send contenders. From the new Contenders page you can send challengers at another League: your academy prospects (who always agree) or anyone on your circuit you sign (who may say no). They run only at that League for two years, and nobody else can hire them meanwhile. You pay a weekly stipend; that League pays you a bounty of 40,000 for each title they win there and 5,000 for each run that reaches its Elite Four. Recall them, renew them, or hire them back. At most four at once.",
+    "Rival Leagues send contenders too, by their aim (star-makers most), at Leagues where runs go further, and may send them at you. The year report lists each year's contenders, yours and those sent at you; the League table counts them.",
+    "Prestige: every League earns it each New Year from a perfect year, letting through fewer than the world's average, the World Championship, the cities it controls and its rank by wealth, and it fades by a tenth a year. Trainers have it from their careers. The League table shows it.",
+    "Found a League of your own. Once your League's prestige reaches 60, you can leave it for 750,000 (on the Money page) if the world has room. Your old League carries on as a rival. Up to three members of staff who want promotion come with you, your academy prospects follow, and you place the new League's staff by hand.",
+    "New Leagues are founded by retirees with a prestige of 60 or more, at least eight years apart, instead of on a timer. The world now holds up to six Leagues, two to a region.",
+    "Fixed: the League table page could not be opened from the menu.",
+    "Fixed: a new Gym Leader could keep a Pokémon that evolved off the gym's type at its level.",
+  ] },
   { id: 16, ver: '0.16.0', date: 'November 15, 2026', time: '1:45 PM ET', title: 'Tuning the economy', items: [
     "Leagues now stay closer to level. Attractions pay less (120, 240 and 360 a week by level), the entry fee is 700 a run, and the wall prize falls by 15,000 for each trainer let through (was 20,000).",
     "Money has more to buy. Training halls and gym features go on to levels 4 and 5 (200,000 and 400,000). A new youth academy at your seat (no slot; 100,000, 200,000 and 400,000) raises a young prospect a year per level. They set out on your circuit as one of your own: likelier to take your offers and paid 15% less by you.",
@@ -311,9 +320,10 @@ function render() {
   const app = $('#app');
   if (S) fixView();
   if (!S) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">New world</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button><button class="btn ghost" data-act="updates">Updates${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div></div></header>` + embedNote() + (view === 'updates' ? `<main class="wrap" id="main">${viewUpdates()}</main>` : viewSetup()); if (view === 'updates') applyFolds(app, 'updates'); return; }
+  if (S.founding) useLeague(ME());
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (['hire', 'staff', 'gtpick', 'money', 'cities'].includes(view)) useLeague(0);
+  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders'].includes(view)) useLeague(ME());
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -331,6 +341,7 @@ function render() {
   if (view === 'money') v = viewMoney();
   if (view === 'table') v = viewTable();
   if (view === 'cities') v = viewCities();
+  if (view === 'contenders') v = viewContenders();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
   app.innerHTML = header() + nav() + embedNote() + `<main class="wrap" id="main">${lgBar()}${v}</main><div id="toast" class="toast" role="status" hidden></div>`;
@@ -375,7 +386,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -389,7 +400,7 @@ function lgBar() {
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
 
 // after a staffing move: a post it opened (a vacancy) goes straight to its hiring page; otherwise back to the staff page
 function afterMove(r, msg) {
@@ -499,7 +510,12 @@ document.addEventListener('click', ev => {
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
     case 'foundclear': foundPlace(el.dataset.k, +el.dataset.v, null); foundSel = { post: el.dataset.k, slot: +el.dataset.v }; save(); render(); break;
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
-    case 'foundgo': finishFounding(); view = 'circuit'; save(); render(); window.scrollTo(0, 0); toast(`The ${S.lgName} is open. Year 1 is underway.`); break;
+    case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
+    case 'sendcon': { const r = inLeague(ME(), () => sendContender(+el.dataset.id, sendTo)); save(); render(); toast(r === 'ok' ? `${T(+el.dataset.id).name} is on the way.` : r === 'later' ? `${T(+el.dataset.id).name} signed, and goes after their run.` : r === 'refused' ? `${T(+el.dataset.id).name} turned the contract down.` : r); break; }
+    case 'recallcon': { const ok = recallContender(+el.dataset.id); save(); render(); toast(ok ? `${T(+el.dataset.id).name} is coming home.` : 'Could not recall them.'); break; }
+    case 'renewcon': { const ok = renewContender(+el.dataset.id); save(); render(); toast(ok ? `Renewed for ${SPON_YEARS} more years.` : 'Could not renew.'); break; }
+    case 'leaveask': leaveAsk = !leaveAsk; render(); break;
+    case 'leavego': { const w = leaveLeague(leaveRegion, [...leaveTake]); leaveAsk = false; leaveTake = new Set(); save(); render(); window.scrollTo(0, 0); toast(w || 'Place your new League\'s staff.'); break; }
     case 'foundquit': saveSeq++; S = null; view = 'circuit'; foundSel = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} render(); break;
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
@@ -548,7 +564,7 @@ document.addEventListener('click', ev => {
     case 'godrolesel': godRole = el.dataset.k; godPick = null; render(); break;
     case 'watchworld': { const m = S.worlds && S.worlds.matches[+el.dataset.i]; if (m) { modal = { kind: 'battle', r: m.log }; renderModal(); } break; }
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
-    case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(0, () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
+    case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;
@@ -601,7 +617,10 @@ document.addEventListener('input', e => {
 });
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
-  if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(0, () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
+  if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(ME(), () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
   if (e.target && e.target.id === 'imgfile' && e.target.files && e.target.files[0]) { imgPickFile(e.target.files[0]); return; }
   if (e.target && e.target.id === 'imgpackfile' && e.target.files && e.target.files.length) { imgImport(e.target.files).then(() => render()); return; }
   if (e.target && e.target.id === 'dx-legend') { dxSyncChecks(); return; }

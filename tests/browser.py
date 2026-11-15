@@ -169,6 +169,25 @@ async def run(path):
           if (S.history.length !== 3) log.push('FAIL history has ' + S.history.length + ' years after three');
           if (!/Year 4/.test(document.querySelector('header').textContent)) log.push('FAIL the header does not show the year');
           log.push('early stops: ' + stopsSeen + ' · field ' + S.challengers.length + ' · resting ' + S.challengers.filter(id => T(id).rest != null).length);
+          // 0.17.0: contenders and leaving. Open a second League, send a contender from the Contenders page, check the
+          // League table's prestige, then leave to found a League of your own and place its staff on the founding screen
+          { openNewLeague(null); const n0 = nLeagues(), old = ME(); go('contenders'); let tx = document.querySelector('#main').textContent;
+            if (!/Your contenders/.test(tx) || !/Send a contender/.test(tx)) log.push('FAIL the Contenders page');
+            const b = [...document.querySelectorAll('[data-act=sendcon]')].find(x => !x.disabled);
+            if (!b) log.push('FAIL nobody to send'); else { const id = +b.dataset.id; b.click(); const t = T(id); log.push('contender: ' + (t.spon ? (t.spon.pending ? 'goes after their run' : 'sent') : 'turned it down')); if (t.spon && !t.spon.pending && lgOf(t) !== 1) log.push('FAIL a contender sent at once is not on the other circuit'); }
+            if (/undefined|NaN|\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the Contenders page shows undefined');
+            go('table'); if (!/Prestige/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table has no prestige');
+            inLeague(ME(), () => { S.prest = PRESTIGE_BAR; S.fin.money = Math.max(S.fin.money, LEAVE_FEE + 50000); });
+            go('money'); if (!click('[data-act=leaveask]')) log.push('FAIL no way to leave on the Money page');
+            const cb = document.querySelector('.leavetake'); if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+            if (!click('[data-act=leavego]')) log.push('FAIL no leave button');
+            tx = document.querySelector('#app').textContent;
+            if (!S.founding || ME() !== n0 || !/Place your staff/.test(tx) || document.querySelector('[data-act=foundquit]')) log.push('FAIL leaving did not open the founding screen');
+            click('[data-act=foundfill]'); click('[data-act=foundgo]');
+            if (S.founding || nLeagues() !== n0 + 1 || !inLeague(old, () => S.fin.aim)) log.push('FAIL the new League did not open, or the old one has no aim');
+            go('staff'); if (!/Your staff/.test(document.querySelector('#main').textContent) || inLeague(ME(), () => S.champion == null)) log.push('FAIL the new League has no staff');
+            for (let n = 0; n < 6; n++) click('[data-act=playweek]');
+            log.push('left to found the ' + inLeague(ME(), () => S.lgName)); }
           // the sim dialog, one year
           click('[data-act=simmany]'); click('[data-act=simmanyn][data-v="1"]'); click('[data-act=simmanygo]');
           log.push('year ' + S.season + ' week ' + S.week + ' leagues ' + nLeagues() + ' ver ' + UPDATES[0].ver + ' key ' + SAVE_KEY);
