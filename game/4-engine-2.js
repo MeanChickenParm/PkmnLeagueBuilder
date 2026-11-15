@@ -1393,8 +1393,8 @@ function retireOrReturn(t, why) {
 // At New Year each League holds at most one challenge for the Champion's seat and one for an Elite Four seat. An
 // Elite Four member who wants promotion, has held the seat in two calendar years (this one included) and didn't have
 // the worst record of the four challenges the Champion. A Gym Leader who wants promotion and whose gym was one of the
-// three best-holding last year, or a challenger who reached the Elite Four this year with an OVR edge of CHAL_EDGE
-// over the seat's holder (or a holder of CHAL_OLD or older), challenges the weakest Elite Four seat (the worst record
+// three best-holding last year, or a challenger who reached the Elite Four this year when the seat's holder is CHAL_OLD
+// or older (0.14.0; until then also with an OVR edge of 2), challenges the weakest Elite Four seat (the worst record
 // of the four, else the lowest OVR for age). One set-level battle at the seat's level. The challenger fields a team
 // built for the seat (a Gym Leader's is topped up to six as on joining the Elite Four), kept if they win. A beaten
 // Champion takes the winner's Elite Four seat; a beaten Elite Four member takes the winning Gym Leader's gym, or goes
@@ -1403,7 +1403,7 @@ function retireOrReturn(t, why) {
 // League each challenge waits for a yes or no (S.chalPending, CHAL_ANSWER weeks, then it goes ahead); a refusal makes
 // a member of staff restless too. The year's challenges go into its history entry (h.chal); the battles are kept in
 // S.seatLogs (SEAT_LOGS a League). All numbers provisional.
-const SEAT_LOGS = 6, CHAL_WAIT = 2, CHAL_ANSWER = 4, CHAL_EDGE = 2, CHAL_OLD = 50, CHAL_SEAT_YEARS = 2;
+const SEAT_LOGS = 6, CHAL_WAIT = 2, CHAL_ANSWER = 4, CHAL_OLD = 50, CHAL_SEAT_YEARS = 2;
 const seatYears = t => { const p = (t.posts || []).find(x => x.to == null); return p ? S.season - p.from + 1 : 0; };
 const canChallenge = t => !!t && !t.acting && t.stepDown == null && (t.chalAt == null || S.season - t.chalAt >= CHAL_WAIT);
 const wantsUp = t => !!(t.wish && t.wish.k === 'up');
@@ -1424,7 +1424,7 @@ function seatChallenger(skip) {
   S.gyms.forEach((g, i) => { const t = T(g.leader); if (t && !g.acting && canChallenge(t) && wantsUp(t) && (t.wallStreak || 0) >= 1) cands.push({ t, from: 'leader', gym: i }); });
   for (const id of new Set(yearLeague().entries.map(e => e.id))) {
     const t = T(id);
-    if (t && t.role === 'challenger' && S.challengers.includes(id) && canChallenge(t) && !t.hired && !t.hireDue && !t.leaving && (ovr(t) > ovr(inc) + CHAL_EDGE || inc.age >= CHAL_OLD)) cands.push({ t, from: 'circuit', gym: null });
+    if (t && t.role === 'challenger' && S.challengers.includes(id) && canChallenge(t) && !t.hired && !t.hireDue && !t.leaving && inc.age >= CHAL_OLD) cands.push({ t, from: 'circuit', gym: null });
   }
   const c = cands.sort((a, b) => ovr(b.t) - ovr(a.t))[0];
   return c ? { k: 'e4', cand: c.t.id, inc: inc.id, slot, from: c.from, gym: c.gym } : null;
@@ -2107,13 +2107,15 @@ function acceptsOffer(t, post) {
   if (t.rest == null) { p -= 0.1; if (t.badges.length >= 6) p -= 0.25; }
   if (post === 'gymtrainer') p -= 0.1; else if (post === 'e4') p += 0.1;
   if (t.grudge != null) p -= 0.3;
+  // (0.14.0, the balance retune) a challenger doing well against the League wants the title, not a post
+  if (impressed(t)) p -= IMPRESS_REFUSE;
   // (0.13.0) the scouting office and a bid over the asking pay
   if (playerLeague()) p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   return rand() < clamp(p, 0.1, 0.95);
 }
 // a challenger on the player's circuit who did well against the League this year or last: reached the Elite Four, or
 // won IMPRESS_BADGES badges in a run. Returns the reason in words, or null.
-const IMPRESS_BADGES = 6;
+const IMPRESS_BADGES = 6, IMPRESS_REFUSE = 0.6;
 function impressed(t) {
   if (!t || t.role !== 'challenger') return null;
   const y = t.yr && t.yr.season === S.season ? { b: t.yr.b, st: t.yr.st, when: 'this year' } : null;

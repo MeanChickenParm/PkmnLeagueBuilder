@@ -1,5 +1,11 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 14, ver: '0.14.0', date: 'November 14, 2026', time: '9:54 PM ET', title: 'Balance retune', items: [
+    "The wall was far too hard to get past, so it has been retuned: staff build their teams a little less well than before, and the best challengers stay on the circuit to chase the title instead of being taken onto Leagues' staff.",
+    "A challenger who impressed (reached the Elite Four, or won six or more badges in a run, this year or last) is much likelier to turn down an offer of a post, from your League or any other.",
+    "Gym trainer places filled automatically go to challengers from the lower half of the circuit, who can turn the place down; the circuit's best are left to chase the title. You can still pick anyone by hand.",
+    "A challenger who reached the Elite Four challenges for an Elite Four seat only when its holder is 50 or older.",
+  ] },
   { id: 13, ver: '0.13.0', date: 'November 14, 2026', time: '7:34 PM ET', title: 'Money and cities', items: [
     "Your League has money. It comes from an entry fee for every run begun on your circuit, a wall prize at New Year that shrinks with every trainer you let through, and attractions you build. It pays your staff's salaries every week, signing fees, severance, raises, bans and buildings. The new Money page has the books.",
     "Salaries follow the post and the trainer's OVR, reviewed each New Year; famous trainers and title winners ask more. Hiring from outside costs a signing fee and letting someone go costs severance; moves, swaps and steers within your staff are free.",
