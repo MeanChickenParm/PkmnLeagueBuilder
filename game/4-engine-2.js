@@ -899,7 +899,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // the League that actually lists a trainer (circuit or post); falls back to their tag. Used before anything that
@@ -949,8 +949,9 @@ function postPlace(t, role) {
   return 'Champion';
 }
 const curSeason = () => S.season || 1;
-function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) p.to = Math.max(p.from, S.season || 1); }
-function openPost(t, role) { closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); }
+function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
+// (0.13.0) a move within the League's staff this week costs no signing fee
+function openPost(t, role) { const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1017,7 +1018,7 @@ function setOut(t) {
   for (const m of t.team) m.form = (m.form || 0) * 0.3;
   if (t.team.length > START_TEAM) applyRegistration(t, bestThree(t));
   setTeamLevel(t, GYM_LV[0]);
-  yearLeague().runs++; yearOf(t).runs++;
+  yearLeague().runs++; yearOf(t).runs++; entryFee();
 }
 // a run is over, on a third loss at one gym (stage is null) or after the Elite Four and Champion. The challenger
 // may leave the circuit here; otherwise they rest, then set out again from the first gym.
@@ -1118,7 +1119,7 @@ function gymTry(t, entry) {
     const foe = line[k], isLeader = k === line.length - 1;
     const autoItems = itemsOn();
     if (autoItems) autoEquip(t, foe); // items picked for this battle
-    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)));
+    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g));
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
     if (res.winner !== 0) {
@@ -1158,7 +1159,7 @@ function leagueRun(q, entry) {
     const foe = T(S.e4[i]);
     setTeamLevel(q, E4_LV[i]);
     if (itemsOn()) autoEquip(q, foe);
-    const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`);
+    const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`, undefined, homeEdge('seat'));
     if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
     y.pts += 2; noteDepth(q, 9 + i);
   }
@@ -1167,7 +1168,7 @@ function leagueRun(q, entry) {
     const champ = T(S.champion);
     setTeamLevel(q, champLv());
     if (itemsOn()) autoEquip(q, champ);
-    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`);
+    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`, undefined, homeEdge('seat'));
     r.when = { season: S.season, week: S.week };
     L.logs.push(r); if (L.logs.length > TITLE_LOGS) L.logs.shift();
     if (r.winner === 0) {
@@ -1197,6 +1198,7 @@ function leagueRun(q, entry) {
 function simWeek() {
   S.stop = null;
   eachLeague(leagueWeek);
+  moneyWeek();
   hireArrivals();
   eachLeague(ambitionWeek);
   challengeWeek();
@@ -1738,6 +1740,7 @@ function birthdays() {
       if (sh && sh.badges === 8) t.r.nrv = clamp(t.r.nrv + ri(1, 3), 1, 99);
       if (sh && sh.stage != null && sh.stage >= 4) { t.r.nrv = clamp(t.r.nrv + 2, 1, 99); t.r.str = clamp(t.r.str + 1, 1, 99); }
     }
+    if (STAFF_ROLES.includes(t.role) && booksOn() && homeLeague(t) === 0) hallGain(t);
     t.pot = Math.max(t.pot, ovr(t));
     if (t.age > (hasTrait(t, 'lateBloomer') ? 32 : 26)) t.pot = ovr(t);
     prog[t.id] = { before, after: { ...t.r, ovr: ovr(t) } };
@@ -1844,9 +1847,9 @@ function openVacancy(post, slot) {
   const was = vacancyAt(post, slot), incoming = was ? was.incoming : null;
   for (const v of (S.vacancies || []).filter(v => v.post === post && v.slot === slot)) { const rest = (v.outsiders || []).filter(x => T(x) && T(x).role === 'prospect'); rest.forEach(x => { T(x).outsider = false; }); fillCircuits(rest); }
   S.vacancies = (S.vacancies || []).filter(v => !(v.post === post && v.slot === slot));
-  const q = post === 'leader' ? 52 + slot * 2 : 66;
+  const q = (post === 'leader' ? 52 + slot * 2 : 66) + (playerLeague() ? 2 * scoutLv() : 0);
   const outsiders = [];
-  for (let k = 0; k < VACANCY_OUTSIDERS; k++) {
+  for (let k = 0; k < VACANCY_OUTSIDERS + (playerLeague() ? scoutLv() : 0); k++) {
     const fam = rand() < FAMOUS_POST_CHANCE && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 18) : [];
     const t = fam.length ? makeFamous(pick(fam), 'prospect', staffQ(q), 30) : newTrainer({ age: ri(24, 46), quality: staffQ(q), role: 'prospect', specialty: rand() < 0.06 ? null : pick(TYPES) });
     if (!fam.length) fieldTeam(t, 5);
@@ -1982,6 +1985,7 @@ function letGo(t, was) {
   // (0.10.0) someone who asked for another run goes on it
   if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
   t.wish = null;
+  severance(t, was);
   if (t.stepDown != null) {
     t.stepDown = null;
     if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; return grudgeAway(t); }
@@ -2103,6 +2107,8 @@ function acceptsOffer(t, post) {
   if (t.rest == null) { p -= 0.1; if (t.badges.length >= 6) p -= 0.25; }
   if (post === 'gymtrainer') p -= 0.1; else if (post === 'e4') p += 0.1;
   if (t.grudge != null) p -= 0.3;
+  // (0.13.0) the scouting office and a bid over the asking pay
+  if (playerLeague()) p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   return rand() < clamp(p, 0.1, 0.95);
 }
 // a challenger on the player's circuit who did well against the League this year or last: reached the Elite Four, or
@@ -2151,7 +2157,7 @@ function cancelIncoming(target, why) {
   if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; id = (g.incoming || [])[target.k]; if (g.incoming) g.incoming[target.k] = null; }
   else { const v = vacancyAt(target.post, target.slot); if (v) { id = v.incoming; v.incoming = null; } }
   const t = T(id); if (!t || !t.hired) return;
-  t.hired = null; t.hireDue = false;
+  t.hired = null; t.hireDue = false; t.bidMul = null;
   if (why) { const msg = `${dn(t)} will not become ${hireTarget(target)} after all: ${why}.`; news(msg, 'move', t.id); noteChange(msg); }
 }
 // the player withdraws an offer someone accepted
@@ -2178,21 +2184,31 @@ function hireArrivals() {
   });
 }
 // a vacancy for the player: offer a circuit challenger, or install anyone else at once
-function hireForVacancy(v, id) {
+// (0.13.0) bid: pay over the asking (one of BIDS) to improve the odds; nobody new is hired while the League is in the red
+function hireForVacancy(v, id, bid = 0) {
   return inLeague(0, () => {
     const t = T(id), c = vacancyCands(v).find(x => x.t === t);
     if (!c) return { res: false };
-    if (c.from === 'circuit') return offerPost({ post: v.post, slot: v.slot }, t);
+    if (booksOn() && S.fin.money < 0 && !['leader', 'e4', 'gym', 'acting'].includes(c.from)) return { res: 'broke' };
+    if (c.from === 'circuit') return bidOffer({ post: v.post, slot: v.slot }, t, bid);
     return { res: 'now', r: fillVacancy(v, id) };
   });
 }
-function hireForGymTrainer(i, k, id) {
+function hireForGymTrainer(i, k, id, bid = 0) {
   return inLeague(0, () => {
     const t = T(id), c = gymTrainerCands(i).find(x => x.t === t), g = S.gyms[i];
     if (!c || k < 0 || k >= GYM_TRAINERS || (g.acting && !T((g.trainers || [])[k]))) return { res: false };
-    if (c.from === 'circuit') return offerPost({ post: 'gymtrainer', slot: i, k }, t);
+    if (booksOn() && S.fin.money < 0 && ['circuit', 'outsider', 'retired'].includes(c.from)) return { res: 'broke' };
+    if (c.from === 'circuit') return bidOffer({ post: 'gymtrainer', slot: i, k }, t, bid);
     return { res: 'now', r: placeGymTrainer(i, k, id) };
   });
+}
+// an offer with a bid: the bid stays with them until they take the post (or the offer falls through)
+function bidOffer(target, t, bid) {
+  t.bidMul = booksOn() && BIDS.includes(bid) && bid > 0 ? 1 + bid : null;
+  const r = offerPost(target, t);
+  if (r.res === 'refused' || r.res === 'cool') t.bidMul = null;
+  return r;
 }
 // outsiders for a gym trainer's place picked by hand: GT_OUTSIDERS trainers of the leader's type, made when the
 // picker opens and kept until a place at that gym is filled by hand or New Year (then they join the circuit)
@@ -2201,8 +2217,8 @@ function gymOutsiders(i) {
     const g = S.gyms[i], L = T(g.leader); if (!L) return [];
     g.outs = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
     const ty = specTypes(L);
-    while (g.outs.length < GT_OUTSIDERS) {
-      const t = newTrainer({ age: ri(18, 34), quality: staffQ(46 + i * 2), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+    while (g.outs.length < GT_OUTSIDERS + scoutLv()) {
+      const t = newTrainer({ age: ri(18, 34), quality: staffQ(46 + i * 2 + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
       fieldTeam(t, 4); t.outsider = true; g.outs.push(t.id);
     }
     return g.outs.slice();
@@ -2544,11 +2560,12 @@ function leagueNewYear(changes) {
   const L = yearLeague();
   const deepest = L.entries.filter(e => e.stage < 5).sort((a, b) => b.stage - a.stage)[0];
   const meta = metaMons();
-  buildBanBallot();
+  if (myBooks()) S.banBallot = null; else buildBanBallot();
   // the year's wall report: titles and badges conceded, how far the best challenger got (0 to 8 badges, 9 to 12
   // for each Elite Four member beaten, 13 for beating the Champion), runs that ended on three losses
   const best = T(L.bestId);
   L.report = { badges: S.gyms.reduce((a, g) => a + g.l, 0), titles: L.conceded.length, best: L.best, bestId: L.bestId, out: L.out, runs: L.runs, field: S.challengers.length };
+  moneyNewYear(L.report.titles);
   news(L.report.titles ? `Year ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Year ${S.season} wall report: a perfect year! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
   S.history.push({
     season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,

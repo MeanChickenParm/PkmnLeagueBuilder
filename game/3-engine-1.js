@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 7; // 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 8; // 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -230,11 +230,12 @@ function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.seaso
 // the regions: each has a name for its League and eight cities. A League sits in one region (gym types are random
 // and reshuffle)
 const LEAGUE_SETS = [
-  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'] },
-  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'] },
-  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'] },
-  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'] },
+  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau' },
+  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver' },
+  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande' },
+  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar' },
 ];
+// (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
 // (gym.city), and more than one League can come to have a gym in the same city. Each region's cities are made the
 // first time a League is founded there.
@@ -242,7 +243,7 @@ function regionCities(region) {
   S.cities = S.cities || {};
   let cs = Object.values(S.cities).filter(c => c.region === region).sort((a, b) => a.id - b.id);
   if (!cs.length) {
-    cs = LEAGUE_SETS[region].towns.map(name => { const id = S.nextCity = (S.nextCity || 0) + 1; return S.cities[id] = { id, name, region }; });
+    cs = LEAGUE_SETS[region].towns.concat(LEAGUE_SETS[region].extra || []).map(name => { const id = S.nextCity = (S.nextCity || 0) + 1; return S.cities[id] = { id, name, region }; });
   }
   return cs;
 }
@@ -969,10 +970,11 @@ function pickSquad(t, foe) {
   return t.team.filter(m => best.has(m));
 }
 // a battle on the circuit: both sides at the post's set level, the challenger fielding as many as the post does
-function setBattle(t, foe, lvl, stakes, title, gymType) {
-  const full = t.team;
+function setBattle(t, foe, lvl, stakes, title, gymType, edge) {
+  const full = t.team, o = gymType !== undefined ? { equal: lvl, gymType } : { equal: lvl };
+  if (edge && edge !== 1) o.edge = edge; // (0.13.0) a gym feature's home edge for the defending side
   t.team = pickSquad(t, foe);
-  try { return battle(t, foe, stakes, title, gymType !== undefined ? { equal: lvl, gymType } : { equal: lvl }); } finally { t.team = full; }
+  try { return battle(t, foe, stakes, title, o); } finally { t.team = full; }
 }
 
 // ================= BATTLE =================
@@ -1198,7 +1200,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   const sides = [tA, tB].map((t, i) => ({
     t, mons: t.team.map(m => battler(EQ ? Object.assign({}, m, { lvl: EQ }) : m)), act: -1, megaUid: megaStakes(stakes) && megaHolder(t) ? megaHolder(t).uid : null, megaUsed: false,
     bondUid: megaStakes(stakes) && bondMon(t) ? bondMon(t).uid : null, bondUsed: false,
-    mod: (1 + (t.r.nrv - 50) / 100 * nerveW) * traitMod(t, i ? tA : tB, stakes, opts, i),
+    mod: (1 + (t.r.nrv - 50) / 100 * nerveW) * traitMod(t, i ? tA : tB, stakes, opts, i) * (i === 1 && opts.edge ? opts.edge : 1),
     crit: 0.03 + t.r.bnd / 1000,
     endure: t.r.bnd / 100 * 0.18,
     smart: 0.15 + t.r.str / 100 * 0.8,
