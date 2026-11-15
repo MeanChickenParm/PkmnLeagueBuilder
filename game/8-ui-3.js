@@ -1,5 +1,13 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 16, ver: '0.16.0', date: 'November 15, 2026', time: '1:45 PM ET', title: 'Tuning the economy', items: [
+    "Leagues now stay closer to level. Attractions pay less (120, 240 and 360 a week by level), the entry fee is 700 a run, and the wall prize falls by 15,000 for each trainer let through (was 20,000).",
+    "Money has more to buy. Training halls and gym features go on to levels 4 and 5 (200,000 and 400,000). A new youth academy at your seat (no slot; 100,000, 200,000 and 400,000) raises a young prospect a year per level. They set out on your circuit as one of your own: likelier to take your offers and paid 15% less by you.",
+    "Buildings cost upkeep: 5% of what you paid for them a year, paid weekly. The Cities page shows the levels, your upkeep and the academy; the Money page lists upkeep and city income.",
+    "Rich rival Leagues now bid over the asking pay when they hire, so challengers and other Leagues' staff are likelier to come to them. With plenty to spare, a rival may also pay at New Year to replace its weakest Elite Four member or Gym Leader with a clearly better trainer. Rivals never build more than their income can keep up.",
+    "A rival League in the red now turns money-maker only until it is back on its feet, then goes back to its old aim. It used to stay a money-maker and race ahead of everyone.",
+    "Bids and the scouting office now help every League's offers, not just yours. The League table shows what each League has built.",
+  ] },
   { id: 15, ver: '0.15.0', date: 'November 15, 2026', time: '10:02 AM ET', title: 'Rival Leagues', items: [
     "Every League now keeps books, not just yours. Rival Leagues earn and spend like you do, each by its aim: a wall-builder hires the best, counters the meta, builds gym features and pays for bans; a star-maker hires young and builds training halls; a money-maker keeps wages down and builds attractions. A rival changes aim when it falls into the red or a money-maker grows rich. Aims replace rivals' old steering rule and their trainers' ban vote.",
     "Being in the red now costs you: every four weeks in the red, your best-paid member of staff (never the Champion) gives twelve weeks' notice, and leaves unless you are back above zero by then. While in the red, automatic hires take the cheapest trainer who fits and cost no signing fee.",

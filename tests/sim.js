@@ -116,7 +116,7 @@ function check(tag) {
     for (const id of g.staffIds()) { const t = g.T(id); if (t && !(t.payOvr > 0)) bad('staff with no pay ' + t.name); if (t && t.quit && t.quit.k === 'pay' && z.fin.money >= 0 && z.fin.redAt == null) bad('a pay notice out of the red'); }
     if (g.paidBans().length > g.BAN_PAID_MAX) bad('too many paid bans');
     if ((z.banBallot || null) && z.banBallot.cands && z.banBallot.cands.length) bad('a ban vote in a League with books');
-    for (const p of g.myPlaces()) { if (p.b.length > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= 3) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
+    for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
   });
   // (0.15.0) at most two Leagues a region; standing only for Leagues with a gym in the city; control by one of them
