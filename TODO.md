@@ -117,3 +117,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The passive player hoards:** it buys nothing, so in a four-League world it ends on about 1.9M cash with no buildings (0.7 of the AI average wealth); alone in a one-League world (`--hand`), 3.2M. Not a target (the owner chose AI-only targets).
 - **AI upgrades** replace at most one senior member a year and only with 300,000 spare; the player has no matching button (the player can already bid and let staff go).
 - **The economy report** (`tests/econ.js`) now splits worlds over two workers (`--jobs`), measures wealth (money + buildings at cost) and reads the three AI Leagues for the targets; 25 years × 8 worlds take about 17 minutes on two cores.
+
+## Long-term ideas (the owner, Nov 15, after 0.16.0; design doc item 31)
+- **League folding.** No League can close: nothing removes a League, money has no floor, and a broke League keeps every post filled with the cheapest trainers who fit. A League that never recovers stays open forever and takes a place under `MAX_LEAGUES` and `REGION_CAP`. Idea: fold a League that stays deep in the red long enough, freeing its cities, staff and challengers (maybe for a founder's new League). Fits stage 5.
+- **Selling and losing buildings.** Nothing sells or removes a League's buildings except moving a gym. Idea: sell in a crisis, or lose them in a crash, when a League folds or when a rival takes a city.
