@@ -101,10 +101,19 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from rival Leagues (0.15.0)
 - **All the numbers are provisional:** `AIMS` reserves and build orders, `pickAim` 40/30/30, `AIM_MIN_YEARS` 3, `AIM_RICH` 2.5, `AIM_BAN_ODDS` 0.25, `RED_BITE_WEEKS` 4, `RICH_PAY_MAX` 0.2 and `RICH_PAY_AT` 4, `EASE_MOVE` 0.25, `EASE_EDGE` 0.03, `EASE_OVR` 66, `REGION_CAP` 2, `MAX_LEAGUES` 4, `FOUNDER_RETIRED` 5, `FOUNDER_CHAMP_CHANCE` 0.15, `FOUNDER_CHAMP_YEARS` 10, `FOUNDER_CHAMP_OVR` 70, `STAND_SPEND` 2,000, `STAND_FADE` 0.25, `CITY_INCOME` 250/350/500, `CITY_CTRL_SHARE` 0.5, `POACH_ACCEPT` 0.6, `ALUMNI_KEEP` 10, `ALUMNI_QUIET` 3, `H2H_KEEP` 20.
-- **The economy isn't tuned.** City income turned a structural deficit (AI Leagues sank hundreds of thousands into the red and stayed there) into growth: Leagues now pile money up, and money-makers hoard once their slots are full (one reached 2.5 million by year 30). Rich AI Leagues have nothing more to buy. See the econ report figures in the design doc (3.5 and 5.2) and tune with `tests/econ.js`.
+- **The economy was tuned in 0.16.0** (design doc 5.7): the AI Leagues' poorest holds 0.72 of their average wealth at year 25, the richest 1.29, and a League crashed to 40% of the others recovers in about 5.7 years, but in one world of eight it never does (it stays deep in the red after the relative crash). Rival Leagues now spend down to their reserve on buildings and upkeep instead of hoarding.
 - **Offers to other Leagues' circuits** go only to challengers resting between runs (they come at once); one out on a run is not listed.
 - **A League's aim is not shown anywhere but the League table and the news.** Rival steers by aim are simple.
 - **New Leagues still need the growth option** (the old timer, 8 to 12 years); a founder is picked when one opens. Founders driving openings was offered and not chosen.
 - **Cross-League title challenges** come only when a League has no challenger of its own that year; at most one challenge for the Champion's seat a year.
 - **Poaching skips staff with a notice, acting holders and founder Champions;** a poached member's new post picks a new ambition. Rival Leagues remember nothing about who poached whom.
 - **Speed and saves with four Leagues:** about 10 seconds a simulated year in Node; saves were about 18 MB after 25 years before the trims (re-measure).
+
+## Left over from the economy tuning (0.16.0)
+- **All the numbers are provisional:** attractions 120/240/360, `ENTRY_FEE` 700, `WALL_PRIZE_LOSS` 15,000, `UP_COST` levels 4–5 (200,000, 400,000), `UPKEEP` 0.05, the academy's prices (100,000/200,000/400,000), `ACADEMY_PAY` 0.85, `ACADEMY_LOYAL` 0.25, `ACADEMY_Q` 6, `AIM_BID` 150,000/400,000, `AIM_UPGRADE` 300,000, `UPGRADE_EDGE` 6.
+- **Losing buildings** (the owner, Nov 15: "interesting"): no League can sell or lose what it built; a crash is only cash. An idea for later, not decided.
+- **The academy's prospects** are tagged `t.academy` for stage 5 (sending a League's own at other Leagues); nothing uses the tag beyond pay and loyalty.
+- **Upkeep is charged in the red too,** and halls and features never pay it back; a League deep in the red keeps paying it. The relative-crash test's one world that never recovers may be this.
+- **The passive player hoards:** it buys nothing, so in a four-League world it ends on about 1.9M cash with no buildings (0.7 of the AI average wealth); alone in a one-League world (`--hand`), 3.2M. Not a target (the owner chose AI-only targets).
+- **AI upgrades** replace at most one senior member a year and only with 300,000 spare; the player has no matching button (the player can already bid and let staff go).
+- **The economy report** (`tests/econ.js`) now splits worlds over two workers (`--jobs`), measures wealth (money + buildings at cost) and reads the three AI Leagues for the targets; 25 years × 8 worlds take about 17 minutes on two cores.
