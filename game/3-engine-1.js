@@ -690,7 +690,7 @@ const TRAIN_IV = 2.5;    // points of Training per point of IV: above 50 it lift
 // BUILD_PAR (0.5.0, the wall's tuning lever): the rating at which a trainer builds an ordinary team. The builder reads
 // Scouting, Strategy and Training as if they were (BUILD_PAR - 50) points lower, so every staff team is weaker by the
 // same amount and the gap between good and poor staff stays as it was. 0.3.0 built at 50.
-const BUILD_PAR = 95;
+const BUILD_PAR = 105; // (0.14.0) 95 → 105 in the balance retune (design doc 3.5)
 const bld = (t, k) => t.r[k] - (BUILD_PAR - 50);
 // the share of what they can find that a trainer looks at, strongest first: 60% at Scouting 50, 30% at 80, 90% at 20
 const scoutShare = t => clamp(1.1 - bld(t, 'sct') / 100, 0.25, 0.9);
@@ -927,11 +927,19 @@ function fillGymTrainer(i, k, L) {
   t.team = staffPicks(t, GYM_LV[i], GYM_SIZE[i] - 1).map(m => stamp(m, 'assigned'));
   relevelElite(t);
 }
-// the circuit's best challenger who would fit a gym under leader L (none in the wall report's fixed tiers)
+// (0.14.0, the balance retune) a challenger who would fit a gym under leader L, taken from the circuit's lower half
+// by OVR (GT_CIRCUIT_CUT): the circuit's best are chasing titles and leave gym trainer places to journeymen. The best
+// of those who fit is asked first, and must accept the place (acceptsOffer); none in the wall report's fixed tiers.
+const GT_CIRCUIT_CUT = 0.5;
+function gtCircuitCut() {
+  const o = S.challengers.map(T).filter(t => t && t.role === 'challenger').map(ovr).sort((a, b) => b - a);
+  return o.length ? o[Math.min(o.length - 1, Math.floor(o.length * GT_CIRCUIT_CUT))] : Infinity;
+}
 function circuitGymTrainer(L) {
   if (fixedStaff()) return null;
-  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
-    .sort((a, b) => ovr(b) - ovr(a))[0] || null;
+  const cut = gtCircuitCut();
+  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
+    .sort((a, b) => ovr(b) - ovr(a)).find(t => acceptsOffer(t, 'gymtrainer')) || null;
 }
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
 // their own type and the rest of the team is built for the post
