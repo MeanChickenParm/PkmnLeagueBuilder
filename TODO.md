@@ -17,7 +17,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Everstone** now simply holds a Pokémon in its current form at every level.
 - **Legendary encounters** still set the legendary's level from the challengers' levels, which are now their next gym's level. It works, but was not looked at closely.
 - **Interim Champion** boards and profile lines are still in the interface but nothing creates an Interim Champion any more. Remove them when the records pages are next touched.
-- **Triple Crown and Champion-of-a-League records** (`champLeaguesOf`) read who held the seat at a season's end, so a challenger's title win no longer counts towards them. To fix with rival Leagues (stage 4).
 - **The banlist vote** doesn't include gym trainers.
 
 ## Left over from the continuous world (0.4.0)
@@ -57,7 +56,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Rival Leagues' refusals aren't remembered:** a challenger who turns a rival League down can be asked again at once; only the player's refusals start the half-year wait.
 - **Retirees don't age or change while retired;** their age catches up when they return, their ratings don't.
 - **"Impressed" reads the trainer's own year tally,** which can include runs at another League if they moved mid-year.
-- **Offers are to your own circuit only.** Other Leagues' circuits wait for stage 4.
 
 ## Left over from ambitions (0.10.0)
 - **All the numbers are provisional:** the ambition weights (`pickAmbition`), `AMB_WAIT_YEARS` 3, restless from 2, `QUIT_NOTICE` 12, `RUN_HOLD` a year, `COMEBACK_STREAK` 5 (1 in 3 a birthday), `AMB_DRIFT` 0.12, `GRUDGE_AWAY` 0.5, `BACKOUT_CHANCE` 0.5, `PROMOTE_EDGE` 5, the career ranges by starting age, `CAREER_MERIT` 3, `CAREER_SERVICE` 2 and the new step-down odds. Balance is unmeasured: rival Leagues now turn staff over much more (promotion within, quits after three years), and staff of every League leave over ambitions.
@@ -91,9 +89,8 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Automatic gym trainer fills can now be refused,** so more places go to retirees and made-up trainers when the lower half has nobody willing who fits.
 
 ## Left over from money and cities (0.13.0)
-- **All the numbers are provisional:** `START_FUND` 200,000, `ENTRY_FEE` 600, `WALL_PRIZE` 150,000 less 20,000 a title, `PAY_BASE` and the (OVR/60)² curve, `PAY_FAMOUS` 1.25, `PAY_TITLE` 1.15, `SIGN_WEEKS`, `SEVER_WEEKS` and `RAISE_WEEKS` 12, `RAISE_MUL` 1.2, `BIDS` and `BID_ODDS` 0.12, `BAN_PRICE` 15,000 (×3 to ×1), `BAN_PAID_MAX` 3, `BAN_PROTECT` 2, `CITY_GROW` 60,000/180,000, `UP_COST` 25,000/50,000/100,000, `MOVE_FEE` 40,000, the upgrade effects (hall +1 a level a birthday up to 95, feature +1.5% a level, attraction 250/550/900 a week, scouting +1 outsider, +2 quality and +4% a level).
+- **All the numbers are provisional:** `START_FUND` 200,000, `ENTRY_FEE` 600, `WALL_PRIZE` 150,000 less 20,000 a title, `PAY_BASE` and the (OVR/60)² curve, `PAY_FAMOUS` 1.25, `PAY_TITLE` 1.15, `SIGN_WEEKS`, `SEVER_WEEKS` and `RAISE_WEEKS` 12, `RAISE_MUL` 1.2, `BIDS` and `BID_ODDS` 0.12, `BAN_PRICE` 15,000 (×3 to ×1), `BAN_PAID_MAX` 3, `BAN_PROTECT` 2, `CITY_GROW` 60,000/180,000, `UP_COST` 25,000/50,000/100,000, `MOVE_FEE` 40,000, the upgrade effects (hall +1 a level a birthday up to 95, feature +1.5% a level, attraction 250/550/900 a week (200/400/650 since 0.15.0), scouting +1 outsider, +2 quality and +4% a level).
 - **Money doesn't limit hiring yet in practice:** the passive player roughly breaks even (+4,500 a year, 10 of 300 years in the red) and the AI Leagues have no money at all. Whether salaries should bite harder (so stars are a real trade-off) is the balance question for the next chat.
-- **The money is the player's only.** Rival Leagues keep no books, never build, still vote on bans and hire freely until stage 4. City standing and control (5.3) are not built; cities only record what each League spent (`c.spent`).
 - **Salaries are reviewed only at New Year** (from OVR then); a hire made mid-year keeps their hiring OVR until then.
 - **Automatic hires always go through**, even in the red: gym trainer fills, the multi-year sim's vacancies and seat-challenge winners from the circuit pay their signing fee and can deepen the red.
 - **Severance is charged whenever `letGo` runs in the player's League,** including a gym trainer let go because the gym changed type, but not for someone who leaves on their own (notice, stepping down, a lost challenge, another run).
@@ -101,3 +98,13 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The paid banlist reads the meta log (24 months).** A Pokémon needs 8 battles there to be listed. The trainers' vote (and its ballot) no longer runs in the player's League; `buildBanBallot` and the vote still run in rival Leagues.
 - **The old Banlist panels** (the ballot card) only show votes; paid bans show in the ban history with their price.
 - **The training hall works on birthdays only,** so a new hall takes up to a year to show; staff at 95 in a rating gain nothing there.
+
+## Left over from rival Leagues (0.15.0)
+- **All the numbers are provisional:** `AIMS` reserves and build orders, `pickAim` 40/30/30, `AIM_MIN_YEARS` 3, `AIM_RICH` 2.5, `AIM_BAN_ODDS` 0.25, `RED_BITE_WEEKS` 4, `RICH_PAY_MAX` 0.2 and `RICH_PAY_AT` 4, `EASE_MOVE` 0.25, `EASE_EDGE` 0.03, `EASE_OVR` 66, `REGION_CAP` 2, `MAX_LEAGUES` 4, `FOUNDER_RETIRED` 5, `FOUNDER_CHAMP_CHANCE` 0.15, `FOUNDER_CHAMP_YEARS` 10, `FOUNDER_CHAMP_OVR` 70, `STAND_SPEND` 2,000, `STAND_FADE` 0.25, `CITY_INCOME` 250/350/500, `CITY_CTRL_SHARE` 0.5, `POACH_ACCEPT` 0.6, `ALUMNI_KEEP` 10, `ALUMNI_QUIET` 3, `H2H_KEEP` 20.
+- **The economy isn't tuned.** City income turned a structural deficit (AI Leagues sank hundreds of thousands into the red and stayed there) into growth: Leagues now pile money up, and money-makers hoard once their slots are full (one reached 2.5 million by year 30). Rich AI Leagues have nothing more to buy. See the econ report figures in the design doc (3.5 and 5.2) and tune with `tests/econ.js`.
+- **Offers to other Leagues' circuits** go only to challengers resting between runs (they come at once); one out on a run is not listed.
+- **A League's aim is not shown anywhere but the League table and the news.** Rival steers by aim are simple.
+- **New Leagues still need the growth option** (the old timer, 8 to 12 years); a founder is picked when one opens. Founders driving openings was offered and not chosen.
+- **Cross-League title challenges** come only when a League has no challenger of its own that year; at most one challenge for the Champion's seat a year.
+- **Poaching skips staff with a notice, acting holders and founder Champions;** a poached member's new post picks a new ambition. Rival Leagues remember nothing about who poached whom.
+- **Speed and saves with four Leagues:** about 10 seconds a simulated year in Node; saves were about 18 MB after 25 years before the trims (re-measure).

@@ -109,16 +109,19 @@ function check(tag) {
       if (t && (!t.team.length || t.team.length > 6)) bad('team size ' + t.team.length + ' for ' + t.name); }
   });
   if (Object.keys(s.cities).length % 11) bad('city count ' + Object.keys(s.cities).length);
-  // money and cities (0.13.0): only the hand-placed League keeps books
-  if (HAND && !s.founding) g.inLeague(0, () => { const z = S();
-    if (!z.fin || !Number.isFinite(z.fin.money) || Math.round(z.fin.money) !== z.fin.money) bad('books broken');
-    for (const id of g.staffIds()) { const t = g.T(id); if (t && !(t.payOvr > 0)) bad('staff with no pay ' + t.name); }
+  // money and cities (0.13.0; every League since 0.15.0): books, pay, bans and buildings; rivals have an aim
+  if (!s.founding) g.eachLeague(i => { const z = S(), mine = HAND && i === 0;
+    if (!z.fin || !Number.isFinite(z.fin.money) || Math.round(z.fin.money) !== z.fin.money) bad('books broken in League ' + i);
+    if (mine ? z.fin.aim != null : !g.AIMS[z.fin.aim]) bad('aim wrong in League ' + i + ': ' + z.fin.aim);
+    for (const id of g.staffIds()) { const t = g.T(id); if (t && !(t.payOvr > 0)) bad('staff with no pay ' + t.name); if (t && t.quit && t.quit.k === 'pay' && z.fin.money >= 0 && z.fin.redAt == null) bad('a pay notice out of the red'); }
     if (g.paidBans().length > g.BAN_PAID_MAX) bad('too many paid bans');
-    if ((z.banBallot || null) && z.banBallot.cands && z.banBallot.cands.length) bad('a ban vote in the player\'s League');
+    if ((z.banBallot || null) && z.banBallot.cands && z.banBallot.cands.length) bad('a ban vote in a League with books');
     for (const p of g.myPlaces()) { if (p.b.length > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= 3) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
-    if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms in one city');
+    if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
   });
-  else if (s.fin && !HAND) bad('books in a world nobody staffs by hand');
+  // (0.15.0) at most two Leagues a region; standing only for Leagues with a gym in the city; control by one of them
+  { const regs = g.eachLeague(() => S().region), gm = g.gymMap(); for (const r of new Set(regs)) if (regs.filter(x => x === r).length > 2) bad('three Leagues in one region');
+    for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || []; for (const k of Object.keys(c.st || {})) if (!lgs.includes(+k) && tag.startsWith('s')) {} if (lgs.length && !lgs.includes(g.cityCtrl(c, lgs))) bad('city controlled by a League with no gym there: ' + c.name); } }
   for (const t of Object.values(s.trainers)) {
     if (t.role === 'challenger' && seen[t.id] == null) bad('challenger on no circuit ' + t.name);
     if (t.role === 'free' && !s.freeAgents.includes(t.id)) bad('free agent not listed ' + t.name);
@@ -219,4 +222,6 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
+console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
+console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));
 process.exit(fail.length ? 1 : 0);

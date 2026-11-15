@@ -93,7 +93,7 @@ function hireRowOf(c, warn, ask) {
   const t = c.t, bits = warn ? [warn] : [], imp = c.from === 'circuit' && impressed(t);
   let label = 'Pick', off = '';
   if (c.refuse) off = c.refuse;
-  else if (c.from === 'circuit') {
+  else if (c.from === 'circuit' || c.from === 'away') {
     label = 'Offer';
     if (!canOffer(t)) off = `turned you down · ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}`;
     else if (t.rest == null) bits.push(`on a run: comes by ${turnDate(S.turn + HIRE_NOTICE)}`);
@@ -121,7 +121,7 @@ function staffNotices() {
 // (0.11.0) seat challenges waiting for the player's yes or no
 function chalNotice() {
   const chal = S.chalPending || []; if (!chal.length) return '';
-  return `<div class="eyebrow">Seat challenge${chal.length === 1 ? '' : 's'} waiting for you</div><ul class="mini">${chal.map((x, i) => `<li><span>${tname(x.cand)} <span class="small">(${x.k === 'champ' ? `Elite Four #${x.slot + 1}` : x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'})</span> challenges ${tname(x.inc)} for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`} <span class="small muted">· goes ahead ${turnDate(x.due)} unless you refuse</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Approve</button> <button class="btn small" data-act="chalno" data-v="${i}">Refuse</button></span></li>`).join('')}</ul>
+  return `<div class="eyebrow">Seat challenge${chal.length === 1 ? '' : 's'} waiting for you</div><ul class="mini">${chal.map((x, i) => `<li><span>${tname(x.cand)} <span class="small">(${x.k === 'champ' ? `Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}` : x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'})</span> challenges ${tname(x.inc)} for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`} <span class="small muted">· goes ahead ${turnDate(x.due)} unless you refuse</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Approve</button> <button class="btn small" data-act="chalno" data-v="${i}">Refuse</button></span></li>`).join('')}</ul>
     <p class="muted small">One battle at the seat's level, the challenger with a team built for the seat. A beaten Champion takes the winner's Elite Four seat; a beaten Elite Four member takes the winning Gym Leader's gym, or returns to the circuit if a challenger beat them. Refusing, or losing, makes a member of staff restless (their promotion clock moves a year on).</p>`;
 }
 const vacancyName = v => v.post === 'leader' ? `${townName(v.slot)} Gym Leader (badge ${v.slot + 1})` : `Elite Four seat #${v.slot + 1}`;
@@ -139,11 +139,11 @@ function viewHire() {
     ${v.incoming != null ? incomingLine(v.incoming, 'the post') : ''}
     <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div>${bidRow()}</section>
   <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers: the ${S.lgName} circuit, your gym trainers, your other Gym Leaders and Elite Four members, recent retirees and ${(v.outsiders || []).length} outsiders. A challenger gets an <b>offer</b>, which they can turn down (then they aren't asked again for half a year); one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while the acting holder stays. Everyone else takes the post at once: a gym trainer leaves their place, a retiree comes out of retirement, and a Gym Leader or Elite Four member leaves their post open, with an acting holder, and you choose for it next.</span></div>
-  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
+  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : c.from === 'rival' ? 'their League gets the signing fee' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
-const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired' };
-const pickFrom = c => PICK_FROM[c.from] + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
+const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
+const pickFrom = c => PICK_FROM[c.from] + (c.from === 'rival' || c.from === 'away' ? ' · ' + lgShort(c.lg) : '') + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
 // ---------- your staff (0.7.0) ----------
 // Every post of the player's League in one place: let anyone but the Champion go, swap two Gym Leaders or two Elite
 // Four members, and replace gym trainers by hand. A senior post someone leaves waits for you with an acting holder.
@@ -240,18 +240,40 @@ function viewMoney0() {
   <section class="panel"><div class="ph"><h2>Ledger</h2><span class="muted">Everything but the weekly salaries, entry fees and attractions</span></div>
     ${f.log.length ? `<div class="scroll"><table class="tbl"><tbody>${f.log.map(x => `<tr><td class="small muted">${turnDate(x.turn)}</td><td>${esc(x.text)}</td><td class="num">${x.amt >= 0 ? '+' : ''}${money(x.amt)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}</section>`;
 }
+// (0.15.0, stage 4) the League table: every League's money first (balance is economic), the wall beside it
+function leagueRow(i) {
+  return inLeague(i, () => {
+    const f = S.fin, last = f && f.last, sum = o => o ? Object.values(o).reduce((a, b) => a + b, 0) : 0, m = gymMap();
+    const h = S.history.filter(x => x.titles != null), lh = h[h.length - 1];
+    return { i, name: S.lgName, aim: f ? (f.aim ? AIMS[f.aim].name : 'Yours') : '—', money: f ? f.money : null, inc: last ? sum(last.in) : null, out: last ? sum(last.out) : null,
+      wage: f ? wageBill() : null, ctrl: S.gyms.filter(g => cityCtrl(S.cities[g.city], m[g.city]) === i).length, shared: S.gyms.filter(g => (m[g.city] || []).length > 1).length,
+      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null };
+  });
+}
+function viewTable() {
+  const rows = Array.from({ length: nLeagues() }, (_, i) => leagueRow(i)).sort((a, b) => (b.money ?? -1e12) - (a.money ?? -1e12));
+  const avg = rows.filter(r => r.money != null), am = avg.length ? avg.reduce((a, r) => a + r.money, 0) / avg.length : 0;
+  return `<section class="panel callout"><div class="eyebrow">${nLeagues()} Leagues</div><h2>League table</h2>
+    <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Income and spending are last year's; cities count those where the League has a gym and controls it (shared cities in brackets). Trainers let through are last year's.</p></section>
+  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.i === 0 && handOn() ? ' class="me"' : ''}><td><b>${esc(r.name)}</b>${r.founder ? ` <span class="small muted">founded by ${tname(r.founder.id)}</span>` : ''}</td><td class="small">${r.aim}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td></tr>`).join('')}
+  </tbody></table></div></section>`;
+}
 // the Cities page: the seat, the gym cities and the cities with no gym of yours
 function viewCities() { return inLeague(0, viewCities0); }
 function viewCities0() {
   if (!booksOn()) return '<section class="panel"><p class="muted">Only a League you staff by hand builds in cities.</p></section>';
-  const places = myPlaces(), gymOpts = S.gyms.map((g, i) => `<option value="${i}">Gym ${i + 1} · ${townName(i)}</option>`).join('');
+  const places = myPlaces(), gm = gymMap(), gymOpts = S.gyms.map((g, i) => `<option value="${i}">Gym ${i + 1} · ${townName(i)}</option>`).join('');
   const card = p => {
     const where = p.seat ? 'seat' : p.gym;
     const built = p.b.map(x => `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv}</li>`).join('');
+    // (0.15.0) standing and control where Leagues share the city, and this League's share of its income
+    const lgs = p.c ? gm[p.c.id] || [] : [], ctrl = p.c ? cityCtrl(p.c, lgs) : null;
+    const share = p.c && lgs.includes(0) ? `<p class="small">${lgs.length > 1 ? `Shared with the ${lgs.filter(i => i !== 0).map(leagueName).join(' and the ')}. Standing: ${lgs.map(i => `${lgShort(i)} ${standing(p.c, i)}`).join(', ')}. Controlled by the <b>${leagueName(ctrl)}</b>. ` : 'Yours alone. '}Your share of its income: <b>${money(cityShare(p.c, lgs, 0))}</b> a week (of ${money(CITY_INCOME[p.slots - 1])}).</p>` : lgs.length ? `<p class="small muted">Gyms here: the ${lgs.map(leagueName).join(' and the ')}.</p>` : '';
     const acts = p.none ? `<div class="confirm-row"><select id="move-${p.c.id}" aria-label="Gym to move">${gymOpts}</select><button class="btn small" data-act="movegym" data-c="${p.c.id}"${canSpend(MOVE_FEE) ? '' : ' disabled'}>Move it here (${money(MOVE_FEE)})</button></div>`
       : `<div class="confirm-row">${Object.keys(UPGRADES).map(k => { const ck = buildCheck(where, k); if (ck.why) return ''; return `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}">${ck.lv > 1 ? `${UPGRADES[k].name} to level ${ck.lv}` : `Build ${UPGRADES[k].name.toLowerCase()}`} (${money(ck.cost)})</button>`; }).join('')}</div>`;
     return `<section class="panel"><div class="ph"><h2>${esc(p.name)}</h2><span class="muted">${p.seat ? 'League seat: the Elite Four and the Champion' : p.none ? 'No gym of yours' : `Gym ${p.gym + 1}${T(S.gyms[p.gym].leader) ? ' · ' + typeLabel(T(S.gyms[p.gym].leader)) : ''}`} · ${p.b.length} of ${p.slots} slot${p.slots === 1 ? '' : 's'} used${p.c ? ` · ${money(Object.values(p.c.spent || {}).reduce((a, b) => a + b, 0))} spent here` : ''}</span></div>
-      ${built ? `<ul>${built}</ul>` : ''}${acts}</section>`;
+      ${share}${built ? `<ul>${built}</ul>` : ''}${acts}</section>`;
   };
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>
     <p>Build in your gym cities and at your League's seat. A city starts with one slot and gets a second once ${money(60000)} has been spent there and a third at ${money(180000)}; the seat has three. Each upgrade has three levels (${money(25000)}, ${money(50000)}, ${money(100000)}). ${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost.</p></section>
@@ -365,8 +387,9 @@ function accolades(t) {
   const ts = t.titleSeasons || [];
   if (ts.length || t.career.titles) a.push({ k: 'title', tag: `Champion${(ts.length || t.career.titles) > 1 ? ' ×' + (ts.length || t.career.titles) : ''}`, text: `League Champion${ts.length ? ' (' + seasonsLg(titleList(t)) + ')' : ''}` });
   if (nLeagues() > 1) {
-    if (isGrandSlam(t)) a.push({ k: 'slam', tag: 'Triple Crown', text: `Triple Crown: Champion of three different Leagues (${[...champLeaguesOf(t)].sort().map(leagueName).join(', ')})${t.grandSlam ? ', completed in Year ' + t.grandSlam : ''}` });
-    else { const cl = champLeaguesOf(t), N = nLeagues(); if (cl.size >= 2) a.push({ k: 'multi', tag: `Crown ${cl.size}/${CROWN_LEAGUES}`, text: `Champion of ${cl.size} Leagues: ${[...cl].sort().map(leagueName).join(', ')}. One more League for the Triple Crown${N >= CROWN_LEAGUES ? ': ' + unwonLeagues(t).map(leagueName).join(' or ') : ''}${slamProtected(t) ? '. Chasing the Crown keeps them going 3 years past their usual career length' : ''}` }); }
+    if (t.founded) a.push({ k: 'founder', tag: 'Founder', text: `Founded the ${leagueName(t.founded.lg)} in Year ${t.founded.season}${t.founded.champ ? ', and was its first Champion' : ''}` });
+    if (isGrandSlam(t)) a.push({ k: 'slam', tag: 'Triple Crown', text: `Triple Crown: won the title in three different Leagues (${[...champLeaguesOf(t)].sort().map(leagueName).join(', ')})${t.grandSlam ? ', completed in Year ' + t.grandSlam : ''}` });
+    else { const cl = champLeaguesOf(t), N = nLeagues(); if (cl.size >= 2) a.push({ k: 'multi', tag: `Crown ${cl.size}/${CROWN_LEAGUES}`, text: `Won the title in ${cl.size} Leagues: ${[...cl].sort().map(leagueName).join(', ')}. One more League for the Triple Crown${N >= CROWN_LEAGUES ? ': ' + unwonLeagues(t).map(leagueName).join(' or ') : ''}${slamProtected(t) ? '. Chasing the Crown keeps them going 3 years past their usual career length' : ''}` }); }
     const wc = (t.worldSeasons || []).length; if (wc) a.push({ k: 'world', tag: `World Champion${wc > 1 ? ' ×' + wc : ''}`, text: `World Champion (Season ${t.worldSeasons.join(', ')})` });
   }
   for (const c of t.comebacks || []) a.push({ k: 'comeback', tag: '', text: `Stepped down from ${c.gym} Gym${lgIn(c.lg) ? ' (' + leagueName(c.lg) + ')' : ''} in Year ${c.season} after ${c.seasons} outstanding years in a row, to chase the title` });
@@ -590,7 +613,7 @@ function viewRecords() {
     ${recBoard('Longest reign', rg.map(r => ({ who: tname(r.id), v: `${r.n} year${r.n > 1 ? 's' : ''}`, sub: (r.from === r.to ? `Year ${r.from}` : `Years ${r.from}–${r.to}`) + (lgIn(S.lg || 0) ? ' · ' + lgIn(S.lg || 0) : '') })), nLeagues() > 1 ? `Years ending as Champion in a row, in the ${S.lgName}.` : 'Seasons ending as Champion in a row.')}
     ${recBoard('Most title defenses', topBy(ts, t => t.career.defenses).map(([t, v]) => row(t, v)))}
     ${recBoard('Youngest Champion', wins.slice().sort((a, b) => a.age - b.age || a.s - b.s).slice(0, 5).map(w => row(w.t, `age ${w.age}`, seasonsLg([{ season: w.s, lg: w.lg }]))))}
-    ${nLeagues() >= CROWN_LEAGUES ? recBoard('Triple Crowns', ts.filter(isGrandSlam).sort((a, b) => (a.grandSlam || 999) - (b.grandSlam || 999)).slice(0, 5).map(t => row(t, champLeaguesOf(t).size + ' Leagues', t.grandSlam ? 'completed Year ' + t.grandSlam : '')), 'Champion of three different Leagues across a career.') : ''}
+    ${nLeagues() >= CROWN_LEAGUES ? recBoard('Triple Crowns', ts.filter(isGrandSlam).sort((a, b) => (a.grandSlam || 999) - (b.grandSlam || 999)).slice(0, 5).map(t => row(t, champLeaguesOf(t).size + ' Leagues', t.grandSlam ? 'completed Year ' + t.grandSlam : '')), 'Won the title in three different Leagues across a career.') : ''}
     ${nLeagues() > 1 ? recBoard('Most World Championships', topBy(ts, t => (t.worldSeasons || []).length).map(([t, v]) => row(t, v, 'Season ' + t.worldSeasons.join(', ')))) : ''}
     ${recBoard('Oldest Champion', wins.slice().sort((a, b) => b.age - a.age || a.s - b.s).slice(0, 5).map(w => row(w.t, `age ${w.age}`, seasonsLg([{ season: w.s, lg: w.lg }]))))}
   </div></section>`;
@@ -773,6 +796,16 @@ function awardsPanel(h, title) {
 // each Elite Four seat and the Champion's, the year's ten furthest challengers and every run at the Elite Four.
 // It opens at New Year (it replaced the year in review) and any year can be opened from it or the History page.
 let repYear = null; // the year shown; null is the latest
+// (0.15.0) every League's year side by side in the year report, with the world's average
+function otherLeaguesPanel(season) {
+  if (nLeagues() < 2) return '';
+  const rows = Array.from({ length: nLeagues() }, (_, i) => inLeague(i, () => { const e = S.history.find(x => x.season === season && x.titles != null); return e ? { i, name: S.lgName, let: e.titles, badges: e.badges, best: e.best, runs: e.runs, q: e.qualifiers } : null; })).filter(Boolean);
+  if (rows.length < 2) return '';
+  const av = k => (rows.reduce((a, r) => a + (r[k] || 0), 0) / rows.length).toFixed(1), me = S.lg || 0;
+  return `<section class="panel"><div class="ph"><h2>Every League, Year ${season}</h2><span class="muted">Money and cities are on the League table</span></div><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Let through</th><th>Badges conceded</th><th>Furthest</th><th>Runs</th><th>Elite Four runs</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.i === me ? ' class="me"' : ''}><td>${esc(r.name)}</td><td class="num">${r.let}</td><td class="num">${r.badges}</td><td class="small">${depthName(r.best || 0)}</td><td class="num">${r.runs}</td><td class="num">${r.q}</td></tr>`).join('')}
+    <tr class="muted"><td>World average</td><td class="num">${av('let')}</td><td class="num">${av('badges')}</td><td></td><td class="num">${av('runs')}</td><td class="num">${av('q')}</td></tr></tbody></table></div></section>`;
+}
 function viewRecap() {
   const all = S.history.filter(x => x.titles != null);
   if (!all.length) return viewCircuit();
@@ -809,7 +842,7 @@ function viewRecap() {
   const stageCells = s => [0, 1, 2, 3, 4].map(k => `<td class="st ${s > k ? 'w' : s === k ? 'l' : ''}">${s > k ? 'W' : s === k ? 'L' : ''}</td>`).join('');
   const nav = `<div class="segs setup-segs">${i > 0 ? `<button class="seg" data-act="repyear" data-v="${all[i - 1].season}">‹ Year ${all[i - 1].season}</button>` : ''}<button class="seg on" aria-pressed="true">Year ${h.season}</button>${!latest ? `<button class="seg" data-act="repyear" data-v="${all[i + 1].season}">Year ${all[i + 1].season} ›</button><button class="seg" data-act="repyear" data-v="latest">Latest</button>` : ''}</div>`;
   const ran = latest ? Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12) : [];
-  return `${latest ? worldPanel() : ''}${nav}<div class="grid-office"><div class="col">
+  return `${latest ? worldPanel() : ''}${nav}${otherLeaguesPanel(h.season)}<div class="grid-office"><div class="col">
     <section class="panel callout"><div class="eyebrow">Year ${h.season} report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</div>
       <h2>${h.titles ? `${h.titles} trainer${h.titles === 1 ? '' : 's'} let through` : 'A perfect year'}</h2>
       <p>${h.titles ? `${won.length ? won.map(r => `${tname(r[0])} <span class="muted small">${weekShort(r[1])}</span>`).join(', ') : names(h.winners)} beat the Champion. ` : 'Nobody took the title. '}${streak ? `<b>${streak}</b> perfect year${streak === 1 ? '' : 's'} in a row. ` : ''}${perfect !== streak ? `<b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} in ${upTo.length}.` : ''}
@@ -1055,7 +1088,12 @@ const GLOSS_TERMS = {
     ['Career length', 'Set by the age a trainer started at: those who start young have the longest careers (about 22 to 30 years from age 10 to 14), late starters the shortest (about 8 to 16 from 35). Strong ratings and a title add up to three years, and long service in posts up to two more.'],
     ['Ambitions', `Each member of staff has one: promotion (a gym trainer wants a gym, a Gym Leader a later gym or the Elite Four, an Elite Four member a higher seat; seat #4 wants the Champion's seat and waits), stay put, or another run as a challenger. It is set when they take a post and can change on a birthday. Promotion waits ${AMB_WAIT_YEARS} years in the post and shows as Restless in the last; then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves with a grudge unless promoted (a gym trainer just goes). The Champion always stays put.`],
     ['Another run', `A Gym Leader with ${COMEBACK_STREAK} outstanding years in a row (now and then anyone younger without a title) may ask to go back to the circuit as a challenger. Let them go (they come back sharper and can be hired again), or they leave anyway a year after asking.`],
-    ['Money', 'Only your League keeps books (rival Leagues will with stage 4). In: an entry fee for every run begun on your circuit, a wall prize at New Year that shrinks with every trainer let through, and attractions. Out: salaries every week (the post and the trainer\'s OVR, reviewed each New Year), signing fees for anyone joining from outside, severance for anyone let go, raises, bans and buildings. In the red, salaries are still paid but nothing new can be bought. The Money page has the books.'],
+    ['Money', 'Every League keeps books (rival Leagues spend by their aim). In: an entry fee for every run begun on your circuit, a wall prize at New Year that shrinks with every trainer let through, attractions and your share of each gym city\'s income. Out: salaries every week (the post and the trainer\'s OVR, reviewed each New Year), signing fees for anyone joining from outside, severance for anyone let go, raises, bans and buildings. In the red, salaries are still paid but nothing new can be bought. The Money page has the books.'],
+    ['Being in the red', `Every ${RED_BITE_WEEKS} weeks in the red the League\'s best-paid member of staff (never the Champion) gives twelve weeks\' notice, and leaves unless the League is back above zero first. In the red nothing new can be bought, and automatic hires take the cheapest trainer who fits, with no signing fee.`],
+    ['Aims', 'Each rival League has an aim. A wall-builder hires the best, counters the meta, builds gym features and pays for bans; a star-maker hires young and builds training halls and a scouting office; a money-maker keeps wages down, builds attractions and holds a reserve. After three years a rival in the red turns money-maker, and a money-maker far richer than the world\'s average turns to a wall or to stars.'],
+    ['Standing and control', 'A League gains standing in a city where it has a gym by spending there (a point per ₽2,000) and each New Year by how its gym held against the region\'s average (a point per percentage point); all standing then fades by a quarter. The League with most standing controls the city. Each city with a gym earns ₽250, ₽350 or ₽500 a week by its size: the controller takes half, the rest is shared by standing among the other Leagues with a gym there.'],
+    ['League table', 'Every League ranked by money, with last year\'s income and spending, the wage bill, cities controlled and the wall. Balance in this game is economic: Leagues should stay close to level, and one that falls behind can catch up (challengers drift to walls they can get further against, and stars ask a little more of a League far richer than the rest).'],
+    ['Founders', 'A new League is founded by a distinguished recent retiree as a final act, and takes their name if it is the second League of its region. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.'],
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
     ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff gain ratings on birthdays), gym features (a home edge), attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers). A city gets more slots as money is spent there. Moving a gym to a city with none loses what you built in the old one.'],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],

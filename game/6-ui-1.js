@@ -254,7 +254,7 @@ function wallStanding() {
 function header() {
   // one continuous world: time moves a week, a month or a year at a time, and you can act between any two weeks.
   // The longer steps stop early when something needs you (a title conceded, a vacant post, the New Year report).
-  const status = `${dateName()} · ${wallStanding()}${booksOn() ? ` · ${money(S.fin.money)}` : ''}`;
+  const pf = playerFin(), status = `${dateName()} · ${wallStanding()}${pf ? ` · ${money(pf.money)}` : ''}`;
   const btn = `<button class="btn primary" data-act="playweek">Next week</button><button class="btn ghost" data-act="playmonth" title="Stops early if a title is conceded or a post falls vacant">Next month</button><button class="btn ghost" data-act="playyear" title="Stops early if a title is conceded or a post falls vacant">To New Year</button>`;
   return `<header class="top"><div class="top-in">
     <div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">${nLeagues() > 1 ? `${nLeagues()} Leagues` : S.lgName} · ${status}</div></div></div>
@@ -266,7 +266,8 @@ let navOpen = null;
 function navGroups() {
   const league = [['circuit', 'Badge circuit'], ['gyms', 'Gyms & Elite']];
   if (handOn()) league.push(['staff', 'Your staff']);
-  if (booksOn()) league.push(['money', 'Money'], ['cities', 'Cities']);
+  if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities']);
+  if (nLeagues() > 1) league.push(['table', 'League table']);
   if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
   league.push(['meta', 'Meta']);
   league.push(['news', 'News'], ['history', 'History']);

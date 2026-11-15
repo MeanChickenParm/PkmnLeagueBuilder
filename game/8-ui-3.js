@@ -1,5 +1,17 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 15, ver: '0.15.0', date: 'November 15, 2026', time: '10:02 AM ET', title: 'Rival Leagues', items: [
+    "Every League now keeps books, not just yours. Rival Leagues earn and spend like you do, each by its aim: a wall-builder hires the best, counters the meta, builds gym features and pays for bans; a star-maker hires young and builds training halls; a money-maker keeps wages down and builds attractions. A rival changes aim when it falls into the red or a money-maker grows rich. Aims replace rivals' old steering rule and their trainers' ban vote.",
+    "Being in the red now costs you: every four weeks in the red, your best-paid member of staff (never the Champion) gives twelve weeks' notice, and leaves unless you are back above zero by then. While in the red, automatic hires take the cheapest trainer who fits and cost no signing fee.",
+    "The second League of a region opens in yours: when a new League is due it opens in your region first (then elsewhere, four Leagues at most), taking the region's three towns with no gym and five of your cities. A distinguished recent retiree founds each new League as a final act and gives it their name; rarely, a champion still fit enough takes its Champion's seat for ten years.",
+    "Cities: a League gains standing in a city where it has a gym by spending there and by how its gym holds against the region's average, and standing fades each year. The League with most standing controls the city. Every city with a gym now earns income each week by its size; its controller takes half and the rest is shared by standing.",
+    "Catch-up, gently: challengers whose runs keep ending early drift toward Leagues where runs go further, so a leaky wall draws more entry fees; and stars ask a little more (up to a fifth) of a League far richer than the world's average.",
+    "Hiring between Leagues: staff who want promotion can take a bigger post in another League (a gym trainer leading a gym, a Gym Leader joining the Elite Four), and their old League receives the signing fee. Any League can also offer a post to a challenger resting between runs on another League's circuit. Your hiring page lists both, and rival Leagues can take yours.",
+    "Title challenges across Leagues: a restless Elite Four member of another League can challenge your Champion at New Year (you approve or refuse); if they win, the two trade places.",
+    "A League table page ranks every League by money, with income, spending, wages, cities held and the wall beside it; the year report shows every League's year side by side; the Cities page shows standing, control and your share of each city's income.",
+    "The Triple Crown now counts title wins (beating a League's Champion) in three Leagues, not who held a Champion's seat at a year's end.",
+    "Saves are smaller: trainers keep fewer former Pokémon and head-to-head records.",
+  ] },
   { id: 14, ver: '0.14.0', date: 'November 14, 2026', time: '9:54 PM ET', title: 'Balance retune', items: [
     "The wall was far too hard to get past, so it has been retuned: staff build their teams a little less well than before, and the best challengers stay on the circuit to chase the title instead of being taken onto Leagues' staff.",
     "A challenger who impressed (reached the Elite Four, or won six or more badges in a run, this year or last) is much likelier to turn down an offer of a post, from your League or any other.",
@@ -309,6 +321,7 @@ function render() {
   if (view === 'staff') v = viewStaff();
   if (view === 'meta') v = viewMeta();
   if (view === 'money') v = viewMoney();
+  if (view === 'table') v = viewTable();
   if (view === 'cities') v = viewCities();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
