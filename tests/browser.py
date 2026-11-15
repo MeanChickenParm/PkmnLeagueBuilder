@@ -15,7 +15,7 @@ async def run(path):
           // 0.9.0: pick a candidate who takes a post at once (not a challenger, who gets an offer, and not senior staff)
           // (0.10.0) staff can now leave over their ambitions, so a scripted step starts with no vacancy already open
           const clearVac = () => inLeague(0, () => { for (let n = 0; n < 20 && (S.vacancies || []).length; n++) { const v = S.vacancies[0]; if (v.incoming != null) withdrawOffer(v.incoming); const o = (v.outsiders || []).find(x => T(x) && T(x).role === 'prospect'); if (!o || !fillVacancy(v, o)) break; } });
-          const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^Circuit/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
+          const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^(Circuit|Another circuit)/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
           const log = [], click = sel => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
           if (!document.querySelector('[data-act=newworld]')) log.push('FAIL no region cards on the setup screen');
           if (!/Pokémon League Builder/.test(document.title + document.body.textContent)) log.push('FAIL the name is missing');

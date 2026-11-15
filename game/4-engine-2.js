@@ -899,7 +899,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // the League that actually lists a trainer (circuit or post); falls back to their tag. Used before anything that
@@ -1049,7 +1049,7 @@ function endRun(t, entry, stage) {
   }
   // between runs a challenger may change Leagues. One who reached the Elite Four and goes to a different League
   // has a quick turnaround; the longer rest only keeps a challenger from trying the same League over and over.
-  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE);
+  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || (stage == null && easeMove(t));
   t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
 }
 // a challenger moves to another League's circuit between runs: a Triple Crown chaser or a Globetrotter when its
@@ -1063,6 +1063,24 @@ function leagueMove(t, keen) {
   if (!pulled && !keen) return false;
   shiftLeague(t, best.i);
   inLeague(best.i, () => news(`${dn(t)} moved from the ${leagueName(from)} to the ${leagueName(best.i)}.`, 'move', t.id));
+  return true;
+}
+// (0.15.0, catch-up) a challenger below EASE_OVR whose run ended on a third loss looks, EASE_MOVE of the time, for a
+// League where runs go further (more of them reached the Elite Four over the last two years, by EASE_EDGE or more):
+// a leaky wall draws more entry fees. Strong challengers still chase tough titles. Provisional.
+const EASE_MOVE = 0.25, EASE_EDGE = 0.03, EASE_OVR = 66, EASE_CROWD = 1.25;
+function leagueEase() {
+  if (S.easeAt === S.season && S.ease) return S.ease;
+  S.ease = eachLeague(() => { const h = S.history.slice(-2), r = h.reduce((a, x) => a + (x.runs || 0), 0); return r ? h.reduce((a, x) => a + (x.qualifiers || 0), 0) / r : 0; });
+  S.easeAt = S.season; return S.ease;
+}
+function easeMove(t) {
+  if (nLeagues() < 2 || t.role !== 'challenger' || ovr(t) >= EASE_OVR || rand() >= EASE_MOVE) return false;
+  // never to a circuit already EASE_CROWD times the average field (a leaky wall shouldn't swell without end)
+  const e = leagueEase(), from = lgOf(t), size = eachLeague(() => S.challengers.length), avg = size.reduce((a, b) => a + b, 0) / size.length;
+  const best = e.map((v, i) => ({ i, gain: v - e[from] })).filter(x => x.i !== from && x.gain >= EASE_EDGE && size[x.i] < avg * EASE_CROWD && slamRoom(t, x.i)).sort((a, b) => b.gain - a.gain)[0];
+  if (!best) return false;
+  shiftLeague(t, best.i);
   return true;
 }
 function doAction(t, act) {
@@ -1311,7 +1329,8 @@ function retireHere(t, why) {
 // it keeps saves small enough for the browser with several Leagues
 function compactRetired(t) {
   t.weekLog = [];
-  t.alumni = (t.alumni || []).filter(m => m.st && m.st.b >= 3).slice(0, 15);
+  t.alumni = (t.alumni || []).filter(m => m.st && m.st.b >= 3).slice(0, 8);
+  trimH2h(t);
 }
 // ---- Elite Four seat challenges ----
 // A seat only changes hands in battle. The loser decides whether to retire or go back to the circuit:
@@ -1415,6 +1434,7 @@ function weakestSeat(skip) {
   return seats.sort((a, b) => score(a) - score(b))[0].k;
 }
 function champChallenger() {
+  if (founderChamp(T(S.champion))) return null; // (0.15.0) nobody challenges a founder Champion in their window
   return S.e4.map(T).filter(t => t && t.role === 'e4' && canChallenge(t) && wantsUp(t) && !(t.e4Poor > 0) && seatYears(t) >= CHAL_SEAT_YEARS)
     .sort((a, b) => ovr(b) - ovr(a))[0] || null;
 }
@@ -1431,13 +1451,14 @@ function seatChallenger(skip) {
 }
 function chalText(x) {
   const c = T(x.cand), i = T(x.inc);
-  if (x.k === 'champ') return `${dn(c)} (Elite Four #${x.slot + 1}) challenges Champion ${i.name} for the Champion's seat.`;
+  if (x.k === 'champ') return `${dn(c)} (Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}) challenges Champion ${i.name} for the Champion's seat.`;
   return `${dn(c)} (${x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'}) challenges ${dn(i)} for Elite Four seat #${x.slot + 1}.`;
 }
 // is everyone still where they were when the challenge was made?
 function chalValid(x) {
   const c = T(x.cand), i = T(x.inc);
   if (!c || !i || i.acting || c.acting) return false;
+  if (x.from === 'rival') return S.champion === x.inc && x.lg < nLeagues() && inLeague(x.lg, () => S.e4[x.slot] === x.cand);
   if (x.k === 'champ') return S.champion === x.inc && S.e4[x.slot] === x.cand;
   if (S.e4[x.slot] !== x.inc) return false;
   if (x.from === 'leader') return S.gyms[x.gym].leader === x.cand && !S.gyms[x.gym].acting;
@@ -1448,6 +1469,7 @@ function seatChallenges(changes) {
   if (fixedStaff() || S.founding) return;
   const out = [], c = champChallenger();
   if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
+  else { const r = rivalChampChallenger(); if (r) out.push(r); }
   const s = seatChallenger(c ? S.e4.indexOf(c.id) : null);
   if (s) out.push(s);
   for (const x of out) { x.season = S.season; T(x.cand).chalAt = S.season; }
@@ -1458,6 +1480,17 @@ function seatChallenges(changes) {
       news(msg, 'move', x.cand); changes.push(msg); stopFor('challenge', msg);
     }
   } else for (const x of out) changes.push(runChallenge(x));
+}
+// (0.15.0) an Elite Four member of another League who wants promotion and is restless, with two years in the seat and
+// not the worst of their four, may challenge this League's Champion (the strongest goes); at most one a League a year
+function rivalChampChallenger() {
+  if (nLeagues() < 2 || founderChamp(T(S.champion))) return null;
+  const me = S.lg || 0; let best = null;
+  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => {
+    for (const t of S.e4.map(T)) if (t && t.role === 'e4' && canChallenge(t) && wantsUp(t) && restless(t) && !(t.e4Poor > 0) && seatYears(t) >= CHAL_SEAT_YEARS && (!best || ovr(t) > ovr(T(best.cand)))) best = { k: 'champ', cand: t.id, inc: null, slot: S.e4.indexOf(t.id), from: 'rival', lg: j, gym: null };
+  });
+  if (best) best.inc = S.champion;
+  return best;
 }
 // a member of staff whose challenge was refused or lost: their promotion clock moves a year on
 function chalRestless(t) {
@@ -1491,7 +1524,15 @@ function runChallenge(x) {
   chalRecord(x, { won, at: S.turn });
   let text;
   if (won) {
-    if (champ) {
+    if (x.from === 'rival') {
+      // (0.15.0) across Leagues the two trade places, with no fees either way
+      const home = S.lg || 0, quiet = L => { if (S.fin) S.fin.quiet = L; };
+      inLeague(x.lg, () => { S.e4[x.slot] = null; });
+      S.champion = null; inc.e4Poor = 0; quiet(true); installElite(cand, 'champion'); quiet(false);
+      inLeague(x.lg, () => { quiet(true); installElite(inc, 'e4', x.slot); quiet(false); });
+      useLeague(home);
+      text = `${cand.name} of the ${leagueName(x.lg)} beat Champion ${inc.name} in a seat challenge and is the new Champion of the ${S.lgName}. ${inc.name} takes ${cand.name}'s Elite Four seat (#${x.slot + 1}) in the ${leagueName(x.lg)}.`;
+    } else if (champ) {
       S.e4[x.slot] = null; S.champion = null; inc.e4Poor = 0;
       installElite(cand, 'champion'); installElite(inc, 'e4', x.slot);
       text = `${cand.name} beat Champion ${inc.name} in a seat challenge and is the new Champion of the ${S.lgName}. ${inc.name} takes ${cand.name}'s Elite Four seat (#${x.slot + 1}).`;
@@ -1701,7 +1742,7 @@ function steerSwap(t, slot, s) {
 // one Pokémon closer to its steer
 function steerMonth() {
   metaMonth();
-  if (!playerLeague()) rivalSteers();
+  if (!playerLeague()) aimMonth(); // (0.15.0) steers and spending by the League's aim
   for (const id of staffIds()) { const t = T(id), slot = t && eliteSlot(t); if (slot && t.team && t.team.length) steerSwap(t, slot, steerOf(t)); }
 }
 // a Gym Leader back on the circuit for a title run isn't offered a gym again during their guaranteed seasons
@@ -1722,6 +1763,7 @@ function birthdays() {
   const prog = S.yearProgress = S.yearProgress || {};
   for (const t of Object.values(S.trainers)) {
     if (t.role === 'retired' || t.role === 'prospect' || bweek(t) !== S.week) continue;
+    trimH2h(t);
     const before = { ...t.r, ovr: ovr(t) };
     t.age++;
     for (const k of RK) {
@@ -1740,7 +1782,7 @@ function birthdays() {
       if (sh && sh.badges === 8) t.r.nrv = clamp(t.r.nrv + ri(1, 3), 1, 99);
       if (sh && sh.stage != null && sh.stage >= 4) { t.r.nrv = clamp(t.r.nrv + 2, 1, 99); t.r.str = clamp(t.r.str + 1, 1, 99); }
     }
-    if (STAFF_ROLES.includes(t.role) && booksOn() && homeLeague(t) === 0) hallGain(t);
+    if (STAFF_ROLES.includes(t.role)) hallGain(t);
     t.pot = Math.max(t.pot, ovr(t));
     if (t.age > (hasTrait(t, 'lateBloomer') ? 32 : 26)) t.pot = ovr(t);
     prog[t.id] = { before, after: { ...t.r, ovr: ovr(t) } };
@@ -1769,6 +1811,7 @@ function birthdays() {
 const STEP_DOWN_YEARS = 10;
 function postYears(t) { return (t.posts || []).reduce((a, p) => a + Math.max(0, (p.to == null ? curSeason() : p.to) - p.from), 0); }
 function stepDownChance(t) {
+  if (founderChamp(t)) return 0; // (0.15.0) a founder Champion's window
   const over = (t.seasons || 0) - careerSpan(t);
   if (over < 0 || postYears(t) < STEP_DOWN_YEARS) return 0;
   // (0.10.0) the odds rise with each year past their career length, and a little with age past 50
@@ -1872,6 +1915,10 @@ function vacancyCands(v, opts = {}) {
   });
   if (!opts.noStaff) S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && !(v.post === 'e4' && k === v.slot)) out.push({ t, from: 'e4', seat: k }); });
   for (const id of v.outsiders || []) if (T(id) && T(id).role === 'prospect') out.push({ t: T(id), from: 'outsider' });
+  // (0.15.0) other Leagues' staff who want promotion and would be moving up
+  if (!opts.noStaff) for (const t of otherStaffFor(v.post, 0)) out.push({ t, from: 'rival', lg: homeLeague(t) });
+  // (0.15.0) challengers resting on other Leagues' circuits (an offer; they come at once if they take it)
+  if (!opts.noStaff) for (const t of otherCircuits(() => true)) out.push({ t, from: 'away', lg: lgOf(t) });
   // (0.10.0) a member of staff may refuse the move (a step down, or a sideways move when they want to stay put)
   for (const c of out) if (c.from === 'leader' || c.from === 'e4') c.refuse = refusal(c.t, v.post, v.slot);
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
@@ -1885,7 +1932,8 @@ function fillVacancy(v, id, opts = {}) {
     // anyone else who had accepted this post isn't coming now (0.9.0)
     if (v.incoming != null && v.incoming !== id) cancelIncoming(v, `${t.name} took the post`);
     v.incoming = null; t.hired = null; t.hireDue = false;
-    const was = postName(t) || (t.outsider ? 'an outsider' : t.role === 'retired' ? 'retirement' : `the ${S.lgName} circuit`);
+    const was = cand && cand.from === 'rival' ? `the ${leagueName(cand.lg)}` : postName(t) || (t.outsider ? 'an outsider' : t.role === 'retired' ? 'retirement' : `the ${S.lgName} circuit`);
+    if (cand && cand.from === 'rival') leaveForPost(t, S.lgName);
     if (t.role === 'retired') unretire(t);
     // the trainer leaves wherever they were; a Gym Leader or Elite Four member leaves a vacancy behind (0.7.0)
     if (t.role === 'challenger') dropFromCircuits(t.id);
@@ -2192,7 +2240,7 @@ function hireForVacancy(v, id, bid = 0) {
     const t = T(id), c = vacancyCands(v).find(x => x.t === t);
     if (!c) return { res: false };
     if (booksOn() && S.fin.money < 0 && !['leader', 'e4', 'gym', 'acting'].includes(c.from)) return { res: 'broke' };
-    if (c.from === 'circuit') return bidOffer({ post: v.post, slot: v.slot }, t, bid);
+    if (c.from === 'circuit' || c.from === 'away') return bidOffer({ post: v.post, slot: v.slot }, t, bid);
     return { res: 'now', r: fillVacancy(v, id) };
   });
 }
@@ -2235,25 +2283,72 @@ function flushGymOutsiders(i) {
 // ---- rival Leagues (and any League nobody staffs by hand) ----
 // the best of the League's own circuit and the recent retirees at OVR min or better; a challenger must accept the
 // offer (the next best is asked if they don't). Null when nobody fits (then the League makes an outsider).
-function rivalHire(min, exclude = []) {
+function rivalHire(min, exclude = [], post = null) {
   if (fixedStaff()) return null;
-  const val = t => ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
+  // (0.15.0) by the League's aim: a wall-builder takes the best, a star-maker leans to youth, a money-maker to trainers
+  // near the floor (cheaper); in the red, anyone takes the cheapest who fits
+  const aim = S.fin && S.fin.aim, red = S.fin && S.fin.money < 0;
+  const val = t => red ? -ovr(t) : aim === 'star' ? ovr(t) + Math.max(0, 30 - t.age) * 0.6 : aim === 'money' ? ovr(t) + (ovr(t) <= min + 8 ? 100 : 0) : ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
   const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
-    .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))).sort((a, b) => val(b) - val(a));
-  for (const t of cs) if (t.role === 'retired' || acceptsOffer(t, 'leader')) return t;
+    .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
+    .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
+    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT) : []).sort((a, b) => val(b) - val(a));
+  for (const t of cs) if (t.role === 'retired' || STAFF_ROLES.includes(t.role) || acceptsOffer(t, 'leader')) return t;
   return null;
 }
 // a rival League's vacant Elite Four seat: the best of its circuit and the recent retirees at E4_HIRE_MIN, else an
 // outsider (sometimes famous)
 function rivalE4(i) {
-  const c = rivalHire(E4_HIRE_MIN);
+  const c = rivalHire(E4_HIRE_MIN, [], 'e4');
   const own = promoteWithin('e4', i, c ? ovr(c) - PROMOTE_EDGE : E4_HIRE_MIN - PROMOTE_EDGE);
   if (own) { const ch = []; moveUpWithin(own, 'e4', i, ch); ch.forEach(noteChange); return own; }
   if (!c) return outsiderE4(i);
   if (c.role === 'retired') unretire(c);
+  if (STAFF_ROLES.includes(c.role)) { const from = leagueName(homeLeague(c)); leaveForPost(c, S.lgName); news(`${dn(c)} left the ${from} to join the ${S.lgName}'s Elite Four.`, 'move', c.id); }
   S.challengers = S.challengers.filter(x => x !== c.id);
   installElite(c, 'e4', i);
   return c;
+}
+// ---------- staff moving between Leagues (0.15.0, stage 4) ----------
+// A member of another League's staff who wants promotion takes a bigger post (gym trainer → Gym Leader, Gym Leader →
+// Elite Four) when offered: rival Leagues ask with POACH_ACCEPT odds, the player's offers are always taken. Their old
+// post opens in their League (an acting holder in the player's; filled at once elsewhere), and their old League
+// receives the signing fee the new one pays (postPay). Nobody is poached while a poach is being refilled.
+const POACH_ACCEPT = 0.6;
+let POACH_DEPTH = 0;
+function otherStaffFor(post, min) {
+  const out = [], me = S.lg || 0;
+  if (POACH_DEPTH || nLeagues() < 2 || fixedStaff()) return out;
+  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { for (const t of staffIds().map(T)) if (t && t.wish && t.wish.k === 'up' && !t.acting && !t.quit && t.stepDown == null && !founderChamp(t) && ((post === 'leader' && t.role === 'gymtrainer') || (post === 'e4' && t.role === 'leader')) && ovr(t) >= min) out.push(t); });
+  return out;
+}
+// (0.15.0) challengers on other Leagues' circuits who are resting between runs (so they could come at once), not hired
+// or leaving, and passing `fit`: any League can offer them a post
+function otherCircuits(fit) {
+  const out = [], me = S.lg || 0;
+  if (nLeagues() < 2 || fixedStaff()) return out;
+  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { for (const t of challengers()) if (t && t.role === 'challenger' && t.rest != null && !t.hired && !t.hireDue && !t.leaving && t.age >= 16 && fit(t)) out.push(t); });
+  return out;
+}
+function leaveForPost(t, toName) {
+  POACH_DEPTH++;
+  try {
+    inLeague(homeLeague(t), () => {
+      const p = postOf(t); if (!p) return;
+      const mine = playerLeague(), was = postName(t);
+      t.quit = null;
+      if (mine) vacate(t);
+      else { closePost(t); if (p.post === 'leader') S.gyms[p.slot].leader = null; else if (p.post === 'e4') S.e4[p.slot] = null; else S.gyms[p.slot].trainers[p.k] = null; }
+      const text = `${t.name} left ${was} for a bigger post at the ${toName}.`;
+      news(text, 'move', t.id); noteChange(text);
+      const ch = [];
+      if (p.post === 'gymtrainer') staffGym(p.slot);
+      else if (!mine) { if (p.post === 'leader') { fillGym(p.slot, ch); staffGym(p.slot); } else rivalE4(p.slot); }
+      ch.forEach(noteChange);
+      if (mine && p.post !== 'gymtrainer') stopFor('vacancy', `${text} ${p.post === 'leader' ? `${dn(T(S.gyms[p.slot].leader))} is acting leader` : `${T(S.e4[p.slot]).name} stands in`} until you choose.`);
+    });
+  } finally { POACH_DEPTH--; }
+  t.role = 'free';
 }
 // the Elite Four seat with the worst record of the year (runs stopped of runs faced), from the year's history
 // entry; null in a year with fewer than E4_POOR_MIN_RUNS runs at the Elite Four. Each holder's t.e4Poor counts the
@@ -2299,14 +2394,15 @@ function replacePoorStaff(changes, worstSeat) {
 // a vacant gym goes to the circuit's best challenger or to an outsider
 function fillGym(i, changes) {
   // (0.9.0) the best of the League's circuit and the recent retirees at GYM_HIRE_MIN, else an outsider
-  const cand = rivalHire(GYM_HIRE_MIN);
+  const cand = rivalHire(GYM_HIRE_MIN, [], 'leader');
   // (0.10.0) a member of staff who wants promotion and is nearly as good comes first
   const own = promoteWithin('leader', i, cand ? ovr(cand) - PROMOTE_EDGE : GYM_HIRE_MIN - PROMOTE_EDGE);
   if (own) { moveUpWithin(own, 'leader', i, changes); return; }
   let nl;
   if (cand) {
-    const back = cand.role === 'retired'; if (back) unretire(cand);
-    changes.push(back ? `${dn(cand)} came out of retirement to lead ${townName(i)} Gym (${typeLabel(cand)}).` : `${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
+    const back = cand.role === 'retired', away = STAFF_ROLES.includes(cand.role), from = away ? leagueName(homeLeague(cand)) : null; if (back) unretire(cand);
+    if (away) leaveForPost(cand, S.lgName);
+    changes.push(back ? `${dn(cand)} came out of retirement to lead ${townName(i)} Gym (${typeLabel(cand)}).` : away ? `${dn(cand)} left the ${from} to lead ${townName(i)} Gym (${typeLabel(cand)}).` : `${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
     S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
     nl = cand;
   } else {
@@ -2407,7 +2503,7 @@ function staffQuits(t) {
   const changes = [];
   if (p.post === 'gymtrainer') staffGym(p.slot);
   else if (!mine) { if (p.post === 'leader') { fillGym(p.slot, changes); staffGym(p.slot); } else rivalE4(p.slot); }
-  const text = k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
+  const text = k === 'pay' ? `${t.name} left ${was}, unpaid while the League was in the red.` : k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
     : `${t.name} left ${was}, tired of waiting for ${p.post === 'gymtrainer' ? 'a gym of their own' : 'promotion'}${fate === 'retired' ? ', and retired' : fate === 'away' ? `, and took their grudge to the ${leagueName(lgOf(t))}` : ', and returns to the circuit holding a grudge'}.`;
   news(text, 'move', t.id); noteChange(text); changes.forEach(noteChange);
   if (mine && p.post !== 'gymtrainer') stopFor('vacancy', `${text} ${p.post === 'leader' ? `${dn(T(S.gyms[p.slot].leader))} is acting leader` : `${T(S.e4[p.slot]).name} stands in`} until you choose.`);
@@ -2527,6 +2623,7 @@ function newYear() {
   S.changes = changes; S.progress = S.yearProgress || {}; S.yearProgress = {};
   settleBanVote();
   for (const t of Object.values(S.trainers)) if (t.role !== 'retired' && t.role !== 'prospect') { t.seasons = (t.seasons || 0) + 1; t.weekLog = []; }
+  cityNewYear(); // (0.15.0) city standing from the year's gym records, fading, and who controls each city
   S.season++; S.week = 0; S.dexSeason = {};
   eachLeague(() => {
     S.lastLeague = S.league; S.league = null;
@@ -2562,7 +2659,7 @@ function leagueNewYear(changes) {
   const L = yearLeague();
   const deepest = L.entries.filter(e => e.stage < 5).sort((a, b) => b.stage - a.stage)[0];
   const meta = metaMons();
-  if (myBooks()) S.banBallot = null; else buildBanBallot();
+  if (booksOn()) S.banBallot = null; else buildBanBallot(); // (0.15.0) a League with books bans for money, by its aim
   // the year's wall report: titles and badges conceded, how far the best challenger got (0 to 8 badges, 9 to 12
   // for each Elite Four member beaten, 13 for beating the Champion), runs that ended on three losses
   const best = T(L.bestId);
@@ -2639,18 +2736,47 @@ function leagueNewYear(changes) {
 // ================= WORLD STRUCTURE =================
 // New Leagues can open as the years go by, each in the next region.
 const MAX_LEAGUES = LEAGUE_SETS.length, LEAGUE_GAP = [8, 12];
-const regionOf = i => (S.regionOrder && S.regionOrder[i] != null ? S.regionOrder[i] : i);
-const nextRegionName = () => nLeagues() < MAX_LEAGUES ? LEAGUE_SETS[regionOf(nLeagues())].name : null;
+// (0.15.0, stage 4) the next League opens in the player's region (League 0's) while it has fewer than REGION_CAP,
+// then in a region with none; at most MAX_LEAGUES in the world for now (speed and save size)
+const REGION_CAP = 2;
+const regionsUsed = () => eachLeague(() => S.region);
+function nextRegion() {
+  if (nLeagues() >= MAX_LEAGUES) return null;
+  const used = regionsUsed(), n = r => used.filter(x => x === r).length, home = used[0];
+  if (n(home) < REGION_CAP) return home;
+  const r = (S.regionOrder || LEAGUE_SETS.map((_, i) => i)).find(x => !n(x));
+  return r == null ? null : r;
+}
+const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');
+const nextRegionName = () => { const r = nextRegion(); return r == null ? null : regionsUsed().includes(r) ? `new ${regionWord(r)} League` : LEAGUE_SETS[r].name; };
+// (0.15.0) a distinguished recent retiree founds a new League as a final act: usually its patron in name; rarely, a
+// top performer still fit enough takes its Champion's seat, protected for FOUNDER_CHAMP_YEARS
+const FOUNDER_RETIRED = 5, FOUNDER_CHAMP_CHANCE = 0.15, FOUNDER_CHAMP_YEARS = 10, FOUNDER_CHAMP_OVR = 70;
+function pickFounder() {
+  const score = t => ((t.titleSeasons || []).length || t.career.titles || 0) * 10 + (t.hof ? 5 : 0) + (t.career.badges || 0) / 10 + (t.seasons || 0) / 2 + (t.career.worlds || 0) * 8;
+  return Object.values(S.trainers).filter(t => t.role === 'retired' && !t.founded && S.season - (t.retiredSeason || 0) <= FOUNDER_RETIRED && t.career)
+    .sort((a, b) => score(b) - score(a))[0] || null;
+}
+const founderChamp = t => !!t && t.founderUntil != null && S.season < t.founderUntil;
 function scheduleLeague() {
   if (S.cfg && S.cfg.growth && nLeagues() < MAX_LEAGUES && !S.nextLeague) S.nextLeague = { season: S.season + ri(LEAGUE_GAP[0], LEAGUE_GAP[1]), told: false };
 }
 // open the next region's League: gyms, Elite Four, a Champion and (when the newcomers arrive) a circuit of challengers
 function openNewLeague() {
   if (nLeagues() >= MAX_LEAGUES) return null;
-  const i = nLeagues(), reg = LEAGUE_SETS[regionOf(i)];
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regionOf(i), lgName: reg.name });
+  const r = nextRegion(); if (r == null) return null;
+  const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r), f = pickFounder();
+  const champ = f && ((f.titleSeasons || []).length || f.career.titles) && f.retAge <= 55 && ovr(f) >= FOUNDER_CHAMP_OVR && rand() < FOUNDER_CHAMP_CHANCE ? f : null;
+  const lgName = second ? `${regionWord(r)} ${f ? f.name.split(' ').pop() : 'New'} League` : reg.name;
+  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: second ? reg.seat2 : reg.seat, founder: f ? f.id : null });
   if (S.cfg) S.cfg.leagues = nLeagues();
-  inLeague(i, () => foundLeague());
+  if (champ) unretire(champ);
+  inLeague(i, () => foundLeague({ champ }));
+  if (f) {
+    f.founded = { lg: i, season: S.season, champ: !!champ };
+    const text = champ ? `${dn(f)} came out of retirement to found the ${lgName}, and takes its Champion's seat for ${FOUNDER_CHAMP_YEARS} years.` : `${dn(f)} founded the ${lgName} in retirement, a final act of a long career.`;
+    news(text, 'league', f.id);
+  }
   S.leagueOpened = { i, season: S.season };
   S.nextLeague = null; scheduleLeague();
   // its founding field: a class of newcomers of its own, setting out over the first weeks

@@ -230,10 +230,10 @@ function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.seaso
 // the regions: each has a name for its League and eight cities. A League sits in one region (gym types are random
 // and reshuffle)
 const LEAGUE_SETS = [
-  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau' },
-  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver' },
-  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande' },
-  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar' },
+  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau', seat2: 'Victory Road' },
+  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver', seat2: "Dragon's Den" },
+  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande', seat2: 'Sky Pillar' },
+  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar', seat2: 'Stark Mountain' },
 ];
 // (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
@@ -939,7 +939,7 @@ function circuitGymTrainer(L) {
   if (fixedStaff()) return null;
   const cut = gtCircuitCut();
   return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
-    .sort((a, b) => ovr(b) - ovr(a)).find(t => acceptsOffer(t, 'gymtrainer')) || null;
+    .sort((a, b) => S.fin && S.fin.money < 0 ? ovr(a) - ovr(b) : ovr(b) - ovr(a)).find(t => acceptsOffer(t, 'gymtrainer')) || null; // (0.15.0) in the red, the cheapest first
 }
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
 // their own type and the rest of the team is built for the post
@@ -2247,8 +2247,25 @@ function farewell(t, m, why) {
   }
   if (!m || !m.st || !m.st.b) return;
   t.alumni = t.alumni || [];
-  t.alumni.unshift({ uid: m.uid, sp: m.sp, lvl: Math.floor(m.lvl), st: m.st, met: m.met, left: S.season || 1, why, nat: m.nat, iv: m.iv, fr: m.fr, cov: m.cov, abSlot: m.abSlot, deltaAb: m.deltaAb, radAb: m.radAb, evoLog: m.evoLog, best: m.best, sweeps: m.sweeps, megas: m.megas, bonds: m.bonds, awards: m.awards, alpha: m.alpha, shiny: m.shiny, radiant: m.radiant, delta: m.delta, lucky: m.lucky, pkrs: m.pkrs });
-  // keep the Pokémon that made a mark (3+ battles, up to 25) and the five most recent others
-  if (t.alumni.length > 12) { let quiet = 0, kept = 0; t.alumni = t.alumni.filter(a => (a.st && a.st.b >= 3) ? ++kept <= 25 : ++quiet <= 5); }
+  // 0.15.0: slimmer entries (no evolution log, Pokérus or Lucky marks), to keep saves small with several Leagues
+  const a = { uid: m.uid, sp: m.sp, lvl: Math.floor(m.lvl), st: m.st, met: m.met, left: S.season || 1, why, nat: m.nat, iv: m.iv, fr: m.fr, cov: m.cov, abSlot: m.abSlot, deltaAb: m.deltaAb, radAb: m.radAb, best: m.best, sweeps: m.sweeps, megas: m.megas, bonds: m.bonds, awards: m.awards, alpha: m.alpha, shiny: m.shiny, radiant: m.radiant, delta: m.delta };
+  for (const k of Object.keys(a)) if (a[k] === undefined) delete a[k];
+  t.alumni.unshift(a);
+  trimAlumni(t);
+}
+// keep the Pokémon that made a mark (3+ battles, ALUMNI_KEEP) and the ALUMNI_QUIET most recent others (0.15.0: was 25 and 5)
+const ALUMNI_KEEP = 10, ALUMNI_QUIET = 3, H2H_KEEP = 20;
+function trimAlumni(t, keep = ALUMNI_KEEP, quiet = ALUMNI_QUIET) {
+  if (!t.alumni || t.alumni.length <= keep + quiet) return;
+  let q = 0, k = 0; t.alumni = t.alumni.filter(a => a.legendRef || ((a.st && a.st.b >= 3) ? ++k <= keep : ++q <= quiet));
+}
+// head-to-head records: only opponents met twice or more, the H2H_KEEP most met (a rival or nemesis is always kept)
+function trimH2h(t) {
+  if (!t.h2h) return;
+  const ids = Object.keys(t.h2h); if (ids.length <= H2H_KEEP) return;
+  const keepIds = new Set(ids.filter(id => +id === t.rival || +id === t.nemesis));
+  ids.filter(id => t.h2h[id].w + t.h2h[id].l >= 2).sort((a, b) => (t.h2h[b].w + t.h2h[b].l) - (t.h2h[a].w + t.h2h[a].l)).slice(0, H2H_KEEP).forEach(id => keepIds.add(id));
+  const out = {}; for (const id of keepIds) if (t.h2h[id]) out[id] = t.h2h[id];
+  t.h2h = out;
 }
 

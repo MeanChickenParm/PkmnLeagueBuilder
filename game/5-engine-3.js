@@ -1221,8 +1221,12 @@ function newWorld(cfg = {}) {
   startWorld();
 }
 // one League's founding staff: eight Gym Leaders, the Elite Four and a Champion
-function foundLeague() {
-  const types = shuffle(TYPES), cities = regionCities(S.region);
+function foundLeague(opts = {}) {
+  if (!fixedStaff()) { initBooks(); S.fin.quiet = true; } // (0.15.0) every League keeps books; no fees for its founding staff
+  // (0.15.0) a League's 8 gym cities: those no other League uses first, then shared ones, the largest first (a second
+  // League in a region takes its three towns with no gym and five of the first League's cities)
+  const use = {}; for (const L of S.leagues || []) if (L && L !== S && L.region === S.region) for (const g of L.gyms || []) use[g.city] = (use[g.city] || 0) + 1;
+  const types = shuffle(TYPES), cities = regionCities(S.region).slice().sort((a, b) => (use[a.id] || 0) - (use[b.id] || 0) || citySpent(b) - citySpent(a) || a.id - b.id);
   for (let i = 0; i < 8; i++) {
     S.gyms.push({ leader: null, city: cities[i].id, w: 0, l: 0, hist: [] });
     const t = newTrainer({ age: ri(22, 50), quality: staffQ(50 + i * 2.2), role: 'leader', specialty: types[i] });
@@ -1238,9 +1242,10 @@ function foundLeague() {
     installElite(t, 'e4', i);
     if (t.famous) news(`${t.name} has joined the ${S.lgName} as a member of the Elite Four.`, 'move', t.id);
   }
-  const c = newTrainer({ age: ri(24, 40), quality: staffQ(72), role: 'champion', specialty: types[12] });
-  c.foundingChamp = true;
+  const c = opts.champ || newTrainer({ age: ri(24, 40), quality: staffQ(72), role: 'champion', specialty: types[12] });
+  if (opts.champ) c.founderUntil = S.season + FOUNDER_CHAMP_YEARS; else c.foundingChamp = true;
   installElite(c, 'champion');
+  if (S.fin) S.fin.quiet = false;
 }
 // ---------- challengers changing Leagues ----------
 // How well a trainer's types line up against League i: +1 for each foe Pokémon they hit super-effectively, −1 for
@@ -1272,7 +1277,8 @@ function champLeagueMap() {
   const key = `${S.season}|${S.phase}|${lens}`;
   if (champLgCache.key === key && champLgCache.map) return champLgCache.map;
   const map = new Map();
-  eachLeague(i => { for (const h of S.history) { if (!map.has(h.champ)) map.set(h.champ, new Set()); map.get(h.champ).add(i); } });
+  // 0.15.0: a League counts for a trainer who won its title (beat its Champion), not for whoever held the seat
+  eachLeague(i => { for (const h of S.history) for (const w of h.winners || []) { const id = typeof w === 'object' ? w.id : w; if (!map.has(id)) map.set(id, new Set()); map.get(id).add(i); } });
   champLgCache = { key, map };
   return map;
 }
@@ -1449,8 +1455,12 @@ const PAY_FAMOUS = 1.25, PAY_TITLE = 1.15, SIGN_WEEKS = 12, SEVER_WEEKS = 12, RA
 const BIDS = [0, 0.25, 0.5], BID_ODDS = 0.12; // pay over the asking, and what each step adds to the odds an offer is taken
 const BAN_PRICE = 15000, BAN_PAID_MAX = 3, BAN_PROTECT = 2; // a ban-year's price (×1 to ×3 by meta rank), bans at once, years protected after
 const FIN_LOG = 60;
-const booksOn = () => !!(S && S.fin && handOn());
-const myBooks = () => booksOn() && (S.lg || 0) === 0;
+// (0.15.0, stage 4) every League keeps books (the League field S.fin), except in the wall report's fixed tiers;
+// rival Leagues spend by their aim. booksOn() is the bound League; myBooks() the player's own League.
+const booksOn = () => !!(S && S.fin);
+const myBooks = () => booksOn() && playerLeague();
+// the player's League's books, whichever League is bound (the header, the nav)
+const playerFin = () => (S && handOn() ? inLeague(0, () => S.fin) : null);
 // a member of staff's weekly pay: the post's base, scaled by OVR ((OVR / 60)², fixed at hire and reviewed each New
 // Year), more for famous trainers and title winners, times any raise or bid
 function payBase(post, slot) { return post === 'gymtrainer' ? PAY_BASE.gymtrainer : post === 'leader' ? PAY_BASE.leader + PAY_BASE.leaderStep * (slot || 0) : post === 'e4' ? PAY_BASE.e4 + PAY_BASE.e4Step * (slot || 0) : PAY_BASE.champion; }
@@ -1460,8 +1470,17 @@ function payFor(t, post, slot, o) {
 }
 function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
-const askFor = (t, post, slot) => payFor(t, post, slot);
-function wageBill() { return inLeague(0, () => staffIds().map(T).filter(Boolean).reduce((a, t) => a + payOf(t), 0)); }
+const askFor = (t, post, slot) => Math.round(payFor(t, post, slot) * richMul());
+// the bound League's weekly wage bill
+function wageBill() { return staffIds().map(T).filter(Boolean).reduce((a, t) => a + payOf(t), 0); }
+// (0.15.0, catch-up) stars ask more of a League much richer than the world's average, fixed when they are hired: up to
+// RICH_PAY_MAX more, reached at RICH_PAY_AT times the average. Gentle: pulling ahead is allowed, never punished.
+const RICH_PAY_MAX = 0.2, RICH_PAY_AT = 4;
+function richMul() {
+  if (!S.fin || nLeagues() < 2) return 1;
+  const avg = Math.max(START_FUND, S.moneyAvg || 0);
+  return 1 + clamp((S.fin.money - avg) / (avg * (RICH_PAY_AT - 1)), 0, 1) * RICH_PAY_MAX;
+}
 function finYear() { const f = S.fin; if (!f.yr || f.yr.season !== S.season) { if (f.yr) f.last = f.yr; f.yr = { season: S.season, in: {}, out: {} }; } return f.yr; }
 // money in (+) or out (−), under a heading; one line for the ledger unless it is routine weekly business
 function book(amt, what, text) {
@@ -1470,44 +1489,80 @@ function book(amt, what, text) {
   f.money = Math.round(f.money + amt);
   const y = finYear(), side = amt >= 0 ? y.in : y.out; side[what] = (side[what] || 0) + Math.abs(Math.round(amt));
   if (text) { f.log.unshift({ turn: S.turn, amt: Math.round(amt), text }); if (f.log.length > FIN_LOG) f.log.length = FIN_LOG; }
-  if (before >= 0 && f.money < 0) { news(`The League is in the red (${money(f.money)}). Nothing new can be bought until it is back above zero.`, 'league'); stopFor('money', `The League is in the red (${money(f.money)}).`); }
+  if (before >= 0 && f.money < 0) {
+    f.redAt = S.turn;
+    if (playerLeague()) { news(`The League is in the red (${money(f.money)}). Nothing new can be bought until it is back above zero, and every ${RED_BITE_WEEKS} weeks in the red the best-paid member of staff gives notice.`, 'league'); stopFor('money', `The League is in the red (${money(f.money)}).`); }
+    else news(`The ${S.lgName} is in the red.`, 'league');
+  }
 }
 const money = n => `${n < 0 ? '−' : ''}₽${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
 // can the player spend this much now? (below zero, or short of it, they can't)
 const canSpend = amt => !booksOn() || S.fin.money >= amt;
-function initBooks() { S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0 }; finYear(); }
+function initBooks() {
+  const mine = !!(S.cfg && S.cfg.hand) && (S.lg || 0) === 0;
+  S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0, aim: mine ? null : pickAim(), aimAt: S.season || 0, redAt: null };
+  finYear();
+}
 // a member of staff takes a post: their pay is set, and someone new to the staff costs a signing fee
 function postPay(t, wasStaff) {
-  t.payOvr = ovr(t); t.payMul = t.bidMul || 1; t.bidMul = null; t.raised = false; t.lastPay = payOf(t);
-  if (!myBooks() || wasStaff || S.founding || S.fin.quiet || t.acting) return;
+  t.payOvr = ovr(t); t.payMul = (t.bidMul || 1) * (wasStaff || t.acting ? 1 : richMul()); t.bidMul = null; t.raised = false; t.lastPay = payOf(t);
+  // (0.15.0) no signing fee while in the red (only automatic hires happen then), so the red doesn't feed on itself
+  if (!booksOn() || wasStaff || S.founding || S.fin.quiet || t.acting || S.fin.money < 0) return;
   const fee = SIGN_WEEKS * payOf(t);
   if (fee) book(-fee, 'signing', `Signing fee: ${t.name} (${postName(t)})`);
+  // (0.15.0) staff from another League: their old League receives the fee
+  if (fee && t.leftAt === S.turn && t.leftLg != null && t.leftLg !== (S.lg || 0) && t.leftLg < nLeagues()) { const to = S.lgName; inLeague(t.leftLg, () => { if (S.fin) book(fee, 'transfers', `Transfer fee: ${t.name} to the ${to}`); }); }
 }
 // severance for someone let go (not for someone you let go on another run they asked for)
 function severance(t, was) {
-  if (!myBooks()) return;
+  if (!booksOn()) return;
   const fee = SEVER_WEEKS * (t.lastPay || 0);
   if (fee) book(-fee, 'severance', `Severance: ${t.name} (${was})`);
 }
-// once a week for League 0: salaries, attractions, and paid bans that run out
+// once a week for every League with books: salaries, attractions, city income, paid bans that run out, and the red
 function moneyWeek() {
-  if (!booksOn()) return;
-  inLeague(0, () => {
+  const all = eachLeague(() => S.fin ? S.fin.money : null).filter(x => x != null);
+  if (!all.length) return;
+  S.moneyAvg = Math.round(all.reduce((a, b) => a + b, 0) / all.length); // world-level: the catch-up rules read it
+  eachLeague(() => {
+    if (!S.fin) return;
     for (const t of staffIds().map(T).filter(Boolean)) t.lastPay = payOf(t);
     const w = wageBill(); if (w) book(-w, 'salaries');
     const a = attractionIncome(); if (a) book(a, 'attractions');
+    const ci = cityIncome(); if (ci) book(ci, 'cities');
     expirePaidBans();
+    redWeek();
   });
+}
+// (0.15.0) money limits what a League can field: every RED_BITE_WEEKS weeks in the red its best-paid member of staff
+// (not the Champion) gives QUIT_NOTICE weeks' notice; back above zero, those notices are withdrawn
+const RED_BITE_WEEKS = 4;
+function redWeek() {
+  const f = S.fin;
+  if (f.money >= 0) {
+    if (f.redAt != null) { f.redAt = null; for (const t of staffIds().map(T)) if (t && t.quit && t.quit.k === 'pay') { t.quit = null; news(`${dn(t)} will stay at ${postName(t)} now the ${S.lgName} is out of the red.`, 'move', t.id); } }
+    return;
+  }
+  if (f.redAt == null) f.redAt = S.turn;
+  const wk = S.turn - f.redAt;
+  if (wk <= 0 || wk % RED_BITE_WEEKS) return;
+  const t = staffIds().map(T).filter(x => x && x.role !== 'champion' && !x.acting && !x.quit && x.stepDown == null && postOf(x)).sort((a, b) => payOf(b) - payOf(a))[0];
+  if (!t) return;
+  t.quit = { at: S.turn + QUIT_NOTICE, k: 'pay' };
+  const msg = `${dn(t)} (${postName(t)}) hasn't been paid in full and will leave on ${turnDate(t.quit.at)} unless the ${S.lgName} is back out of the red.`;
+  news(msg, 'move', t.id); noteChange(msg);
+  if (playerLeague()) stopFor('money', msg);
 }
 // New Year for League 0: the wall prize, and every salary reviewed against OVR now
 function moneyNewYear(titles) {
-  if (!myBooks()) return;
+  if (!booksOn()) return;
   const prize = Math.max(0, WALL_PRIZE - WALL_PRIZE_LOSS * titles);
   if (prize) book(prize, 'prize', `Wall prize for Year ${S.season} (${titles} let through)`);
   for (const t of staffIds().map(T).filter(Boolean)) t.payOvr = ovr(t);
+  if (!playerLeague()) aimNewYear();
 }
 // the entry fee for a run begun on League 0's circuit
-function entryFee() { if (myBooks()) book(ENTRY_FEE, 'entry'); }
+function entryFee() { if (booksOn()) book(ENTRY_FEE, 'entry'); }
 // a raise: a restless member of staff (or one who gave notice over promotion) has their clock put back a year and
 // their notice withdrawn, once per post, for RAISE_WEEKS weeks' pay up front and RAISE_MUL on their pay after
 function canRaise(t) { return !!t && !t.raised && !!t.wish && t.wish.k === 'up' && (restless(t) || (t.quit && t.quit.k === 'up')); }
@@ -1530,18 +1585,19 @@ const CITY_GROW = [60000, 180000], SEAT_SLOTS = 3, UP_COST = [25000, 50000, 1000
 const UPGRADES = {
   hall:    { name: 'Training hall',   text: 'Staff here gain a rating point per level on each birthday (Scouting, Strategy or Training), up to 95.' },
   feature: { name: 'Gym feature',     text: 'A home edge: staff here fight at +1.5% per level in their own battles.' },
-  attract: { name: 'Attraction',      text: 'Brings in income every week.', income: [250, 550, 900] },
+  attract: { name: 'Attraction',      text: 'Brings in income every week.', income: [200, 400, 650] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
 };
 const cityLg = () => S.lg || 0;
 function cityB(c, i = cityLg()) { c.b = c.b || {}; return c.b[i] = c.b[i] || []; }
 const citySpent = c => Object.values(c.spent || {}).reduce((a, b) => a + b, 0);
 const citySlots = c => 1 + (citySpent(c) >= CITY_GROW[0]) + (citySpent(c) >= CITY_GROW[1]);
+const seatPlace = () => S.seatName || LEAGUE_SETS[S.region].seat;
 function seatB() { return S.seatB = S.seatB || []; }
 // the League's places: its seat, then the gym cities in gym order, then the region's cities where it has no gym
 function myPlaces() {
   const all = regionCities(S.region), gymC = S.gyms.map(g => g.city);
-  return [{ seat: true, name: LEAGUE_SETS[S.region].seat, slots: SEAT_SLOTS, b: seatB() }]
+  return [{ seat: true, name: seatPlace(), slots: SEAT_SLOTS, b: seatB() }]
     .concat(S.gyms.map((g, i) => { const c = S.cities[g.city]; return { c, gym: i, name: c.name, slots: citySlots(c), b: cityB(c) }; }))
     .concat(all.filter(c => !gymC.includes(c.id)).map(c => ({ c, gym: null, name: c.name, slots: citySlots(c), b: cityB(c), none: true })));
 }
@@ -1559,15 +1615,15 @@ function buildCheck(where, k) {
   if (!lv && pl.b.length >= pl.slots) return { why: 'No free slot.' };
   return { cost: UP_COST[lv], lv: lv + 1 };
 }
-function build(where, k) {
-  return inLeague(0, () => {
+function build(where, k, lg = 0) {
+  return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
     const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push({ k, lv: 1 });
-    const name = where === 'seat' ? LEAGUE_SETS[S.region].seat : townName(where);
-    if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
+    const name = where === 'seat' ? seatPlace() : townName(where);
+    if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; addStanding(c, ck.cost / STAND_SPEND); }
     book(-ck.cost, 'building', `${UPGRADES[k].name} ${ck.lv > 1 ? `to level ${ck.lv}` : 'built'} in ${name}`);
     news(`The League ${ck.lv > 1 ? `raised its ${UPGRADES[k].name.toLowerCase()} in ${name} to level ${ck.lv}` : `built a ${UPGRADES[k].name.toLowerCase()} in ${name}`}.`, 'league');
     return null;
@@ -1575,20 +1631,69 @@ function build(where, k) {
 }
 // a gym moves to a city of the region where the League has no gym: the fee, and everything the League built in the
 // old city is lost (the city keeps its size)
-function moveGym(i, cityId) {
-  return inLeague(0, () => {
+function moveGym(i, cityId, lg = 0) {
+  return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
     const g = S.gyms[i], to = S.cities[cityId];
     if (!g || !to || to.region !== S.region || S.gyms.some(x => x.city === cityId)) return 'That city is not free.';
     if (!canSpend(MOVE_FEE)) return 'Not enough money.';
     const from = S.cities[g.city], lost = cityB(from).length;
-    from.b[cityLg()] = [];
+    from.b[cityLg()] = []; if (from.st) delete from.st[cityLg()];
     g.city = cityId;
     book(-MOVE_FEE, 'building', `Moved ${from.name} Gym to ${to.name}`);
     const text = `${from.name} Gym moved to ${to.name}${lost ? `; what the League had built in ${from.name} is lost` : ''}.`;
     news(text, 'league'); noteChange(text);
     return null;
   });
+}
+// ---------- city standing, control and income (0.15.0, stage 4) ----------
+// A League's standing in a city where it has a gym comes from what it spends there (a point per STAND_SPEND) and,
+// each New Year, from how its gym held against the region's average (a point per percentage point); all standing then
+// fades by STAND_FADE. The League with the most standing among those with a gym there controls the city (a tie keeps
+// the controller). Each city with a gym earns CITY_INCOME a week by its size (slots); the controller takes
+// CITY_CTRL_SHARE and the rest goes to the other Leagues with a gym there by their standing. All numbers provisional.
+const STAND_SPEND = 2000, STAND_FADE = 0.25, CITY_INCOME = [250, 350, 500], CITY_CTRL_SHARE = 0.5;
+// which Leagues have a gym in each city: { cityId: [league, …] }, read from every League without binding
+function gymMap() {
+  const out = {};
+  for (let i = 0; i < nLeagues(); i++) { const L = i === (S.lg || 0) ? S : S.leagues[i]; for (const g of (L && L.gyms) || []) (out[g.city] = out[g.city] || []).push(i); }
+  return out;
+}
+function addStanding(c, n, lg = cityLg()) { c.st = c.st || {}; c.st[lg] = Math.round(((c.st[lg] || 0) + n) * 10) / 10; }
+const standing = (c, lg = cityLg()) => (c.st && c.st[lg]) || 0;
+// the controlling League of city c (null if no gym there); lgs: the Leagues with a gym there
+function cityCtrl(c, lgs) {
+  if (!lgs || !lgs.length) return null;
+  if (lgs.length === 1) return lgs[0];
+  const best = Math.max(...lgs.map(i => standing(c, i)));
+  return lgs.includes(c.ctrl) && standing(c, c.ctrl) >= best ? c.ctrl : lgs.find(i => standing(c, i) === best);
+}
+// the bound League's share of city c's weekly income
+function cityShare(c, lgs, lg = cityLg()) {
+  if (!lgs || !lgs.includes(lg)) return 0;
+  const inc = CITY_INCOME[citySlots(c) - 1], ctrl = cityCtrl(c, lgs);
+  if (lgs.length === 1) return inc;
+  if (lg === ctrl) return Math.round(inc * CITY_CTRL_SHARE);
+  const rest = lgs.filter(i => i !== ctrl), pos = rest.map(i => Math.max(0, standing(c, i))), tot = pos.reduce((a, b) => a + b, 0);
+  return Math.round(inc * (1 - CITY_CTRL_SHARE) * (tot > 0 ? Math.max(0, standing(c, lg)) / tot : 1 / rest.length));
+}
+function cityIncome() { const m = gymMap(); return S.gyms.reduce((a, g) => a + cityShare(S.cities[g.city], m[g.city]), 0); }
+// New Year, before the gyms' year is reset: standing from each gym's record against its region's average, fading,
+// and control (news when it changes hands in a shared city)
+function cityNewYear() {
+  const held = g => g.w + g.l ? g.w / (g.w + g.l) : null, byRegion = {};
+  eachLeague(() => S.gyms.forEach(g => { const h = held(g); if (h != null) (byRegion[S.region] = byRegion[S.region] || []).push(h); }));
+  eachLeague(i => S.gyms.forEach(g => {
+    const h = held(g), rs = byRegion[S.region] || []; if (h == null || !rs.length) return;
+    addStanding(S.cities[g.city], (h - rs.reduce((a, b) => a + b, 0) / rs.length) * 100, i);
+  }));
+  const m = gymMap();
+  for (const c of Object.values(S.cities)) {
+    if (c.st) for (const k of Object.keys(c.st)) { if (!(m[c.id] || []).includes(+k)) delete c.st[k]; else c.st[k] = Math.round(c.st[k] * (1 - STAND_FADE) * 10) / 10; }
+    const was = c.ctrl, now = cityCtrl(c, m[c.id]);
+    c.ctrl = now;
+    if (was != null && now != null && was !== now && (m[c.id] || []).length > 1) { const text = `The ${leagueName(now)} took control of ${c.name} from the ${leagueName(was)}.`; inLeague(now, () => { news(text, 'league'); noteChange(text); }); }
+  }
 }
 // upgrade effects in the bound League
 function homeEdge(where) { return 1 + 0.015 * placeLv(where, 'feature'); }
@@ -1620,8 +1725,8 @@ function banCands() {
   return out;
 }
 function paidBans() { return (S.bans || []).filter(b => b.until != null); }
-function payBan(sp, len) {
-  return inLeague(0, () => {
+function payBan(sp, len, lg = 0) {
+  return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
     len = Math.round(len); if (!(len >= 1 && len <= 3)) return 'A ban lasts 1 to 3 years.';
     const c = banCands().find(x => x.sp === sp); if (!c) return 'Not seen on your circuit.';
@@ -1651,4 +1756,51 @@ function expirePaidBans() {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+
+// ---------- aims: how a rival League spends (0.15.0, stage 4) ----------
+// Each League not staffed by hand has an aim, drawn at founding. It decides its steers (replacing the old simple rule),
+// what it builds, whether it pays for bans (replacing the trainers' vote), and how it hires (rivalHire). A League keeps
+// its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
+// world's average) turns to a wall or to stars. All numbers are provisional.
+const AIMS = {
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['seat', 'hall'], ['seat', 'attract']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['gyms', 'hall'], ['seat', 'scout'], ['seat', 'attract']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'attract'], ['seat', 'hall']] },
+};
+const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
+const pickAim = () => { const r = rand(); return r < 0.4 ? 'wall' : r < 0.7 ? 'star' : 'money'; };
+const aimOf = () => (S.fin && S.fin.aim) || null;
+// once a month in a rival League: steers by aim, then at most one purchase
+function aimMonth() {
+  const aim = aimOf();
+  if (!aim || aim === 'wall') rivalSteers();
+  else { const st = steerState(); st.line = 'bal'; st.posts = {};
+    // a star-maker lets its gyms build freely and has only its Elite Four and Champion counter the year
+    if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
+  if (aim) aimSpend(aim);
+}
+function aimSpend(aim) {
+  const f = S.fin, A = AIMS[aim], lg = S.lg || 0;
+  if (f.money < 0) return;
+  const spare = f.money - A.reserve;
+  if (aim === 'wall' && paidBans().length < BAN_PAID_MAX && rand() < AIM_BAN_ODDS) {
+    const c = banCands().find(x => !x.banned && !x.prot && x.rank <= 3);
+    if (c && spare >= c.price + UP_COST[0]) { payBan(c.sp, 1, lg); return; }
+  }
+  for (const [w, k] of A.build) {
+    const spots = w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
+    for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare) { build(where, k, lg); return; } }
+  }
+}
+// New Year in a rival League: a change of aim when the books call for it
+function aimNewYear() {
+  const f = S.fin; if (!f || !f.aim || S.season - (f.aimAt || 0) < AIM_MIN_YEARS) return;
+  let to = null;
+  if (f.money < 0 && f.aim !== 'money') to = 'money';
+  else if (f.aim === 'money' && f.money > AIM_RICH * Math.max(START_FUND, S.moneyAvg || 0)) to = rand() < 0.5 ? 'wall' : 'star';
+  if (!to) return;
+  f.aim = to; f.aimAt = S.season;
+  const text = `The ${S.lgName} has a new aim: ${AIMS[to].name.toLowerCase()}.`;
+  news(text, 'league'); noteChange(text);
+}
+if (typeof module !== 'undefined') module.exports = { gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, scheduleLeague, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
