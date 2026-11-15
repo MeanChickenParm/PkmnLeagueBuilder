@@ -104,7 +104,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The economy was tuned in 0.16.0** (design doc 5.7): the AI Leagues' poorest holds 0.72 of their average wealth at year 25, the richest 1.29, and a League crashed to 40% of the others recovers in about 5.7 years, but in one world of eight it never does (it stays deep in the red after the relative crash). Rival Leagues now spend down to their reserve on buildings and upkeep instead of hoarding.
 - **Offers to other Leagues' circuits** go only to challengers resting between runs (they come at once); one out on a run is not listed.
 - **A League's aim is not shown anywhere but the League table and the news.** Rival steers by aim are simple.
-- **New Leagues still need the growth option** (the old timer, 8 to 12 years); a founder is picked when one opens. Founders driving openings was offered and not chosen.
+- **New Leagues still need the growth option.** Since 0.17.0 founders drive openings (prestige ≥ 60, 8+ years apart), up to 6 Leagues.
 - **Cross-League title challenges** come only when a League has no challenger of its own that year; at most one challenge for the Champion's seat a year.
 - **Poaching skips staff with a notice, acting holders and founder Champions;** a poached member's new post picks a new ambition. Rival Leagues remember nothing about who poached whom.
 - **Speed and saves with four Leagues:** about 10 seconds a simulated year in Node; saves were about 18 MB after 25 years before the trims (re-measure).
@@ -112,7 +112,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## Left over from the economy tuning (0.16.0)
 - **All the numbers are provisional:** attractions 120/240/360, `ENTRY_FEE` 700, `WALL_PRIZE_LOSS` 15,000, `UP_COST` levels 4–5 (200,000, 400,000), `UPKEEP` 0.05, the academy's prices (100,000/200,000/400,000), `ACADEMY_PAY` 0.85, `ACADEMY_LOYAL` 0.25, `ACADEMY_Q` 6, `AIM_BID` 150,000/400,000, `AIM_UPGRADE` 300,000, `UPGRADE_EDGE` 6.
 - **Losing buildings** (the owner, Nov 15: "interesting"): no League can sell or lose what it built; a crash is only cash. An idea for later, not decided.
-- **The academy's prospects** are tagged `t.academy` for stage 5 (sending a League's own at other Leagues); nothing uses the tag beyond pay and loyalty.
+- **The academy's prospects** can be sent as contenders since 0.17.0 (they always agree).
 - **Upkeep is charged in the red too,** and halls and features never pay it back; a League deep in the red keeps paying it. The relative-crash test's one world that never recovers may be this.
 - **The passive player hoards:** it buys nothing, so in a four-League world it ends on about 1.9M cash with no buildings (0.7 of the AI average wealth); alone in a one-League world (`--hand`), 3.2M. Not a target (the owner chose AI-only targets).
 - **AI upgrades** replace at most one senior member a year and only with 300,000 spare; the player has no matching button (the player can already bid and let staff go).
@@ -121,3 +121,14 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## Long-term ideas (the owner, Nov 15, after 0.16.0; design doc item 31)
 - **League folding.** No League can close: nothing removes a League, money has no floor, and a broke League keeps every post filled with the cheapest trainers who fit. A League that never recovers stays open forever and takes a place under `MAX_LEAGUES` and `REGION_CAP`. Idea: fold a League that stays deep in the red long enough, freeing its cities, staff and challengers (maybe for a founder's new League). Fits stage 5.
 - **Selling and losing buildings.** Nothing sells or removes a League's buildings except moving a gym. Idea: sell in a crisis, or lose them in a crash, when a League folds or when a rival takes a city.
+
+## Left over from stage 5 (0.17.0)
+- **All the numbers are provisional:** `PRESTIGE_BAR` 60 (set so a hands-off player alone in a region reaches it around year 10 to 14, and a strong retiree founds a League from about year 10), `PRESTIGE_FADE` 0.1 and the yearly gains (10 a perfect year, 2 a title under the average up to 10, 10 a World Championship, 1 a city, 6/4/2/1 by wealth), `FOUNDER_ODDS` 0.3, `LEAGUE_MIN_GAP` 8, `MAX_LEAGUES` 6, `SPON_YEARS` 2, `SPON_MAX` 4, `SPON_BASE` 60, `SPON_BOUNTY` 40,000, `SPON_E4_BOUNTY` 5,000, `SPON_ACCEPT` 0.6, `SPON_RENEW_WEEKS` 24, `SPON_AIM` 3/2/1, `SPON_AIM_SPARE` 50,000, `SPON_AIM_ODDS` 0.5, `SPON_AIM_OVR` 60, `LEAVE_FEE` 750,000, `LEAVE_TAKE` 3.
+- **Not measured:** the economy report and the wall report were not rerun. Contenders move strong challengers between circuits (a League sending its best away walls better at home) and move money by bounties; whether that helps catch-up or lets a rich League pull away is unknown.
+- **A League's prestige** is earned by the League, not the player: a new League you found starts at 0, and the one you leave keeps its prestige.
+- **The Champion can't come with you** when you leave (kept simple); the carried staff are placed at the same gym number or seat when it is free.
+- **Contracts the player made stay with the League left** (it carries on paying and may renew them as an AI).
+- **A contender out on a run when signed or recalled** goes when the run ends; until then they still count toward the cap.
+- **Contenders and the Triple Crown:** a contender who wins a title counts it like anyone (a Triple Crown chaser who is under contract doesn't move League until the contract ends).
+- **League folding** (item 31) stays a long-term idea; the higher cap makes room for openings without it.
+- **Fixed in 0.17.0:** the League table view was missing from the list of views since 0.15.0, so its menu item led to the circuit; a new Gym Leader could keep a Pokémon that evolved off the gym's type at its level (seen once in the growth sim).

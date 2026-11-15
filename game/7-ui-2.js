@@ -57,6 +57,8 @@ function gymWatch(g, i) {
   const w = g.watch || []; if (!w.length) return '';
   return `<div class="eyebrow" style="margin-top:.6rem">Badges conceded lately</div><div class="logs">${w.map((r, k) => `<button class="btn small" data-act="watchgym" data-g="${i}" data-i="${k}">${esc(r.sides[0].name)} · ${weekShort(r.when.week)}, Year ${r.when.season}</button>`).reverse().join('')}</div>`;
 }
+// (0.17.0) a sponsored contender: whose, and against whom
+const sponTag = t => t && t.spon ? ` <span class="tag small" title="Under contract until ${turnDate(t.spon.until)}">${t.spon.pending === 'send' ? 'Going' : 'Contender'}: ${esc(lgShort(t.spon.lg))} vs ${esc(lgShort(t.spon.to))}</span>` : '';
 // ---------- staff notices (0.6.0) ----------
 // acting holders and staff who have announced they are stepping down, tagged wherever their card shows
 function staffTags(t) {
@@ -64,9 +66,10 @@ function staffTags(t) {
 }
 // (0.9.0) on the player's circuit: a challenger who impressed the League, and one hired who comes after their run
 function hireTags(t) {
-  if (!handOn() || (S.lg || 0) !== 0) return '';
+  const sp = sponTag(t);
+  if (!handOn() || (S.lg || 0) !== ME()) return sp;
   const imp = impressed(t);
-  return (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
+  return sp + (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
 }
 // (0.9.0) a warning on a Gym Leader's poor years in a row, or an Elite Four member with the worst record of the four
 // two or more years running. In the player's League nothing happens on its own: replacing them is the player's call.
@@ -104,7 +107,7 @@ function hireRowOf(c, warn, ask) {
 const incomingLine = (id, what) => { const t = T(id); return t && t.hired ? `<p><b>${tname(id)}</b> accepted ${what} and comes after their run, by ${turnDate(t.hired.by)} at the latest. <button class="btn small" data-act="hirewd" data-id="${id}">Withdraw the offer</button></p>` : ''; };
 // the player's League: open vacancies (with the picker) and announced departures, at the top of the circuit and gym pages
 function staffNotices() {
-  if (!handOn() || (S.lg || 0) !== 0) return '';
+  if (!handOn() || (S.lg || 0) !== ME()) return '';
   const vac = S.vacancies || [], going = staffIds().map(T).filter(t => t && t.stepDown != null).sort((a, b) => a.stepDown - b.stepDown);
   const leaving = staffIds().map(T).filter(t => t && t.quit && t.role !== 'gymtrainer').sort((a, b) => a.quit.at - b.quit.at);
   const asking = staffIds().map(T).filter(t => t && !t.quit && t.wish && t.wish.k === 'run' && t.wish.asked != null);
@@ -218,14 +221,14 @@ function viewMeta() {
 }
 // ---------- money and cities (0.13.0) ----------
 // the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
-const FIN_NAMES = { entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees' };
+const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees' };
 function finTable(y) {
   if (!y) return '<p class="muted">Nothing yet.</p>';
   const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
   const tin = Object.values(y.in).reduce((a, b) => a + b, 0), tout = Object.values(y.out).reduce((a, b) => a + b, 0);
   return `<div class="scroll"><table class="tbl"><tbody><tr><th colspan="2">In</th></tr>${row(y.in, '+') || '<tr><td colspan="2" class="muted">—</td></tr>'}<tr><th colspan="2">Out</th></tr>${row(y.out, '−') || '<tr><td colspan="2" class="muted">—</td></tr>'}<tr><td><b>Net</b></td><td class="num"><b>${money(tin - tout)}</b></td></tr></tbody></table></div>`;
 }
-function viewMoney() { return inLeague(0, viewMoney0); }
+function viewMoney() { return inLeague(ME(), viewMoney0); }
 function viewMoney0() {
   if (!booksOn()) return '<section class="panel"><p class="muted">Only a League you staff by hand keeps books.</p></section>';
   const f = S.fin, staff = staffIds().map(T).filter(Boolean), w = wageBill();
@@ -237,6 +240,7 @@ function viewMoney0() {
     <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Trainer</th><th>OVR</th><th>Pay</th><th></th></tr></thead><tbody>
     ${staff.map(t => `<tr><td class="small">${postName(t)}</td><td>${tname(t.id)}${wishTag(t)}</td><td>${ovrPill(t)}</td><td class="num">${money(payOf(t))}${t.payMul > 1 ? ' <span class="small muted">(+' + Math.round((t.payMul - 1) * 100) + '%)</span>' : ''}</td><td>${canRaise(t) ? `<button class="btn small" data-act="raise" data-id="${t.id}"${canSpend(raiseCost(t)) ? '' : ' disabled'}>Raise (${money(raiseCost(t))})</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div></section>
+  ${leavePanel()}
   <section class="panel"><div class="ph"><h2>Ledger</h2><span class="muted">Everything but the weekly salaries, entry fees and attractions</span></div>
     ${f.log.length ? `<div class="scroll"><table class="tbl"><tbody>${f.log.map(x => `<tr><td class="small muted">${turnDate(x.turn)}</td><td>${esc(x.text)}</td><td class="num">${x.amt >= 0 ? '+' : ''}${money(x.amt)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}</section>`;
 }
@@ -247,7 +251,7 @@ function leagueRow(i) {
     const h = S.history.filter(x => x.titles != null), lh = h[h.length - 1];
     return { i, name: S.lgName, aim: f ? (f.aim ? AIMS[f.aim].name : 'Yours') : '—', money: f ? f.money : null, estate: f ? estateCost() : null, inc: last ? sum(last.in) : null, out: last ? sum(last.out) : null,
       wage: f ? wageBill() : null, ctrl: S.gyms.filter(g => cityCtrl(S.cities[g.city], m[g.city]) === i).length, shared: S.gyms.filter(g => (m[g.city] || []).length > 1).length,
-      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null };
+      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, prest: Math.round(S.prest || 0), spon: contendersOf(i).length };
   });
 }
 function viewTable() {
@@ -255,12 +259,44 @@ function viewTable() {
   const avg = rows.filter(r => r.money != null), am = avg.length ? avg.reduce((a, r) => a + r.money, 0) / avg.length : 0;
   return `<section class="panel callout"><div class="eyebrow">${nLeagues()} Leagues</div><h2>League table</h2>
     <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Built is what the League owns in cities and at its seat, at cost. Income and spending are last year's; cities count those where the League has a gym and controls it (shared cities in brackets). Trainers let through are last year's.</p></section>
-  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th></tr></thead><tbody>
-    ${rows.map(r => `<tr${r.i === 0 && handOn() ? ' class="me"' : ''}><td><b>${esc(r.name)}</b>${r.founder ? ` <span class="small muted">founded by ${tname(r.founder.id)}</span>` : ''}</td><td class="small">${r.aim}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td></tr>`).join('')}
+  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th><th title="Earned each New Year, fading a tenth a year">Prestige</th><th>Contenders</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.i === ME() && handOn() ? ' class="me"' : ''}><td><b>${esc(r.name)}</b>${r.founder ? ` <span class="small muted">founded by ${tname(r.founder.id)}</span>` : ''}</td><td class="small">${r.aim}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td><td class="num">${r.prest}</td><td class="num">${r.spon}</td></tr>`).join('')}
   </tbody></table></div></section>`;
 }
+// ---------- contenders (0.17.0, stage 5) ----------
+// Your League's sponsored contenders: who is out, where, how they are doing and what they have earned; who you could
+// send; and the contenders other Leagues have sent at you.
+let sendTo = null;
+function viewContenders() { return inLeague(ME(), viewContenders0); }
+function viewContenders0() {
+  const mine = contendersOf(ME()), at = contendersAt(ME()), targets = sponTargets(), cands = sendCands().slice(0, 30);
+  if (sendTo == null || !targets.includes(sendTo)) sendTo = targets[0] ?? null;
+  const row = t => { const x = t.spon;
+    return `<tr><td>${tname(t.id)}${ownAcademy(t) ? ' <span class="tag small">Academy</span>' : ''}</td><td>${ovrPill(t)}</td><td class="small">${esc(leagueName(x.to))}${x.pending === 'send' ? ' <span class="muted">(after their run)</span>' : x.pending === 'home' ? ' <span class="muted">(coming home after their run)</span>' : ''}</td><td class="small">${turnDate(x.until)}</td><td class="num">${x.runs}</td><td class="small">${x.best ? depthName(x.best) : '—'}</td><td class="num">${x.e4}</td><td class="num">${x.titles}</td><td class="num">${money(x.earned)}</td><td class="num">${money(x.paid)}</td>
+      <td>${x.pending ? '' : `<button class="btn small" data-act="recallcon" data-id="${t.id}">Recall</button>`}${canRenew(t) ? ` <button class="btn small primary" data-act="renewcon" data-id="${t.id}">Renew</button>` : ''}</td></tr>`; };
+  return `<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Contenders</h2>
+    <p>Send challengers at another League as your contenders: your own academy prospects (who always agree), or anyone on your circuit you sign (who can turn it down). A contender runs only at that League for ${SPON_YEARS} years, and nobody else can hire them meanwhile. You pay a weekly stipend; the League you send them at still gets their entry fees, and pays you a bounty of ${money(SPON_BOUNTY)} for each title they win there (${money(SPON_E4_BOUNTY)} for a run that reaches the Elite Four). Recall them, renew them in their last ${Math.round(SPON_RENEW_WEEKS / 4)} months, or hire them back like anyone on another circuit. At most ${SPON_MAX} at once.</p></section>
+  <section class="panel"><div class="ph"><h2>Your contenders</h2><span class="muted">${mine.length} of ${SPON_MAX}</span></div>
+    ${mine.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Trainer</th><th>OVR</th><th>Against</th><th>Until</th><th>Runs</th><th>Best</th><th>Elite Four</th><th>Titles</th><th>Earned</th><th>Stipends</th><th></th></tr></thead><tbody>${mine.map(row).join('')}</tbody></table></div>` : '<p class="muted">None out.</p>'}</section>
+  <section class="panel"><div class="ph"><h2>Send a contender</h2>${targets.length ? `<span class="muted">Against <select class="sendtosel">${targets.map(i => `<option value="${i}"${i === sendTo ? ' selected' : ''}>${esc(leagueName(i))}</option>`).join('')}</select></span>` : ''}</div>
+    ${!targets.length ? '<p class="muted">There is no other League to send at yet.</p>' : `<div class="scroll"><table class="tbl"><thead><tr><th>Trainer</th><th>Age</th><th>OVR</th><th>Now</th><th>Stipend</th><th></th></tr></thead><tbody>${cands.map(t => `<tr><td>${tname(t.id)}${ownAcademy(t) ? ' <span class="tag small">Academy</span>' : ''}${hireTags(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="small">${t.rest == null ? `out on a run (${t.badges.length} badges): goes after it` : 'resting: goes at once'}</td><td class="num">${money(sponStipend(t))}/wk</td><td>${!canOffer(t) ? '<span class="small muted">turned you down lately</span>' : `<button class="btn small" data-act="sendcon" data-id="${t.id}"${mine.length >= SPON_MAX || (S.fin && S.fin.money < 0) ? ' disabled' : ''}>Send</button>`}</td></tr>`).join('')}</tbody></table></div>`}</section>
+  <section class="panel"><div class="ph"><h2>Sent at you</h2><span class="muted">${at.length} contender${at.length === 1 ? '' : 's'} of other Leagues on your circuit</span></div>
+    ${at.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Trainer</th><th>OVR</th><th>From</th><th>Until</th><th>Runs</th><th>Best</th><th>Titles</th></tr></thead><tbody>${at.map(t => `<tr><td>${tname(t.id)}</td><td>${ovrPill(t)}</td><td class="small">${esc(leagueName(t.spon.lg))}</td><td class="small">${turnDate(t.spon.until)}</td><td class="num">${t.spon.runs}</td><td class="small">${t.spon.best ? depthName(t.spon.best) : '—'}</td><td class="num">${t.spon.titles}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">None.</p>'}</section>`;
+}
+// leaving your League to found your own (on the Money page)
+let leaveAsk = false, leaveRegion = null, leaveTake = new Set();
+function leavePanel() {
+  if (!handOn()) return '';
+  const c = leaveCheck(), takers = leaveTakers();
+  if (leaveRegion == null || !c.regions.includes(leaveRegion)) leaveRegion = c.regions[0] ?? null;
+  return `<section class="panel"><div class="ph"><h2>Found a League of your own</h2><span class="muted">Prestige ${c.prest} of ${PRESTIGE_BAR} · ${money(LEAVE_FEE)}</span></div>
+    <p class="small">You can leave the ${S.lgName} to found a new League. It costs ${money(LEAVE_FEE)} from the ${S.lgName}'s money, which must stay at or above zero, and the ${S.lgName}'s prestige must reach ${PRESTIGE_BAR} (earned each New Year from perfect years, letting through fewer than the world's average, World Championships, cities controlled and its rank by wealth, fading a tenth a year). The ${S.lgName} carries on as a rival with an aim of its own. Up to ${LEAVE_TAKE} members of staff who want promotion come with you (not the Champion), and your academy prospects on its circuit follow. You found the new League by hand, with ${money(START_FUND)} to start.</p>
+    ${c.ok ? `<div class="confirm-row"><span class="small">Region <select class="leaveregsel">${c.regions.map(r => `<option value="${r}"${r === leaveRegion ? ' selected' : ''}>${esc(regionWord(r))}${regionsUsed().includes(r) ? ' (shared)' : ''}</option>`).join('')}</select></span></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Bring</th><th>Trainer</th><th>Post</th><th>OVR</th></tr></thead><tbody>${takers.map(x => `<tr><td>${x.willing ? `<input type="checkbox" class="leavetake" data-id="${x.t.id}"${leaveTake.has(x.t.id) ? ' checked' : ''}${!leaveTake.has(x.t.id) && leaveTake.size >= LEAVE_TAKE ? ' disabled' : ''}>` : '<span class="small muted">would stay</span>'}</td><td>${tname(x.t.id)}</td><td class="small">${esc(x.post)}</td><td>${ovrPill(x.t)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="confirm-row">${leaveAsk ? `<button class="btn primary" data-act="leavego">Leave the ${esc(S.lgName)} and found a League in ${esc(regionWord(leaveRegion))}</button> <button class="btn ghost" data-act="leaveask">Not now</button>` : '<button class="btn" data-act="leaveask">Found a League of your own…</button>'}</div>` : `<p class="muted small">${esc(c.why)}</p>`}</section>`;
+}
 // the Cities page: the seat, the gym cities and the cities with no gym of yours
-function viewCities() { return inLeague(0, viewCities0); }
+function viewCities() { return inLeague(ME(), viewCities0); }
 function viewCities0() {
   if (!booksOn()) return '<section class="panel"><p class="muted">Only a League you staff by hand builds in cities.</p></section>';
   const places = myPlaces(), gm = gymMap(), gymOpts = S.gyms.map((g, i) => `<option value="${i}">Gym ${i + 1} · ${townName(i)}</option>`).join('');
@@ -269,7 +305,7 @@ function viewCities0() {
     const built = p.b.map(x => `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv} of ${upMax(x.k)}${UPGRADES[x.k].slotless ? ' <span class="small muted">(no slot)</span>' : ''}</li>`).join('');
     // (0.15.0) standing and control where Leagues share the city, and this League's share of its income
     const lgs = p.c ? gm[p.c.id] || [] : [], ctrl = p.c ? cityCtrl(p.c, lgs) : null;
-    const share = p.c && lgs.includes(0) ? `<p class="small">${lgs.length > 1 ? `Shared with the ${lgs.filter(i => i !== 0).map(leagueName).join(' and the ')}. Standing: ${lgs.map(i => `${lgShort(i)} ${standing(p.c, i)}`).join(', ')}. Controlled by the <b>${leagueName(ctrl)}</b>. ` : 'Yours alone. '}Your share of its income: <b>${money(cityShare(p.c, lgs, 0))}</b> a week (of ${money(CITY_INCOME[p.slots - 1])}).</p>` : lgs.length ? `<p class="small muted">Gyms here: the ${lgs.map(leagueName).join(' and the ')}.</p>` : '';
+    const share = p.c && lgs.includes(ME()) ? `<p class="small">${lgs.length > 1 ? `Shared with the ${lgs.filter(i => i !== ME()).map(leagueName).join(' and the ')}. Standing: ${lgs.map(i => `${lgShort(i)} ${standing(p.c, i)}`).join(', ')}. Controlled by the <b>${leagueName(ctrl)}</b>. ` : 'Yours alone. '}Your share of its income: <b>${money(cityShare(p.c, lgs, 0))}</b> a week (of ${money(CITY_INCOME[p.slots - 1])}).</p>` : lgs.length ? `<p class="small muted">Gyms here: the ${lgs.map(leagueName).join(' and the ')}.</p>` : '';
     const acts = p.none ? `<div class="confirm-row"><select id="move-${p.c.id}" aria-label="Gym to move">${gymOpts}</select><button class="btn small" data-act="movegym" data-c="${p.c.id}"${canSpend(MOVE_FEE) ? '' : ' disabled'}>Move it here (${money(MOVE_FEE)})</button></div>`
       : `<div class="confirm-row">${Object.keys(UPGRADES).map(k => { const ck = buildCheck(where, k); if (ck.why) return ''; return `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}">${ck.lv > 1 ? `${UPGRADES[k].name} to level ${ck.lv}` : `Build ${UPGRADES[k].name.toLowerCase()}`} (${money(ck.cost)})</button>`; }).join('')}</div>`;
     return `<section class="panel"><div class="ph"><h2>${esc(p.name)}</h2><span class="muted">${p.seat ? 'League seat: the Elite Four and the Champion' : p.none ? 'No gym of yours' : `Gym ${p.gym + 1}${T(S.gyms[p.gym].leader) ? ' · ' + typeLabel(T(S.gyms[p.gym].leader)) : ''}`} · ${slotsUsed(p.b)} of ${p.slots} slot${p.slots === 1 ? '' : 's'} used${p.c ? ` · ${money(Object.values(p.c.spent || {}).reduce((a, b) => a + b, 0))} spent here` : ''}</span></div>
@@ -328,7 +364,7 @@ function viewFounding() {
   const pool = foundPool().filter(id => foundShow === 'all' || (foundShow === 'field') === F.field.includes(id)).map(T).sort((a, b) => ovr(b) - ovr(a));
   return `<main class="wrap setup" id="main"><section class="panel callout"><div class="eyebrow">Founding the ${S.lgName}</div><h1>Place your staff</h1>
     <p>Choose a Champion, four Elite Four members and eight Gym Leaders. You can pick from ${F.cands.length} candidates the game has found and the ${F.field.length} trainers of the founding field. A gym's type is its leader's class, and each gym takes on two gym trainers from the circuit who share a type with the leader. Everyone you don't place sets out as a challenger.</p>
-    <div class="confirm-row"><button class="btn" data-act="foundfill">Fill the rest for me</button><button class="btn primary" data-act="foundgo"${left ? ' disabled' : ''}>${left ? `${left} post${left === 1 ? '' : 's'} to fill` : `Open the ${S.lgName}`}</button><button class="btn ghost" data-act="foundquit">Back to setup</button></div></section>
+    <div class="confirm-row"><button class="btn" data-act="foundfill">Fill the rest for me</button><button class="btn primary" data-act="foundgo"${left ? ' disabled' : ''}>${left ? `${left} post${left === 1 ? '' : 's'} to fill` : `Open the ${S.lgName}`}</button>${F.mid ? '' : '<button class="btn ghost" data-act="foundquit">Back to setup</button>'}</div></section>
   <section class="panel"><div class="ph"><h2>Posts</h2><span class="muted">Pick a post, then a trainer for it. Ratings: Strategy, Training, Bond, Scouting, Nerve.${booksOn() ? ` You start with ${money(START_FUND)}; your senior staff's pay comes to <b>${money(posts.reduce((a, p) => a + (p.id != null ? askFor(T(p.id), p.post === 'gym' ? 'leader' : p.post, p.slot) : 0), 0))}</b> a week (gym trainers add about ${money(16 * 35)}). There is no cap, but you can start in the red.` : ''}</span></div>
   <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Battles</th><th>Trainer</th><th>Type</th><th>OVR</th><th></th></tr></thead><tbody>
   ${posts.map(p => { const t = p.id != null ? T(p.id) : null, on = sel === p, dup = t && specTypes(t).some(x => foundTypesUsed(p.post, p.slot).includes(x));
@@ -797,6 +833,15 @@ function awardsPanel(h, title) {
 // It opens at New Year (it replaced the year in review) and any year can be opened from it or the History page.
 let repYear = null; // the year shown; null is the latest
 // (0.15.0) every League's year side by side in the year report, with the world's average
+// (0.17.0) the year's contenders: the League's own, sent at others, and those other Leagues sent at it
+function sponPanel(h) {
+  const x = h.spon; if (!x || (!x.out.length && !x.at.length)) return '';
+  const row = (r, other) => `<tr><td>${tname(r[0])}</td><td class="small">${esc(leagueName(other))}</td><td class="num">${r[3]}</td><td class="small">${r[4] ? depthName(r[4]) : '—'}</td><td class="num">${r[5]}</td><td class="num">${r[6]}</td><td class="num">${money(r[7])}</td><td class="small muted">${r[8] ? esc(r[8]) : ''}</td></tr>`;
+  const head = w => `<thead><tr><th>Contender</th><th>${w}</th><th>Runs</th><th>Best</th><th>Elite Four</th><th>Titles</th><th>Bounties</th><th></th></tr></thead>`;
+  return `<section class="panel"><div class="ph"><h2>Contenders</h2><span class="muted">Sponsored challengers this year</span></div>
+    ${x.out.length ? `<h3>Sent by the ${esc(S.lgName)}</h3><div class="scroll"><table class="tbl">${head('Against')}<tbody>${x.out.map(r => row(r, r[2])).join('')}</tbody></table></div>` : ''}
+    ${x.at.length ? `<h3>Sent at the ${esc(S.lgName)}</h3><div class="scroll"><table class="tbl">${head('From')}<tbody>${x.at.map(r => row(r, r[1])).join('')}</tbody></table></div>` : ''}</section>`;
+}
 function otherLeaguesPanel(season) {
   if (nLeagues() < 2) return '';
   const rows = Array.from({ length: nLeagues() }, (_, i) => inLeague(i, () => { const e = S.history.find(x => x.season === season && x.titles != null); return e ? { i, name: S.lgName, let: e.titles, badges: e.badges, best: e.best, runs: e.runs, q: e.qualifiers } : null; })).filter(Boolean);
@@ -826,7 +871,7 @@ function viewRecap() {
   const won = (h.runsE4 || []).filter(r => r[2] === 5);
   const names = ids => ids.filter(id => T(id)).map(tname).join(', ');
   // gyms: the leader at year's end and anyone else who led it, the gym trainers, tries turned back and badges conceded
-  const watchFor = g => (S.lg || 0) === 0 ? (S.gyms[g] && S.gyms[g].watch || []).map((r, k) => ({ r, k })).filter(x => x.r.when && x.r.when.season === h.season) : [];
+  const watchFor = g => (S.lg || 0) === ME() ? (S.gyms[g] && S.gyms[g].watch || []).map((r, k) => ({ r, k })).filter(x => x.r.when && x.r.when.season === h.season) : [];
   const gymRows = (h.gyms || []).map((g, k) => { const tb = g.wl + g.wt, n = tb + g.l, also = g.lead.filter(id => id !== g.leader), w = watchFor(k);
     return `<tr><td class="num">${k + 1}</td><td>${townName(k)}<div class="muted small">${g.type || '—'}</div>${h.steers ? `<div class="muted small">${steerName((h.steers.posts || {})['gym:' + k] || h.steers.line)}</div>` : ''}</td><td>${g.leader != null && T(g.leader) ? tname(g.leader) : '—'}${g.acting ? ' <span class="tag">acting</span>' : ''}${g.poor ? ' ' + poorTag(g.poor) : ''}${also.length ? `<div class="muted small">also led by ${names(also)}</div>` : ''}<div class="muted small">Gym trainers: ${names(g.gt) || 'none'}</div></td>
       <td class="num">${g.wt}</td><td class="num">${g.wl}</td><td class="num">${g.l}</td><td class="num">${n ? Math.round(100 * tb / n) + '%' : '—'}</td>
@@ -842,7 +887,7 @@ function viewRecap() {
   const stageCells = s => [0, 1, 2, 3, 4].map(k => `<td class="st ${s > k ? 'w' : s === k ? 'l' : ''}">${s > k ? 'W' : s === k ? 'L' : ''}</td>`).join('');
   const nav = `<div class="segs setup-segs">${i > 0 ? `<button class="seg" data-act="repyear" data-v="${all[i - 1].season}">‹ Year ${all[i - 1].season}</button>` : ''}<button class="seg on" aria-pressed="true">Year ${h.season}</button>${!latest ? `<button class="seg" data-act="repyear" data-v="${all[i + 1].season}">Year ${all[i + 1].season} ›</button><button class="seg" data-act="repyear" data-v="latest">Latest</button>` : ''}</div>`;
   const ran = latest ? Object.values(S.trainers).filter(t => inLg(t) && S.progress && S.progress[t.id] && ['challenger', ...STAFF_ROLES].includes(t.role)).sort((a, b) => S.progress[b.id].after.ovr - S.progress[a.id].after.ovr).slice(0, 12) : [];
-  return `${latest ? worldPanel() : ''}${nav}${otherLeaguesPanel(h.season)}<div class="grid-office"><div class="col">
+  return `${latest ? worldPanel() : ''}${nav}${otherLeaguesPanel(h.season)}${sponPanel(h)}<div class="grid-office"><div class="col">
     <section class="panel callout"><div class="eyebrow">Year ${h.season} report${nLeagues() > 1 ? ' · ' + S.lgName : ''}</div>
       <h2>${h.titles ? `${h.titles} trainer${h.titles === 1 ? '' : 's'} let through` : 'A perfect year'}</h2>
       <p>${h.titles ? `${won.length ? won.map(r => `${tname(r[0])} <span class="muted small">${weekShort(r[1])}</span>`).join(', ') : names(h.winners)} beat the Champion. ` : 'Nobody took the title. '}${streak ? `<b>${streak}</b> perfect year${streak === 1 ? '' : 's'} in a row. ` : ''}${perfect !== streak ? `<b>${perfect}</b> perfect year${perfect === 1 ? '' : 's'} in ${upTo.length}.` : ''}
@@ -857,7 +902,7 @@ function viewRecap() {
       <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Gym</th><th>Leader and gym trainers</th><th>Trainers</th><th>Leader</th><th>Badges</th><th>Held</th><th></th></tr></thead><tbody>${gymRows}</tbody></table></div></section>
     <section class="panel"><div class="ph"><h3>The Elite Four and the Champion</h3><span class="muted">One run: a loss anywhere ends it</span></div>
       <div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Held by</th><th>Type</th><th>Runs faced</th><th>Stopped</th><th>Got past</th></tr></thead><tbody>${seatRows}</tbody></table></div></section>
-    ${latest && chalPend.length && (S.lg || 0) === 0 ? `<section class="panel callout warnbox">${chalNotice()}</section>` : ''}
+    ${latest && chalPend.length && (S.lg || 0) === ME() ? `<section class="panel callout warnbox">${chalNotice()}</section>` : ''}
     <section class="panel"><div class="ph"><h3>Seat challenges</h3><span class="muted">Held at New Year: at most one for the Champion's seat and one for an Elite Four seat</span></div>
       ${chalRows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Challenger</th><th>Holder</th><th>Result</th><th></th></tr></thead><tbody>${chalRows}</tbody></table></div>` : '<p class="muted">No seat challenges.</p>'}</section>
   <div class="grid-office"><div class="col">
@@ -1093,7 +1138,10 @@ const GLOSS_TERMS = {
     ['Aims', 'Each rival League has an aim. A wall-builder hires the best, counters the meta, builds gym features and pays for bans; a star-maker hires young and builds training halls, a youth academy and a scouting office; a money-maker keeps wages down, builds attractions and holds a reserve. A rival in the red turns money-maker until it is back on its feet, then goes back to its old aim; a money-maker by choice far richer than the world\'s average turns to a wall or to stars. A rich rival bids over the asking pay when it hires, and at New Year may pay to replace its weakest Elite Four member or Gym Leader with a clearly better trainer. It never builds more than its running income can keep up.'],
     ['Standing and control', 'A League gains standing in a city where it has a gym by spending there (a point per ₽2,000) and each New Year by how its gym held against the region\'s average (a point per percentage point); all standing then fades by a quarter. The League with most standing controls the city. Each city with a gym earns ₽250, ₽350 or ₽500 a week by its size: the controller takes half, the rest is shared by standing among the other Leagues with a gym there.'],
     ['League table', 'Every League ranked by money, with last year\'s income and spending, the wage bill, cities controlled and the wall. Balance in this game is economic: Leagues should stay close to level, and one that falls behind can catch up (challengers drift to walls they can get further against, and stars ask a little more of a League far richer than the rest).'],
-    ['Founders', 'A new League is founded by a distinguished recent retiree as a final act, and takes their name if it is the second League of its region. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.'],
+    ['Founders', `A new League is founded by a distinguished recent retiree as a final act, and takes their name if it is the second League of its region. With new Leagues switched on, one may open each New Year once ${LEAGUE_MIN_GAP} years have passed since the last, if there is room (at most ${MAX_LEAGUES} Leagues, ${REGION_CAP} to a region) and the most prestigious recent retiree has a prestige of ${PRESTIGE_BAR} or more. No founder, no League. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.`],
+    ['Prestige', `One scale for trainers and Leagues. A trainer's comes from their career: titles, the Hall of Fame, badges, years and World titles. A League's is earned each New Year (${PRESTIGE_PERFECT} for a perfect year, up to ${PRESTIGE_LET_MAX} for letting through fewer than the world's average, ${PRESTIGE_WORLD} for winning the World Championship, ${PRESTIGE_CITY} for each city it controls, and up to ${PRESTIGE_RANK[0]} for its rank by wealth) and fades by a tenth a year. Founding a League needs ${PRESTIGE_BAR}, for a retiree and for you. The League table shows every League's.`],
+    ['Contenders', `A League can send challengers at another League as its contenders: its own academy prospects, or a challenger from its circuit it signs. A contender runs only at that League for ${SPON_YEARS} years (renewable), and nobody else can hire them or seat them after a deep run meanwhile. The sponsor pays a weekly stipend; the target still gets their entry fees and pays the sponsor a bounty of ${money(SPON_BOUNTY)} for each title they win there (${money(SPON_E4_BOUNTY)} for a run that reaches the Elite Four). Rival Leagues send them too, by their aim, and may send them at you. Your Contenders page has yours; the year report lists each year's.`],
+    ['Founding your own League', `Once your League's prestige reaches ${PRESTIGE_BAR}, you can leave it to found a new League for ${money(LEAVE_FEE)} from its money (on the Money page), if the world has room. The League you leave carries on as a rival with an aim of its own, keeping its money, buildings, staff and history. Up to ${LEAVE_TAKE} members of staff who want promotion come with you, and your academy prospects follow. You place the new League's staff by hand and start with ${money(START_FUND)}. You only ever run one League.`],
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
     ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff gain ratings on birthdays) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
@@ -1192,7 +1240,7 @@ function viewGod() {
   if (!godOn()) return viewCircuit();
   return `<section class="panel callout"><div class="eyebrow">God mode</div><h2>Shape the world by hand</h2>
     <p>Open a League, or edit any trainer directly. These skip the usual limits.</p></section>
-  <section class="panel"><div class="ph"><h3>Leagues</h3><span class="muted">${nLeagues()} of ${MAX_LEAGUES} regions open</span></div>
-    <p>${Array.from({ length: nLeagues() }, (_, i) => leagueName(i)).join(' · ')}${S.nextLeague ? ` · next opening on its own in Year ${S.nextLeague.season}` : ''}</p>
-    <div class="confirm-row"><button class="btn primary" data-act="godleague" ${nLeagues() < MAX_LEAGUES ? '' : 'disabled'}>${nLeagues() < MAX_LEAGUES ? `Open the ${nextRegionName()} now` : 'Every region is open'}</button></div></section>${godEditor()}`;
+  <section class="panel"><div class="ph"><h3>Leagues</h3><span class="muted">${nLeagues()} of ${MAX_LEAGUES} Leagues open</span></div>
+    <p>${Array.from({ length: nLeagues() }, (_, i) => leagueName(i)).join(' · ')}</p>
+    <div class="confirm-row"><button class="btn primary" data-act="godleague" ${nextRegion() != null ? '' : 'disabled'}>${nextRegion() != null ? `Open the ${nextRegionName()} now` : 'The world is full'}</button></div></section>${godEditor()}`;
 }
