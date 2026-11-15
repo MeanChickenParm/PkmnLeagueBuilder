@@ -1247,6 +1247,7 @@ function arrivals() {
   const every = Math.round(YEAR_WEEKS / NEWCOMERS_PER_LEAGUE);
   if (S.week % every === Math.floor(every / 2)) fillCircuits(makeNewcomers(nLeagues()));
   if (S.freeAgents.length) fillCircuits(S.freeAgents.slice());
+  academyWeek();
 }
 
 // ---------- World Championship: the Champions of every League meet once the Leagues are done ----------
@@ -2157,8 +2158,10 @@ function acceptsOffer(t, post) {
   if (t.grudge != null) p -= 0.3;
   // (0.14.0, the balance retune) a challenger doing well against the League wants the title, not a post
   if (impressed(t)) p -= IMPRESS_REFUSE;
-  // (0.13.0) the scouting office and a bid over the asking pay
-  if (playerLeague()) p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
+  // (0.13.0) the scouting office and a bid over the asking pay (0.16.0: in every League, rival Leagues bid too)
+  p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
+  // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
+  if (ownAcademy(t)) p += ACADEMY_LOYAL;
   return rand() < clamp(p, 0.1, 0.95);
 }
 // a challenger on the player's circuit who did well against the League this year or last: reached the Elite Four, or
@@ -2283,8 +2286,11 @@ function flushGymOutsiders(i) {
 // ---- rival Leagues (and any League nobody staffs by hand) ----
 // the best of the League's own circuit and the recent retirees at OVR min or better; a challenger must accept the
 // offer (the next best is asked if they don't). Null when nobody fits (then the League makes an outsider).
-function rivalHire(min, exclude = [], post = null) {
+function rivalHire(min, exclude = [], post = null, bidAt = null) {
   if (fixedStaff()) return null;
+  // (0.16.0) a rich League bids over the asking pay (aimBid), which makes challengers and other Leagues' staff likelier
+  // to come, and costs it more every week after
+  const bid = bidAt != null ? bidAt : aimBid(), steps = Math.round(bid / 0.25);
   // (0.15.0) by the League's aim: a wall-builder takes the best, a star-maker leans to youth, a money-maker to trainers
   // near the floor (cheaper); in the red, anyone takes the cheapest who fits
   const aim = S.fin && S.fin.aim, red = S.fin && S.fin.money < 0;
@@ -2292,8 +2298,13 @@ function rivalHire(min, exclude = [], post = null) {
   const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
-    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT) : []).sort((a, b) => val(b) - val(a));
-  for (const t of cs) if (t.role === 'retired' || STAFF_ROLES.includes(t.role) || acceptsOffer(t, 'leader')) return t;
+    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).sort((a, b) => val(b) - val(a));
+  for (const t of cs) {
+    if (t.role === 'retired') return t;
+    t.bidMul = bid ? 1 + bid : null;
+    if (STAFF_ROLES.includes(t.role) || acceptsOffer(t, 'leader')) return t;
+    t.bidMul = null;
+  }
   return null;
 }
 // a rival League's vacant Elite Four seat: the best of its circuit and the recent retirees at E4_HIRE_MIN, else an
@@ -2301,7 +2312,7 @@ function rivalHire(min, exclude = [], post = null) {
 function rivalE4(i) {
   const c = rivalHire(E4_HIRE_MIN, [], 'e4');
   const own = promoteWithin('e4', i, c ? ovr(c) - PROMOTE_EDGE : E4_HIRE_MIN - PROMOTE_EDGE);
-  if (own) { const ch = []; moveUpWithin(own, 'e4', i, ch); ch.forEach(noteChange); return own; }
+  if (own) { if (c) c.bidMul = null; const ch = []; moveUpWithin(own, 'e4', i, ch); ch.forEach(noteChange); return own; }
   if (!c) return outsiderE4(i);
   if (c.role === 'retired') unretire(c);
   if (STAFF_ROLES.includes(c.role)) { const from = leagueName(homeLeague(c)); leaveForPost(c, S.lgName); news(`${dn(c)} left the ${from} to join the ${S.lgName}'s Elite Four.`, 'move', c.id); }
@@ -2397,7 +2408,7 @@ function fillGym(i, changes) {
   const cand = rivalHire(GYM_HIRE_MIN, [], 'leader');
   // (0.10.0) a member of staff who wants promotion and is nearly as good comes first
   const own = promoteWithin('leader', i, cand ? ovr(cand) - PROMOTE_EDGE : GYM_HIRE_MIN - PROMOTE_EDGE);
-  if (own) { moveUpWithin(own, 'leader', i, changes); return; }
+  if (own) { if (cand) cand.bidMul = null; moveUpWithin(own, 'leader', i, changes); return; }
   let nl;
   if (cand) {
     const back = cand.role === 'retired', away = STAFF_ROLES.includes(cand.role), from = away ? leagueName(homeLeague(cand)) : null; if (back) unretire(cand);
