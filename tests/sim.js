@@ -13,6 +13,7 @@ const money = { built: 0, bans: 0, raises: 0, moved: 0 };
 const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
+const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -118,7 +119,9 @@ function check(tag) {
     { const t = g.T(z.champion); if (!t || t.role !== 'champion') bad('Champion is wrong'); }
     // no cap on a circuit, but weak challengers giving up should keep the field in a sensible range (0.5.0: an older,
     // larger field, about 50 to 75 a League; 160 is the alarm since 0.7.0: several-League worlds peaked at 122 to 147 even at 0.6.0)
-    if (z.challengers.length > 160) bad('field too big: ' + z.challengers.length);
+    // (0.20.0, the owner's choice) 200 within five years of a League folding, when one circuit takes in a folded field
+    { const lastFold = Math.max(-99, ...(z.folded || []).map(f => f.to || 0)), cap = z.season - lastFold <= 5 ? 200 : 160;
+      if (z.challengers.length > cap) bad('field too big: ' + z.challengers.length); }
     if (z.challengers.length < 8) bad('field too thin: ' + z.challengers.length);
     fieldSum += z.challengers.length; fieldN++; fieldMax = Math.max(fieldMax, z.challengers.length);
     for (const id of z.challengers) { const t = g.T(id);
@@ -127,6 +130,16 @@ function check(tag) {
       if (t && (!t.team.length || t.team.length > 6)) bad('team size ' + t.team.length + ' for ' + t.name); }
   });
   if (Object.keys(s.cities).length % 11) bad('city count ' + Object.keys(s.cities).length);
+  // (0.20.0) one of each legendary in the world, one of each Paradox Pokémon held; sanctuaries only in gym cities
+  { const held = {}, px = {};
+    for (const t of Object.values(s.trainers)) { if (['retired', 'prospect'].includes(t.role)) continue;
+      for (const m of t.team) { if (g.SP[m.sp].legend && !g.SP[m.sp].baby) { if (held[m.sp]) bad('two of ' + m.sp + ' in the world'); held[m.sp] = 1; }
+        if (g.SP[m.sp].paradox) { if (px[m.sp]) bad('two of ' + m.sp + ' (Paradox) held'); px[m.sp] = 1; } } }
+    for (const m of s.wPool || []) if (held[m.sp]) bad(m.sp + ' both held and waiting');
+    if (s.leagues) for (const L of s.leagues) if (L && L.legendPool) bad('a League still has its own legendary pool');
+    LEG.held = Math.max(LEG.held, Object.keys(held).length); LEG.px = Math.max(LEG.px, Object.keys(px).length);
+    LEG.sites = Math.max(LEG.sites, Object.values(s.cities).filter(c => g.siteOn(c)).length);
+    for (const c of Object.values(s.cities)) if (c.site && !(c.site.until >= c.site.from)) bad('a bad legendary site in ' + c.name); }
   // money and cities (0.13.0; every League since 0.15.0): books, pay, bans and buildings; rivals have an aim
   if (!s.founding) g.eachLeague(i => { const z = S(), mine = HAND && i === g.ME();
     if (!z.fin || !Number.isFinite(z.fin.money) || Math.round(z.fin.money) !== z.fin.money) bad('books broken in League ' + i);
@@ -134,7 +147,7 @@ function check(tag) {
     for (const id of g.staffIds()) { const t = g.T(id); if (t && !(t.payOvr > 0)) bad('staff with no pay ' + t.name); if (t && t.quit && t.quit.k === 'pay' && z.fin.money >= 0 && z.fin.redAt == null) bad('a pay notice out of the red'); }
     if (g.paidBans().length > g.BAN_PAID_MAX) bad('too many paid bans');
     if ((z.banBallot || null) && z.banBallot.cands && z.banBallot.cands.length) bad('a ban vote in a League with books');
-    for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
+    for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat) || (g.UPGRADES[x.k].site && p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
   });
   // (0.15.0) at most two Leagues a region; standing only for Leagues with a gym in the city; control by one of them
@@ -191,6 +204,11 @@ for (let i = 0; i < N; i++) {
     });
     // money and cities (0.13.0): build, ban, give raises and move gyms now and then
     if (HAND && S().season >= 2 && Math.random() < 0.05) g.inLeague(g.ME(), () => { const z = S(), r = Math.random();
+      // (0.20.0) a Sanctuary where a gym city is a legendary site; never at the seat or a city that isn't one
+      { const site = [0, 1, 2, 3, 4, 5, 6, 7].find(i => g.siteOn(z.cities[z.gyms[i].city]) && !g.buildCheck(i, 'sanct').why);
+        if (site != null && Math.random() < 0.5) { const ck = g.buildCheck(site, 'sanct'), m0 = z.fin.money; if (!g.build(site, 'sanct')) { LEG.sanctBuilt++; if (z.fin.money !== m0 - ck.cost) fail.push('sanctuary cost wrong'); } }
+        if (!g.buildCheck('seat', 'sanct').why) fail.push('a sanctuary allowed at the seat');
+        const off = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !g.siteOn(z.cities[z.gyms[i].city])); if (off != null && !g.buildCheck(off, 'sanct').why) fail.push('a sanctuary allowed off a site'); }
       if (r < 0.4) { const where = rnd(['seat', 0, 1, 2, 3, 4, 5, 6, 7]), k = rnd(Object.keys(g.UPGRADES)), ck = g.buildCheck(where, k), m0 = z.fin.money, w = g.build(where, k);
         if (!w) { money.built++; if (z.fin.money !== m0 - ck.cost) fail.push('build cost wrong'); } else if (!ck.why && z.fin.money >= ck.cost) fail.push('build refused: ' + w); }
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
@@ -307,6 +325,8 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
+LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
+console.log('legendaries', JSON.stringify(LEG));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));

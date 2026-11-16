@@ -4,7 +4,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from the seed (0.1.0)
 - **Unused styles.** `game/1-page.html` still has the CSS for the screens that were cut (office, party, draft, ranch, trade desk, tournament, villain banner, team marks). It does no harm; prune it when the new screens are built and it is clear what they reuse.
-- **Legendaries with no way in.** Xerneas, Genesect, Cobalion, Terrakion, Virizion and Keldeo only entered the world through villain events. Paradox Pokémon only came from the Champion's reward and promotions. They wait for the legendaries rework (design doc, section 7).
 - **Traits and temperaments that lost their effect.** The Mentor and Hero traits were removed (they acted on teammates and villains). The Naive, Quiet and Docile natures have no temperament now (theirs were about trades and the ranch), and Lonely, Adamant, Relaxed and Naughty lost half of theirs. To revisit when staff and gym trainers exist.
 - **Battle rules.** `BATTLE_RULE` still works in the battle engine but nothing sets it. Could serve gym features later.
 - **Custom trainer packs** made for Pokémon League GM import as before, but a pack trainer whose trait is Mentor or Hero gets a random trait.
@@ -146,3 +145,13 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The region picker after a fold** offers any region with room; the fresh League's cities follow the region, and its name becomes `<Region> Founders League` when the region already has a League.
 - **Merging fields:** a folded League's younger challengers move to the emptiest circuit; in the hand-placed sim the single remaining circuit peaked at 142 to 155 (alarm 160). Watch it.
 - **Lapsed buildings still count in wealth and in the League table's Built column.**
+
+## Left over from legendaries reworked (0.20.0)
+- **All the numbers are provisional:** `OBEY_BADGES` (4/6/8 by base stats under 600/680), `LEGEND_HOME_MUL` 3, `LEGEND_AWAY_MUL` 0.5, the `LEGEND_HOME` map, `AREA_ZERO_WEEKS` 48, `PARADOX_FIND` 0.004, `SITE_YEARS` 10, the Sanctuary's income (250/500/800, an attraction's after) and `SANCT_PRESTIGE` 1, and the Swords of Justice's and Keldeo's choices.
+- **The wall is far harder:** obedience took the passive player from 2.92 to 0.85 let through a year (3 worlds × 25 years). Retune later with `BUILD_PAR` and the economy report together (the owner's choice). The owner wants obedience revisited once the ranch is designed, perhaps per League or per region.
+- **Paradox Pokémon are to be evaluated later** (the owner): only through Area Zero, not legendaries, no partner years, held for a trainer's career.
+- **Sanctuaries are new income:** rival Leagues build them wherever they can (exempt from the running-income rule, like attractions). The economy report hasn't been tuned for them.
+- **Old legendary records** (`m.lgHome`, `t.greatLegends[].lg`) still name the League where a legendary was found; the pool no longer belongs to a League.
+- **Unova and later legendaries have no home region** (only four regions exist); they turn up at their usual rate everywhere.
+- **A site comes from where a legendary joined** (the encounter's town, the roamer's town, else the challenger's next gym, or a random gym for one with eight badges); storms and gifts have no town of their own.
+- **Legendary encounters still set their level from the circuit** (`circuitLevel()`), as before.

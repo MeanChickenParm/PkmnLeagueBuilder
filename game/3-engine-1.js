@@ -184,7 +184,7 @@ const WORMHOLE_CHANCE = 0.03 * 11 / 48, WORMHOLE_OPEN = 2; // per week, any week
 function maybeWormhole() {
   if (S.wormhole && S.turn >= S.wormhole.until) { const w = S.wormhole, t = T(w.id); S.wormhole = null; if (t) catchNews(`The Ultra Wormhole near ${t.name} closed, and ${w.sp} went back through it.`, 'circuit', t.id); }
   if (!featOn('wormhole') || S.wormhole || rand() >= WORMHOLE_CHANCE) return;
-  const held = ownedLegends(), free = ULTRA_BEASTS.filter(n => !held.has(n)); const near = challengers().filter(t => t.team.length && t.rest == null);
+  const held = ownedLegends(), free = ULTRA_BEASTS.filter(n => !held.has(n) && !legendElsewhere(n)); const near = challengers().filter(t => t.team.length && t.rest == null);
   if (!free.length || !near.length) return;
   let t = pick(near), sp = pick(free);
   // now and then the wormhole leads into Ultra Space itself, and Solgaleo or Lunala comes through
@@ -193,9 +193,9 @@ function maybeWormhole() {
   S.wormhole = { id: t.id, sp, until: S.turn + WORMHOLE_OPEN };
   catchNews(`An Ultra Wormhole opened near ${dn(t)}! ${sp} has come through. Exploring in the next ${WORMHOLE_OPEN} weeks gives ${t.name} one chance to catch it.`, 'circuit', t.id);
 }
-// a baby legendary line is free when nobody active holds any stage of it
+// a baby legendary line is free when nobody active in the world holds any stage of it (0.20.0; was this League)
 function freeBabies() {
-  const held = new Set(); for (const t of leagueTrainers()) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held.add(LINE[m.sp]);
+  const held = new Set(); for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held.add(LINE[m.sp]);
   return BABY_LEGENDS.filter(b => !held.has(b));
 }
 // For branching lines (Eevee, Tyrogue, Kirlia...) pick the branch that fits the preferred type, else at random
@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 9; // 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 10; // 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -987,9 +987,17 @@ function pickSquad(t, foe) {
   return t.team.filter(m => best.has(m));
 }
 // a battle on the circuit: both sides at the post's set level, the challenger fielding as many as the post does
+// (0.20.0) obedience: a legendary (Ultra Beasts, Missingno and Paradox Pokémon too) battles for a challenger only once
+// they hold enough badges for its strength, as in the games: base stats under 600 from 4 badges, under 680 from 6,
+// the box legendaries from 8. At the Elite Four and the title every Pokémon obeys. Staff are never held back.
+const OBEY_BADGES = [[600, 4], [680, 6], [Infinity, 8]];
+function obeyBadges(sp) { const s = SP[sp]; if (!s || !(s.legend || s.paradox || s.ub)) return 0; return OBEY_BADGES.find(x => s.bst < x[0])[1]; }
+const obeys = (t, m, lvl) => t.role !== 'challenger' || lvl >= E4_LV[0] || (t.badges || []).length >= obeyBadges(m.sp);
 function setBattle(t, foe, lvl, stakes, title, gymType, edge) {
   const full = t.team, o = gymType !== undefined ? { equal: lvl, gymType } : { equal: lvl };
   if (edge && edge !== 1) o.edge = edge; // (0.13.0) a gym feature's home edge for the defending side
+  const ok = full.filter(m => obeys(t, m, lvl));
+  if (ok.length) t.team = ok;
   t.team = pickSquad(t, foe);
   try { return battle(t, foe, stakes, title, o); } finally { t.team = full; }
 }

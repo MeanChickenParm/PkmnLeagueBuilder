@@ -140,6 +140,13 @@ async def run(path):
                         const db = document.querySelector('[data-act=distbuy]'), m2 = S.fin.money;
                         if (!db || !/Distress sales/.test(document.querySelector('#main').textContent)) log.push('FAIL no distress sales panel');
                         else { db.click(); if (S.fin.money !== m2 - 7500 || (S.distress || []).length) log.push('FAIL buying a distress offer'); else log.push('bought a distress offer'); } }
+                      // 0.20.0: a legendary site in a gym city; build a Sanctuary there from the Cities page
+                      { S.fin.money = 100000; const gi = [1, 2, 3, 4, 5, 6, 7].find(i => { const c = S.cities[S.gyms[i].city]; const was = c.site; c.site = { sp: 'Mew', from: S.season, until: S.season + 9 }; const ok = !inLeague(0, () => buildCheck(i, 'sanct')).why; if (!ok) c.site = was; return ok; });
+                        if (gi == null) log.push('no gym city with room for a Sanctuary');
+                        else { go('cities'); const sb = document.querySelector('[data-act=build][data-w="' + gi + '"][data-k=sanct]'), m3 = S.fin.money;
+                          if (!/Legendary site/.test(document.querySelector('#main').textContent) || !sb) log.push('FAIL no legendary site or Sanctuary button');
+                          else { sb.click(); if (S.fin.money !== m3 - 25000 || !inLeague(0, () => placeLv(gi, 'sanct'))) log.push('FAIL building a Sanctuary'); else log.push('built a Sanctuary'); } }
+                        if (!document.querySelector('[data-act=build][data-w=seat][data-k=sanct]') === false) log.push('FAIL a Sanctuary offered at the seat'); }
                       S.fin.money = keep; go('cities'); }
                     if (document.querySelectorAll('[data-act=movegym]').length !== 3) log.push('FAIL the Cities page should list three cities with no gym');
                     go('meta'); const bn = [...document.querySelectorAll('[data-act=ban][data-v="1"]')].find(x => !x.disabled);

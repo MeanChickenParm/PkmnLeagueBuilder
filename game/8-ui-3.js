@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 20, ver: '0.20.0', date: 'November 16, 2026', time: '1:45 PM ET', title: 'Legendaries reworked', items: [
+    "Legendaries obey by badges. A legendary (an Ultra Beast, Missingno or a Paradox Pokémon too) only battles for a challenger with enough badges for its strength: base stats under 600 from 4 badges, under 680 from 6, the box legendaries from 8. Below that it sits out and the challenger fields the rest of the team. At the Elite Four and the title every Pokémon obeys. Your staff are never held back. Legendaries used to sweep the early gyms, so walls are now much harder to get past.",
+    "One of each legendary in the world. A legendary held or waiting anywhere can't turn up in another League, and one that moves on waits for a new partner from wherever it is. A world with several Leagues has far fewer legendaries.",
+    "Legendaries belong to regions. Kanto's, Johto's, Hoenn's and Sinnoh's own legendaries turn up about three times as often in a League of their region and half as often elsewhere.",
+    "Six legendaries that had no way in since the start get events: the Swords of Justice (Cobalion, Terrakion, Virizion) and Keldeo choose challengers by how their year went, Genesect breaks out of a laboratory, and Xerneas awakens.",
+    "Paradox Pokémon are back. When an expedition to Area Zero finds Koraidon, Miraidon or Terapagos, the crater stays open in that League for a year and exploring challengers may find a Paradox Pokémon. One of each in the world at a time; they aren't legendaries, so a trainer can hold one beside a legendary.",
+    "Legendary sites and Sanctuaries. A gym city where a legendary appeared or was caught becomes a legendary site for ten years. Every League with a gym there can build a Sanctuary (a city slot, three levels): it earns 250, 500 or 800 a week while the site lasts (an attraction's income after) and adds a point of prestige a level each New Year. Rival Leagues build them too. Sites show on the Cities page.",
+    "Old saves don't load (save version 10).",
+  ] },
   { id: 19, ver: '0.19.0', date: 'November 16, 2026', time: '5:30 AM ET', title: 'Restoring what was lost', items: [
     "Restore what the red cost you. A building level a League lost while in the red (sold in the red, or lost to unpaid upkeep) leaves a ruin, and rebuilding that level in the same place costs only 30% of its price. The Cities page shows it as a Restore button. A level sold while you are solvent leaves no ruin. A League that crashed now climbs back in about six years instead of ten.",
     "Distress sales come to you first. When a rival League loses a building level in a city where you have a gym (to unpaid upkeep, or when it folds), you're offered that level at 30% of its price for four weeks, with a stop and a Distress sales panel on the Cities page. The rival is paid if you buy; otherwise the level is simply lost.",
