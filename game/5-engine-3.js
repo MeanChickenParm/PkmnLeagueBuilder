@@ -1535,7 +1535,8 @@ function postPay(t, wasStaff) {
   const fee = SIGN_WEEKS * payOf(t);
   if (fee) book(-fee, 'signing', `Signing fee: ${t.name} (${postName(t)})`);
   // (0.15.0) staff from another League: their old League receives the fee
-  if (fee && t.leftAt === S.turn && t.leftLg != null && t.leftLg !== (S.lg || 0) && t.leftLg < nLeagues()) { const to = S.lgName; inLeague(t.leftLg, () => { if (S.fin) book(fee, 'transfers', `Transfer fee: ${t.name} to the ${to}`); }); }
+  // (0.19.0) a League that folded (a negative number) has no books to pay into
+  if (fee && t.leftAt === S.turn && t.leftLg != null && t.leftLg >= 0 && t.leftLg !== (S.lg || 0) && t.leftLg < nLeagues()) { const to = S.lgName; inLeague(t.leftLg, () => { if (S.fin) book(fee, 'transfers', `Transfer fee: ${t.name} to the ${to}`); }); }
 }
 // severance for someone let go (not for someone you let go on another run they asked for)
 function severance(t, was) {

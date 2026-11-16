@@ -106,7 +106,7 @@ else {
   const { spawn } = require('child_process');
   const outs = parts.map(() => ''), procs = parts.map((p, i) => { const c = spawn(process.execPath, [__filename, ...pass, `--worker=${p.join(',')}`]); c.stdout.on('data', d => { outs[i] += d; }); c.stderr.on('data', d => process.stderr.write(d)); return c; });
   let left = procs.length;
-  procs.forEach(c => c.on('close', () => { if (--left === 0) (FOLD != null ? foldReport : report)(outs.map(o => JSON.parse(o))); }));
+  procs.forEach((c, i) => c.on('close', (code, sig) => { if (code || sig) console.error(`worker ${i} (worlds ${parts[i].join(',')}) stopped: code ${code}, signal ${sig}`); if (--left === 0) (FOLD != null ? foldReport : report)(outs.filter(o => o).map(o => JSON.parse(o))); }));
 }
 if (res) (FOLD != null ? foldReport : report)(res);
 
