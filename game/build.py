@@ -43,4 +43,10 @@ z = os.path.join(OUT, f'pokemon-league-builder-v{ver}-itch.zip')
 with zipfile.ZipFile(z, 'w', zipfile.ZIP_DEFLATED) as zf:
     for f in ('index.html', 'pokemon-data.js'): zf.write(os.path.join(OUT, 'itch', f), f)
 open(os.path.join(OUT, 'engine-node.js'), 'w', encoding='utf-8').write(data + '\n' + engine + '\n')
+# the GitHub Pages copy (Nov 16, 2026, the owner): docs/index.html in the repo, rebuilt every build and committed
+# every push, so the site always plays the version on main
+docs = os.path.join(os.path.dirname(SRC.rstrip('/')) or '.', 'docs')
+os.makedirs(docs, exist_ok=True)
+open(os.path.join(docs, 'index.html'), 'w', encoding='utf-8').write(html(f'<script>\n{data}\n</script>'))
+open(os.path.join(docs, '.nojekyll'), 'w').write('')
 print(f'v{ver}: {single} ({os.path.getsize(single):,} bytes), {z}')

@@ -11,7 +11,8 @@ This repo is the only master copy of the game. Every chat works the same way: cl
 - Edit the source pieces in `game/`, never the built HTML.
 - One chat = one new version number, with all of that chat's changes in one changelog entry (date and Eastern Time timestamp).
 - Test before every push: the Node sim, the headless browser play-through and the two code checks below must all pass.
-- **Don't send the game files unless asked.** The build still makes the game HTML and the itch.io zip and they are checked every chat, but they are only sent to the owner when the owner asks for them, once the game is playable. The built game is not committed to the repo (there is no GitHub Pages site yet).
+- **Don't send the game files unless asked.** The build still makes the game HTML and the itch.io zip and they are checked every chat, but they are only sent to the owner when the owner asks for them, once the game is playable.
+- **The GitHub Pages copy (owner, Nov 16, 2026):** the build also writes `docs/index.html` (the single-file game, identical to `dist/Pokémon League Builder.html`) and `docs/.nojekyll`. Commit `docs/` with every push so the Pages site always plays the version on `main`. It is the only built file in the repo; `dist/` stays uncommitted. Pages is switched on by the owner in the repo's settings (Pages → Deploy from a branch → `main`, folder `/docs`); a chat can't change that setting.
 - Keep this file up to date, and keep the design doc in the Project up to date with what was decided and what was built.
 - **Old saves don't matter (owner, Nov 13, 2026):** never hold back a change to keep old saves working. Bump `SAVE_VERSION` whenever it is simpler, and don't write fallback code for older saves.
 
@@ -45,6 +46,7 @@ This repo is the only master copy of the game. Every chat works the same way: cl
 - `tests/`: the checks to run before pushing.
 - `TODO.md`: things left over or tabled. Add to it; remove an item once it is done.
 - `dist/` (not committed): build output.
+- `docs/` (committed): the GitHub Pages copy of the game, written by the build. Never edit it by hand.
 
 | Piece | What's in it | Starts at |
 |---|---|---|
@@ -136,7 +138,7 @@ Balance at 0.5.0, tuned (1 League, seed 1; `25 12 --tiers` rechecked at the star
 ## End of every chat
 1. `git pull` first. If someone pushed a newer version in the meantime, merge their changes in and give this chat's work the next version number; never overwrite theirs.
 2. Rebuild and run every test.
-3. Commit `game/`, `tests/` and the docs with a message naming the version (e.g. `v0.2.0: badge-level gym battles`), and push to `main`.
+3. Commit `game/`, `tests/`, `docs/` (the Pages copy) and the docs with a message naming the version (e.g. `v0.2.0: badge-level gym battles`), and push to `main`.
 4. Update `claude/game-design.md` in the Project with what was decided and what was built, and say what the next chat should cover.
 5. Send the game HTML and the itch.io zip only if the owner asked for them.
 
