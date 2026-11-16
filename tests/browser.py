@@ -129,6 +129,18 @@ async def run(path):
                     // 0.18.0: sell it back for half from the Cities page
                     { const sb = document.querySelector('[data-act=sellb][data-w=seat][data-k=attract]'), m1 = S.fin.money;
                       if (!(S.seatB || []).some(x => x.k === 'attract')) {} else if (!sb) log.push('FAIL no sell button for the attraction'); else { sb.click(); if ((S.seatB || []).some(x => x.k === 'attract') || S.fin.money !== m1 + 12500) log.push('FAIL selling the attraction'); else log.push('sold the attraction'); } }
+                    // 0.19.0: a level sold in the red can be restored at 30%; a distress offer can be bought from the Cities page
+                    { const keep = S.fin.money; S.fin.money = 100000; go('cities'); const b2 = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
+                      if (b2 && !b2.disabled) { b2.click(); S.fin.money = -1000; inLeague(0, () => sellBuilding('seat', 'attract')); S.fin.money = 100000; go('cities');
+                        const rb = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
+                        if (!rb || !/Restore/.test(rb.textContent)) log.push('FAIL no Restore button after a sale in the red');
+                        else { rb.click(); if (S.fin.money !== 100000 - 7500 || !(S.seatB || []).some(x => x.k === 'attract')) log.push('FAIL restoring the attraction'); else log.push('restored the attraction'); } }
+                      const ck = inLeague(0, () => buildCheck(0, 'attract'));
+                      if (!ck.why) { S.distress = [{ city: S.gyms[0].city, k: 'attract', lv: ck.lv, from: -1, price: 7500, due: S.turn + 4, at: S.turn }]; go('cities');
+                        const db = document.querySelector('[data-act=distbuy]'), m2 = S.fin.money;
+                        if (!db || !/Distress sales/.test(document.querySelector('#main').textContent)) log.push('FAIL no distress sales panel');
+                        else { db.click(); if (S.fin.money !== m2 - 7500 || (S.distress || []).length) log.push('FAIL buying a distress offer'); else log.push('bought a distress offer'); } }
+                      S.fin.money = keep; go('cities'); }
                     if (document.querySelectorAll('[data-act=movegym]').length !== 3) log.push('FAIL the Cities page should list three cities with no gym');
                     go('meta'); const bn = [...document.querySelectorAll('[data-act=ban][data-v="1"]')].find(x => !x.disabled);
                     if (bn) { const sp = bn.dataset.sp; bn.click(); if (!inLeague(0, () => paidBans().some(x => x.sp === sp))) log.push('FAIL paying for a ban'); else log.push('banned ' + sp); } else log.push('nothing to ban yet');
