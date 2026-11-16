@@ -447,7 +447,7 @@ function accolades(t) {
   for (const k of Object.keys(AWARDS)) if (byK[k] && !['poy', 'coy'].includes(k)) a.push({ k: 'award', tag: `${AWARDS[k].short}${byK[k].length > 1 ? ' ×' + byK[k].length : ''}`, text: `${AWARDS[k].name} (${seasonsLg(byK[k])})` });
   for (const x of t.greatLegends || []) a.push({ k: 'legend', tag: x.sp, text: x.how === 'glitch' ? `${x.sp} glitched onto the team (${seasonsLg([x])})` : `${x.how === 'caught' ? 'Caught' : 'Chosen by'} ${x.sp} (${seasonsLg([x])})` });
   if (t.career.defenses) a.push({ k: 'def', tag: `${t.career.defenses} defense${t.career.defenses > 1 ? 's' : ''}`, text: `${t.career.defenses} successful title defense${t.career.defenses > 1 ? 's' : ''}` });
-  if (t.hof) a.push({ k: 'hof', tag: 'Hall of Fame', text: `Hall of Fame${t.retiredSeason ? ', inducted Year ' + t.retiredSeason : ''}` });
+  if (t.hof) a.push({ k: 'hof', tag: 'Hall of Fame', text: `Hall of Fame: ${t.hofN || 1} entr${(t.hofN || 1) === 1 ? 'y' : 'ies'}, one for each title` });
   const cw = circuitWins(t); if (cw) { const by = lgCounts((t.seasonHist || []).filter(h => h.badges === 8)); a.push({ k: 'circ', tag: `Circuit ×${cw}`, text: `Completed the badge circuit ${cw} time${cw > 1 ? 's' : ''}${by ? ' (' + by + ')' : ''}` }); }
   const bf = bestFinish(t); if (bf != null && bf < 5) { const where = [...new Set((t.seasonHist || []).filter(h => h.stage === bf && lgIn(h.lg)).map(h => leagueName(h.lg)))]; a.push({ k: 'run', tag: '', text: `Best League finish: ${bf === 4 ? 'Championship match' : 'Elite Four #' + (bf + 1)}${where.length ? ' (' + where.join(', ') + ')' : ''}` }); }
   if (t.career.e4Wins) a.push({ k: 'e4', tag: '', text: `${t.career.e4Wins} wins as an Elite Four member` });
@@ -721,7 +721,7 @@ function viewRecords() {
     ${recBoard('Pokémon losing streak', topBy(noGymMons, x => x.st.wl || 0, 50).map(([x, v]) => ({ who: monWho(x), v: v + (v === 1 ? ' loss' : ' losses'), sub: x.cur && x.st.cl === v ? 'ongoing' : '' })), 'Battles it took part in, in a row, on the losing side. Gym Leaders\' Pokémon not included. Tracked from v122 on.', 'pk-losing-streak')}
     ${recBoard('Leakiest gym year', gymSeasons.sort((a, b) => a.p - b.p || b.l - a.l).slice(0, 5).map(g => ({ who: tname(g.t.id), v: `${g.w}–${g.l}`, sub: `${g.town} Gym, Year ${g.season}${lgIn(S.lg || 0) ? ' · ' + lgIn(S.lg || 0) : ''}` })), 'Lowest share of challenges held, 8+ challenges.')}
   </div></section>`;
-  const hofLink = `<section class="panel"><div class="ph"><h2>Hall of Fame</h2><span class="muted">${(S.hof || []).length} inductee${(S.hof || []).length === 1 ? '' : 's'}</span></div><p>Champions are inducted when they retire. <button class="link" data-act="nav" data-v="hof">Open the Hall of Fame ›</button></p></section>`;
+  const hofLink = `<section class="panel"><div class="ph"><h2>Hall of Fame</h2><span class="muted">${(S.hof || []).length} entr${(S.hof || []).length === 1 ? 'y' : 'ies'}</span></div><p>Every title win enters the Hall at once, with the team that won it. <button class="link" data-act="nav" data-v="hof">Open the Hall of Fame ›</button></p></section>`;
   const partnersOf = x => { const f = x.uid != null ? findLegend(x.uid) : null; return f && f.m.partners ? f.m.partners.length : 1; };
   const legWho = x => `${monLink(x)} <span class="muted small">${x.pooled ? 'waiting · last with ' + dn(x.t) : dn(x.t)}</span>`;
   const legends = `<section class="panel"><div class="ph"><h2>Legendary &amp; mythical</h2><span class="muted">Each legendary counted once across all its partners, with its lifetime record</span></div><div class="recgrid">
@@ -737,64 +737,135 @@ function viewRecords() {
   </div></section>`;
   return champion + hofLink + trainers + pokemon + legends + seasons + rivals + shame;
 }
+// ---------- the progress board (0.21.0) ----------
+// One row per stop (gyms 1 to 8, the Elite Four, the Champion): challengers there now, let through this year, runs walled
+// there this year and a bar of the share of tries held. Tapping a row opens it: who leads it and stands in its line,
+// who is there now and how far they are, who got through lately (the try and the core of their team), who was walled
+// (and by whom), and the types that are beating it this year. Works for any League through the League switcher.
+let boardSel = null; // null, a gym index, 'e4:k' or 'champ'
+const BOARD_THREATS = 14;
+function boardThreats() {
+  const lg = S.lg || 0, out = [];
+  for (const id of S.challengers) {
+    const t = T(id); if (!t || t.role !== 'challenger') continue;
+    const deep = t.rest == null && (t.badges || []).length >= 6, imp = impressed(t), con = t.spon && t.spon.to === lg;
+    if (deep || con || imp) out.push({ t, k: (t.rest == null ? (t.badges || []).length : 0) * 10 + (con ? 5 : 0) + (imp ? 2 : 0) + ovr(t) / 100, deep, imp, con });
+  }
+  return out.sort((a, b) => b.k - a.k).slice(0, BOARD_THREATS);
+}
+const boardBar = (w, l) => { const n = w + l, p = n ? Math.round(w / n * 100) : null; return p == null ? '<span class="muted small">no tries yet</span>' : `<span class="hbar" title="${p}% of ${n} tries held"><span style="width:${p}%"></span></span> <span class="small">${p}%</span>`; };
+const stageWord = k => k === 0 ? 'gym trainer 1' : k === 1 ? 'gym trainer 2' : 'the leader';
+function boardRows() {
+  const out = S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.rest == null);
+  const L = S.league || { entries: [] }, E = L.entries || [];
+  const row = (key, label, holder, now, thru, wall, w, l) => `<tr class="boardrow${String(boardSel) === String(key) ? ' on' : ''}" data-act="boardrow" data-v="${key}"><td><b>${label}</b><div class="small muted">${holder}</div></td><td class="num">${now}</td><td class="num">${thru}</td><td class="num">${wall}</td><td>${boardBar(w, l)}</td></tr>`;
+  const rows = S.gyms.map((g, i) => {
+    const ld = T(g.leader);
+    return row(i, `Badge ${i + 1} · ${townName(i)}`, ld ? `${dn(ld)} · ${typeLabel(ld)}${ld.acting ? ' (acting)' : ''}` : 'Vacant', out.filter(t => t.badges.length === i).length, g.l, g.out || 0, g.w, g.l);
+  });
+  const ready = out.filter(t => t.badges.length >= 8).length;
+  for (let k = 0; k < 4; k++) { const h = T(S.e4[k]), faced = E.filter(e => e.stage >= k).length, st = E.filter(e => e.stage === k).length;
+    rows.push(row('e4:' + k, `Elite Four #${k + 1}`, h ? `${dn(h)} · ${typeLabel(h)}` : 'Vacant', k === 0 ? ready : '—', faced - st, st, st, faced - st)); }
+  { const c = T(S.champion), faced = E.filter(e => e.stage >= 4).length, won = E.filter(e => e.stage === 5).length;
+    rows.push(row('champ', 'Champion', c ? `${dn(c)} · ${typeLabel(c)}` : 'Vacant', '—', won, faced - won, faced - won, won)); }
+  return rows.join('');
+}
+// the challengers' latest Elite Four runs at this League (this year, then last year's), newest first
+const boardRuns = () => [...((S.league || {}).entries || []).map(e => [e, S.season]), ...((S.lastLeague || {}).entries || []).map(e => [e, S.season - 1])].reverse();
+function boardDetail() {
+  if (boardSel == null) return '<p class="muted small">Tap a row to open that stop: who is there now, who got through lately, who was walled and what is beating it.</p>';
+  const li = (x, extra) => `<li>${tname(x)}${extra ? ` <span class="small muted">${extra}</span>` : ''}</li>`;
+  const list = (title, items, none) => `<div><div class="eyebrow">${title}</div>${items.length ? `<ul class="changes">${items.join('')}</ul>` : `<p class="muted small">${none}</p>`}</div>`;
+  if (typeof boardSel === 'number') {
+    const i = boardSel, g = S.gyms[i]; if (!g) return '';
+    const ld = T(g.leader), line = (g.trainers || []).map(T).filter(Boolean).concat(ld ? [ld] : []);
+    const here = S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.rest == null && t.badges.length === i).sort((a, b) => (b.gymTries || 0) - (a.gymTries || 0) || gymStageNow(b) - gymStageNow(a));
+    const rec = g.recent || { thru: [], wall: [] };
+    const beat = Object.entries(g.beat || {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    return `<div class="ph"><h3>Badge ${i + 1} · ${townName(i)} Gym</h3><span class="muted">Lv ${GYM_LV[i]} · ${GYM_SIZE[i]} Pokémon for the leader · ${g.w}–${g.l} this year</span></div>
+      <ul class="mini">${line.map((t, k) => `<li><span>${k === line.length - 1 ? '<b>Leader</b> ' : `Gym trainer ${k + 1} `}${tname(t.id)} ${specChips(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>
+      <div class="hist3">
+        ${list(`Here now (${here.length})`, here.map(t => li(t.id, `${t.gymTries || 0} of ${GYM_TRIES} tries used · up to ${stageWord(gymStageNow(t))}`)), 'Nobody is at this gym right now.')}
+        ${list('Let through lately', rec.thru.slice().reverse().map(([id, at, tr, core]) => li(id, `${turnDate(at)} · try ${tr} · ${(core || []).join(', ')}`)), 'Nobody yet.')}
+        ${list('Walled lately', rec.wall.slice().reverse().map(([id, at, by]) => li(id, `${turnDate(at)} · lost to ${T(by) ? dn(T(by)) : '?'}`)), 'Nobody yet.')}
+      </div>
+      <div class="eyebrow" style="margin-top:.6rem">What's beating it this year</div>${beat.length ? `<p>${beat.map(([ty, n]) => `${chip(ty)} <span class="small muted">×${n}</span>`).join(' ')} <span class="small muted">types in the squads that took its badge</span></p>` : '<p class="muted small">No badges conceded this year.</p>'}
+      ${(S.lg || 0) === ME() ? gymWatch(g, i) : ''}`;
+  }
+  const champ = boardSel === 'champ', k = champ ? 4 : +String(boardSel).split(':')[1], h = T(champ ? S.champion : S.e4[k]);
+  const runs = boardRuns().filter(([e]) => e.stage >= k);
+  const thru = runs.filter(([e]) => e.stage > k).slice(0, BOARD_KEEP), stop = runs.filter(([e]) => e.stage === k).slice(0, BOARD_KEEP);
+  const ready = k === 0 ? S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.rest == null && t.badges.length >= 8) : [];
+  return `<div class="ph"><h3>${champ ? 'Champion' : `Elite Four #${k + 1}`}${h ? ' · ' + tname(h.id) : ''}</h3><span class="muted">${h ? `${typeLabel(h)} · Lv ${champ ? champLv() : E4_LV[k]}` : 'Vacant'}</span></div>
+    ${h ? `<p class="small muted">${h.team.map(m => m.sp).join(', ')}</p>` : ''}
+    <div class="hist3">
+      ${k === 0 ? list(`Preparing for the Elite Four (${ready.length})`, ready.map(t => li(t.id, `${t.team.length} Pokémon`)), 'Nobody has eight badges right now.') : ''}
+      ${list(champ ? 'Won the title lately' : 'Got past lately', thru.map(([e, y]) => li(e.id, `${weekShort(e.week)}, Year ${y}`)), 'Nobody yet.')}
+      ${list(champ ? 'Stopped by the Champion lately' : 'Stopped here lately', stop.map(([e, y]) => li(e.id, `${weekShort(e.week)}, Year ${y}`)), 'Nobody yet.')}
+    </div>`;
+}
+function viewBoard() {
+  const th = boardThreats();
+  return `<section class="panel"><div class="ph"><h2>Progress board${nLeagues() > 1 ? ' · ' + esc(S.lgName) : ''}</h2><span class="muted">${dateName()} · ${S.challengers.length} challengers on the circuit, ${S.challengers.map(T).filter(t => t && t.rest == null).length} out on a run</span></div>
+    <div class="threats"><span class="eyebrow">Threats</span>${th.length ? th.map(x => `<span class="threat">${tname(x.t.id)} <span class="small">${x.t.rest == null ? `${x.t.badges.length} badge${x.t.badges.length === 1 ? '' : 's'}` : 'resting'}</span>${x.con ? ' <span class="tag small">Contender</span>' : ''}${x.imp ? ' <span class="tag gold small">Impressed</span>' : ''}</span>`).join('') : '<span class="muted small">Nobody with six badges or more, no contenders and nobody who impressed.</span>'}</div>
+    <div class="scroll"><table class="tbl board"><thead><tr><th>Stop</th><th title="Challengers out on a run who are at this stop now">Here now</th><th title="This year">Let through</th><th title="Runs ended here on a third loss this year (the Elite Four and Champion: runs stopped here)">Walled</th><th>Held</th></tr></thead><tbody>${boardRows()}</tbody></table></div></section>
+    <section class="panel boarddetail">${boardDetail()}</section>`;
+}
 // ---------- Hall of Fame ----------
-let hofQ = '', hofSort = 'new', hofLg = 'all'; // hofLg: 'all' or a League index (multi-League saves)
-const HOF_SORTS = [['new', 'Newest inductees'], ['titles', 'Most titles'], ['worlds', 'Most World titles'], ['reign', 'Longest reign'], ['winpct', 'Best win %'], ['defenses', 'Most defenses'], ['badges', 'Most badges'], ['seasons', 'Longest career']];
-// every reign in every League's history, by trainer: { from, to, n (season-ends held), lg }
-function reignsByTrainer() {
-  const map = new Map();
-  eachLeague(i => { for (const r of reigns()) { if (!map.has(r.id)) map.set(r.id, []); map.get(r.id).push({ ...r, lg: i }); } });
-  for (const list of map.values()) list.sort((a, b) => a.from - b.from);
-  return map;
+let hofQ = '', hofSort = 'new', hofLg = 'all'; // hofLg: 'all' or a League index (folded Leagues are negative)
+// (0.21.0) the Hall of Fame on winning: one card per title win, with the team that won it
+const HOF_SORTS = [['new', 'Newest'], ['old', 'Oldest'], ['most', 'Most entries'], ['league', 'By League']];
+// the title battle of an entry, while its League keeps it: [League, 'cur' | 'last', index]
+function hofLog(e) {
+  if (e.lg < 0 || e.lg >= nLeagues()) return null;
+  return inLeague(e.lg, () => { for (const [k, L] of [['cur', S.league], ['last', S.lastLeague]]) { const i = L && L.logs ? L.logs.findIndex(r => r.hof === e.uid) : -1; if (i >= 0) return [e.lg, k, i]; } return null; });
 }
-const reignText = r => `${r.from === r.to ? 'Season ' + r.from : `Years ${r.from}–${r.to}`} (${r.n} year${r.n > 1 ? 's' : ''})${nLeagues() > 1 ? ' · ' + lgShort(r.lg) : ''}`;
-function hofEntries() {
-  const rbt = reignsByTrainer();
-  const ids = (S.hof || []).filter(id => T(id));
-  const byTrainer = new Map(); for (const x of allMons()) { const cur = byTrainer.get(x.t); if (!cur || x.st.ko > cur.st.ko) byTrainer.set(x.t, x); }
-  return ids.map(id => { const t = T(id); return { t, best: byTrainer.get(t), titles: (t.titleSeasons || []).length || t.career.titles, worlds: (t.worldSeasons || []).length, reigns: rbt.get(t.id) || [] }; });
-}
-// everything a search can match: name, class, famous tags, type, trait, title seasons and Pokémon
+// the Leagues a Hall filter offers: every League open now and every folded League with an entry
+const hofLeagues = () => [...new Set(Array.from({ length: nLeagues() }, (_, i) => i).concat((S.hof || []).map(e => e.lg)))].sort((a, b) => (a < 0) - (b < 0) || Math.abs(a) - Math.abs(b));
 function hofText(e) {
-  const t = e.t;
-  return fold([dn(t), t.name, t.cls, specName(t), traitOf(t) ? TRAITS[traitOf(t)].name : '', ...famousTags(t).map(k => FAMOUS_TAG_LABELS[k]), t.famous ? 'famous' : '',
-    ...(t.titleSeasons || []).map(s => 'season ' + s), 'inducted ' + (t.retiredSeason || ''), (t.worldSeasons || []).length ? 'world champion' : '', t.grandSlam ? 'grand slam' : '', ...[...champLeaguesOf(t)].map(leagueName),
-    ...t.team.map(m => m.sp), ...(t.alumni || []).map(m => m.sp)].join(' '));
+  const t = T(e.id), c = T(e.champ);
+  return fold([t ? dn(t) : '', t ? t.name : '', t ? t.cls : '', c ? dn(c) : '', 'year ' + e.season, leagueName(e.lg), e.spon != null ? 'contender' : '', ...e.team.map(m => m.sp)].join(' '));
 }
+const hofMon = m => `<span class="hofmon" title="${esc([`Lv ${m.lv}`, m.ab, m.item && ITEMS[m.item] ? ITEMS[m.item].name : '', (m.moves || []).join(', ')].filter(Boolean).join(' · '))}">${m.shiny ? '✦ ' : ''}${esc(m.sp)}${m.item && ITEMS[m.item] ? ` <small class="muted">@ ${esc(ITEMS[m.item].name)}</small>` : ''}</span>`;
 function hofCard(e) {
-  const t = e.t, c = t.career, b = e.best;
-  return `<article class="hofcard"><div class="eyebrow">Inducted Year ${t.retiredSeason || '?'}${t.famous ? ' · ★ Famous' : ''}</div><div class="hof-name">${tname(t.id)}</div>
-    <div class="hof-stats"><span><b>${e.titles}</b> title${e.titles > 1 ? 's' : ''}</span>${e.worlds ? `<span class="hof-world"><b>${e.worlds}</b> World title${e.worlds > 1 ? 's' : ''}</span>` : ''}${e.reigns.length ? `<span><b>${Math.max(...e.reigns.map(r => r.n))}</b> year${Math.max(...e.reigns.map(r => r.n)) > 1 ? 's' : ''} longest reign</span>` : ''}<span><b>${c.defenses}</b> defense${c.defenses === 1 ? '' : 's'}</span><span><b>${c.badges}</b> badges</span><span><b>${t.seasons}</b> years</span>${(() => { const r = recOf(t), n = r.w + r.l; return n ? `<span class="hof-wl"><b>${r.w}–${r.l}</b> career (${Math.round(r.w / n * 100)}%)</span>` : ''; })()}</div>
-    ${nLeagues() > 1 && champLeaguesOf(t).size ? `<div class="hof-lgs">${[...champLeaguesOf(t)].sort().map(i => `<span class="tag lg">${lgShort(i)}</span>`).join('')}</div>` : ''}
-    ${e.reigns.length ? `<div class="hof-reigns"><span class="eyebrow">Reign${e.reigns.length > 1 ? 's' : ''}</span>${e.reigns.map(r => `<span>${reignText(r)}</span>`).join('')}</div>` : ''}
-    <div class="small">${(t.titleSeasons || []).length ? 'Champion in ' + seasonsLg(titleList(t)) : ''}${e.worlds ? ` · World Champion in Year ${t.worldSeasons.join(', ')}` : ''}${t.grandSlam ? ' · Grand Slam' : ''}</div>
-    <div class="small muted">${specName(t)}${traitOf(t) ? ' · ' + TRAITS[traitOf(t)].name : ''}</div>
-    ${b ? `<div class="small muted">Best Pokémon: ${monLink(b)} (${b.st.ko} KOs)</div>` : ''}</article>`;
+  const t = T(e.id), n = t ? t.hofN || 1 : 1, k = (S.hof || []).filter(x => x.id === e.id && x.uid <= e.uid).length, w = hofLog(e);
+  return `<article class="hofcard"><div class="eyebrow">Year ${e.season} · ${weekShort(e.week)} · ${esc(leagueName(e.lg))}${e.lg < 0 ? ' (folded)' : ''}</div><div class="hof-name">${t ? tname(t.id) : 'Unknown'}</div>
+    <div class="hof-stats"><span>beat Champion ${T(e.champ) ? tname(e.champ) : '?'}</span>${n > 1 ? `<span><b>${k}</b> of ${n} entries</span>` : ''}${e.spon != null ? `<span class="tag small">Contender for the ${esc(lgShort(e.spon))}</span>` : ''}</div>
+    <div class="hof-team">${e.team.map(hofMon).join('')}</div>
+    ${w ? `<button class="btn small" data-act="watchhof" data-u="${e.uid}">Watch the title battle</button>` : ''}</article>`;
 }
 function hofResults() {
   const q = fold(hofQ.trim());
-  let list = hofEntries();
-  // League filter: Champions who finished a season holding that League's title (one who won several shows in each)
+  let list = (S.hof || []).slice();
   const all = list.length;
-  if (hofLg !== 'all' && +hofLg >= nLeagues()) hofLg = 'all';
-  const lgOn = nLeagues() > 1 && hofLg !== 'all';
-  if (lgOn) list = list.filter(e => champLeaguesOf(e.t).has(+hofLg));
+  if (hofLg !== 'all' && !hofLeagues().includes(+hofLg)) hofLg = 'all';
+  const lgOn = hofLg !== 'all';
+  if (lgOn) list = list.filter(e => e.lg === +hofLg);
   const total = list.length;
-  // a search ending in a number matches that number exactly, so "season 3" doesn't also find Season 30
+  // a search ending in a number matches that number exactly, so "year 3" doesn't also find Year 30
   if (q) { const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + (/\d$/.test(q) ? '(?!\\d)' : '')); list = list.filter(e => re.test(hofText(e))); }
-  const key = { new: e => e.t.retiredSeason || 0, winpct: e => { const r = recOf(e.t), n = r.w + r.l; return n ? r.w / n : -1; }, reign: e => Math.max(0, ...e.reigns.map(r => r.n)) * 1000 + e.reigns.reduce((a, r) => a + r.n, 0), worlds: e => e.worlds * 1e6 + e.titles * 1000 + e.t.career.defenses, titles: e => e.titles * 1000 + e.t.career.defenses, defenses: e => e.t.career.defenses, badges: e => e.t.career.badges, seasons: e => e.t.seasons }[hofSort];
-  list.sort((a, b) => key(b) - key(a) || (b.t.retiredSeason || 0) - (a.t.retiredSeason || 0));
-  if (!all) return '<p class="muted">No inductees yet. A Champion is inducted when they retire.</p>';
-  if (!total) return `<p class="muted">No inductees have been Champion of the ${leagueName(+hofLg)} yet.</p>`;
-  if (!list.length) return `<p class="muted">No inductees match “${esc(hofQ.trim())}”. Try a name, a type or a Pokémon.</p>`;
-  return `<p class="muted small">${list.length} of ${total} inductee${total === 1 ? '' : 's'}${lgOn ? ` who won the ${leagueName(+hofLg)}` : ''}${q ? ` matching “${esc(hofQ.trim())}”` : ''}</p><div class="hofgrid">${list.map(hofCard).join('')}</div>`;
+  const nOf = e => (T(e.id) || {}).hofN || 1;
+  const key = { new: (a, b) => b.uid - a.uid, old: (a, b) => a.uid - b.uid, most: (a, b) => nOf(b) - nOf(a) || a.id - b.id || b.uid - a.uid, league: (a, b) => (a.lg < 0) - (b.lg < 0) || Math.abs(a.lg) - Math.abs(b.lg) || b.uid - a.uid }[hofSort] || ((a, b) => b.uid - a.uid);
+  list.sort(key);
+  if (!all) return '<p class="muted">No entries yet. A challenger enters the Hall of Fame the moment they beat a Champion.</p>';
+  if (!total) return `<p class="muted">Nobody has won the ${leagueName(+hofLg)} yet.</p>`;
+  if (!list.length) return `<p class="muted">No entries match “${esc(hofQ.trim())}”. Try a name, a year, a League or a Pokémon.</p>`;
+  const shown = list.slice(0, HOF_SHOW);
+  return `<p class="muted small">${list.length} of ${total} entr${total === 1 ? 'y' : 'ies'}${lgOn ? ` in the ${leagueName(+hofLg)}` : ''}${q ? ` matching “${esc(hofQ.trim())}”` : ''}${list.length > shown.length ? ` · showing the first ${shown.length}` : ''}</p><div class="hofgrid">${shown.map(hofCard).join('')}</div>`;
 }
+const HOF_SHOW = 120;
 function viewHof() {
-  return `<section class="panel"><div class="ph"><h2>Hall of Fame</h2><span class="muted">Champions only, inducted when they retire</span></div>
-    ${searchBox('hofsearch', hofQ, 'Search the Hall of Fame', 'Search by name, type, trait, year or Pokémon')}
-    ${nLeagues() > 1 ? `<div class="filters hof-lgf"><span class="muted small">Champion of:</span>${[['all', 'All Leagues'], ...Array.from({ length: nLeagues() }, (_, i) => [String(i), leagueName(i)])].map(([k, l]) => `<button class="pill${String(hofLg) === k ? ' on' : ''}" data-act="hoflg" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
-    <div class="filters">${HOF_SORTS.filter(([k]) => k !== 'worlds' || nLeagues() > 1 || (S.worldHist || []).length).map(([k, l]) => `<button class="pill${hofSort === k ? ' on' : ''}" data-act="hofsort" data-v="${k}">${l}</button>`).join('')}</div>
+  const lgs = hofLeagues(), people = new Set((S.hof || []).map(e => e.id)).size;
+  return `<section class="panel"><div class="ph"><h2>Hall of Fame</h2><span class="muted">Every title win, entered the moment it is won · ${people} Hall of Famer${people === 1 ? '' : 's'}</span></div>
+    ${searchBox('hofsearch', hofQ, 'Search the Hall of Fame', 'Search by name, year, League, Champion or Pokémon')}
+    ${lgs.length > 1 ? `<div class="filters hof-lgf"><span class="muted small">League:</span>${[['all', 'All Leagues'], ...lgs.map(i => [String(i), leagueName(i) + (i < 0 ? ' (folded)' : '')])].map(([k, l]) => `<button class="pill${String(hofLg) === k ? ' on' : ''}" data-act="hoflg" data-v="${k}">${esc(l)}</button>`).join('')}</div>` : ''}
+    <div class="filters">${HOF_SORTS.map(([k, l]) => `<button class="pill${hofSort === k ? ' on' : ''}" data-act="hofsort" data-v="${k}">${l}</button>`).join('')}</div>
     <div id="hofres">${hofResults()}</div></section>`;
+}
+// a trainer's own Hall of Fame entries, on their page
+function hofPanel(t) {
+  const es = hofOf(t); if (!es.length) return '';
+  return `<section class="panel"><div class="ph"><h3>Hall of Fame</h3><span class="muted">${es.length} entr${es.length === 1 ? 'y' : 'ies'}</span></div><div class="hofgrid">${es.slice().reverse().map(hofCard).join('')}</div></section>`;
 }
 function viewHistory() {
   const h = S.history.slice().reverse();
@@ -1178,7 +1249,9 @@ const GLOSS_TERMS = {
     ['Champion', 'A challenger who beats the Champion wins a title, and the League has conceded one. The Champion keeps the seat and only leaves by retiring; for now the strongest Elite Four member then moves up.'],
     ['World Championship', 'With several Leagues, their Champions meet after the season.'],
     ['Triple Crown', 'Champion of three different Leagues across a career. A trainer with titles in 2+ Leagues gets 3 extra years before age can retire them.'],
-    ['Hall of Fame', 'Retired trainers who won a title.'],
+    ['Progress board', 'A page of its own (League menu, or Board in the header) showing how far everyone has got against a League: one row per gym, Elite Four seat and the Champion, with the challengers there now, how many it let through and walled this year, and the share of tries it held. Open a row for who is there and on which try, who got through lately with the core of their team, who was walled and by whom, and the types beating it. The threats strip lists challengers with six badges or more, contenders and anyone who impressed. The League switcher shows any League\'s board.'],
+    ['Gym memory', `A challenger who loses at a gym remembers the types of the trainer who beat them there. On later tries they pick their squad against those types, and between tries they lean their catches toward counters (and sometimes go looking for one). Strategy sets how well they learn. The memory is kept across runs at that League, never carried to another, and wiped when the gym changes: a new leader or gym trainer, or about ${Math.round(GMEM_CHANGE * 100)}% of its line's Pokémon replaced since (steers, a leader adapting, bans). A gym that never changes wears down; one that keeps changing holds.`],
+    ['Hall of Fame', 'Every title win, entered the moment the Champion is beaten, with the team that won it, the year, the League, the Champion beaten and a contender tag. A trainer who wins again gets another entry. Anyone with an entry is a Hall of Famer, and each entry adds to their prestige.'],
     ['Hall of Shame', "Records nobody wants: worst win rates, longest losing streaks and the like."],
     ['Meta', 'The five best-performing species of the season. Newcomers lean toward types that counter them.'],
     ['Rival', 'Two challengers who keep meeting in close road battles.'],

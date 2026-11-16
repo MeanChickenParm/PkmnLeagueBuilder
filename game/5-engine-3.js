@@ -2377,7 +2377,7 @@ function removeLeague(k, info) {
     c.st = keys(c.st); c.b = keys(c.b); c.spent = keys(c.spent);
     if (c.ctrl != null) c.ctrl = c.ctrl === k ? null : rm(c.ctrl);
   }
-  rmArr(S.news); rmArr(S.myLeagues); rmArr(S.chalPending); rmArr(S.distress, 'from');
+  rmArr(S.news); rmArr(S.myLeagues); rmArr(S.chalPending); rmArr(S.distress, 'from'); rmArr(S.hof); rmArr(S.hof, 'spon'); // (0.21.0) Hall entries keep a folded League's name
   for (const w of S.worldHist || []) { w.winnerLg = rm(w.winnerLg); w.runnerLg = rm(w.runnerLg); }
   const hists = [S.history].concat(S.leagues.map((L, i) => i === (S.lg || 0) ? null : L.history));
   for (const hs of hists) for (const h of hs || []) {

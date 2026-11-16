@@ -260,6 +260,14 @@ p { margin: 0; }
 .hofgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .hofcard { border: 1px solid var(--gold); border-radius: 10px; padding: 12px 14px; background: var(--gold-soft); }
 .hof-name { font-size: 18px; font-weight: 700; margin: 2px 0 6px; }
+.threats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 4px 0 10px; }
+.threat { padding: 2px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.boardrow { cursor: pointer; }
+.boardrow.on td { background: var(--gold-soft); }
+.hbar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: var(--sunk); vertical-align: middle; overflow: hidden; }
+.hbar > span { display: block; height: 100%; background: var(--win); }
+.hof-team { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0; font-size: 13px; }
+.hofmon { padding: 1px 6px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); }
 .hof-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-bottom: 4px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .stats div { background: var(--sunk); border-radius: 8px; padding: 8px 10px; }
