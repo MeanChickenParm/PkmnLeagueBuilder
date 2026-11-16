@@ -14,6 +14,7 @@ const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
+const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -33,6 +34,21 @@ function check(tag) {
       if (x.until <= x.at) bad('a contract that ends before it starts');
       per[x.lg] = (per[x.lg] || 0) + 1; }
     for (const k in per) if (per[k] > g.SPON_MAX) bad('League ' + k + ' has ' + per[k] + ' contenders'); }
+  // (0.21.0) the Hall of Fame on winning: one entry per title, well-formed, counted on the trainer
+  { const per = {}, n = g.nLeagues(), nf = (s.folded || []).length;
+    for (const e of s.hof || []) { const t = s.trainers[e.id];
+      if (!t || !t.hof) bad('a Hall entry for a trainer who is not a Hall of Famer');
+      if (!s.trainers[e.champ]) bad('a Hall entry without the Champion beaten');
+      if (!(e.lg < n && e.lg >= -nf)) bad('a Hall entry in League ' + e.lg);
+      if (e.spon != null && !(e.spon < n && e.spon >= -nf)) bad('a Hall entry sponsored by League ' + e.spon);
+      if (!e.team || !e.team.length || e.team.length > 6 || e.team.some(m => !g.SP[m.sp] || !Array.isArray(m.moves))) bad('a Hall entry with a bad team');
+      per[e.id] = (per[e.id] || 0) + 1; }
+    for (const t of Object.values(s.trainers)) if ((t.hofN || 0) !== (per[t.id] || 0) || (t.career && t.career.titles !== (per[t.id] || 0))) { bad('Hall entries differ from titles for ' + t.name); break; } }
+  // (0.21.0) gym memory: per League, on trainers who exist, at real gyms, a few types each; the board's lists capped
+  g.eachLeague(() => { const m = g.S.gmem || {};
+    for (const [id, gs] of Object.entries(m)) { if (!s.trainers[id]) bad('gym memory for a missing trainer');
+      for (const [k, x] of Object.entries(gs)) { if (!(+k >= 0 && +k < 8) || !x.ty || !x.ty.length || x.ty.length > 4 || !Array.isArray(x.sps) || typeof x.line !== 'string') bad('a bad gym memory'); MEM.n++; } }
+    for (const gy of g.S.gyms) { const r = gy.recent; if (r && (r.thru.length > 8 || r.wall.length > 8)) bad('a gym keeps too many recent names'); if ((gy.out || 0) < 0) bad('negative walled count'); } });
   if (s.phase !== 'season') bad('unknown phase ' + s.phase);
   if (!(s.week >= 0 && s.week < g.YEAR_WEEKS)) bad('week out of range ' + s.week);
   if (s.turn !== (s.season - 1) * g.YEAR_WEEKS + s.week) bad('turn ' + s.turn + ' does not match year ' + s.season + ' week ' + s.week);
@@ -327,6 +343,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));
+console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));

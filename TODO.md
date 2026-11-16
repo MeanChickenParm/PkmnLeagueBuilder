@@ -155,3 +155,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Unova and later legendaries have no home region** (only four regions exist); they turn up at their usual rate everywhere.
 - **A site comes from where a legendary joined** (the encounter's town, the roamer's town, else the challenger's next gym, or a random gym for one with eight badges); storms and gifts have no town of their own.
 - **Legendary encounters still set their level from the circuit** (`circuitLevel()`), as before.
+
+## Left over from 0.21.0 (three Leagues, the progress board, the Hall of Fame on winning, gym memory)
+- **Gym memory is not tuned.** `GMEM_CHANGE` 0.3, `GMEM_SQUAD` 1.2, `GMEM_CATCH` 0.35, `GMEM_EXPLORE` 0.3 and `gmemLearn` were set by eye; how much it loosens the early gyms has not been measured (wall targets wait for the owner's play, design doc 3.5). The backstop dials of 3.5 stay ready. Challengers don't share what they learn (the owner: later, with contenders).
+- **Three Leagues from the start** spread the field over three walls; let-through numbers, save size and speed with three Leagues from year 1 have not been measured. Whether a rival in your own region should be an option is open.
+- **The progress board** has no week scrubber yet (the owner: later). It could become the home screen once the owner has played with it. Elite Four and Champion "lately" lists come from this year's and last year's runs only.
+- **Hall of Fame title battles** can be watched only while the League keeps them (this year's and last year's last few title battles).
+- **The cross-League stats page** (career honours for trainers and post holders) waits (design doc 6.2).
+

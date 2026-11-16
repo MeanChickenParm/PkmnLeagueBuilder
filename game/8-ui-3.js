@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 21, ver: '0.21.0', date: 'November 16, 2026', time: '7:30 PM ET', title: 'Three Leagues, the progress board and the Hall of Fame on winning', items: [
+    "The world starts with three Leagues: yours in the region you choose and two rivals, each in a different region, founded on their own. A new setup option, Starting Leagues (1 to 3), keeps the one-League start. The rivals count toward the prestige a founder needs, so the next League to open needs 50, then 60 and 70.",
+    "The progress board, a page of its own (League menu, or Board in the header). One row per gym, Elite Four seat and the Champion: who is there now, how many it let through and walled this year, and the share of tries it held. Open a row for the line, who is there and on which try, who got through lately with the core of their team, who was walled and by whom, and the types beating it this year. A threats strip lists challengers with six badges or more, contenders and anyone who impressed. The League switcher shows any League's board.",
+    "The Hall of Fame on winning. Every title win enters the Hall at once, with the team that beat the Champion (species, moves, items and abilities), the year, the League, the Champion beaten and a contender tag, and a Watch button while the title battle is kept. A trainer who wins again gets another entry, and their page gathers them all. Anyone with an entry is a Hall of Famer; each entry adds to their prestige. Nobody is inducted at retirement any more, and folded Leagues stay in the Hall's League filter.",
+    "Gym memory. A challenger who loses at a gym remembers the types of the trainer who beat them there, picks their squad against those types on later tries and leans their catches toward counters; Strategy sets how well they learn. The memory stays with that League across runs and is wiped when the gym changes (a new leader or gym trainer, or enough of its Pokémon replaced), so gyms that change hold and gyms that don't wear down.",
+    "Old saves don't load (save version 11).",
+  ] },
   { id: 20, ver: '0.20.0', date: 'November 16, 2026', time: '1:45 PM ET', title: 'Legendaries reworked', items: [
     "Legendaries obey by badges. A legendary (an Ultra Beast, Missingno or a Paradox Pokémon too) only battles for a challenger with enough badges for its strength: base stats under 600 from 4 badges, under 680 from 6, the box legendaries from 8. Below that it sits out and the challenger fields the rest of the team. At the Elite Four and the title every Pokémon obeys. Your staff are never held back. Legendaries used to sweep the early gyms, so walls are now much harder to get past.",
     "One of each legendary in the world. A legendary held or waiting anywhere can't turn up in another League, and one that moves on waits for a new partner from wherever it is. A world with several Leagues has far fewer legendaries.",
@@ -364,6 +371,7 @@ function render() {
   if (view === 'meta') v = viewMeta();
   if (view === 'money') v = viewMoney();
   if (view === 'table') v = viewTable();
+  if (view === 'board') v = viewBoard();
   if (view === 'cities') v = viewCities();
   if (view === 'contenders') v = viewContenders();
   if (view === 'gtpick') v = viewGtPick();
@@ -410,8 +418,8 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table'];
-const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board'];
+const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records', 'board'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
   viewLg = Math.min(viewLg, nLeagues() - 1);
@@ -478,10 +486,11 @@ document.addEventListener('click', ev => {
     case 'imgclear': imgClearArm = true; imgRefresh(); break;
     case 'imgclearno': imgClearArm = false; imgRefresh(); break;
     case 'imgclearyes': imgClearAll().then(() => render()); break;
+    case 'setleagues': setupLeagues = +el.dataset.v; render(); break;
     case 'setgrowth': setupGrowth = el.dataset.v === '1'; render(); break;
     case 'setgod': setupGod = el.dataset.v === '1'; render(); break;
     case 'godleague': { const why = godOpenLeague(); save(); render(); toast(why || `The ${leagueName(nLeagues() - 1)} is open.`); break; }
-    case 'lgview': viewLg = +el.dataset.v; render(); break;
+    case 'lgview': viewLg = +el.dataset.v; boardSel = null; render(); break;
     case 'setuppage': setupPage = el.dataset.v; render(); window.scrollTo(0, 0); break;
     case 'advtoggle': setupAdv[el.dataset.k] = !setupAdv[el.dataset.k]; render(); break;
     case 'packlist': setupPackOpen[el.dataset.k] = !setupPackOpen[el.dataset.k]; render(); break;
@@ -528,7 +537,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, leagues: setupLeagues, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -590,6 +599,8 @@ document.addEventListener('click', ev => {
       save(); render(); toast(errs[0] || 'Saved.'); break; }
     case 'godrolesel': godRole = el.dataset.k; godPick = null; render(); break;
     case 'watchworld': { const m = S.worlds && S.worlds.matches[+el.dataset.i]; if (m) { modal = { kind: 'battle', r: m.log }; renderModal(); } break; }
+    case 'boardrow': { const v = el.dataset.v; boardSel = /^\d+$/.test(v) ? +v : v; render(); break; }
+    case 'watchhof': { const e = (S.hof || []).find(x => x.uid === +el.dataset.u), w = e && hofLog(e); const r = w && inLeague(w[0], () => (w[1] === 'last' ? S.lastLeague : S.league).logs[w[2]]); if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }

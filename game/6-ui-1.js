@@ -258,13 +258,13 @@ function header() {
   const btn = `<button class="btn primary" data-act="playweek">Next week</button><button class="btn ghost" data-act="playmonth" title="Stops early if a title is conceded or a post falls vacant">Next month</button><button class="btn ghost" data-act="playyear" title="Stops early if a title is conceded or a post falls vacant">To New Year</button>`;
   return `<header class="top"><div class="top-in">
     <div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">${nLeagues() > 1 ? `${nLeagues()} Leagues` : S.lgName} · ${status}</div></div></div>
-    <div class="top-act">${btn}<button class="btn ghost" data-act="simmany">Sim years</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
+    <div class="top-act">${btn}<button class="btn ghost" data-act="nav" data-v="board" title="The progress board: how far everyone has got">Board</button><button class="btn ghost" data-act="simmany">Sim years</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
   </div></header>`;
 }
 // the page menu: three groups, each a dropdown (League / Trainers / Stats), plus the Glossary
 let navOpen = null;
 function navGroups() {
-  const league = [['circuit', 'Badge circuit'], ['gyms', 'Gyms & Elite']];
+  const league = [['circuit', 'Badge circuit'], ['board', 'Progress board'], ['gyms', 'Gyms & Elite']];
   if (handOn()) league.push(['staff', 'Your staff']);
   if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities']);
   if (handOn() && nLeagues() > 1) league.push(['contenders', 'Contenders']);
@@ -294,7 +294,7 @@ function nav() {
   return `<nav class="tabs" aria-label="Pages"><div class="tabs-in">${groups.map(grp).join('')}<button class="tab navgloss" data-act="glossary">Glossary</button><button class="tab navgloss${view === 'updates' ? ' on' : ''}" data-act="updates">Updates${dot}</button>${more}</div></nav>`;
 }
 // ---------- setup ----------
-let setupGrowth = true, setupGod = false;
+let setupGrowth = true, setupGod = false, setupLeagues = 3; // (0.21.0) Leagues at the start, yours included
 let setupPage = 'main', setupAdv = { allFamous: false }, setupBaseOff = false, setupPacks = {}, setupPackOpen = {}, setupOff = {};
 // every section on the Advanced page folds; folded sections show a one-line summary
 let setupFold = {};
@@ -722,10 +722,11 @@ function viewSetup() {
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
     <p>You run a Pokémon League and try to let nobody through. After you choose a region you place its first staff by hand: a Champion, four Elite Four members and eight Gym Leaders. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
     <div class="setup-opts">
+      <div><div class="eyebrow">Starting Leagues</div><div class="segs setup-segs">${[1, 2, 3].map(n => opt('setleagues', n, setupLeagues, String(n))).join('')}</div></div>
       <div><div class="eyebrow">New Leagues open over time</div><div class="segs setup-segs">${opt('setgrowth', 1, setupGrowth ? 1 : 0, 'On')}${opt('setgrowth', 0, setupGrowth ? 1 : 0, 'Off')}</div></div>
       <div><div class="eyebrow">God mode</div><div class="segs setup-segs">${opt('setgod', 0, setupGod ? 1 : 0, 'Off')}${opt('setgod', 1, setupGod ? 1 : 0, 'On')}</div></div>
     </div>
-    <p class="muted small">The world starts with one League, in the region you choose. ${setupGrowth ? 'A new League opens in another region every 8 to 12 years until all four regions are in, and the Champions then meet in a World Championship. ' : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
+    <p class="muted small">${setupLeagues > 1 ? `The world starts with ${setupLeagues} Leagues: yours in the region you choose and ${setupLeagues === 2 ? 'a rival in another region' : 'two rivals, each in a different region'}, founded on their own. Their Champions meet in a World Championship every year. ` : 'The world starts with your League alone, in the region you choose. '}${setupGrowth ? `More Leagues open over time when a distinguished retired trainer founds one (up to ${MAX_LEAGUES}, two a region); each new one needs more prestige than the last. ` : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
@@ -774,6 +775,7 @@ function profileBody(t, full) {
     <section class="panel"><div class="ph"><h3>Team</h3><span class="muted">${t.team.length}/6${walkingPartner(t) ? ' · walks with ' + walkingPartner(t).sp : ''}</span></div>${t.team.map(m => monRow(m, t.id)).join('') || '<p class="muted">No Pokémon.</p>'}</section>
     ${(t.alumni || []).length ? `<section class="panel"><div class="ph"><h3>Former Pokémon</h3><span class="muted">${t.alumni.length}</span></div><div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Last Lv</th><th>Record</th><th>KOs</th><th>Left</th></tr></thead><tbody>${t.alumni.map((a, i) => `<tr><td><button class="tlink" data-act="alum" data-t="${t.id}" data-i="${i}">${a.sp}</button></td><td class="num">${a.lvl}</td><td class="num">${wl(a.st)}</td><td class="num">${a.st.ko}</td><td class="muted small">S${a.left} · ${a.why}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
     ${careerExtras(t)}
+    ${hofPanel(t)}
     <section class="panel"><div class="ph"><h3>Career</h3><span class="muted">${t.role === 'retired' ? `Retired in Year ${t.retiredSeason} after ${t.seasons || 0} years` : `Year ${(t.seasons || 0) + 1} of their career${t.role === 'challenger' ? ` · ${t.runs || 0} run${t.runs === 1 ? '' : 's'}${t.rest != null && t.last ? `, last one ${lastRunText(t)}` : ''}` : ''}${t.age >= 45 && t.role === 'challenger' ? ` · could retire for age from ${Math.max(50, t.age + Math.max(0, careerSpan(t) - (t.seasons || 0)))}` : ''}${STAFF_ROLES.includes(t.role) ? ` · career length ${careerSpan(t)} years · steer: ${inLeague(lgOf(t), () => steerName(steerOf(t)))}${wishTag(t)}` : ''}`}</span></div>
       <div class="stats">
         <div><b>${recOf(t).w}–${recOf(t).l}</b><small>All battles</small></div><div><b>${recOf(t).lw + recOf(t).tw}–${recOf(t).ll + recOf(t).tl}</b><small>League &amp; title</small></div>

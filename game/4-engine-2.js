@@ -299,7 +299,9 @@ function aiCatch(t) {
   // specialists want one strong off-type Pokémon for coverage: until they have one, a strong off-type find rates like an on-type one
   const wildcardFit = o => t.specialty && !onT(o.sp) && !wild && linePeak(o.sp) >= WILDCARD_PEAK;
   const val = o => (o.roam || o.wormhole ? 1000 : SP[o.sp].baby ? 900 : Math.max(SP[o.sp].bst, wildcardFit(o) ? (SP[o.sp].bst + linePeak(o.sp)) / 2 : 0)) * (specFit(t, o.sp) === 2 ? 1.45 : onT(o.sp) || wildcardFit(o) ? 1.35 : 1) * (o.shiny ? 1.4 : 1) * (o.radiant ? 1.5 : 1) * (o.delta ? 1.3 : 1) * (o.alpha ? 1.3 : 1);
-  const best = offers.reduce((a, b) => (val(a) > val(b) ? a : b));
+  // (0.21.0) gym memory: a catch that answers what beat them at their next gym is worth more, as Strategy allows
+  const mem = gmemNext(t), lean = o => mem ? 1 + GMEM_CATCH * gmemLearn(t) * counterScore(SP[formAt(o.sp, GYM_LV[t.badges.length])].types, mem) : 1;
+  const best = offers.reduce((a, b) => (val(a) * lean(a) > val(b) * lean(b) ? a : b));
   if (t.team.length < 6) return addCatch(t, best);
   // release off-type Pokémon first when the new catch fits the trainer's type, but keep the wildcard
   // AI trainers hang on to special Pokémon (alphas, shinies, Deltas, legendaries...); only a special catch can push one out
@@ -311,7 +313,7 @@ function aiCatch(t) {
   const weakest = releasePool.reduce((a, b) => (monPower(a) < monPower(b) ? a : b));
   const swapEdge = onT(best.sp) && !onT(weakest.sp) ? 0.85 : wildcardFit(best) ? 0.95 : 1.08;
   // judge a wildcard by what it grows into, since it'll level up fast as a new catch
-  const worth = best.roam || best.wormhole ? 1000 : SP[best.sp].baby ? 900 : wildcardFit(best) ? (SP[best.sp].bst + linePeak(best.sp)) / 2 : SP[best.sp].bst;
+  const worth = (best.roam || best.wormhole ? 1000 : SP[best.sp].baby ? 900 : wildcardFit(best) ? (SP[best.sp].bst + linePeak(best.sp)) / 2 : SP[best.sp].bst) * Math.max(1, lean(best));
   if (best.lvl * worth > monPower(weakest) * 450 * swapEdge) return addCatch(t, best, weakest.uid);
   return null;
 }
@@ -331,6 +333,8 @@ function aiActionBase(t) {
   // badges they take on the Elite Four when ready: up to READY_WEEKS weeks spent filling the team to six first.
   const b = t.badges.length, n = t.team.length;
   if (b >= 8) { if (n < 6 && (t.ready || 0) < READY_WEEKS) { t.ready = (t.ready || 0) + 1; return 'explore'; } return 'league'; }
+  // (0.21.0) between tries at a gym that beat them, a learner sometimes looks for a counter before going back in
+  if ((t.gymTries || 0) > 0 && gmemNext(t) && rand() < GMEM_EXPLORE * gmemLearn(t)) return 'explore';
   if (n < Math.min(6, GYM_SIZE[b]) && rand() < 0.85) return 'explore';
   if (n < 6 && rand() < 0.25) return 'explore';
   return rand() < 0.1 ? 'train' : 'challenge';
@@ -944,7 +948,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -1171,6 +1175,62 @@ const gymLineKey = g => [...(S.gyms[g].trainers || []), S.gyms[g].leader].join('
 // how many gym trainers a challenger has beaten at their next gym, as things stand
 const gymStageNow = t => t.gymStage && t.gymLine === gymLineKey(t.badges.length) ? t.gymStage : 0;
 const GYM_WATCH = 3; // badges conceded kept per gym for watching
+// (0.21.0) the progress board's recent lists per gym: gym.recent = { thru: [[id, turn, try, [core]]], wall: [[id, turn,
+// lostTo]] }, the last BOARD_KEEP of each (names, tries and results only, no battles); gym.out counts runs walled there
+// this year and gym.beat the types in the squads that took its badge this year (both reset at New Year)
+const BOARD_KEEP = 8;
+function boardNote(gym, k, row) { const r = gym.recent = gym.recent || { thru: [], wall: [] }; r[k].push(row); if (r[k].length > BOARD_KEEP) r[k].shift(); }
+// ---- gym memory (0.21.0) ----
+// After a loss at a gym a challenger remembers the types of the trainer who beat them there (a trainer with no type
+// focus: their team's two commonest types). On later tries they pick their squad against those types and lean their
+// catches toward counters; Strategy sets how well they learn. The memory belongs to the League (League field gmem:
+// { trainerId: { gym: { line, sps, ty } } }), so it is kept across runs there and never carried to another League.
+// It is wiped when the gym changes: a new leader or gym trainer (the line), or GMEM_CHANGE of the line's Pokémon
+// replaced since the memory formed (steer swaps, the losing-streak adaptation, a ban replacement). A gym that never
+// changes erodes; one that keeps changing holds. All numbers provisional.
+const GMEM_CHANGE = 0.3, GMEM_SQUAD = 1.2, GMEM_CATCH = 0.35, GMEM_EXPLORE = 0.3, GMEM_TYPES = 4;
+const gmemLearn = t => clamp(((t.r ? t.r.str : 50) - 20) / 60, 0.2, 1);
+// the species standing in gym g's line now
+const gymLineSps = g => [...(S.gyms[g].trainers || []), S.gyms[g].leader].map(T).filter(Boolean).flatMap(x => x.team.map(m => m.sp));
+// what a trainer brings to a gym: their class's types, else their team's two commonest types
+function foeTypes(foe) {
+  const st = specTypes(foe); if (st.length) return st;
+  const n = {}; for (const m of foe.team) for (const ty of monTypes(m)) n[ty] = (n[ty] || 0) + 1;
+  return Object.keys(n).sort((a, b) => n[b] - n[a]).slice(0, 2);
+}
+// the remembered types at gym g of the bound League, or null; a memory the gym has outgrown is wiped here
+function gmemAt(t, g) {
+  const m = S.gmem && S.gmem[t.id] && S.gmem[t.id][g]; if (!m) return null;
+  if (m.line !== gymLineKey(g)) { gmemWipe(t.id, g); return null; }
+  const now = gymLineSps(g), left = m.sps.slice(); let gone = 0;
+  for (const sp of now) { const i = left.indexOf(sp); if (i >= 0) left.splice(i, 1); else gone++; }
+  if (gone / Math.max(1, now.length) >= GMEM_CHANGE) { gmemWipe(t.id, g); return null; }
+  return m.ty;
+}
+function gmemWipe(id, g) { const all = S.gmem && S.gmem[id]; if (!all) return; delete all[g]; if (!Object.keys(all).length) delete S.gmem[id]; }
+function gmemNote(t, g, foe) {
+  S.gmem = S.gmem || {};
+  const all = S.gmem[t.id] = S.gmem[t.id] || {};
+  let m = all[g];
+  if (m && (m.line !== gymLineKey(g) || !gmemAt(t, g))) m = null;
+  if (!m) m = all[g] = { line: gymLineKey(g), sps: gymLineSps(g), ty: [] };
+  for (const ty of foeTypes(foe)) if (!m.ty.includes(ty)) m.ty.push(ty);
+  if (m.ty.length > GMEM_TYPES) m.ty = m.ty.slice(-GMEM_TYPES);
+}
+// how well a set of types answers remembered ones: hitting them hard counts, being hit hard by them counts against
+function counterScore(types, mem) {
+  if (!mem || !mem.length) return 0;
+  let v = 0; for (const ty of mem) v += (bestMult(types, [ty]) >= 2 ? 1 : 0) - (bestMult([ty], types) >= 2 ? 0.6 : 0);
+  return v / mem.length;
+}
+// the memory at a challenger's next gym (their League), if any
+const gmemNext = t => t.role === 'challenger' && t.badges && t.badges.length < 8 ? gmemAt(t, t.badges.length) : null;
+// a trainer who retired or took a post forgets: the store is pruned at New Year (one away on another League's
+// circuit keeps theirs for when they come back)
+function gmemPrune() {
+  if (!S.gmem) return;
+  for (const id of Object.keys(S.gmem)) { const t = T(+id); if (!t || t.role !== 'challenger') delete S.gmem[id]; }
+}
 // One try at a gym: the gym trainers still standing, then the leader, healed between battles, every battle at the
 // gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the run's three tries
 // at this gym; the third loss ends the run.
@@ -1183,12 +1243,13 @@ function gymTry(t, entry) {
   if (t.gymStage && t.gymLine !== key) t.gymStage = 0;
   setTeamLevel(t, lvl);
   entry.gym = g; entry.won = true; entry.tryNo = (t.gymTries || 0) + 1;
+  const mem = gmemAt(t, g); // (0.21.0) what beat them here before
   let res = null;
   for (let k = Math.min(t.gymStage || 0, line.length - 1); k < line.length; k++) {
     const foe = line[k], isLeader = k === line.length - 1;
     const autoItems = itemsOn();
     if (autoItems) autoEquip(t, foe); // items picked for this battle
-    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g));
+    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g), mem);
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
     if (res.winner !== 0) {
@@ -1197,11 +1258,14 @@ function gymTry(t, entry) {
       if (isLeader) gym.lw = (gym.lw || 0) + 1; else foe.career.gymW = (foe.career.gymW || 0) + 1;
       { const yg = yearGym(g); addOnce(isLeader ? yg.lead : yg.gt, foe.id); yg.by[foe.id] = (yg.by[foe.id] || 0) + 1; if (isLeader) yg.wl++; else yg.wt++; }
       t.gymTries = (t.gymTries || 0) + 1;
-      if (t.gymTries >= GYM_TRIES) { news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
+      gmemNote(t, g, foe);
+      if (t.gymTries >= GYM_TRIES) { gym.out = (gym.out || 0) + 1; boardNote(gym, 'wall', [t.id, S.turn, foe.id]); news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
     }
     if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; t.gymLine = key; }
   }
+  boardNote(gym, 'thru', [t.id, S.turn, entry.tryNo, res ? res.sides[0].team.map(m => m.sp).slice(0, 3) : []]);
+  if (res) { gym.beat = gym.beat || {}; for (const m of res.sides[0].team) for (const ty of m.types || []) gym.beat[ty] = (gym.beat[ty] || 0) + 1; }
   t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
   t.gymStage = 0; t.gymTries = 0; t.gymLine = null;
   // the player's League keeps the last few badges each gym conceded, to watch (0.7.0)
@@ -1217,6 +1281,23 @@ function gymTry(t, entry) {
 // One run at the Elite Four and the Champion, as soon as a challenger with eight badges is ready. Every battle is at
 // a set level for both sides, six against (up to) six, healed between battles; a loss to anyone ends it. The Champion
 // keeps the seat whatever happens: a challenger who beats them is credited with a title, and it is a title conceded.
+// (0.21.0) the Hall of Fame on winning: every title win is its own entry at once, with the team that beat the
+// Champion (species, moves, item, ability, as each was at the title's level), the year, the League, the Champion beaten
+// and whether the winner was a sponsored contender. S.hof = [{ uid, id, season, week, lg, champ, spon, team }]; the
+// title battle carries the entry's uid (r.hof) while the League keeps it. Anyone with an entry is a Hall of Famer
+// (t.hof, t.hofN entries). Nobody is inducted at retirement any more.
+function hofEnter(q, champ, r) {
+  const pool = q.team.slice(), team = [];
+  for (const b of r.sides[0].team) {
+    const i = pool.findIndex(m => m.sp === b.sp); const m = i >= 0 ? pool.splice(i, 1)[0] : null;
+    team.push({ sp: b.sp, lv: b.L, moves: m && m.moves ? m.moves.slice() : [], item: m ? heldItem(m) || null : null, ab: b.ab || null, shiny: !!b.shiny });
+  }
+  const e = { uid: uid(), id: q.id, season: S.season, week: S.week, lg: S.lg || 0, champ: champ.id, spon: q.spon ? q.spon.lg : null, team };
+  (S.hof = S.hof || []).push(e); r.hof = e.uid;
+  q.hof = true; q.hofN = (q.hofN || 0) + 1;
+  return e;
+}
+const hofOf = t => (S.hof || []).filter(e => e.id === t.id);
 function leagueRun(q, entry) {
   const L = yearLeague(), y = yearOf(q);
   for (const id of [...S.e4, S.champion]) { const s = T(id); if (s) eliteMega(s); }
@@ -1246,6 +1327,7 @@ function leagueRun(q, entry) {
       (q.titleSeasons = q.titleSeasons || []).push(S.season); (q.titleLgs = q.titleLgs || []).push(S.lg || 0); (q.titleAges = q.titleAges || []).push({ season: S.season, age: q.age });
       champ.career.conceded = (champ.career.conceded || 0) + 1;
       L.conceded.push(q.id); S.lastTitle = S.turn;
+      hofEnter(q, champ, r);
       const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the Champion's seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
       news(msg, 'title', q.id); stopFor('title', msg);
     } else {
@@ -1374,10 +1456,8 @@ function retireHere(t, why) {
   t.prevRole = t.role; t.role = 'retired'; t.retiredSeason = S.season;
   scheduleLegacy(t);
   compactRetired(t);
-  // only Champions are inducted: a full title win (Interim Champions don't count)
-  const hof = t.career.titles >= 1;
-  if (hof) { t.hof = true; if (!S.hof.includes(t.id)) S.hof.push(t.id); }
-  news(`${was} retired${why ? ' ' + why : ''}.${hof ? ' Inducted into the Hall of Fame.' : ''}`, 'move', t.id);
+  // (0.21.0) title winners enter the Hall of Fame when they win, not when they retire
+  news(`${was} retired${why ? ' ' + why : ''}.${t.hof ? ` A Hall of Famer, with ${t.hofN || 1} entr${(t.hofN || 1) === 1 ? 'y' : 'ies'}.` : ''}`, 'move', t.id);
 }
 // a retired trainer keeps their career, but not last season's week-by-week log or Pokémon that barely battled:
 // it keeps saves small enough for the browser with several Leagues
@@ -2699,7 +2779,8 @@ function newYear() {
     S.lastLeague = S.league; S.league = null;
     if (S.lastLeague) S.lastLeague.logs = S.lastLeague.logs.slice(-TITLE_LOGS);
     enforceBans();
-    S.gyms.forEach(g => { g.w = 0; g.l = 0; });
+    S.gyms.forEach(g => { g.w = 0; g.l = 0; g.out = 0; g.beat = {}; });
+    gmemPrune();
     S.stats = { ko: {}, use: {} };
     for (const id of staffIds()) { const t = T(id); t.badges = []; relevelElite(t); }
   });
@@ -2833,7 +2914,7 @@ const nextRegionName = () => { const r = nextRegion(); return r == null ? null :
 const PRESTIGE_BAR = 60, PRESTIGE_FADE = 0.1, PRESTIGE_PERFECT = 10, PRESTIGE_LET = 2, PRESTIGE_LET_MAX = 10, PRESTIGE_WORLD = 10, PRESTIGE_CITY = 1, PRESTIGE_RANK = [6, 4, 2, 1];
 function trainerPrestige(t) {
   if (!t || !t.career) return 0;
-  return Math.round(((t.titleSeasons || []).length || t.career.titles || 0) * 10 + (t.hof ? 5 : 0) + (t.career.badges || 0) / 10 + (t.seasons || 0) / 2 + (t.career.worlds || 0) * 8);
+  return Math.round(((t.titleSeasons || []).length || t.career.titles || 0) * 10 + (t.hofN || 0) * 5 + (t.career.badges || 0) / 10 + (t.seasons || 0) / 2 + (t.career.worlds || 0) * 8);
 }
 const leaguePrestige = i => inLeague(i == null ? (S.lg || 0) : i, () => Math.round(S.prest || 0));
 // each New Year, after the World Championship and the cities' year: what each League earned, then the fade

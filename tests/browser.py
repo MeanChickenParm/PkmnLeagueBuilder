@@ -23,6 +23,9 @@ async def run(path):
           for (const pg of ['advanced', 'main']) { click(`[data-act=setuppage][data-v=${pg}]`); if (!document.querySelector('main')) log.push('FAIL setup page ' + pg); }
           click('[data-act=updates]'); click('[data-act=nav]');
           click('[data-act=setgod][data-v="1"]');
+          // 0.21.0: three starting Leagues by default (the option is pressed anyway)
+          if (!document.querySelector('[data-act=setleagues][data-v="3"].on')) log.push('FAIL Starting Leagues does not default to 3');
+          click('[data-act=setleagues][data-v="3"]');
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
           if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
@@ -40,7 +43,9 @@ async def run(path):
           if (S.champion !== placedChamp) log.push('FAIL the Champion placed is not the Champion');
           if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
-          const views = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities'];
+          // 0.21.0: three Leagues, each in its own region
+          if (nLeagues() !== 3 || new Set(eachLeague(() => S.region)).size !== 3) log.push('FAIL the world did not start with three Leagues in three regions');
+          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -174,7 +179,7 @@ async def run(path):
                 if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];
                   if (!old) log.push('FAIL no year links on the History page'); else { const yv = old.dataset.v; old.click(); const tx = document.querySelector('#main').textContent;
                     if (view !== 'recap' || !tx.includes('Year ' + yv + ' report')) log.push('FAIL an earlier year report did not open');
-                    if (document.querySelectorAll('#main .tbl')[2].querySelectorAll('tbody tr').length !== 8) log.push('FAIL the year report has no row per gym');
+                    if (![...document.querySelectorAll('#main .tbl')].some(tb => tb.querySelectorAll('tbody tr').length === 8 && tb.textContent.includes(townName(0)))) log.push('FAIL the year report has no row per gym'); // (0.21.0) found by its rows: other Leagues' tables come first from the start
                     if (/undefined|NaN|\[object/.test(tx)) log.push('FAIL the year report shows undefined');
                     if (!click('[data-act=repyear][data-v=latest]') || !document.querySelector('#main').textContent.includes('Year ' + S.history[S.history.length - 1].season + ' report')) log.push('FAIL Latest did not go back');
                     seen.repyear = 1; log.push('opened an earlier year report'); } go('circuit'); }
@@ -188,6 +193,18 @@ async def run(path):
             } catch (e) { log.push('FAIL step ' + tag + ': ' + e.message); break; }
           }
           if (!seen.gymwatch) log.push('FAIL no badge conceded to watch');
+          // 0.21.0: the progress board, drilled into a gym and the Champion, for your League and a rival; the Hall of Fame
+          for (const lg of [0, 1]) { viewLg = lg; go('board');
+            const rows = document.querySelectorAll('[data-act=boardrow]'); if (rows.length !== 13) log.push('FAIL the board does not list 13 stops');
+            rows[0].click(); let tx = document.querySelector('#main').textContent; if (!/Here now/.test(tx) || !/Let through lately/.test(tx)) log.push('FAIL a gym did not open on the board');
+            document.querySelector('[data-act=boardrow][data-v=champ]').click(); tx = document.querySelector('#main').textContent; if (!/Won the title lately/.test(tx)) log.push('FAIL the Champion did not open on the board');
+            if (/undefined|NaN|\[object/.test(tx)) log.push('FAIL the board shows undefined'); }
+          viewLg = 0;
+          { const hofN = (S.hof || []).length, titles = eachLeague(() => S.history.reduce((a, h) => a + (h.titles || 0), 0) + ((S.league && S.league.conceded) || []).length).reduce((a, b) => a + b, 0);
+            if (hofN !== titles) log.push('FAIL Hall entries ' + hofN + ' differ from titles ' + titles);
+            go('hof'); const cards = document.querySelectorAll('.hofcard').length; if (hofN && !cards) log.push('FAIL no Hall cards');
+            if (click('[data-act=watchhof]')) { if (!document.querySelector('.sheet')) log.push('FAIL the Hall title battle did not open'); click('[data-act=close]'); }
+            log.push('hall: ' + hofN + ' entries, ' + cards + ' cards; memories ' + eachLeague(() => Object.keys(S.gmem || {}).length).join('/')); }
           if (S.history.length !== 3) log.push('FAIL history has ' + S.history.length + ' years after three');
           if (!/Year 4/.test(document.querySelector('header').textContent)) log.push('FAIL the header does not show the year');
           log.push('early stops: ' + stopsSeen + ' · field ' + S.challengers.length + ' · resting ' + S.challengers.filter(id => T(id).rest != null).length);
