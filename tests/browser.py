@@ -126,6 +126,9 @@ async def run(path):
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
                     if (!b) log.push('FAIL no attraction to build at the seat'); else if (!b.disabled) { b.click(); if (!(S.seatB || []).some(x => x.k === 'attract') || S.fin.money !== m0 - 25000) log.push('FAIL building an attraction'); else log.push('built an attraction'); }
+                    // 0.18.0: sell it back for half from the Cities page
+                    { const sb = document.querySelector('[data-act=sellb][data-w=seat][data-k=attract]'), m1 = S.fin.money;
+                      if (!(S.seatB || []).some(x => x.k === 'attract')) {} else if (!sb) log.push('FAIL no sell button for the attraction'); else { sb.click(); if ((S.seatB || []).some(x => x.k === 'attract') || S.fin.money !== m1 + 12500) log.push('FAIL selling the attraction'); else log.push('sold the attraction'); } }
                     if (document.querySelectorAll('[data-act=movegym]').length !== 3) log.push('FAIL the Cities page should list three cities with no gym');
                     go('meta'); const bn = [...document.querySelectorAll('[data-act=ban][data-v="1"]')].find(x => !x.disabled);
                     if (bn) { const sp = bn.dataset.sp; bn.click(); if (!inLeague(0, () => paidBans().some(x => x.sp === sp))) log.push('FAIL paying for a ban'); else log.push('banned ' + sp); } else log.push('nothing to ban yet');

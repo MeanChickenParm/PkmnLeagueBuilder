@@ -934,7 +934,7 @@ function useLeague(i) {
 let LG_CTX = 0; // > 0 while code runs for one League in particular (its news is tagged with that League)
 function inLeague(i, fn) { const was = S.lg || 0; useLeague(i); LG_CTX++; try { return fn(); } finally { LG_CTX--; useLeague(was); } }
 function eachLeague(fn) { const out = []; for (let i = 0; i < nLeagues(); i++) out.push(inLeague(i, () => fn(i))); return out; }
-const leagueName = i => i == null || i === (S.lg || 0) ? S.lgName : (S.leagues[i] ? S.leagues[i].lgName : LEAGUE_SETS[i].name);
+const leagueName = i => i == null || i === (S.lg || 0) ? S.lgName : i < 0 ? ((S.folded || [])[-i - 1] || { name: 'a League that folded' }).name : (S.leagues[i] ? S.leagues[i].lgName : LEAGUE_SETS[i].name);
 const lgShort = i => leagueName(i).replace(' League', '');
 // trainers on this League's circuit and in its posts
 function leagueTrainers() { return Object.values(S.trainers).filter(inLg); }
@@ -1062,7 +1062,8 @@ function endRun(t, entry, stage) {
 function leagueMove(t, keen) {
   if (nLeagues() < 2 || t.role !== 'challenger' || t.spon) return false;
   const from = lgOf(t);
-  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) })).sort((a, b) => b.gain - a.gain)[0];
+  // (0.18.0) prestige draws challengers: PRESTIGE_DRAW per 100 prestige on top of the matchups
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
   if (!best) return false;
   const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
   if (!pulled && !keen) return false;
@@ -2169,6 +2170,7 @@ function acceptsOffer(t, post) {
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
   if (ownAcademy(t)) p += ACADEMY_LOYAL;
+  p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);
 }
 // (0.17.0, stage 5) a sponsored contender under contract to another League than `lg` (the bound League by default):
@@ -2656,6 +2658,7 @@ function newYear() {
     S.stats = { ko: {}, use: {} };
     for (const id of staffIds()) { const t = T(id); t.badges = []; relevelElite(t); }
   });
+  foldNewYear(); // (0.18.0) a League in the red too long folds
   worldGrowth();
   const circ = eachLeague(() => S.challengers.length);
   news(`Year ${S.season} begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers on the circuit'}.`, 'league');
@@ -2840,12 +2843,16 @@ function openNewLeague(f, r) {
 // (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years have passed since the last
 // opening and there is room, the most prestigious recent retiree over PRESTIGE_BAR may found a League, likelier the
 // higher their prestige (FOUNDER_ODDS at the bar, rising to 0.9). No founder, no League.
+// (0.18.0) a founder's bar rises with the Leagues already open: FOUNDER_BAR_BASE for the second League, FOUNDER_BAR_STEP
+// more for each after (30, 40, 50, 60, 70). The player leaving still needs PRESTIGE_BAR.
+const FOUNDER_BAR_BASE = 30, FOUNDER_BAR_STEP = 10;
+const founderBar = () => FOUNDER_BAR_BASE + FOUNDER_BAR_STEP * Math.max(0, nLeagues() - 1);
 function worldGrowth() {
   if (!S.cfg || !S.cfg.growth || nLeagues() >= MAX_LEAGUES || nextRegion() == null) return;
   if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
-  const f = pickFounder(), p = trainerPrestige(f);
-  if (!f || p < PRESTIGE_BAR) return;
-  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - PRESTIGE_BAR) / PRESTIGE_BAR)) openNewLeague(f);
+  const f = pickFounder(), p = trainerPrestige(f), bar = founderBar();
+  if (!f || p < bar) return;
+  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f);
 }
 // ---------- god mode: open a League by hand, and edit any trainer ----------
 const godOn = () => !!(S && S.cfg && S.cfg.god);
