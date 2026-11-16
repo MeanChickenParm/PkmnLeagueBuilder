@@ -1,5 +1,11 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 19, ver: '0.19.0', date: 'November 16, 2026', time: '5:30 AM ET', title: 'Restoring what was lost', items: [
+    "Restore what the red cost you. A building level a League lost while in the red (sold in the red, or lost to unpaid upkeep) leaves a ruin, and rebuilding that level in the same place costs only 30% of its price. The Cities page shows it as a Restore button. A level sold while you are solvent leaves no ruin. A League that crashed now climbs back in about six years instead of ten.",
+    "Distress sales come to you first. When a rival League loses a building level in a city where you have a gym (to unpaid upkeep, or when it folds), you're offered that level at 30% of its price for four weeks, with a stop and a Distress sales panel on the Cities page. The rival is paid if you buy; otherwise the level is simply lost.",
+    "Choose where to start again. When your League folds, the founding screen lets you pick the region of your new League (any region with room) before it opens.",
+    "Titles won in a League that has since folded count toward the Triple Crown again.",
+  ] },
   { id: 18, ver: '0.18.0', date: 'November 15, 2026', time: '9:45 PM ET', title: 'Debts, sales and Leagues that fold', items: [
     "Being in the red now costs your buildings. While a League is below zero it stops paying upkeep and everything it has built lapses: attractions earn nothing, and training halls, gym features, the scouting office and the youth academy do nothing until it is back in the black.",
     "Unpaid upkeep wears buildings down. Every 24 weeks in the red in a row, a League's costliest building loses a level. In a city it shares with another League, that League may buy the level at a distress price of 30% of its cost, and the seller gets the money.",
@@ -531,6 +537,8 @@ document.addEventListener('click', ev => {
     case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
     case 'hirebid': hireBid = +el.dataset.v; render(); break;
     case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
+    case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
+    case 'distno': { declineDistress(+el.dataset.v); save(); render(); break; }
     case 'sellb': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = sellBuilding(wh, el.dataset.k); save(); render(); toast(w || `Sold a level of ${UPGRADES[el.dataset.k].name.toLowerCase()}.`); break; }
     case 'build': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = build(wh, el.dataset.k); save(); render(); toast(w || `${UPGRADES[el.dataset.k].name} built.`); break; }
     case 'movegym': { const sel = $('#move-' + el.dataset.c), i = sel ? +sel.value : 0, w = moveGym(i, +el.dataset.c); save(); render(); toast(w || `Gym ${i + 1} moved to ${townName(i)}.`); break; }
@@ -627,6 +635,7 @@ document.addEventListener('input', e => {
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
+  if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(ME(), () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }

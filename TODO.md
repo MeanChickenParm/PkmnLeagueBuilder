@@ -135,9 +135,14 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from the red, selling and folding (0.18.0)
 - **All the numbers are provisional:** `FOUNDER_BAR_BASE` 30, `FOUNDER_BAR_STEP` 10, `PRESTIGE_PULL` 0.06, `PRESTIGE_DRAW` 0.3, `SELL_SHARE` 0.5, `DISTRESS_SHARE` 0.3, `DECAY_WEEKS` 24, `FOLD_YEARS` 3, `FOLD_QUIT_AGE` 30, `FOLD_QUIT_EARLY` 2.
-- **Recovery from a crash is now slow:** 10.0 years on `econ.js 25 8` (target 4 to 6; one world never). A crashed AI League sells its buildings at half and loses more to decay while lapsed, so its wealth (money plus buildings at cost) climbs back slowly, though it leaves the red sooner. The next chat's tuning question.
-- **The player is never a distress-sale buyer:** only AI Leagues buy automatically (nothing asks you). A fire-sale list the player could buy from was offered and not chosen.
-- **The player's fresh League after a fold** opens in the same region; there is no region picker (the old region always has room once the fold frees it).
-- **A folded League's records:** its history goes with it; `S.folded` keeps its name, region, years and prestige, and old references name it. Its titles no longer count toward "Champion of a League" or the Triple Crown.
+- **Recovery from a crash** was 10.0 years at 0.18.0; restoring at 30% (0.19.0) brought it back near the target (see the design doc 5.10).
+- **A folded League's records:** its history goes with it; `S.folded` keeps its name, region, years and prestige, and old references name it. Since 0.19.0 its titles count toward the Triple Crown again (from trainers' own `titleLgs`).
+
+## Left over from crash recovery (0.19.0)
+- **All the numbers are provisional:** `RESTORE_SHARE` 0.3, `DISTRESS_OFFER_WEEKS` 4.
+- **Ruins only from the red:** a level sold while solvent leaves no ruin (selling pays 50%, restoring costs 30%). Going into the red on purpose to sell and restore is still a 20% gain per level, at the cost of being in the red (lapsed buildings, staff notices). Ruins have no time limit and go when the gym leaves the city.
+- **Wealth counts a restored level at full cost** (the owner's choice), so restoring adds more wealth than it costs.
+- **Distress offers to the player come first:** while an offer is open no AI League buys that level, and the seller is paid only if the player buys. The multi-year sim buys nothing, so its offers lapse. An offer is checked again when bought (the gym may have moved, or the level been built).
+- **The region picker after a fold** offers any region with room; the fresh League's cities follow the region, and its name becomes `<Region> Founders League` when the region already has a League.
 - **Merging fields:** a folded League's younger challengers move to the emptiest circuit; in the hand-placed sim the single remaining circuit peaked at 142 to 155 (alarm 160). Watch it.
 - **Lapsed buildings still count in wealth and in the League table's Built column.**

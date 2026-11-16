@@ -12,7 +12,7 @@ const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() 
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
 const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
-const red = { sold: 0, decayed: 0, folded: 0, myFold: 0, lapsedYears: 0 };
+const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -196,7 +196,14 @@ for (let i = 0; i < N; i++) {
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
       else if (r < 0.85) { const t = g.staffIds().map(g.T).find(x => x && g.canRaise(x)); if (t && !g.giveRaise(t.id)) money.raises++; }
       else if (r < 0.9) { const free = g.myPlaces().filter(p => p.none); if (free.length && !g.moveGym(rnd([0, 1, 2, 3, 4, 5, 6, 7]), rnd(free).c.id)) money.moved++; }
-      else if (r < 0.95) { const x = g.topLevels(); if (x.length) { const b = rnd(x), v = g.sellValue(b.where, b.k), m0 = z.fin.money, e0 = g.estateCost(); if (g.sellBuilding(b.where, b.k)) fail.push('sellBuilding refused'); else { red.sold++; if (z.fin.money !== m0 + v || g.estateCost() !== e0 - b.cost || v !== Math.round(b.cost * g.SELL_SHARE)) fail.push('sale amounts wrong'); } } }
+      else if (r < 0.95) { const x = g.topLevels(); if (x.length) { const b = rnd(x), v = g.sellValue(b.where, b.k), keep = z.fin.money, inRed = Math.random() < 0.4; if (inRed) z.fin.money = -1000; const m0 = z.fin.money, e0 = g.estateCost(); if (g.sellBuilding(b.where, b.k)) fail.push('sellBuilding refused'); else { red.sold++; if (z.fin.money !== m0 + v || g.estateCost() !== e0 - b.cost || v !== Math.round(b.cost * g.SELL_SHARE)) fail.push('sale amounts wrong');
+        // (0.19.0) the level sold can be restored at RESTORE_SHARE of its price
+        const ck = g.buildCheck(b.where, b.k);
+        // only a sale made in the red leaves a ruin
+        if (!ck.why && m0 >= 0 && ck.restore && g.ruinsAt(b.where, b.k) === 0) fail.push('a restore price with no ruin');
+        if (!ck.why && m0 < 0 && (!ck.restore || ck.cost !== Math.round(g.upCost(b.k, ck.lv - 1) * g.RESTORE_SHARE))) fail.push('no restore price after a sale in the red');
+        if (inRed) z.fin.money = keep + v; // back to what it was, plus the sale
+        if (!ck.why && ck.restore && Math.random() < 0.5 && z.fin.money >= ck.cost) { const m1 = z.fin.money, e1 = g.estateCost(); if (g.build(b.where, b.k)) fail.push('restore refused'); else { red.restored++; if (z.fin.money !== m1 - ck.cost || g.estateCost() !== e1 + b.cost ) fail.push('restore amounts wrong'); } } } } }
     });
     // (0.17.0) contenders: send, recall and renew now and then; and in year 5 leave the League to found another
     if (HAND && g.nLeagues() > 1 && Math.random() < 0.04) g.inLeague(g.ME(), () => {
@@ -232,6 +239,13 @@ for (let i = 0; i < N; i++) {
       g.inLeague(k, () => { S().fin.money = -50000000; S().fin.redYears = g.FOLD_YEARS - 1; });
       foldWatch = { k, n: g.nLeagues(), mine: k === g.ME(), meName: g.inLeague(g.ME(), () => S().lgName) };
     }
+    // (0.19.0) distress offers to the player: a rival's level in a shared city is offered now and then; answer them
+    if (HAND && !S().founding && Math.random() < 0.02) { const gm = g.gymMap(), me = g.ME();
+      for (let j = 0; j < g.nLeagues(); j++) { if (j === me) continue; const hit = g.inLeague(j, () => { const gi = S().gyms.findIndex(x => (gm[x.city] || []).includes(me) && g.inLeague(j, () => g.topLevels().some(y => y.where === S().gyms.indexOf(x)))); if (gi < 0) return null; const y = g.topLevels().find(t => t.where === gi); const n0 = (S().distress || []).length; g.distressSale(gi, y.k); return (S().distress || []).length > n0; }); if (hit) { red.offered++; break; } } }
+    for (const o of S().distress || []) if (o.due - o.at !== g.DISTRESS_OFFER_WEEKS || o.from === g.ME() || !(o.price > 0)) fail.push('a bad distress offer');
+    if (HAND && g.distressOffers().length && Math.random() < 0.3) { const offs = g.distressOffers(), o = offs[0];
+      if (!o.why && Math.random() < 0.6) { const m0 = g.inLeague(g.ME(), () => S().fin.money), w = g.buyDistress(o.i); if (!w) { red.bought++; if (g.inLeague(g.ME(), () => S().fin.money) !== m0 - o.price) fail.push('distress price wrong'); } else if (m0 >= o.price) fail.push('distress buy refused: ' + w); }
+      else { g.declineDistress(o.i); red.declined++; } }
     if (HAND && Math.random() < 0.01) g.inLeague(rnd([...Array(g.nLeagues()).keys()]), () => { const e0 = g.estateCost(); if (e0 && S().fin) { g.decayOne(); if (g.estateCost() >= e0) fail.push('decay took nothing'); else red.decayed++; } });
     // steers (0.12.0): set the League line and posts' steers now and then
     if (HAND && Math.random() < 0.06) g.inLeague(g.ME(), () => { const keys = ['line', 'champion', 'e4:0', 'e4:3', 'gym:0', 'gym:4', 'gym:7']; if (!g.setSteer(rnd(keys), Math.random() < 0.2 ? null : rnd(g.STEER_KEYS))) fail.push('setSteer failed'); steersSet++; });
@@ -247,10 +261,16 @@ for (let i = 0; i < N; i++) {
       if (g.nLeagues() !== foldWatch.n - (foldWatch.mine ? 0 : 1)) fail.push('a League forced into the red did not fold');
       else if (foldWatch.mine) { red.myFold++;
         if (!S().founding || !S().founding.mid) fail.push('the player\'s fold opened no founding');
+        // (0.19.0) the fresh League's region can be chosen before it opens
+        { const rs = g.foldRegions(), cur = g.inLeague(g.ME(), () => S().region), to = rs.find(r => r !== cur);
+          if (!rs.includes(cur)) fail.push('the fold region list leaves out the old region');
+          if (to != null) { if (g.foldRegion(to)) fail.push('foldRegion refused'); else { red.moved++; g.inLeague(g.ME(), () => { if (S().region !== to || S().gyms.some(x => S().cities[x.city].region !== to)) fail.push('the fresh League did not move region'); }); } } }
         g.inLeague(g.ME(), () => { if (S().fin.money !== g.START_FUND || (S().prest || 0) !== 0) fail.push('the fresh League did not start fresh'); g.foundingFill(); g.finishFounding(); });
         if (S().founding) fail.push('founding left open after a fold'); }
       else { red.folded++; if (g.inLeague(g.ME(), () => S().lgName) !== foldWatch.meName) fail.push('the player\'s League changed when a rival folded'); }
       if (!(S().folded || []).length) fail.push('no record of the folded League');
+      // (0.19.0) a folded League's titles still count toward the Triple Crown
+      if (g.nLeagues() > 1) for (const t of Object.values(S().trainers)) if ((t.titleLgs || []).some(x => x < 0) && ![...g.champLeaguesOf(t)].some(x => x < 0)) { fail.push('a folded League\'s title dropped out of the Triple Crown'); break; }
     }
     g.eachLeague(() => { if (S().fin && S().fin.money < 0 && S().week === 0) red.lapsedYears++; });
     for (const id of hiredBefore) { const t = g.T(id); if (t && !t.hired && t.role !== 'challenger') offers.arrived++; }
