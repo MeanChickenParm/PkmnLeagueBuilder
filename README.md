@@ -6,8 +6,9 @@ It is a fork of Pokémon League GM, seeded from version 2.0.2. Version 0.1.0 is 
 
 - `game/`: the source pieces and `build.py`
 - `tests/`: checks to run before pushing
+- `docs/`: the playable copy for GitHub Pages, written by the build
 - `CLAUDE.md`: how to work on this repo
 
-Build: `python3 game/build.py game dist` makes `dist/Pokémon League Builder.html` (the whole game in one file) and an itch.io zip.
+Build: `python3 game/build.py game dist` makes `dist/Pokémon League Builder.html` (the whole game in one file) and an itch.io zip, and refreshes `docs/index.html` for GitHub Pages.
 
 Pokémon League Builder is an unofficial, fan-made game. It is not affiliated with, endorsed, sponsored or approved by Nintendo, Creatures Inc., GAME FREAK inc. or The Pokémon Company.
