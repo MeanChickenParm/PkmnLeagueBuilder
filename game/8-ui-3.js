@@ -5,6 +5,7 @@ const UPDATES = [
     "Distress sales come to you first. When a rival League loses a building level in a city where you have a gym (to unpaid upkeep, or when it folds), you're offered that level at 30% of its price for four weeks, with a stop and a Distress sales panel on the Cities page. The rival is paid if you buy; otherwise the level is simply lost.",
     "Choose where to start again. When your League folds, the founding screen lets you pick the region of your new League (any region with room) before it opens.",
     "Titles won in a League that has since folded count toward the Triple Crown again.",
+    "Fixed: the game could stop when a folded League's former staff were taken on as gym trainers the same week it folded.",
   ] },
   { id: 18, ver: '0.18.0', date: 'November 15, 2026', time: '9:45 PM ET', title: 'Debts, sales and Leagues that fold', items: [
     "Being in the red now costs your buildings. While a League is below zero it stops paying upkeep and everything it has built lapses: attractions earn nothing, and training halls, gym features, the scouting office and the youth academy do nothing until it is back in the black.",
