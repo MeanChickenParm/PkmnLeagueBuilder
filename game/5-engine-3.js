@@ -942,11 +942,11 @@ function simWeeks(n, stops) {
   for (let i = 0; i < n; i++) { simWeek(); if (stops && S.stop) return S.stop; if (S.founding) return S.stop || { why: 'money', text: 'Your League folded.' }; }
   return null;
 }
-// legendaries held in this League. A baby legendary (Cosmog, Type: Null, Kubfu…) counts as every legendary it can grow into,
+// legendaries held anywhere in the world (0.20.0: one of each; was this League). A baby legendary (Cosmog, Type: Null, Kubfu…) counts as every legendary it can grow into,
 // so nobody is handed a Solgaleo while a Cosmog that could become one is out there
 function ownedLegends() {
   const set = new Set();
-  for (const t of leagueTrainers()) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) {
+  for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) {
     if (SP[m.sp].legend) set.add(m.sp);
     if (SP[m.sp].baby) { const q = [m.sp]; while (q.length) { const n = q.shift(); for (const e of SP[n].evos || []) { if (SP[e.to].legend) set.add(e.to); q.push(e.to); } } }
   }
@@ -1301,13 +1301,9 @@ const unwonLeagues = t => Array.from({ length: nLeagues() }, (_, i) => i).filter
 // v199: a Globetrotter feels the pull twice as strongly and looks for a move every offseason
 const globetrotter = t => !!t && t.r && hasTrait(t, 'globetrotter');
 const slamFit = (t, i) => leagueFit(t, i) + (slamChaser(t) && !champLeaguesOf(t).has(i) ? SLAM_PULL * (globetrotter(t) ? 2 : 1) : 0);
-// can challenger t go to League i: no legendary clash (a circuit has no cap)
-function slamRoom(t, i) {
-  if (i === lgOf(t)) return false;
-  const legs = t.team.filter(m => SP[m.sp].legend).map(m => m.sp);
-  if (legs.length && inLeague(i, () => { const held = ownedLegends(); return legs.some(sp => held.has(sp)); })) return false;
-  return true;
-}
+// can challenger t go to League i (a circuit has no cap; since 0.20.0 there is one of each legendary in the world, so
+// a legendary can't clash with another League's)
+const slamRoom = (t, i) => i !== lgOf(t);
 // after the League offseasons: a dethroned Slam chaser looks for a new challenge in a League they haven't won
 function slamReturns(changes) {
   const ids = S.slamReturn || []; S.slamReturn = [];
@@ -1556,7 +1552,7 @@ function moneyWeek() {
     const lap = lapsed();
     for (const t of staffIds().map(T).filter(Boolean)) t.lastPay = payOf(t);
     const w = wageBill(); if (w) book(-w, 'salaries');
-    if (!lap) { const a = attractionIncome(); if (a) book(a, 'attractions'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
+    if (!lap) { const a = attractionIncome(); if (a) book(a, 'attractions'); const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
     const ci = cityIncome(); if (ci) book(ci, 'cities');
     expirePaidBans();
     redWeek();
@@ -1618,6 +1614,8 @@ const UPGRADES = {
   feature: { name: 'Gym feature',     text: 'A home edge: staff here fight at +1.5% per level in their own battles.', max: 5 },
   attract: { name: 'Attraction',      text: 'Brings in income every week.', income: [120, 240, 360] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
+  // (0.20.0) only in a gym city that is a legendary site: earns more than an attraction while the site lasts, and adds prestige
+  sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in more than an attraction every week while the site lasts (an attraction\'s income after), and a point of prestige a level each New Year while it lasts.', site: true, income: [250, 500, 800] },
   academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
 };
 const upMax = k => UPGRADES[k].max || 3;
@@ -1645,6 +1643,7 @@ function placeLv(where, k) { if (where === 'seat') return upLevel(seatB(), k); c
 function buildCheck(where, k) {
   const U = UPGRADES[k]; if (!U) return { why: 'No such upgrade.' };
   if (U.seat && where !== 'seat') return { why: 'Only at the seat.' };
+  if (U.site && (where === 'seat' || !siteOn(S.cities[(S.gyms[where] || {}).city]))) return { why: 'Only at a legendary site.' };
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
@@ -1763,6 +1762,22 @@ function academyWeek() {
 // upgrade effects in the bound League
 function homeEdge(where) { return lapsed() ? 1 : 1 + 0.015 * placeLv(where, 'feature'); }
 function attractionIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === 'attract') ? UPGRADES.attract.income[upLevel(p.b, 'attract') - 1] : 0), 0); }
+// ---------- (0.20.0) legendary sites and sanctuaries ----------
+// A gym city where a legendary appeared or was caught becomes a legendary site for SITE_YEARS (c.site = { sp, from, until },
+// on the world's city object, so every League with a gym there shares it; a new legendary there renews it). A League with
+// a gym in a site can build a Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week
+// while the site lasts, an attraction's income after, and SANCT_PRESTIGE a level each New Year while the site lasts.
+const SITE_YEARS = 10, SANCT_PRESTIGE = 1;
+const siteOn = c => !!(c && c.site && S.season <= c.site.until);
+function noteSite(gi, sp) {
+  const g = S.gyms[gi]; const c = g && S.cities[g.city]; if (!c) return;
+  const was = siteOn(c);
+  c.site = { sp, from: was ? c.site.from : S.season, until: S.season + SITE_YEARS - 1 };
+  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary until the end of Year ${c.site.until}.`, 'league');
+}
+function sanctIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => { const lv = upLevel(p.b, 'sanct'); return a + (lv ? (siteOn(p.c) ? UPGRADES.sanct.income : UPGRADES.attract.income)[lv - 1] : 0); }, 0); }
+// sanctuary levels at live sites, for prestige
+function sanctLevels() { return myPlaces().filter(p => !p.none && siteOn(p.c)).reduce((a, p) => a + upLevel(p.b, 'sanct'), 0); }
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
 function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
@@ -1828,9 +1843,9 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['seat', 'hall'], ['seat', 'attract'], ['seat', 'academy']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'hall'], ['seat', 'scout'], ['seat', 'attract']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'attract'], ['seat', 'hall'], ['seat', 'academy']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['seat', 'hall'], ['seat', 'attract'], ['seat', 'academy']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['seat', 'scout'], ['seat', 'attract']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['seat', 'academy']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -1897,7 +1912,7 @@ function aimSpend(aim) {
   const net = runningNet();
   for (const [w, k] of A.build) {
     const spots = w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
-    for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && (k === 'attract' || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
+    for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && (k === 'attract' || k === 'sanct' || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
   }
 }
 // New Year in a rival League: a change of aim when the books call for it
@@ -2379,4 +2394,4 @@ function removeLeague(k, info) {
 const PRESTIGE_PULL = 0.06, PRESTIGE_DRAW = 0.3;
 const prestOf = i => i === (S.lg || 0) ? (S.prest || 0) : ((S.leagues && S.leagues[i]) || {}).prest || 0;
 const prestigePull = () => PRESTIGE_PULL * Math.min(1, (S.prest || 0) / 100);
-if (typeof module !== 'undefined') module.exports = { RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };

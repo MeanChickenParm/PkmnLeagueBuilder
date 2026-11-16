@@ -14,7 +14,8 @@ function isLegendLine(sp) {
   const b = LINE[sp] || sp;
   return BABY_LEGENDS.includes(b) && !LEG_UB_LINES.has(b) && SP[b].label !== 'One of a kind';
 }
-const legendPool = () => S.legendPool || (S.legendPool = []);
+// (0.20.0) one of each legendary in the world: the waiting pool is the world's (S.wPool), not each League's
+const legendPool = () => S.wPool || (S.wPool = []);
 const lineOf = sp => LINE[sp] || sp;
 // the individual of this line waiting in the bound League (the most experienced, should there ever be two)
 function pooledLegend(sp) { const b = lineOf(sp); return legendPool().filter(m => lineOf(m.sp) === b).sort((x, y) => ((y.st && y.st.b) || 0) - ((x.st && x.st.b) || 0))[0] || null; }
@@ -37,7 +38,7 @@ function claimLegend(t, fresh) {
   let m = fresh;
   const p = pooledLegend(fresh.sp);
   if (p && !wasPartner(t, p)) {
-    S.legendPool = legendPool().filter(x => x !== p);
+    S.wPool = legendPool().filter(x => x !== p);
     m = p;
     m.lvl = fresh.lvl; m.met = fresh.met; m.metFr = fresh.metFr; m.fr = fresh.fr; m.gift = fresh.gift; m.cap = fresh.cap;
     m.form = 0; m.ss = null; m.item = null; delete m.bond;
@@ -58,8 +59,7 @@ function releaseLegend(t, m, why) {
   if (p) { p.to = S.season || 1; const now = statSnap(m); p.st = { b: now.b - p.at.b, w: now.w - p.at.w, l: now.l - p.at.l, ko: now.ko - p.at.ko }; p.why = why; }
   if (t.mega && t.mega.uid === m.uid) t.mega.uid = null;
   m.leg = null; m.cap = null; m.gift = null;
-  const home = m.lgHome != null && m.lgHome < nLeagues() ? m.lgHome : homeLeague(t);
-  inLeague(home, () => { if (!legendPool().includes(m)) legendPool().push(m); });
+  if (!legendPool().includes(m)) legendPool().push(m);
   return true;
 }
 // offseason: legendaries whose time is up move on (never leaving a trainer with no Pokémon)
@@ -72,7 +72,7 @@ function legendDepartures() {
       const seasons = (S.season || 1) - ((m.partners || []).slice(-1)[0] || { from: S.season }).from + 1;
       farewell(t, m, `moved on after ${seasons} year${seasons === 1 ? '' : 's'}`);
       t.team = t.team.filter(x => x !== m);
-      inLeague(homeLeague(t), () => news(`${m.sp} moved on from ${dn(t)} after ${seasons} year${seasons === 1 ? '' : 's'} together. It will wait in the ${leagueName(m.lgHome ?? (S.lg || 0))} for a new partner.`, 'title', t.id));
+      inLeague(homeLeague(t), () => news(`${m.sp} moved on from ${dn(t)} after ${seasons} year${seasons === 1 ? '' : 's'} together. It will wait for a new partner.`, 'title', t.id));
       if (STAFF_ROLES.includes(t.role)) inLeague(lgOf(t), () => backfillElite(t, m));
     }
   }
@@ -236,8 +236,14 @@ function wildOffers(t) {
   // v184: rarer still, a legendary in the open slot: a sealed chamber, a hidden glade, a ring in the air
   if (featOn('greatlegends') && !rareFind && out.length && !legendFull(t) && rand() < LEGEND_FIND + sctOf(t) / 100 * 0.0008) {
     const free = FIND_LEGENDS.filter(sp => greatFree(sp) && !legendBlocked(t, sp) && !(sp === 'Shaymin' && S.week + 1 > 12));
-    if (free.length) { const sp0 = pick(free), pl = pooledLegend(sp0), sp = pl ? pl.sp : sp0, lvl = Math.max(L, Math.floor(Math.max(...t.team.map(m => m.lvl), L)));
+    if (free.length) { const sp0 = regionPick(free), pl = pooledLegend(sp0), sp = pl ? pl.sp : sp0, lvl = Math.max(L, Math.floor(Math.max(...t.team.map(m => m.lvl), L)));
       out[out.length - 1] = ensureMon({ sp, lvl, legendFind: true, form: 1, iv: ivSet(() => ri(20, 31)) }); rareFind = true; }
+  }
+  // (0.20.0) Area Zero is open: now and then a Paradox Pokémon in the open slot
+  if (featOn('rarefind') && !rareFind && out.length && areaZeroOpen() && rand() < PARADOX_FIND + sctOf(t) / 100 * 0.002) {
+    const held = paradoxHeld(), free = PARADOX.filter(sp => !held.has(sp) && !bannedIn(sp, lgOf(t)));
+    if (free.length) { const sp = pick(free), lvl = Math.max(L, Math.floor(Math.max(...t.team.map(m => m.lvl), L)));
+      out[out.length - 1] = ensureMon({ sp, lvl, paradoxFind: true, form: 1, iv: ivSet(() => ri(20, 31)) }); rareFind = true; }
   }
   // a roaming legendary near this trainer's route (v182)
   if (featOn('roamers') && S.roamer && !rareFind) roamOffer(t, out, L);
@@ -258,6 +264,7 @@ function addCatch(t, offer, releaseUid) {
   if (offer.roam && (!S.roamer || S.roamer.sp !== offer.sp || !greatFree(offer.sp))) return null;
   if (legendBlocked(t, offer.sp) || (isLegendLine(offer.sp) && legendFull(t))) return null;
   if (offer.legendFind && !greatFree(offer.sp)) return null;
+  if (offer.paradoxFind && paradoxHeld().has(offer.sp)) return null;
   let m = stamp(ensureMon({ uid: uid(), sp: offer.sp, lvl: offer.lvl, iv: offer.iv, nat: offer.nat, cov: offer.cov, alpha: offer.alpha || undefined, shiny: offer.shiny || undefined, radiant: offer.radiant || undefined, radAb: offer.radAb || undefined, delta: offer.delta || undefined, deltaAb: offer.deltaAb || undefined, form: offer.alpha || offer.shiny ? offer.form : undefined }), 'caught');
   if (t.team.length >= 6) {
     const idx = releaseUid != null ? t.team.findIndex(x => x.uid === releaseUid) : -1;
@@ -444,12 +451,40 @@ function legendLuck() { const lo = Math.log(LEGEND_LUCK[0]), hi = Math.log(LEGEN
 // damage totals per trainer (an encounter from an older save starts its tally afresh)
 function legendState(L) { if (L && !L.dmg) { L.dmg = {}; L.tries = {}; L.total = 0; } return L; }
 const legendRank = L => Object.entries(legendState(L).dmg).map(([id, d]) => ({ id: +id, d, n: L.tries[id] || 0 })).sort((a, b) => b.d - a.d);
-const greatFree = sp => !ownedLegends().has(sp) && !bannedIn(sp, S.lg || 0);
+const greatFree = sp => !ownedLegends().has(sp) && !legendElsewhere(sp) && !bannedIn(sp, S.lg || 0);
+// (0.20.0) a legendary another League's event or gift has in hand (an encounter, a roamer, a storm, a wormhole, a gift on
+// its way) can't turn up here too: there is one of each in the world
+function legendElsewhere(sp) {
+  for (let i = 0; i < nLeagues(); i++) {
+    if (i === (S.lg || 0)) continue;
+    const L = S.leagues[i]; if (!L) continue;
+    if ((L.legend && L.legend.sp === sp) || (L.roamer && L.roamer.sp === sp) || (L.storm && L.storm.sp === sp) || (L.wormhole && L.wormhole.sp === sp)) return true;
+    if ((L.legendGifts || []).some(g => g.sp === sp)) return true;
+  }
+  return false;
+}
 const everCaught = sp => !!(S.greatCaught && S.greatCaught[sp]);
+// (0.20.0) legendaries belong to a region: an event for one of Kanto's, Johto's, Hoenn's or Sinnoh's own turns up about
+// LEGEND_HOME_MUL times as often in a League of that region and LEGEND_AWAY_MUL as often elsewhere; the rest as before
+const LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew: 0, Raikou: 1, Entei: 1, Suicune: 1, Lugia: 1, 'Ho-Oh': 1, Celebi: 1,
+  Regirock: 2, Regice: 2, Registeel: 2, Latias: 2, Latios: 2, Kyogre: 2, Groudon: 2, Rayquaza: 2, Jirachi: 2, Deoxys: 2,
+  Uxie: 3, Mesprit: 3, Azelf: 3, Dialga: 3, Palkia: 3, Giratina: 3, Heatran: 3, Regigigas: 3, Cresselia: 3, Darkrai: 3, Shaymin: 3, Manaphy: 3, Arceus: 3 };
+const LEGEND_HOME_MUL = 3, LEGEND_AWAY_MUL = 0.5;
+function regionMul(sp) { const h = LEGEND_HOME[sp]; return h == null ? 1 : h === (S.region || 0) ? LEGEND_HOME_MUL : LEGEND_AWAY_MUL; }
+// a pick weighted by region
+function regionPick(list) { const tot = list.reduce((a, sp) => a + regionMul(sp), 0); let r = rand() * tot; for (const sp of list) { r -= regionMul(sp); if (r <= 0) return sp; } return list[list.length - 1]; }
+// (0.20.0) Paradox Pokémon: an expedition to Area Zero (Koraidon, Miraidon or Terapagos appearing) opens the crater for a
+// year in that League, and exploring challengers can then find a Paradox Pokémon. One of each in the world at a time;
+// they are not legendaries (no partner years, not under one-legendary-a-trainer). To be evaluated later (the owner).
+const AREA_ZERO = ['Koraidon', 'Miraidon', 'Terapagos'], AREA_ZERO_WEEKS = 48, PARADOX_FIND = 0.004;
+function paradoxHeld() { const s = new Set(); for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) if (SP[m.sp].paradox) s.add(m.sp); return s; }
+const areaZeroOpen = () => !!(S.areaZero && S.turn < S.areaZero.until);
 // the Darkest Day: every battle swings wildly while Eternatus is loose
 const legendChaos = () => (S.legend && S.legend.sp === 'Eternatus' && S.phase === 'season' ? 0.7 + rand() * 0.7 : 1);
-function recordGreat(t, m, how) {
+function recordGreat(t, m, how, gi) {
   (S.greatCaught = S.greatCaught || {})[m.sp] = { id: t.id, season: S.season, how };
+  // (0.20.0) the city where it joined becomes a legendary site: the encounter's or roamer's town, else the challenger's next gym
+  if (inLg(t)) noteSite(gi != null && gi >= 0 ? gi : t.role === 'challenger' && t.badges.length < 8 ? t.badges.length : ri(0, S.gyms.length - 1), m.sp);
   (t.greatLegends = t.greatLegends || []).push({ sp: m.sp, season: S.season, how, lg: S.lg || 0 });
   noteLegends(t);
 }
@@ -495,6 +530,8 @@ const LEGEND_STORY = {
   Cresselia: 'A Full Moon: Cresselia has been seen gliding over the region.',
   Deoxys: 'A meteor came down near the region, and something inside it has woken: Deoxys.',
   Heatran: 'A volcano near the region has erupted, and Heatran has crawled out of the magma.',
+  Genesect: 'A laboratory near the region lost power, and something ancient and armoured broke out: Genesect.',
+  Xerneas: 'A great tree glowing in rainbow colours has been seen in the forest. Xerneas has awakened.',
 };
 const RARE_ENCOUNTER = 0.002; // v184: per week, each of Regigigas, Darkrai, Cresselia, Deoxys and Heatran, in weeks 5–16
 const LEGEND_FALLBACK_CHANCE = 0.0015; // per week, per legendary, in weeks 5–16
@@ -504,6 +541,7 @@ const LEGEND_FALLBACK = [
   ['Dialga', 'A tremor shook Spear Pillar, and Dialga appeared.'],
   ['Palkia', 'A tremor shook Spear Pillar, and Palkia appeared.'],
   ['Yveltal', 'Yveltal woke from its long sleep on its own.'],
+  ['Xerneas', 'A great tree glowing in rainbow colours has been seen in the forest. Xerneas has awakened.'],
   ['Reshiram', 'With no one to control it, Reshiram, the dragon of truth, sought out the trainer with the deepest bond.'],
   ['Zekrom', 'With no one to control it, Zekrom, the dragon of ideals, sought out the strongest trainer.'],
 ];
@@ -514,9 +552,11 @@ function circuitLevel() {
 }
 function startLegend(sp, why) {
   if (!featOn('greatlegends') || !greatFree(sp) || S.legend || S.phase !== 'season' || S.legendSeason === S.season) return false;
-  const lvl = Math.min(100, Math.round(circuitLevel()) + LEGEND_LV);
-  S.legend = { sp, season: S.season, from: S.week + 1, until: S.turn + (['Groudon', 'Kyogre'].includes(sp) ? LEGEND_WEEKS * 3 : LEGEND_WEEKS), town: townName(ri(0, S.gyms.length - 1)), lvl, attempts: 0, dmg: {}, tries: {}, total: 0 };
+  const lvl = Math.min(100, Math.round(circuitLevel()) + LEGEND_LV), gi = ri(0, S.gyms.length - 1);
+  S.legend = { sp, season: S.season, from: S.week + 1, until: S.turn + (['Groudon', 'Kyogre'].includes(sp) ? LEGEND_WEEKS * 3 : LEGEND_WEEKS), town: townName(gi), gi, lvl, attempts: 0, dmg: {}, tries: {}, total: 0 };
   S.legendSeason = S.season;
+  if (AREA_ZERO.includes(sp)) S.areaZero = { sp, until: S.turn + AREA_ZERO_WEEKS };
+  noteSite(gi, sp);
   news(`${why || LEGEND_STORY[sp] || sp + ' has appeared.'} It's near ${S.legend.town}; challengers can seek it until ${turnDate(S.legend.until)}, and it goes to whoever does the most damage.`, 'title');
   return true;
 }
@@ -556,12 +596,12 @@ function settleLegend(reason, force) {
   }
   const r = rank.find(x => x.id === w.id);
   const why = `${reason} ${dn(w)} did the most damage to it (${Math.round(r.d * 100)}% over ${r.n} attempt${r.n === 1 ? '' : 's'})${tie}:`;
-  awardLegend(w, L.sp, why, force);
+  awardLegend(w, L.sp, why, force, L.gi);
   return w;
 }
-function awardLegend(t, sp, why, force) {
+function awardLegend(t, sp, why, force, gi) {
   if (t.team.length >= 6) { const out = t.team.filter(x => !isSpecial(x) && !(t.mega && t.mega.uid === x.uid) && x.bond !== t.id).sort((a, b) => monPower(a) - monPower(b))[0] || t.team.filter(x => !SP[x.sp].legend).sort((a, b) => monPower(a) - monPower(b))[0] || t.team[0]; farewell(t, out, `released to make room for ${sp}`); t.team = t.team.filter(x => x !== out); }
-  const m = legendMon(t, sp); t.team.push(m); recordGreat(t, m, 'caught');
+  const m = legendMon(t, sp); t.team.push(m); recordGreat(t, m, 'caught', gi);
   news(`${why} ${sp} joined ${dn(t)}!`, 'title', t.id);
   return m;
 }
@@ -596,11 +636,11 @@ function legendWeek() {
   glitchWeek();
   if (!featOn('greatlegends') || S.legend || S.legendSeason === S.season || rand() >= 0.25) return; // any week of the year, at the source's yearly rate (it rolled in 12 of a year's 24 weeks)
   if (S.rayquazaDue === S.season && rand() < 0.3) { S.rayquazaDue = null; startLegend('Rayquaza'); return; }
-  if ((everCaught('Dialga') || everCaught('Palkia')) && rand() < 0.02) { startLegend('Giratina'); return; }
+  if ((everCaught('Dialga') || everCaught('Palkia')) && rand() < 0.02 * regionMul('Giratina')) { startLegend('Giratina'); return; }
   if ((everCaught('Reshiram') || everCaught('Zekrom')) && rand() < 0.02) { startLegend('Kyurem'); return; }
   // these legendaries appear on their own now and then
   for (const [sp, why] of shuffle(LEGEND_FALLBACK.slice())) {
-    if (!greatFree(sp) || rand() >= LEGEND_FALLBACK_CHANCE) continue;
+    if (!greatFree(sp) || rand() >= LEGEND_FALLBACK_CHANCE * regionMul(sp)) continue;
     if (sp === 'Reshiram' || sp === 'Zekrom') {
       const key = sp === 'Reshiram' ? 'bnd' : 'str';
       const t = challengers().filter(x => x.team.length && !legendFull(x)).sort((a, b) => b.r[key] - a.r[key])[0];
@@ -612,7 +652,7 @@ function legendWeek() {
   if (rand() < 0.012) { const f = ['Koraidon', 'Miraidon', 'Terapagos'].filter(greatFree); if (f.length) { startLegend(pick(f)); return; } }
   if (rand() < 0.003) { startLegend('Eternatus'); return; }
   // v184: rare encounters of their own
-  for (const sp of shuffle(['Regigigas', 'Darkrai', 'Cresselia', 'Deoxys', 'Heatran'])) if (rand() < RARE_ENCOUNTER && startLegend(sp)) return;
+  for (const sp of shuffle(['Regigigas', 'Darkrai', 'Cresselia', 'Deoxys', 'Heatran', 'Genesect'])) if (rand() < RARE_ENCOUNTER * regionMul(sp) && startLegend(sp)) return;
   // v185: legendaries from this league's own Pokédex, rarer still
   for (const sp of shuffle(DEX_LEGENDS.slice())) if (SP[sp] && SP[sp].dexLegend && rand() < DEX_LEGEND_CHANCE && startLegend(sp, `A legendary Pokémon no one has ever recorded has appeared: ${sp}.`)) return;
 }
@@ -662,24 +702,24 @@ function legendOffseason(L, awards) {
   const bySeason = (except) => field.filter(x => open(x) && !(except || []).includes(x.id)).sort((a, b) => seasonScore(b) - seasonScore(a));
   const give = (t, sp, how, why, note) => { gifts.push({ id: t.id, sp, how, season: next, week: ri(3, 14), why }); news(note, 'title', t.id); return t; };
   let silver = null;
-  if (greatFree('Lugia') && !pending('Lugia')) {
+  if (greatFree('Lugia') && !pending('Lugia') && rand() < regionMul('Lugia')) {
     const t = open(champ) ? champ : bySeason()[0];
     if (t) silver = give(t, 'Lugia', 'wing', `Drawn by the Silver Wing ${t.name} received${t === champ ? ' as Champion' : ''},`, `${dn(t)} received a Silver Wing${t === champ ? '' : ' (the Champion already has a legendary partner)'}. Lugia may come for its bearer once they're out on the circuit.`);
   }
-  if (greatFree('Ho-Oh') && !pending('Ho-Oh') && rand() < RAINBOW_CHANCE) {
+  if (greatFree('Ho-Oh') && !pending('Ho-Oh') && rand() < RAINBOW_CHANCE * regionMul('Ho-Oh')) {
     const toy = (awards || []).find(a => a.k === 'toy'); let t = toy && T(toy.id);
     // the wings never go to the same trainer, or to anyone with a legendary already: the Rainbow Wing passes to the next-best season
     if (!open(t) || (silver && t.id === silver.id)) t = bySeason(silver ? [silver.id] : [])[0] || null;
     if (t) give(t, 'Ho-Oh', 'wing', `Drawn by the Rainbow Wing ${t.name} received,`, `${dn(t)} received a Rainbow Wing. Ho-Oh may come for its bearer once they're out on the circuit.`);
   }
   // Mewtwo: Cerulean Cave opens to a challenger who won their first title this season
-  if (open(champ) && L.startChamp !== champ.id && (champ.titleSeasons || []).length === 1 && greatFree('Mewtwo') && !pending('Mewtwo') && rand() < 0.5) {
+  if (open(champ) && L.startChamp !== champ.id && (champ.titleSeasons || []).length === 1 && greatFree('Mewtwo') && !pending('Mewtwo') && rand() < 0.5 * regionMul('Mewtwo')) {
     gifts.push({ id: champ.id, sp: 'Mewtwo', how: 'cave', season: next, week: ri(2, 10), why: `Cerulean Cave opened to the new Champion, and inside,` });
     news(`Rumors say Cerulean Cave has opened to ${dn(champ)}...`, 'title', champ.id);
   }
   // Arceus (v184): now and then it appears to the trainer with the finest career who has never had a legendary at all,
   // and only once in a career
-  if (greatFree('Arceus') && !pending('Arceus') && rand() < ARCEUS_CHANCE) {
+  if (greatFree('Arceus') && !pending('Arceus') && rand() < ARCEUS_CHANCE * regionMul('Arceus')) {
     const career = x => (x.career.titles || 0) * 12 + (x.career.badges || 0) + (x.career.e4Wins || 0) * 2;
     const t = field.filter(x => open(x) && !x.arceusChosen && !(x.legendsEver || []).length && (x.seasons || 0) >= 3).sort((a, b) => career(b) - career(a))[0];
     if (t) { t.arceusChosen = next; gifts.push({ id: t.id, sp: 'Arceus', how: 'chosen', season: next, week: ri(4, 16), why: `After a long career without a single legendary partner, ${t.name} was found worthy:` }); news(`Something stirs at the Hall of Origin. ${dn(t)} has never had a legendary partner...`, 'title', t.id); }
@@ -689,7 +729,7 @@ function legendOffseason(L, awards) {
   const wins = x => (x.weekLog || []).filter(w => (w.act === 'challenge' && w.won) || (w.road && w.road.won)).length;
   const kos = x => x.team.reduce((a, m) => a + (m.ss && m.ss.season === S.season ? m.ss.ko : 0), 0);
   for (const g of shuffle(CHARACTER_GIFTS)) {
-    if (!greatFree(g.sp) || pending(g.sp) || rand() >= CHARACTER_CHANCE) continue;
+    if (!greatFree(g.sp) || pending(g.sp) || rand() >= CHARACTER_CHANCE * regionMul(g.sp)) continue;
     const t = pickBy(g.rank(x => ({ wins: wins(x), kos: kos(x), score: seasonScore(x) })), g.keep && (x => g.keep(x, L)));
     if (!t) continue;
     give(t, g.sp, 'chosen', g.why(t), `${g.sign(t)} ${g.sp} may come to ${dn(t)} in the new year.`);
@@ -716,6 +756,11 @@ const CHARACTER_GIFTS = [
   { sp: 'Meloetta', rank: s => x => s(x).score, sign: t => `A melody follows ${t.name}, who had the best year of any challenger.`, why: t => `Drawn by ${t.name}'s season,` },
   { sp: 'Jirachi', rank: s => x => rand(), sign: t => `The Millennium Comet passed overhead, and ${t.name}'s wish was the one Jirachi heard.`, why: t => `Granting ${t.name}'s wish,` },
   { sp: 'Celebi', rank: s => x => improved(x), sign: t => `Celebi passed through time to see ${t.name}, who came further this year than anyone.`, why: t => `Travelling through time to meet ${t.name},` },
+  // (0.20.0) the Swords of Justice and Keldeo, who had no way in since the seed (they came from villain events)
+  { sp: 'Cobalion', rank: s => x => yearOf(x).runs, sign: t => `Cobalion has watched ${t.name} set out again and again this year without giving up.`, why: t => `Drawn by ${t.name}'s resolve,` },
+  { sp: 'Terrakion', rank: s => x => yearOf(x).b * 10 - ovr(x), sign: t => `Terrakion has taken the side of ${t.name}, who went further this year than anyone rated as low.`, why: t => `Standing with the underdog,` },
+  { sp: 'Virizion', keep: x => yearOf(x).b >= 6, rank: s => x => -(x.age || 30), sign: t => `Virizion has noticed ${t.name}, the youngest challenger to win six badges in a run this year.`, why: t => `Drawn by ${t.name}'s youth and promise,` },
+  { sp: 'Keldeo', keep: x => (x.seasons || 0) <= 1, rank: s => x => yearOf(x).b + (yearOf(x).st || 0), sign: t => `Keldeo has been racing alongside ${t.name}, the best of this year's newcomers.`, why: t => `Resolute to prove itself beside ${t.name},` },
   { sp: 'Diancie', keep: x => x.team.some(m => m.sp === 'Carbink'), rank: s => x => s(x).score, sign: t => `Diancie heard that ${t.name} looks after a Carbink.`, why: t => `Looking for the trainer who cares for Carbink,` },
 ];
 // ================= WILD LEGENDARY EVENTS (v182) =================
@@ -767,7 +812,7 @@ function roamOffer(t, out, L) {
 // a challenger caught the roamer
 function roamCaught(t, m) {
   const R = S.roamer; S.roamer = null;
-  m.met.how = 'roamer'; recordGreat(t, m, 'caught');
+  m.met.how = 'roamer'; recordGreat(t, m, 'caught', R.town);
   catchNews(`${dn(t)} caught ${m.sp}, the roaming legendary, near ${townName(R.town)}!`, 'title', t.id);
   logSky(`${dn(t)} caught ${m.sp} near ${townName(R.town)}`);
 }
@@ -788,7 +833,7 @@ function roamWeek() {
   if (!featOn('roamers') || S.roamSeason === S.season) return;
   if (!S.roamPlan || S.roamPlan.season !== S.season) S.roamPlan = { season: S.season, wk: rand() < ROAM_CHANCE ? ri(ROAM_FIRST, ROAM_LAST) : null };
   if (S.roamPlan.wk == null || S.week + 2 < S.roamPlan.wk) return;
-  const free = ROAMERS.filter(greatFree); if (free.length) startRoamer(pick(free)); else S.roamSeason = S.season;
+  const free = ROAMERS.filter(greatFree); if (free.length) startRoamer(regionPick(free)); else S.roamSeason = S.season;
 }
 // a legendary from a wild event joins t, who makes room for it
 function giveWildLegend(t, sp, how, why, force) {
@@ -880,7 +925,7 @@ function stormWeek() {
   if (S.stormSeason === S.season) return;
   if (!S.stormPlan || S.stormPlan.season !== S.season) {
     const ok = Object.keys(STORMS).filter(sp => sp !== 'Landorus' && !STORMS[sp].galar && greatFree(sp));
-    let sp = ok.length && rand() < STORM_CHANCE ? pick(ok) : null;
+    let sp = ok.length && rand() < STORM_CHANCE ? regionPick(ok) : null;
     const gal = sp && Object.keys(STORMS).find(k => STORMS[k].galar === sp);
     if (gal && greatFree(gal) && rand() < GALAR_STORM) sp = gal;
     S.stormPlan = { season: S.season, sp, wk: sp ? ri(Math.max(stormAt(sp)[0], S.week + 2), Math.max(stormAt(sp)[1], S.week + 2)) : null };
@@ -899,7 +944,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'legendPool', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -2803,7 +2848,7 @@ function prestigeNewYear() {
     const cities = S.gyms.filter(g => { const c = S.cities[g.city]; return c && cityCtrl(c, gm[g.city] || [i]) === i; }).length;
     const rank = nLeagues() > 1 ? PRESTIGE_RANK[order.indexOf(i)] || 0 : 0;
     const gain = (h.titles === 0 ? PRESTIGE_PERFECT : 0) + (nLeagues() > 1 ? Math.min(PRESTIGE_LET_MAX, Math.max(0, avg - lets[i]) * PRESTIGE_LET) : 0)
-      + (wl === i ? PRESTIGE_WORLD : 0) + cities * PRESTIGE_CITY + rank;
+      + (wl === i ? PRESTIGE_WORLD : 0) + cities * PRESTIGE_CITY + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0);
     S.prest = Math.round(((S.prest || 0) * (1 - PRESTIGE_FADE) + gain) * 10) / 10;
     h.prest = S.prest; h.prestGain = Math.round(gain * 10) / 10;
   });
