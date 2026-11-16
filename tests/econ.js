@@ -14,8 +14,8 @@ const L = 4, sum = o => o ? Object.values(o).reduce((a, b) => a + b, 0) : 0;
 
 function runWorlds(list) {
   const g = require(path.join(__dirname, '..', 'dist', 'engine-node.js'));
-  const per = Array.from({ length: L }, () => ({ money: 0, estate: 0, inc: 0, out: 0, wages: 0, let: 0, ctrl: 0, yrs: 0, red: 0, aims: {}, heads: {}, outs: {} }));
-  const ends = [], recov = [], marks = {};
+  const per = Array.from({ length: L }, () => ({ money: 0, estate: 0, inc: 0, out: 0, wages: 0, let: 0, ctrl: 0, yrs: 0, red: 0, aims: {}, heads: {}, outs: {}, sOut: 0, sT: 0, sE: 0, sOwnT: 0, top: 0 }));
+  const ends = [], recov = [], marks = {}, folds = [];
   // what a League has built, at cost (the 0.15.0 fallback lets this report measure builds from before 0.16.0)
   const estate = () => g.estateCost ? g.estateCost() : g.myPlaces().filter(p => !p.none).reduce((a, p) => a + p.b.reduce((c, x) => c + [0, 25000, 75000, 175000][x.lv], 0), 0);
   for (const w of list) {
@@ -27,6 +27,8 @@ function runWorlds(list) {
     for (let y = 1; y <= N; y++) {
       g.approveAllChallenges(); g.fillAllVacancies();
       g.simYear();
+      // (0.18.0) a League can fold: the world's figures stop there (it no longer has four Leagues)
+      if (g.nLeagues() < L) { folds.push({ w, y, lg: g.S.folded[g.S.folded.length - 1].name }); break; }
       g.approveAllChallenges(); g.fillAllVacancies();
       // the shock (0.16.0, the owner's choice: a relative crash): League 1's wealth is cut to 40% of L2 and L3's
       // average by taking cash (which goes as far below zero as needed); its buildings stay
@@ -39,16 +41,20 @@ function runWorlds(list) {
         const h = g.S.history[g.S.history.length - 1]; p.let += h ? h.titles : 0;
         p.ctrl += g.S.gyms.filter(x => g.cityCtrl(g.S.cities[x.city], gm[x.city]) === i).length;
         p.aims[f.aim || 'player'] = (p.aims[f.aim || 'player'] || 0) + 1;
+        // (0.18.0) contenders: out at the year's end, titles won by its own, titles and Elite Four runs conceded to others'; the circuit's best ten
+        p.sOut += g.contendersOf(i).length; if (h && h.spon) { for (const r of h.spon.at) { p.sT += r[6]; p.sE += r[5]; } for (const r of h.spon.out) p.sOwnT += r[6]; }
+        { const ov = g.challengers().filter(Boolean).map(t => g.ovr(t)).sort((a, b) => b - a).slice(0, 10); p.top += ov.length ? ov.reduce((a, b) => a + b, 0) / ov.length : 0; }
       });
       if (y % 5 === 0) { const ai = wl.slice(1), a = ai.reduce((x, z) => x + z, 0) / 3; (marks[y] = marks[y] || []).push({ low: Math.min(...ai) / a, high: Math.max(...ai) / a, avg: a }); }
       if (shockAt != null && back == null && y > shockAt) { const oa = (wl[2] + wl[3]) / 2; if (wl[1] >= 0.8 * oa) back = y - shockAt; }
     }
+    if (g.nLeagues() < L) { if (shockAt != null) recov.push('folded'); continue; }
     if (shockAt != null) recov.push(back);
     const wl = g.eachLeague(() => g.S.fin.money + estate()), ai = wl.slice(1), a = ai.reduce((x, z) => x + z, 0) / 3;
     ends.push({ low: Math.min(...ai) / a, high: Math.max(...ai) / a, spread: Math.max(...ai) - Math.min(...ai), p0: wl[0] / a });
     g.eachLeague(i => { per[i].money += g.S.fin.money; per[i].estate += estate(); });
   }
-  return { per, ends, recov, marks };
+  return { per, ends, recov, marks, folds };
 }
 
 if (opt.worker != null) { process.stdout.write(JSON.stringify(runWorlds(opt.worker.split(',').map(Number)))); process.exit(0); }
@@ -69,9 +75,10 @@ if (res) report(res);
 
 function report(rs) {
   const per = Array.from({ length: L }, () => ({ money: 0, estate: 0, inc: 0, out: 0, wages: 0, let: 0, ctrl: 0, yrs: 0, red: 0, aims: {}, heads: {}, outs: {} }));
-  const ends = [], recov = [], marks = {};
+  const ends = [], recov = [], marks = {}, folds = [];
   for (const r of rs) {
-    r.per.forEach((p, i) => { const q = per[i]; for (const k of ['money', 'estate', 'inc', 'out', 'wages', 'let', 'ctrl', 'yrs', 'red']) q[k] += p[k]; for (const o of ['aims', 'heads', 'outs']) for (const k in p[o]) q[o][k] = (q[o][k] || 0) + p[o][k]; });
+    folds.push(...(r.folds || []));
+    r.per.forEach((p, i) => { const q = per[i]; for (const k of ['money', 'estate', 'inc', 'out', 'wages', 'let', 'ctrl', 'yrs', 'red', 'sOut', 'sT', 'sE', 'sOwnT', 'top']) q[k] = (q[k] || 0) + p[k]; for (const o of ['aims', 'heads', 'outs']) for (const k in p[o]) q[o][k] = (q[o][k] || 0) + p[o][k]; });
     ends.push(...r.ends); recov.push(...r.recov); for (const y in r.marks) (marks[y] = marks[y] || []).push(...r.marks[y]);
   }
   const k = n => (n / 1000).toFixed(0) + 'k', mean = a => a.reduce((x, z) => x + z, 0) / Math.max(1, a.length);
@@ -79,9 +86,11 @@ function report(rs) {
   console.log('  League  money at end  estate at end  income/yr  spending/yr  wages/yr  let through/yr  cities held  years in red  aims');
   per.forEach((p, i) => console.log(`  L${i}      ${k(p.money / W).padStart(11)}  ${k(p.estate / W).padStart(12)}  ${k(p.inc / p.yrs).padStart(9)}  ${k(p.out / p.yrs).padStart(11)}  ${k(p.wages / p.yrs).padStart(8)}  ${(p.let / p.yrs).toFixed(2).padStart(14)}  ${(p.ctrl / p.yrs).toFixed(1).padStart(11)}  ${String(p.red).padStart(12)}  ${Object.entries(p.aims).map(([a, n]) => `${a} ${Math.round(n / p.yrs * 100)}%`).join(' ')}`));
   per.forEach((p, i) => console.log(`  L${i} in/yr: ${Object.entries(p.heads).map(([h, v]) => `${h} ${k(v / p.yrs)}`).join(', ')} | out/yr: ${Object.entries(p.outs).map(([h, v]) => `${h} ${k(v / p.yrs)}`).join(', ')}`));
+  per.forEach((p, i) => console.log(`  L${i} contenders: ${(p.sOut / p.yrs).toFixed(2)} out at year end; titles by its own ${(p.sOwnT / p.yrs).toFixed(2)}/yr; conceded to others' contenders ${(p.sT / p.yrs).toFixed(2)} titles and ${(p.sE / p.yrs).toFixed(2)} Elite Four runs/yr; circuit's best ten OVR ${(p.top / p.yrs).toFixed(1)}`));
+  if (folds.length) console.log(`  folded: ${folds.map(f => `world ${f.w} year ${f.y} (${f.lg})`).join(', ')}; those worlds stop there and are left out of the end figures`);
   console.log('  AI Leagues\' wealth (money + buildings at cost) by year, poorest and richest as a share of their average:');
   for (const y of Object.keys(marks).sort((a, b) => a - b)) console.log(`    year ${String(y).padStart(2)}: average ${k(mean(marks[y].map(x => x.avg)))}, poorest ${mean(marks[y].map(x => x.low)).toFixed(2)}, richest ${mean(marks[y].map(x => x.high)).toFixed(2)}`);
   const lowOk = ends.filter(e => e.low >= 0.6).length, highOk = ends.filter(e => e.high <= 2).length;
   console.log(`  at the end (targets: poorest ≥ 0.60, richest ≤ 2.00): poorest ${mean(ends.map(e => e.low)).toFixed(2)} (worst ${Math.min(...ends.map(e => e.low)).toFixed(2)}; ${lowOk}/${ends.length} worlds meet it), richest ${mean(ends.map(e => e.high)).toFixed(2)} (worst ${Math.max(...ends.map(e => e.high)).toFixed(2)}; ${highOk}/${ends.length}); spread ${k(mean(ends.map(e => e.spread)))}; the passive player ${mean(ends.map(e => e.p0)).toFixed(2)} of the AI average`);
-  if (recov.length) { const got = recov.filter(r => r != null); console.log(`  after the shock (target 4 to 6 years), years until L1 is back to 80% of L2 and L3's average: ${recov.map(r => r == null ? 'never' : r).join(', ')}; mean ${got.length ? mean(got).toFixed(1) : '-'}${got.length < recov.length ? `, never in ${recov.length - got.length}` : ''}`); }
+  if (recov.length) { const got = recov.filter(r => typeof r === 'number'); console.log(`  after the shock (target 4 to 6 years), years until L1 is back to 80% of L2 and L3's average: ${recov.map(r => r == null ? 'never' : r).join(', ')}; mean ${got.length ? mean(got).toFixed(1) : '-'}${recov.some(r => r == null) ? `, never in ${recov.filter(r => r == null).length}` : ''}${recov.includes('folded') ? `, folded in ${recov.filter(r => r === 'folded').length}` : ''}`); }
 }

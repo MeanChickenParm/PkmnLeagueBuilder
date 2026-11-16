@@ -12,11 +12,17 @@ const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() 
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
 const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
+const red = { sold: 0, decayed: 0, folded: 0, myFold: 0, lapsedYears: 0 };
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
   // (0.17.0) sponsored contenders and the player's League
   if (g.ME() >= g.nLeagues()) bad('the player League index is out of range');
+  // (0.18.0) after folding and renumbering, every League reference points at a real League
+  { const n = g.nLeagues();
+    for (const t of Object.values(s.trainers)) { if (t.lg != null && (t.lg < 0 || t.lg >= n)) bad('a trainer on League ' + t.lg); if (t.academy != null && (t.academy < 0 || t.academy >= n)) bad('an academy tag for League ' + t.academy); }
+    for (const c of Object.values(s.cities)) { for (const o of [c.b, c.st]) for (const k of Object.keys(o || {})) if (+k >= n || +k < 0) bad('city ' + c.name + ' holds League ' + k); if (c.ctrl != null && c.ctrl >= n) bad('city ' + c.name + ' controlled by League ' + c.ctrl); }
+    if (s.leagues.length !== n) bad('League count mismatch'); }
   { const per = {};
     for (const t of Object.values(s.trainers)) { const x = t.spon; if (!x) continue;
       if (t.role !== 'challenger') bad('a contender holds role ' + t.role);
@@ -190,6 +196,7 @@ for (let i = 0; i < N; i++) {
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
       else if (r < 0.85) { const t = g.staffIds().map(g.T).find(x => x && g.canRaise(x)); if (t && !g.giveRaise(t.id)) money.raises++; }
       else if (r < 0.9) { const free = g.myPlaces().filter(p => p.none); if (free.length && !g.moveGym(rnd([0, 1, 2, 3, 4, 5, 6, 7]), rnd(free).c.id)) money.moved++; }
+      else if (r < 0.95) { const x = g.topLevels(); if (x.length) { const b = rnd(x), v = g.sellValue(b.where, b.k), m0 = z.fin.money, e0 = g.estateCost(); if (g.sellBuilding(b.where, b.k)) fail.push('sellBuilding refused'); else { red.sold++; if (z.fin.money !== m0 + v || g.estateCost() !== e0 - b.cost || v !== Math.round(b.cost * g.SELL_SHARE)) fail.push('sale amounts wrong'); } } }
     });
     // (0.17.0) contenders: send, recall and renew now and then; and in year 5 leave the League to found another
     if (HAND && g.nLeagues() > 1 && Math.random() < 0.04) g.inLeague(g.ME(), () => {
@@ -217,6 +224,15 @@ for (let i = 0; i < N; i++) {
           if (S().founding) fail.push('founding left open'); } }
       else fail.push('could not leave: ' + chk.why);
     }
+    // (0.18.0) the red: a rival League forced deep into the red folds at New Year in year 7; the player's own League
+    // in year 9 (each needs a third red New Year running, and debts its buildings can't cover); a decay is forced now and then
+    let foldWatch = null;
+    if (HAND && S().week === 47 && ((S().season === 7 && g.nLeagues() > 1) || S().season === 9)) {
+      const k = S().season === 7 ? [...Array(g.nLeagues()).keys()].find(i => i !== g.ME()) : g.ME();
+      g.inLeague(k, () => { S().fin.money = -50000000; S().fin.redYears = g.FOLD_YEARS - 1; });
+      foldWatch = { k, n: g.nLeagues(), mine: k === g.ME(), meName: g.inLeague(g.ME(), () => S().lgName) };
+    }
+    if (HAND && Math.random() < 0.01) g.inLeague(rnd([...Array(g.nLeagues()).keys()]), () => { const e0 = g.estateCost(); if (e0 && S().fin) { g.decayOne(); if (g.estateCost() >= e0) fail.push('decay took nothing'); else red.decayed++; } });
     // steers (0.12.0): set the League line and posts' steers now and then
     if (HAND && Math.random() < 0.06) g.inLeague(g.ME(), () => { const keys = ['line', 'champion', 'e4:0', 'e4:3', 'gym:0', 'gym:4', 'gym:7']; if (!g.setSteer(rnd(keys), Math.random() < 0.2 ? null : rnd(g.STEER_KEYS))) fail.push('setSteer failed'); steersSet++; });
     // seat challenges (0.11.0): approve some, refuse some, leave the rest to go ahead on their own
@@ -227,12 +243,22 @@ for (let i = 0; i < N; i++) {
       if (no) { amb.refusedMove++; if (g.fillVacancy(v, no.t.id)) fail.push('a refused vacancy move went ahead'); }
       else if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
     g.simWeek();
+    if (foldWatch) {
+      if (g.nLeagues() !== foldWatch.n - (foldWatch.mine ? 0 : 1)) fail.push('a League forced into the red did not fold');
+      else if (foldWatch.mine) { red.myFold++;
+        if (!S().founding || !S().founding.mid) fail.push('the player\'s fold opened no founding');
+        g.inLeague(g.ME(), () => { if (S().fin.money !== g.START_FUND || (S().prest || 0) !== 0) fail.push('the fresh League did not start fresh'); g.foundingFill(); g.finishFounding(); });
+        if (S().founding) fail.push('founding left open after a fold'); }
+      else { red.folded++; if (g.inLeague(g.ME(), () => S().lgName) !== foldWatch.meName) fail.push('the player\'s League changed when a rival folded'); }
+      if (!(S().folded || []).length) fail.push('no record of the folded League');
+    }
+    g.eachLeague(() => { if (S().fin && S().fin.money < 0 && S().week === 0) red.lapsedYears++; });
     for (const id of hiredBefore) { const t = g.T(id); if (t && !t.hired && t.role !== 'challenger') offers.arrived++; }
     if (S().stop) stops[S().stop.why] = (stops[S().stop.why] || 0) + 1;
     check('step');
   }
   if (guard >= 400) fail.push('stuck in year ' + S().season);
-  if (S().history.length !== S().season - 1) fail.push('history has ' + S().history.length + ' years at the start of year ' + S().season);
+  { const hs = S().history, first = hs.length ? hs[0].season : S().season; if (hs.length !== S().season - first || (hs.length && hs[hs.length - 1].season !== S().season - 1)) fail.push('history has ' + hs.length + ' years at the start of year ' + S().season); }
   // the year report's detail (0.8.0), in every League
   g.eachLeague(li => { const x = S().history[S().history.length - 1]; if (!x) return; const tag = 'year report L' + li + ' Y' + x.season + ': ';
     if (!x.gyms || x.gyms.length !== 8 || !x.seats || x.seats.length !== 5 || !x.top || !x.runsE4) { fail.push(tag + 'detail missing'); return; }
@@ -261,6 +287,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
+console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));
 process.exit(fail.length ? 1 : 0);

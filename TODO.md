@@ -118,13 +118,13 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **AI upgrades** replace at most one senior member a year and only with 300,000 spare; the player has no matching button (the player can already bid and let staff go).
 - **The economy report** (`tests/econ.js`) now splits worlds over two workers (`--jobs`), measures wealth (money + buildings at cost) and reads the three AI Leagues for the targets; 25 years × 8 worlds take about 17 minutes on two cores.
 
-## Long-term ideas (the owner, Nov 15, after 0.16.0; design doc item 31)
-- **League folding.** No League can close: nothing removes a League, money has no floor, and a broke League keeps every post filled with the cheapest trainers who fit. A League that never recovers stays open forever and takes a place under `MAX_LEAGUES` and `REGION_CAP`. Idea: fold a League that stays deep in the red long enough, freeing its cities, staff and challengers (maybe for a founder's new League). Fits stage 5.
-- **Selling and losing buildings.** Nothing sells or removes a League's buildings except moving a gym. Idea: sell in a crisis, or lose them in a crash, when a League folds or when a rival takes a city.
+## Long-term ideas (the owner; design doc item 31)
+- **League folding and selling or losing buildings:** built in 0.18.0. Still an idea: losing buildings when a rival takes control of a city.
+- **Pokémon finds tied to money, and regional encounters (the owner, Nov 15, 0.18.0 chat):** maybe tie the chance to find rarer Pokémon to money as well, and make encounters more environmental by region. Not designed; no stage.
 
 ## Left over from stage 5 (0.17.0)
 - **All the numbers are provisional:** `PRESTIGE_BAR` 60 (set so a hands-off player alone in a region reaches it around year 10 to 14, and a strong retiree founds a League from about year 10), `PRESTIGE_FADE` 0.1 and the yearly gains (10 a perfect year, 2 a title under the average up to 10, 10 a World Championship, 1 a city, 6/4/2/1 by wealth), `FOUNDER_ODDS` 0.3, `LEAGUE_MIN_GAP` 8, `MAX_LEAGUES` 6, `SPON_YEARS` 2, `SPON_MAX` 4, `SPON_BASE` 60, `SPON_BOUNTY` 40,000, `SPON_E4_BOUNTY` 5,000, `SPON_ACCEPT` 0.6, `SPON_RENEW_WEEKS` 24, `SPON_AIM` 3/2/1, `SPON_AIM_SPARE` 50,000, `SPON_AIM_ODDS` 0.5, `SPON_AIM_OVR` 60, `LEAVE_FEE` 750,000, `LEAVE_TAKE` 3.
-- **Not measured:** the economy report and the wall report were not rerun. Contenders move strong challengers between circuits (a League sending its best away walls better at home) and move money by bounties; whether that helps catch-up or lets a rich League pull away is unknown.
+- **Measured in 0.18.0:** contenders barely move the economy (about 0.6 out per AI League, 3 to 8k a year in bounties, neutral on spread and recovery); the economy report now counts them. Not retuned, by the owner's choice.
 - **A League's prestige** is earned by the League, not the player: a new League you found starts at 0, and the one you leave keeps its prestige.
 - **The Champion can't come with you** when you leave (kept simple); the carried staff are placed at the same gym number or seat when it is free.
 - **Contracts the player made stay with the League left** (it carries on paying and may renew them as an AI).
@@ -132,3 +132,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Contenders and the Triple Crown:** a contender who wins a title counts it like anyone (a Triple Crown chaser who is under contract doesn't move League until the contract ends).
 - **League folding** (item 31) stays a long-term idea; the higher cap makes room for openings without it.
 - **Fixed in 0.17.0:** the League table view was missing from the list of views since 0.15.0, so its menu item led to the circuit; a new Gym Leader could keep a Pokémon that evolved off the gym's type at its level (seen once in the growth sim).
+
+## Left over from the red, selling and folding (0.18.0)
+- **All the numbers are provisional:** `FOUNDER_BAR_BASE` 30, `FOUNDER_BAR_STEP` 10, `PRESTIGE_PULL` 0.06, `PRESTIGE_DRAW` 0.3, `SELL_SHARE` 0.5, `DISTRESS_SHARE` 0.3, `DECAY_WEEKS` 24, `FOLD_YEARS` 3, `FOLD_QUIT_AGE` 30, `FOLD_QUIT_EARLY` 2.
+- **Recovery from a crash is now slow:** 10.0 years on `econ.js 25 8` (target 4 to 6; one world never). A crashed AI League sells its buildings at half and loses more to decay while lapsed, so its wealth (money plus buildings at cost) climbs back slowly, though it leaves the red sooner. The next chat's tuning question.
+- **The player is never a distress-sale buyer:** only AI Leagues buy automatically (nothing asks you). A fire-sale list the player could buy from was offered and not chosen.
+- **The player's fresh League after a fold** opens in the same region; there is no region picker (the old region always has room once the fold frees it).
+- **A folded League's records:** its history goes with it; `S.folded` keeps its name, region, years and prestige, and old references name it. Its titles no longer count toward "Champion of a League" or the Triple Crown.
+- **Merging fields:** a folded League's younger challengers move to the emptiest circuit; in the hand-placed sim the single remaining circuit peaked at 142 to 155 (alarm 160). Watch it.
+- **Lapsed buildings still count in wealth and in the League table's Built column.**
