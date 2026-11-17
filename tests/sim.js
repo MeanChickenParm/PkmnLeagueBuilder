@@ -10,7 +10,7 @@ const S = () => g.S, fail = [];
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
-const chal = { n: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
+const chal = { n: 0, claims: 0, claimWon: 0, claimNo: 0, claimPost: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
@@ -116,7 +116,8 @@ function check(tag) {
     // answer window and naming people still on the books; kept challenge battles stay capped
     if ((z.seatLogs || []).length > g.SEAT_LOGS) bad('too many kept seat challenges');
     if (i === g.ME()) for (const x of s.chalPending || []) { if (!HAND) bad('a challenge waits in a League nobody staffs by hand');
-      if (x.due < s.turn || x.due - s.turn > g.CHAL_ANSWER) bad('a challenge waits out of range');
+      if (x.due < s.turn || x.due - s.turn > (x.from === 'claim' ? g.CLAIM_ANSWER : g.CHAL_ANSWER)) bad('a challenge waits out of range');
+      if (x.from === 'claim' && (x.k !== 'champ' || !g.claimOn(g.T(x.cand)))) bad('a malformed title claim');
       if (!g.T(x.cand) || !g.T(x.inc) || !['champ', 'e4'].includes(x.k)) bad('a malformed challenge'); }
     if (i !== g.ME() && (z.gyms.some(x => x.acting) || z.e4.some(id => g.T(id) && g.T(id).acting))) bad('a vacancy in a League not staffed by hand');
     // challengers: tries, gym trainers beaten, and Pokémon standing at the level of their next battle
@@ -325,14 +326,15 @@ for (let i = 0; i < N; i++) {
     x.seats.forEach((st, k) => { if (!st.held.includes(st.id)) fail.push(tag + 'seat ' + k + ' holder not among its holders'); });
     { const ch = x.chal || [];
       if (ch.filter(c => c.k === 'champ').length > 1 || ch.filter(c => c.k === 'e4').length > 1) fail.push(tag + 'more than one challenge of a kind');
-      if (!(S().myLeagues || [{ lg: 0 }]).some(m => m.lg === li) && ch.some(c => c.refused)) fail.push(tag + 'a rival League refused a challenge');
+      if (!(S().myLeagues || [{ lg: 0 }]).some(m => m.lg === li) && ch.some(c => c.refused && c.from !== 'claim')) fail.push(tag + 'a rival League refused a challenge');
+      if (ch.some(c => c.from === 'claim' && c.k !== 'champ')) fail.push(tag + 'a title claim not for the Champion');
       }
     if (x.top.length > 10 || x.top.some((r, k) => k && r[1] > x.top[k - 1][1]) || (x.titles && x.top[0][1] !== 13)) fail.push(tag + 'top ten wrong'); });
   check('s' + S().season);
 }
 // a reloaded save keeps running
 { const copy = JSON.parse(JSON.stringify(S())); g.S = copy; g.applyDex(copy.cfg && copy.cfg.dex); g.applyCfg(); g.simYear(); check('reload'); if (g.simWeeks(60, true) == null) fail.push('60 weeks without a stop for New Year'); check('stops'); }
-g.eachLeague(() => { for (const x of S().history) for (const c of x.chal || []) { chal.n++; if (c.won) chal.won++; if (c.refused) chal.refused++; if (c.lapsed) chal.lapsed++; if (c.k === 'champ') chal.champ++; if (c.from === 'leader') chal.leader++; if (c.from === 'circuit') chal.circuit++; } });
+g.eachLeague(() => { for (const x of S().history) for (const c of x.chal || []) { chal.n++; if (c.won) chal.won++; if (c.refused) chal.refused++; if (c.lapsed) chal.lapsed++; if (c.k === 'champ') chal.champ++; if (c.from === 'leader') chal.leader++; if (c.from === 'circuit') chal.circuit++; if (c.from === 'claim') { chal.claims++; if (c.won) chal.claimWon++; if (c.refused) chal.claimNo++; if (c.offered) chal.claimPost++; } } });
 const h = S().history;
 console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') : 'ok', 'leagues', g.nLeagues(), 'year', S().season, 'trainers', Object.keys(S().trainers).length, 'cities', Object.keys(S().cities).length,
   'Elite Four runs/year', (h.reduce((a, x) => a + x.qualifiers, 0) / Math.max(1, h.length)).toFixed(1), 'perfect years', Math.round(h.filter(x => !x.titles).length / Math.max(1, h.length) * 100) + '%', 'badges conceded/year', (h.reduce((a, x) => a + x.badges, 0) / Math.max(1, h.length)).toFixed(1),
