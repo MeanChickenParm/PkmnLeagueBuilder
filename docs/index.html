@@ -4903,7 +4903,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 12; // 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 13; // 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -5280,7 +5280,8 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     S.famousUsed.push(t.name);
   }
   t.trait = (t.famous && (f && f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[famBase(t)])) || rollTrait();
-  t.pot = clamp(ovr(t) + Math.max(0, Math.round((22 - t.age) * ri(1, 4) * 0.9)) + ri(-4, 6), ovr(t), 99);
+  t.start = t.age - seasons; // (0.24.0) the age the career began
+  t.pot = growPot(t);
   S.trainers[id] = t;
   return t;
 }
@@ -8960,25 +8961,13 @@ function birthdays() {
     trimH2h(t);
     const before = { ...t.r, ovr: ovr(t) };
     t.age++;
-    for (const k of RK) {
-      let d;
-      if (t.age <= 17) d = ri(0, 6) * (ovr(t) < t.pot ? 1 : 0.3);
-      else if (t.age <= 24) d = ri(-1, 4) * (ovr(t) < t.pot ? 1 : 0.4);
-      else if (t.age <= 34) d = ri(-1, 2);
-      else if (t.age <= 44) d = ri(-2, 1);
-      else if (t.age <= 52) d = ri(-3, 1);
-      else d = ri(-4, 1);
-      if (hasTrait(t, 'lateBloomer') && t.age >= 20 && t.age <= 32) d += ri(0, 1);
-      t.r[k] = clamp(Math.round(t.r[k] + d), 1, 99);
-    }
+    grow(t); // (0.24.0) one growth model for everyone
     if (t.role === 'challenger') {
       const sh = t.seasonHist[t.seasonHist.length - 1];
       if (sh && sh.badges === 8) t.r.nrv = clamp(t.r.nrv + ri(1, 3), 1, 99);
       if (sh && sh.stage != null && sh.stage >= 4) { t.r.nrv = clamp(t.r.nrv + 2, 1, 99); t.r.str = clamp(t.r.str + 1, 1, 99); }
     }
-    if (STAFF_ROLES.includes(t.role)) hallGain(t);
-    t.pot = Math.max(t.pot, ovr(t));
-    if (t.age > (hasTrait(t, 'lateBloomer') ? 32 : 26)) t.pot = ovr(t);
+    t.pot = growPot(t);
     prog[t.id] = { before, after: { ...t.r, ovr: ovr(t) } };
     // --- retiring: with age (50+ and past their career length), after a long dry spell, or for poor ratings
     if (t.role === 'challenger') {
@@ -8997,6 +8986,62 @@ function birthdays() {
       inLeague(homeLeague(t), () => { if (t.stepDown != null) staffRetires(t); else if (!t.acting && rand() < stepDownChance(t)) announceStepDown(t); else if (!t.acting) driftAmbition(t); });
     }
   }
+}
+// ================= GROWTH (0.24.0, design doc 6.3) =================
+// One model for every trainer, staff and challengers alike, replacing the source's potential ceiling. A trainer grows
+// until their peak (GROW_PEAK, their late 20s), holds, and declines slowly from GROW_DECLINE (their mid 30s), faster
+// with age. Growth counts from the start of a career, not age: a late starter grows for GROW_LATE years from the
+// start, and declines GROW_LATE_DECLINE years after it, no later than GROW_DECLINE_MAX. Each birthday every rating moves
+// by the stage's step × the trainer's talent (a stable draw, GROW_TALENT) × their coach's Training (a gym trainer's
+// leader, a Gym Leader's or Elite Four member's Champion, else their own) × the training hall at their post (+GROW_HALL a
+// level; it also slows the decline), less as a rating nears the top. A Late Bloomer peaks and declines
+// GROW_BLOOM years later. All numbers provisional.
+const GROW_PEAK = 28, GROW_DECLINE = 35, GROW_LATE = 4, GROW_LATE_DECLINE = 6, GROW_DECLINE_MAX = 40, GROW_BLOOM = 3;
+const GROW_STEP = [[17, 3.0], [22, 2.0], [99, 1.2]]; // [up to age, points a year] while growing
+const GROW_DROP = [[44, 0.7], [52, 1.2], [99, 1.8]]; // [up to age, points a year] while declining
+const GROW_TALENT = [0.6, 1.4], GROW_HALL = 0.12, GROW_HALL_SLOW = 0.1;
+// the age a career started (set when a trainer is made; older trainers get it from their years)
+const startAge = t => (t.start != null ? t.start : (t.start = t.age - (t.seasons || 0)));
+// a late starter is one whose career began after their natural peak was near
+function growAges(t) {
+  const s = startAge(t), b = hasTrait(t, 'lateBloomer') ? GROW_BLOOM : 0;
+  const decline = Math.max(GROW_DECLINE, Math.min(s + GROW_LATE_DECLINE, GROW_DECLINE_MAX)) + b;
+  const peak = Math.min(decline, Math.max(GROW_PEAK, s + GROW_LATE)) + b;
+  return { peak, decline };
+}
+const talent = t => GROW_TALENT[0] + (((t.id * 40503) >>> 0) % 101) / 100 * (GROW_TALENT[1] - GROW_TALENT[0]);
+const stepAt = (tbl, age) => tbl.find(([a]) => age <= a)[1];
+// whose Training speeds t's growth
+function coachOf(t) {
+  if (!STAFF_ROLES.includes(t.role)) return t;
+  return inLeague(homeLeague(t), () => {
+    if (t.role === 'gymtrainer') { const g = S.gyms.find(x => (x.trainers || []).includes(t.id)); return (g && T(g.leader)) || t; }
+    if (t.role === 'champion') return t;
+    return T(S.champion) || t;
+  });
+}
+const coachMul = t => 0.7 + 0.6 * clamp((coachOf(t).r.trn - 20) / 60, 0, 1); // Training 50 = ×1
+// the training hall at a member of staff's post (0 while the League is in the red)
+const hallAt = t => STAFF_ROLES.includes(t.role) ? inLeague(homeLeague(t), () => lapsed() ? 0 : hallLv(t)) : 0;
+// the birthday's change to every rating (t.age is already the new age)
+function grow(t) {
+  const { peak, decline } = growAges(t), hall = hallAt(t);
+  if (t.age <= peak) {
+    const step = stepAt(GROW_STEP, t.age) * talent(t) * coachMul(t) * (1 + GROW_HALL * hall);
+    for (const k of RK) { const room = clamp((96 - t.r[k]) / 40, 0.15, 1); t.r[k] = clamp(Math.round(t.r[k] + step * room + (rand() - 0.5) * 2), 1, 99); }
+  } else if (t.age <= decline) {
+    for (const k of RK) t.r[k] = clamp(t.r[k] + ri(-1, 1), 1, 99);
+  } else {
+    const drop = stepAt(GROW_DROP, t.age) * Math.max(0.3, 1 - GROW_HALL_SLOW * hall);
+    for (const k of RK) t.r[k] = clamp(Math.round(t.r[k] - drop + (rand() - 0.5) * 2), 1, 99);
+  }
+}
+// a trainer's potential: their OVR now plus the growth still ahead at their own pace (coach and hall left out)
+function growPot(t) {
+  const { peak } = growAges(t);
+  let o = ovr(t);
+  for (let a = t.age + 1; a <= peak; a++) o += stepAt(GROW_STEP, a) * talent(t) * clamp((96 - o) / 40, 0.15, 1);
+  return clamp(Math.round(o), ovr(t), 99);
 }
 // ---------- stepping down (0.6.0) ----------
 // A member of staff only thinks of stepping down once they are past their career length and have held posts for
@@ -9767,6 +9812,7 @@ function staffQuits(t) {
 // off on another run as a challenger, sharper for it, and guaranteed COMEBACK_GUARD years on the circuit
 function comeback(t, was) {
   for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
+  t.pot = Math.max(t.pot, ovr(t));
   t.noRetireUntil = (S.season || 0) + 1 + COMEBACK_GUARD;
   t.comebacks = (t.comebacks || []).concat([{ season: S.season, post: was, seasons: t.wallStreak || 0, lg: S.lg || 0 }]);
   t.wallStreak = 0; t.wish = null; t.quit = null; t.letGoAt = S.turn;
@@ -9962,7 +10008,7 @@ function leagueNewYear(changes) {
     let leave = null, stepDown = false;
     if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
     if (!leave) {
-      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
+      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); t.pot = Math.max(t.pot, ovr(t)); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
       else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor year and the League will replace them' : ''}.`); }
       return;
     }
@@ -10096,7 +10142,7 @@ function godEdit(id, field, v) {
   const t = T(id); if (!t) return 'No such trainer.';
   const num = (lo, hi) => { const n = Math.round(+v); return Number.isFinite(n) ? clamp(n, lo, hi) : null; };
   if (field === 'name') { const s = String(v || '').replace(/[<>&"]/g, '').trim().slice(0, 24); if (!s) return 'A name is needed.'; t.name = s; return null; }
-  if (field === 'age') { const n = num(10, 70); if (n == null) return 'Not a number.'; t.age = n; return null; }
+  if (field === 'age') { const n = num(10, 70); if (n == null) return 'Not a number.'; t.age = n; if (startAge(t) > n) t.start = n; return null; }
   if (field === 'pot') { const n = num(1, 99); if (n == null) return 'Not a number.'; t.pot = Math.max(n, ovr(t)); return null; }
   if (RK.includes(field)) { const n = num(1, 99); if (n == null) return 'Not a number.'; t.r[field] = n; if (t.pot < ovr(t)) t.pot = ovr(t); return null; }
   return 'Unknown field.';
@@ -11488,7 +11534,7 @@ const FOUND_CANDS = 40, FOUND_OVR = [45, 55], FOUND_STANDOUTS = [4, 6], FOUND_ST
 // set a new trainer's OVR to `to` by moving every rating alike (OVR is a weighted mean of them)
 function setOvr(t, to) {
   for (let n = 0; n < 3; n++) { const d = to - ovr(t); if (!d) break; for (const k of RK) t.r[k] = clamp(t.r[k] + d, 8, 96); }
-  t.pot = clamp(t.pot, ovr(t), 99);
+  t.pot = growPot(t);
 }
 function foundingCands() {
   const n = ri(FOUND_STANDOUTS[0], FOUND_STANDOUTS[1]), out = [];
@@ -11743,7 +11789,7 @@ function giveRaise(id) {
 // purchase at the seat that takes no slot and has its own prices. Every level owned costs UPKEEP of its price a year.
 const CITY_GROW = [60000, 180000], SEAT_SLOTS = 3, UP_COST = [25000, 50000, 100000, 200000, 400000], MOVE_FEE = 40000, UPKEEP = 0.05;
 const UPGRADES = {
-  hall:    { name: 'Training hall',   text: 'Staff here gain a rating point per level on each birthday (Scouting, Strategy or Training), up to 95.', max: 5 },
+  hall:    { name: 'Training hall',   text: 'Staff here grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', max: 5 },
   feature: { name: 'Gym feature',     text: 'A home edge: staff here fight at +1.5% per level in their own battles.', max: 5 },
   attract: { name: 'Attraction',      text: 'Brings in income every week.', income: [120, 240, 360] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
@@ -11914,11 +11960,6 @@ function sanctLevels() { return myPlaces().filter(p => !p.none && siteOn(p.c)).r
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
 function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
-function hallGain(t) {
-  const lv = inLeague(homeLeague(t), () => lapsed() ? 0 : hallLv(t)); if (!lv) return;
-  for (let n = 0; n < lv; n++) { const k = pick(['sco', 'str', 'trn']); if (t.r[k] < 95) t.r[k]++; }
-  t.pot = Math.max(t.pot, ovr(t));
-}
 // ---------- the paid banlist (League 0) ----------
 // Any family seen on the circuit in the meta log can be banned, in any week, for 1 to 3 years; the price per year
 // rises with its meta rank (×3 for the top, down to ×1). Up to BAN_PAID_MAX at once; a lapsed ban protects the family
@@ -12528,7 +12569,7 @@ function removeLeague(k, info) {
 const PRESTIGE_PULL = 0.06, PRESTIGE_DRAW = 0.3;
 const prestOf = i => i === (S.lg || 0) ? (S.prest || 0) : ((S.leagues && S.leagues[i]) || {}).prest || 0;
 const prestigePull = () => PRESTIGE_PULL * Math.min(1, (S.prest || 0) / 100);
-if (typeof module !== 'undefined') module.exports = { prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, MAX_LEAGUES, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, GYM_LV, GYM_SIZE, E4_LV, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -14905,11 +14946,12 @@ const GLOSS_TERMS = {
     ['Standing and control', 'A League gains standing in a city where it has a gym by spending there (a point per ₽2,000) and each New Year by how its gym held against the region\'s average (a point per percentage point); all standing then fades by a quarter. The League with most standing controls the city. Each city with a gym earns ₽250, ₽350 or ₽500 a week by its size: the controller takes half, the rest is shared by standing among the other Leagues with a gym there.'],
     ['League table', 'Every League ranked by money, with last year\'s income and spending, the wage bill, cities controlled and the wall. Balance in this game is economic: Leagues should stay close to level, and one that falls behind can catch up (challengers drift to walls they can get further against, and stars ask a little more of a League far richer than the rest).'],
     ['Founders', `A new League is founded by a distinguished recent retiree as a final act, and takes their name if it is the second League of its region. With new Leagues switched on, one may open each New Year once ${LEAGUE_MIN_GAP} years have passed since the last, if there is room (at most ${MAX_LEAGUES} Leagues, ${REGION_CAP} to a region) and the most prestigious recent retiree has enough prestige: ${FOUNDER_BAR_BASE} for the world's second League, ${FOUNDER_BAR_STEP} more for each League after. No founder, no League. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.`],
+    ['Growth', `Every trainer, staff and challengers alike, grows on one curve, a step on each birthday. They improve until their peak (age ${GROW_PEAK}), fastest while young (about ${GROW_STEP[0][1]} points a rating a year up to ${GROW_STEP[0][0]}, ${GROW_STEP[1][1]} to ${GROW_STEP[1][0]}, ${GROW_STEP[2][1]} after), hold, and decline slowly from ${GROW_DECLINE}, faster with age. Growth counts from the start of a career: a late starter improves for ${GROW_LATE} years from the start and declines ${GROW_LATE_DECLINE} years after it, by ${GROW_DECLINE_MAX} at the latest. Talent varies (×${GROW_TALENT[0]} to ×${GROW_TALENT[1]}), as does the coach: a gym trainer is coached by their Gym Leader, Gym Leaders and the Elite Four by the Champion, everyone else by themselves, and a coach's Training speeds growth (Training 50 is the usual pace). A training hall at a member of staff's post adds ${Math.round(GROW_HALL * 100)}% a level and slows their decline. Late Bloomers peak and decline ${GROW_BLOOM} years later. Potential (POT) is where a trainer's growth is heading at their own pace.`],
     ['Prestige', `One scale for trainers and Leagues. A trainer's comes from their career: titles, the Hall of Fame, badges, years and World titles. A League's is earned each New Year (${PRESTIGE_PERFECT} for a perfect year, up to ${PRESTIGE_LET_MAX} for letting through fewer than the world's average, ${PRESTIGE_WORLD} for winning the World Championship, ${PRESTIGE_CITY} for each city it controls, and up to ${PRESTIGE_RANK[0]} for its rank by wealth) and fades by a tenth a year. A retiree founding a League needs ${FOUNDER_BAR_BASE} for the world's second, ${FOUNDER_BAR_STEP} more for each after; you need ${PRESTIGE_BAR} to leave yours. A prestigious League draws trainers: up to ${Math.round(PRESTIGE_PULL * 100)}% likelier to take its offers and sponsorships, and challengers moving League lean toward it. The League table shows every League's. Since 0.23.0 every trainer also has a prestige minimum for joining a League: nothing up to OVR ${PM_FREE}, then ${PM_PER} for each point above it, plus ${Math.round(PM_REC * 100)}% of their own prestige (at most ${PM_REC_MAX}) and ${PM_FAMOUS} for a famous trainer. A trainer hungry for a post (another League's staff who want promotion, a claimant, and about one challenger in four) needs only ${Math.round(PM_HUNGRY * 100)}% of it, and one holding a grudge against another League ${Math.round(PM_GRUDGE * 100)}%. Below it they won't sign, at founding, for a post or for an offer; candidates show it as Prestige X. Outsiders the game finds for a post are no stronger than the League's prestige can attract. Your own staff moving between posts, and staff who follow you to a new League, are never held back.`],
     ['Contenders', `A League can send challengers at another League as its contenders: its own academy prospects, or a challenger from its circuit it signs. A contender runs only at that League for ${SPON_YEARS} years (renewable), and nobody else can hire them or seat them after a deep run meanwhile. The sponsor pays a weekly stipend; the target still gets their entry fees and pays the sponsor a bounty of ${money(SPON_BOUNTY)} for each title they win there (${money(SPON_E4_BOUNTY)} for a run that reaches the Elite Four). Rival Leagues send them too, by their aim, and may send them at you. Your Contenders page has yours; the year report lists each year's.`],
     ['Founding your own League', `Once your League's prestige reaches ${PRESTIGE_BAR}, you can leave it to found a new League for ${money(LEAVE_FEE)} from its money (on the Money page), if the world has room. The League you leave carries on as a rival with an aim of its own, keeping its money, buildings, staff and history. Up to ${LEAVE_TAKE} members of staff who want promotion come with you, and your academy prospects follow. You place the new League's staff by hand and start with ${money(START_FUND)}. You only ever run one League.`],
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
-    ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff gain ratings on birthdays) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
+    ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
     ['Youth academy', `A League-level purchase at the seat that takes no slot. Each of its three levels raises a young prospect a year who sets out on your circuit as one of your own: ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers and paid ${Math.round((1 - ACADEMY_PAY) * 100)}% less by you. Rival Leagues build academies too.`],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
@@ -15015,6 +15057,14 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 24, ver: '0.24.0', date: 'November 16, 2026', time: '11:45 PM ET', title: 'Growth', items: [
+    "Everyone grows on one curve, staff and challengers alike. Trainers improve on each birthday, fastest while young: a teenager is typically 6 to 10 OVR better within three years, a young adult 4 to 6. They peak in their late 20s, hold, and decline slowly from their mid 30s, faster with age. This replaces the old potential ceiling.",
+    "Late starters grow too. Growth counts from the start of a career, not age, so someone who comes to the circuit or a post at 30 still improves for four years, and only declines six years in (by 40 at the latest).",
+    "Talent varies from trainer to trainer, and so does coaching: a gym trainer is coached by their Gym Leader, Gym Leaders and the Elite Four by the Champion, and a coach with high Training speeds growth. A cheap young Gym Leader under a good Champion can grow into the post.",
+    "The training hall now speeds growth at its post (12% a level) and slows the decline of older staff, in place of its flat rating point a level.",
+    "Potential (POT) on a trainer's card is where their growth is heading at their own pace. The glossary has a Growth entry.",
+    "Old saves don't load (save version 13).",
+  ] },
   { id: 23, ver: '0.23.0', date: 'November 16, 2026', time: '10:30 PM ET', title: 'Prestige decides who will sign', items: [
     "A weaker start. Every League now founds from a pool of about 40 candidates who are mostly OVR 45 to 55, with four to six standouts at 58 to 62, plus the founding field. There are no stars and no famous trainers at founding. Your rival Leagues found the same way, from the same kind of pool, so the early years are a level race and walls start loose.",
     "Every trainer has a prestige minimum for joining a League. Nothing up to OVR 62, then 4.5 for each point above it, plus part of their own record (titles, the Hall of Fame, badges and years) and more for a famous trainer. Trainers hungry for a post sign below their bar: another League's staff who want promotion, a claimant, and about one challenger in four. So do trainers holding a grudge against another League. A new League starts with no prestige, so a Champion-calibre trainer (around OVR 72) waits until your League has earned about 45, usually in three to five years.",

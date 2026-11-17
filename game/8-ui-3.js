@@ -1,5 +1,13 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 24, ver: '0.24.0', date: 'November 16, 2026', time: '11:45 PM ET', title: 'Growth', items: [
+    "Everyone grows on one curve, staff and challengers alike. Trainers improve on each birthday, fastest while young: a teenager is typically 6 to 10 OVR better within three years, a young adult 4 to 6. They peak in their late 20s, hold, and decline slowly from their mid 30s, faster with age. This replaces the old potential ceiling.",
+    "Late starters grow too. Growth counts from the start of a career, not age, so someone who comes to the circuit or a post at 30 still improves for four years, and only declines six years in (by 40 at the latest).",
+    "Talent varies from trainer to trainer, and so does coaching: a gym trainer is coached by their Gym Leader, Gym Leaders and the Elite Four by the Champion, and a coach with high Training speeds growth. A cheap young Gym Leader under a good Champion can grow into the post.",
+    "The training hall now speeds growth at its post (12% a level) and slows the decline of older staff, in place of its flat rating point a level.",
+    "Potential (POT) on a trainer's card is where their growth is heading at their own pace. The glossary has a Growth entry.",
+    "Old saves don't load (save version 13).",
+  ] },
   { id: 23, ver: '0.23.0', date: 'November 16, 2026', time: '10:30 PM ET', title: 'Prestige decides who will sign', items: [
     "A weaker start. Every League now founds from a pool of about 40 candidates who are mostly OVR 45 to 55, with four to six standouts at 58 to 62, plus the founding field. There are no stars and no famous trainers at founding. Your rival Leagues found the same way, from the same kind of pool, so the early years are a level race and walls start loose.",
     "Every trainer has a prestige minimum for joining a League. Nothing up to OVR 62, then 4.5 for each point above it, plus part of their own record (titles, the Hall of Fame, badges and years) and more for a famous trainer. Trainers hungry for a post sign below their bar: another League's staff who want promotion, a claimant, and about one challenger in four. So do trainers holding a grudge against another League. A new League starts with no prestige, so a Champion-calibre trainer (around OVR 72) waits until your League has earned about 45, usually in three to five years.",
