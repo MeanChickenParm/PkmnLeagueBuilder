@@ -101,7 +101,7 @@ async def run(path):
           // 0.31.0: the world has Testland as its 10th region, its own Pokémon and Mewtwo at home there, and no rival in it
           { const r = S.regions[9];
             if (!r || r.name !== 'Testland League' || !r.solo || r.posts.leader !== 'Warden' || r.ports.Portwick !== 'port') log.push('FAIL the 10th region of the world: ' + JSON.stringify(r || {}).slice(0, 200));
-            if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || LEGEND_HOME.Mewtwo !== 9 || LEGEND_HOME.Testgod !== 9 || !SP.Testgod || !SP.Testgod.dexLegend) log.push('FAIL the Pokémon or legendary of Testland');
+            if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || !(LEGEND_HOMES.Mewtwo || []).includes(9) || !(LEGEND_HOMES.Mewtwo || []).includes(0) || LEGEND_HOME.Testgod !== 9 || !SP.Testgod || !SP.Testgod.dexLegend) log.push('FAIL the Pokémon or legendary of Testland');
             if (eachLeague(() => S.region).slice(1).includes(9)) log.push('FAIL a rival started in a region closed to rivals'); }
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region

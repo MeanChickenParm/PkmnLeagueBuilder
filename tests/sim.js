@@ -210,9 +210,9 @@ function check(tag) {
   // (0.20.0) one of each legendary in the world, one of each Paradox Pokémon held; sanctuaries only in gym cities
   { const held = {}, px = {};
     for (const t of Object.values(s.trainers)) { if (['retired', 'prospect'].includes(t.role)) continue;
-      for (const m of t.team) { if (g.SP[m.sp].legend && !g.SP[m.sp].baby) { if (held[m.sp]) bad('two of ' + m.sp + ' in the world'); held[m.sp] = 1; }
+      for (const m of t.team) { if (g.SP[m.sp].legend && !g.SP[m.sp].baby) { held[m.sp] = (held[m.sp] || 0) + 1; if (held[m.sp] > g.legendCap(m.sp)) bad(held[m.sp] + ' of ' + m.sp + ' in the world'); }
         if (g.SP[m.sp].paradox) { if (px[m.sp]) bad('two of ' + m.sp + ' (Paradox) held'); px[m.sp] = 1; } } }
-    for (const m of s.wPool || []) if (held[m.sp]) bad(m.sp + ' both held and waiting');
+    { const wait = {}; for (const m of s.wPool || []) { wait[m.sp] = (wait[m.sp] || 0) + 1; if ((held[m.sp] || 0) + wait[m.sp] > g.legendCap(m.sp)) bad(m.sp + ' held and waiting past its places'); } }
     if (s.leagues) for (const L of s.leagues) if (L && L.legendPool) bad('a League still has its own legendary pool');
     LEG.held = Math.max(LEG.held, Object.keys(held).length); LEG.px = Math.max(LEG.px, Object.keys(px).length);
     LEG.sites = Math.max(LEG.sites, Object.values(s.cities).filter(c => g.siteOn(c)).length);

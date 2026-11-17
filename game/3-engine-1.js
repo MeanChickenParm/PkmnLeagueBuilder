@@ -195,9 +195,10 @@ function maybeWormhole() {
   catchNews(`An Ultra Wormhole opened near ${dn(t)}! ${sp} has come through. Exploring in the next ${WORMHOLE_OPEN} weeks gives ${t.name} one chance to catch it.`, 'circuit', t.id);
 }
 // a baby legendary line is free when nobody active in the world holds any stage of it (0.20.0; was this League)
+// (0.31.0) or fewer than one for each region that has it at home
 function freeBabies() {
-  const held = new Set(); for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held.add(LINE[m.sp]);
-  return BABY_LEGENDS.filter(b => !held.has(b));
+  const held = {}; for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held[LINE[m.sp]] = (held[LINE[m.sp]] || 0) + 1;
+  return BABY_LEGENDS.filter(b => (held[b] || 0) < legendCap(b));
 }
 // For branching lines (Eevee, Tyrogue, Kirlia...) pick the branch that fits the preferred type, else at random
 function pickBranch(s, L, pref) {
