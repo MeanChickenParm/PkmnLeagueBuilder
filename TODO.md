@@ -64,6 +64,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Strict borders** (only the regions in play's Pokémon) and **a shared library in the game** stay open (the owner: later, far later).
 - **Not measured:** the wall or the economy in a world with custom regions (lighter testing).
 
+## Left over from gyms in any order (0.32.0)
+- **The wall is much weaker.** Passive player (`report.js 15 4 --hand`, seed 1): 23.97 let through a year against 1.85 at 0.31.0; 4.05 badges a run against 0.45; every gym holds 59–66% of tries (was 93% at gym 1 down to 28% at gym 7). Not tuned by the owner's choice (targets after playing). Levers: `BUILD_PAR`, `ROUTE_NOISE` (sharper routing helps challengers), `ROUTE_MEM`, `GYM_TRIES`, the badge ladder, `START_TEAM`.
+- **Provisional:** the stage bands (0–2, 3–5, 6–7), `ROUTE_MEM` 0.5, `ROUTE_TRY` 0.2, `ROUTE_NOISE` 1.6.
+- **Staff build for the top stage only.** A gym's team is built at level 77 and devolves for early challengers; a builder that weighs how a line does at early levels too might suit gyms that mostly see beginners. `adaptGym` swaps against what beats the gym at any stage.
+- **Rival Leagues' poor-gym rule** (`replacePoorStaff`, held under 30% of 12+ tries) and Gym Leader of the Year read the whole gym record; with every gym seeing every stage that's fairer than before, but not checked.
+
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
 

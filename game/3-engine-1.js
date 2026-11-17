@@ -216,7 +216,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 15; // 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 16; // 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -263,8 +263,16 @@ function regionCities(region) {
 // the city the bound League's gym i sits in, and its name
 const gymCity = i => S.cities[S.gyms[i].city];
 const townName = i => gymCity(i).name;
+// (0.32.0) gyms in any order: a gym fights at the level and team size for the badges the challenger already holds
+// (0 badges: level 16 with 3 Pokémon … 7 badges: level 77 with 6), whichever gym it is. Staff hold a team for the
+// hardest stage (a leader up to LEADER_HOLD, a gym trainer GT_HOLD) and field the number each battle needs, in the
+// form each Pokémon would have at that level.
 const GYM_LV = [16, 24, 32, 41, 51, 61, 70, 77];
 const GYM_SIZE = [3, 3, 4, 4, 5, 5, 6, 6];
+const GYM_TOP = GYM_LV.length - 1, LEADER_HOLD = 6, GT_HOLD = 5;
+// stage bands for the reports: early (0 to 2 badges), mid (3 to 5), late (6 to 7)
+const stageBand = b => (b < 3 ? 0 : b < 6 ? 1 : 2);
+const BAND_NAMES = ['Early (0–2 badges)', 'Mid (3–5)', 'Late (6–7)'];
 // the wall: every gym has two gym trainers to beat before the leader (each fields one Pokémon fewer than the
 // leader), and a challenger gets three tries at each gym in a season
 const GYM_TRAINERS = 2, GYM_TRIES = 3;
@@ -692,8 +700,8 @@ function eliteSlot(t) {
   const places = [S].concat((S.leagues || []).filter(x => x && x !== S));
   for (const L of places) {
     if (t.role === 'e4') { const i = (L.e4 || []).indexOf(t.id); if (i >= 0) return { lvl: E4_LV[i], size: E4_SIZE }; }
-    if (t.role === 'leader') { const i = (L.gyms || []).findIndex(g => g.leader === t.id); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] - (t.acting ? 1 : 0) }; } // an acting leader keeps their gym trainer's team (0.10.0 fix)
-    if (t.role === 'gymtrainer') { const i = (L.gyms || []).findIndex(g => (g.trainers || []).includes(t.id)); if (i >= 0) return { lvl: GYM_LV[i], size: GYM_SIZE[i] - 1 }; }
+    if (t.role === 'leader') { const i = (L.gyms || []).findIndex(g => g.leader === t.id); if (i >= 0) return { lvl: GYM_LV[GYM_TOP], size: LEADER_HOLD - (t.acting ? 1 : 0) }; } // an acting leader keeps their gym trainer's team (0.10.0 fix)
+    if (t.role === 'gymtrainer') { const i = (L.gyms || []).findIndex(g => (g.trainers || []).includes(t.id)); if (i >= 0) return { lvl: GYM_LV[GYM_TOP], size: GT_HOLD }; }
   }
   return null;
 }
@@ -960,7 +968,7 @@ function fillGymTrainer(i, k, L) {
   t.lg = S.lg || 0;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
-  t.team = staffPicks(t, GYM_LV[i], GYM_SIZE[i] - 1).map(m => stamp(m, 'assigned'));
+  t.team = staffPicks(t, GYM_LV[GYM_TOP], GT_HOLD).map(m => stamp(m, 'assigned'));
   relevelElite(t);
 }
 // (0.14.0, the balance retune) a challenger who would fit a gym under leader L, taken from the circuit's lower half
@@ -980,15 +988,15 @@ function circuitGymTrainer(L) {
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
 // their own type and the rest of the team is built for the post
 function takeGymTrainer(t, i, k, how) {
-  const g = S.gyms[i], size = GYM_SIZE[i] - 1, mixed = !t.specialty;
+  const g = S.gyms[i], size = GT_HOLD, mixed = !t.specialty;
   dropFromCircuits(t.id);
-  t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0; t.acting = false;
+  t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = {}; t.gymStage = {}; t.gymLine = {}; t.gymAt = null; t.acting = false;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
   t.team = t.team.filter(m => !m.stop); // (0.26.0) a senior member's stopgaps stay behind
   const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(steerOf(t) === 'keep' ? KEEP_CORE : 2, size - 1));
   for (const m of t.team) if (!keep.includes(m)) farewell(t, m, 'left behind on becoming a gym trainer');
-  const fresh = staffPicks(t, GYM_LV[i], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });
+  const fresh = staffPicks(t, GYM_LV[GYM_TOP], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });
   t.team = keep.concat(fresh.map(m => stamp(m, 'assigned')));
   relevelElite(t);
   // a kept Pokémon can evolve off type at the gym's level (Dartrix into Decidueye): it is replaced (0.7.0)
@@ -996,7 +1004,7 @@ function takeGymTrainer(t, i, k, how) {
   if (off.length) {
     for (const m of off) farewell(t, m, 'left behind on becoming a gym trainer');
     t.team = t.team.filter(m => !off.includes(m));
-    staffPicks(t, GYM_LV[i], off.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
+    staffPicks(t, GYM_LV[GYM_TOP], off.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
     relevelElite(t);
   }
   news(how || `${dn(t)} left the circuit to become a gym trainer at ${townName(i)} Gym.`, 'move', t.id);
@@ -1005,14 +1013,15 @@ function takeGymTrainer(t, i, k, how) {
 function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }
 // which of a challenger's Pokémon fight: as many as the other side fields, picked for the matchup. A sharper
 // trainer (Strategy) reads it better; a poor one is half guessing.
-function pickSquad(t, foe, mem) {
-  const n = foe.team.length;
+function pickSquad(t, foe, mem) { return pickN(t, foe.team, foe.team.length, mem); }
+// (0.32.0) the n of t's Pokémon picked against a team; staff use it too, to field the number a gym battle needs
+function pickN(t, vs, n, mem) {
   if (t.team.length <= n) return t.team.slice();
   const noise = (100 - t.r.str) / 100 * 1.2;
   // (0.21.0) gym memory: the types that beat them at this gym before weigh in, as much as their Strategy lets them learn
   const mw = mem && mem.length ? GMEM_SQUAD * gmemLearn(t) : 0;
-  const sc = m => { let v = 0; for (const f of foe.team) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
-    return v / foe.team.length + (mw ? mw * counterScore(monTypes(m), mem) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
+  const sc = m => { let v = 0; for (const f of vs) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
+    return v / Math.max(1, vs.length) + (mw ? mw * counterScore(monTypes(m), mem) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
   const best = new Set(t.team.map(m => [m, sc(m)]).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]));
   return t.team.filter(m => best.has(m));
 }
@@ -1030,6 +1039,14 @@ function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem) {
   if (ok.length) t.team = ok;
   t.team = pickSquad(t, foe, mem);
   try { return battle(t, foe, stakes, title, o); } finally { t.team = full; }
+}
+// (0.32.0) a member of staff fields n of the team they hold, each in the form and with the moves it has at level lvl,
+// picked by their Strategy against the challenger's team; restore() puts the team back as it was
+function staffField(s, lvl, n, vs) {
+  const full = s.team, saved = full.map(m => [m, m.sp, m.lvl, m.moves, m.top, m.cap, m.abSlot]);
+  for (const m of full) { m.lvl = lvl; delete m.cap; if (heldItem(m) !== 'everstone') m.sp = stageAt(m, lvl, s.specialty); ensureMon(m); refreshMoves(m); }
+  s.team = pickN(s, vs, n);
+  return () => { s.team = full; for (const [m, sp, lv, mv, top, cap, ab] of saved) { m.sp = sp; m.lvl = lv; m.moves = mv; if (top == null) delete m.top; else m.top = top; m.abSlot = ab; if (cap == null) delete m.cap; else m.cap = cap; } };
 }
 
 // ================= BATTLE =================
