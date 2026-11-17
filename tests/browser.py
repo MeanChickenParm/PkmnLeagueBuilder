@@ -43,7 +43,7 @@ async def run(path):
             if (!click('[data-act=rgnew]')) log.push('FAIL no New region button');
             if (!document.querySelector('.rg-places')) log.push('FAIL the region editor did not open');
             setIn('.rg-f[data-f=name]', 'Testland'); setIn('.rg-f[data-f="towns.0"]', 'Portwick'); setIn('.rg-port[data-i="0"]', 'port', 'change');
-            setIn('.rg-f[data-f="posts.leader"]', 'Warden');
+            setIn('.rg-f[data-f="posts.leader"]', 'Warden'); setIn('.rg-f[data-f="posts.champion"]', 'Lord Warden'); setIn('.rg-f[data-f="posts.e4"]', 'High Wardens');
             click('[data-act=rgnb][data-k=Kanto]'); click('[data-act=rgnb][data-k=Hoenn]');
             setIn('#rg-leg', 'Mewtwo'); click('[data-act=rglegadd]');
             click('[data-act=rggent][data-k=Water]'); click('[data-act=rggent][data-k=Ice]'); click('[data-act=rggen]');
@@ -61,7 +61,7 @@ async def run(path):
             click('[data-act=rgsave]');
             const rec = regionLib.regions.find(r => r.name === 'Testland');
             if (!rec) log.push('FAIL Testland was not saved'); else {
-              if (rec.towns[0] !== 'Portwick' || rec.ports.Portwick !== 'port' || !rec.legends.includes('Mewtwo') || rec.nb.length !== 2 || !rec.added.some(x => x.name === 'Testmon') || !rec.added.some(x => x.name === 'Testgod' && x.legend) || rec.pool.includes('Testgod') || !rec.pool.includes('Testmon') || rec.pool.includes('Ekans') || (rec.posts || {}).leader !== 'Warden') log.push('FAIL Testland saved wrong: ' + JSON.stringify(rec).slice(0, 300));
+              if (rec.towns[0] !== 'Portwick' || rec.ports.Portwick !== 'port' || !rec.legends.includes('Mewtwo') || rec.nb.length !== 2 || !rec.added.some(x => x.name === 'Testmon') || !rec.added.some(x => x.name === 'Testgod' && x.legend) || rec.pool.includes('Testgod') || !rec.pool.includes('Testmon') || rec.pool.includes('Ekans') || (rec.posts || {}).leader !== 'Warden' || (rec.posts || {}).champion !== 'Lord Warden' || (rec.posts || {}).e4 !== 'High Wardens') log.push('FAIL Testland saved wrong: ' + JSON.stringify(rec).slice(0, 300));
               click(`[data-act=rgexport][data-k=${rec.id}]`);
               const code = (document.querySelector('#rg-exptext') || {}).value || '';
               if (!code.startsWith('PLR1:')) log.push('FAIL no region code');
@@ -103,6 +103,8 @@ async def run(path):
             if (!r || r.name !== 'Testland League' || !r.solo || r.posts.leader !== 'Warden' || r.ports.Portwick !== 'port') log.push('FAIL the 10th region of the world: ' + JSON.stringify(r || {}).slice(0, 200));
             if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || !(LEGEND_HOMES.Mewtwo || []).includes(9) || !(LEGEND_HOMES.Mewtwo || []).includes(0) || LEGEND_HOME.Testgod !== 9 || !SP.Testgod || !SP.Testgod.dexLegend) log.push('FAIL the Pokémon or legendary of Testland');
             if (eachLeague(() => S.region).slice(1).includes(9)) log.push('FAIL a rival started in a region closed to rivals'); }
+          // 0.31.0: no "Defending" before a Champion's title (the owner)
+          if (/Defending/.test((document.querySelector('#main') || {}).textContent || '') || eachLeague(() => dn(T(S.champion))).some(x => /Defending/.test(x))) log.push('FAIL a Champion is still titled Defending');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }

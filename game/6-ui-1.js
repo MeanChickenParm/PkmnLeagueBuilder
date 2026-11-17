@@ -212,9 +212,10 @@ function roleLabel(t) {
   return nLeagues() > 1 && [...STAFF_ROLES, 'challenger'].includes(t.role) ? `${r} · ${leagueName(lgOf(t))}` : r;
 }
 function roleHere(t) {
-  if (t.role === 'leader') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => g.leader === t.id); return `${townName(i)} Gym Leader`; });
-  if (t.role === 'gymtrainer') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return `${townName(i)} Gym trainer`; });
-  return { challenger: 'Challenger', e4: 'Elite Four', champion: 'Champion', retired: 'Retired', exchamp: 'Former Champion', prospect: 'Newcomer', free: 'Free agent' }[t.role] || t.role;
+  if (t.role === 'leader') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => g.leader === t.id); return `${townName(i)} ${postWord('leader')}`; });
+  if (t.role === 'gymtrainer') return inLeague(lgOf(t), () => { const i = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); return `${townName(i)} ${postWord('gymtrainer')}`; });
+  if (t.role === 'e4' || t.role === 'champion') return postWord(t.role, lgOf(t));
+  return { challenger: 'Challenger', retired: 'Retired', exchamp: 'Former Champion', prospect: 'Newcomer', free: 'Free agent' }[t.role] || t.role;
 }
 function badgeRow(t, big) { return inLeague(lgOf(t), () => badgeRowHere(t, big)); }
 function badgeRowHere(t, big) {
@@ -872,7 +873,7 @@ function viewRegionEditor() {
     ${rgMsg ? `<p class="cf-msg">${esc(rgMsg)}</p>` : ''}
     ${rgErrs.length ? `<ul class="warn cf-errs">${rgErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <section class="panel"><div class="ph"><h2>The region</h2><span class="muted">Name, rules and post names</span></div>
-      <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}</div>
+      <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}${rgField('The Elite Four are called', 'posts.e4', d.posts && d.posts.e4, POST_NAME_MAX, 'Elite Four')}${rgField('The Champion is called', 'posts.champion', d.posts && d.posts.champion, POST_NAME_MAX, 'Champion')}</div>
       <div class="adv-list">
         <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
         <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>

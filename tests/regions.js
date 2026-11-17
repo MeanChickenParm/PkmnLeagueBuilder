@@ -11,7 +11,7 @@ g.seedRandom(31);
 const land = g.regionCopy(0); land.name = 'Testland'; land.lock = true; land.rivals = false; land.legends = ['Mewtwo']; land.nb = ['Kanto', 'Alola'];
 land.added = [{ name: 'Testmon', types: ['Water'], stats: [70, 80, 70, 60, 60, 90], ab: ['Torrent', '', ''] }, { name: 'Testevo', types: ['Water', 'Dark'], stats: [90, 110, 85, 80, 80, 105], ab: ['Torrent', '', ''], from: 'Testmon', lvl: 30 },
   { name: 'Testgod', types: ['Water', 'Dragon'], stats: [120, 120, 120, 120, 120, 120], ab: ['Pressure', '', ''], legend: true }];
-land.pool.push('Testmon'); land.ports = { Vermilion: 'port' }; land.posts = { leader: 'Warden', gymtrainer: '' };
+land.pool.push('Testmon'); land.ports = { Vermilion: 'port' }; land.posts = { leader: 'Warden', gymtrainer: '', e4: 'High Wardens', champion: 'Lord Warden' };
 { const r = g.regionRead(g.regionCode(land));
   if (r.err || r.dropped.length || r.rec.added.length !== 3 || !r.rec.added[2].legend || r.rec.pool.length !== land.pool.length || r.rec.posts.leader !== 'Warden' || r.rec.ports.Vermilion !== 'port') fail('the paste code round trip: ' + JSON.stringify(r).slice(0, 200));
   const newer = g.regionNorm({ plbRegion: 99, region: land }); if (!newer.err || !/newer/.test(newer.err)) fail('a newer format was not refused');
@@ -51,6 +51,10 @@ if (g.LEGEND_HOMES.Mewtwo.join() !== '0,9' || !R[0].legends.includes('Mewtwo') |
 g.NEIGHBOURS.forEach((a, i) => a.forEach(x => { if (!g.NEIGHBOURS[x].includes(i)) fail('neighbours not two-way ' + i + '-' + x); }));
 if (!g.SP.Testmon || g.SP.Testmon.homeOnly !== 9 || !g.homeSet(9).has('Testmon') || g.lineBaseOf('Testevo') !== 'Testmon') fail('Testland\'s own Pokémon');
 if (g.wildOk('Testmon', 0) || !g.wildOk('Testmon', 9)) fail('a locked line found away from home');
+// (0.31.0) its post names: the player's League sits in Testland; no "Defending" before a Champion anywhere
+g.inLeague(0, () => { const c = g.T(g.S.champion), e = g.T(g.S.e4[0]), l = g.T(g.S.gyms[0].leader);
+  if (g.dn(c) !== 'Testland Lord Warden ' + c.name || g.dn(e) !== 'Testland High Wardens ' + e.name || g.dn(l) !== 'Testland Warden ' + l.name || g.postName(c) !== 'Lord Warden of the Testland League' || !/^High Wardens seat #1$/.test(g.postName(e))) fail('post names: ' + [g.dn(c), g.dn(e), g.dn(l), g.postName(c), g.postName(e)].join(' | ')); });
+g.inLeague(1, () => { const c = g.T(g.S.champion); if (!/^\w+ Champion /.test(g.dn(c)) || /Defending/.test(g.dn(c))) fail('a built-in region\'s Champion: ' + g.dn(c)); });
 // its legendary: a legendary encounter at home in Testland, never on a list
 if (!g.SP.Testgod || !g.SP.Testgod.dexLegend || g.LEGEND_HOME.Testgod !== 9 || g.regionLines().sets.some(s => s.has('Testgod')) || g.ranchSpecies().includes('Testgod')) fail('Testland\'s legendary: ' + JSON.stringify(g.SP.Testgod));
 g.inLeague(0, () => { if (g.S.region !== 9 || g.regionMul('Testgod') !== 3) fail('Testgod is not three times likelier at home'); });
