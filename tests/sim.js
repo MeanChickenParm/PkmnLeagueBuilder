@@ -5,7 +5,15 @@ const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'
 // holders until they are filled
 const [L, G, N, GOD, HAND] = process.argv.slice(2).map(Number);
 g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
-if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); } g.finishFounding(); }
+if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); }
+  // (0.23.0) nobody placed is above a new League's prestige, and a blocked candidate can't be placed
+  if (g.foundPlaced().some(id => !g.willSign(g.T(id)))) { console.log('FAIL a founding post went to someone who would not sign'); process.exit(1); }
+  const blk = g.foundPool().find(id => !g.willSign(g.T(id))); if (blk != null && g.foundPlace('gym', 0, blk)) { console.log('FAIL placed a blocked candidate'); process.exit(1); }
+  g.finishFounding(); }
+// (0.23.0) prestige gating: no stars or famous trainers at founding, and the start of every League's senior staff
+const PG = { start: [], famous: 0 }, PGH = { blocked: 0 };
+g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x => x.leader)]; for (const id of ids) { const t = g.T(id); if (t.famous && !t.founded) PG.famous++; } PG.start.push(Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length)); });
+function S0() { return g.S; }
 const S = () => g.S, fail = [];
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
@@ -212,10 +220,12 @@ for (let i = 0; i < N; i++) {
     // hiring (0.9.0): offers to the circuit for vacancies and gym trainer places, outsiders and retirees, withdrawals
     if (HAND && S().season >= 2) g.inLeague(g.ME(), () => { const z = S();
       const tally = o => { if (o && o.res) offers[o.res] = (offers[o.res] || 0) + 1; else fail.push('an offer failed'); };
-      if ((z.vacancies || []).length && Math.random() < 0.1) { const v = rnd(z.vacancies), c = g.vacancyCands(v).filter(x => x.from === 'circuit' && g.canOffer(x.t) && x.t.id !== v.incoming); if (c.length) tally(g.hireForVacancy(v, rnd(c.slice(0, 12)).t.id, rnd(g.BIDS))); }
+      if ((z.vacancies || []).length && Math.random() < 0.1) { const v = rnd(z.vacancies), all = g.vacancyCands(v), c = all.filter(x => x.from === 'circuit' && !x.refuse && g.canOffer(x.t) && x.t.id !== v.incoming);
+        { const bl = all.find(x => x.from === 'circuit' && x.refuse); if (bl) { PGH.blocked++; const r = g.hireForVacancy(v, bl.t.id); if (r && r.res) fail.push('a blocked candidate was offered a post'); } } // (0.23.0)
+        if (c.length) tally(g.hireForVacancy(v, rnd(c.slice(0, 12)).t.id, rnd(g.BIDS))); }
       if (Math.random() < 0.05) { const i = rnd([0, 1, 2, 3, 4, 5, 6, 7]), gy = z.gyms[i], k = (gy.trainers || []).findIndex(x => x != null);
         if (Math.random() < 0.5) g.gymOutsiders(i);
-        const c = g.gymTrainerCands(i).filter(x => ['circuit', 'outsider', 'retired'].includes(x.from) && (x.from !== 'circuit' || g.canOffer(x.t)));
+        const c = g.gymTrainerCands(i).filter(x => ['circuit', 'outsider', 'retired'].includes(x.from) && !x.refuse && (x.from !== 'circuit' || g.canOffer(x.t)));
         if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
@@ -348,5 +358,12 @@ console.log('legendaries', JSON.stringify(LEG));
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
+console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'famous at founding', PG.famous, 'now: prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'Champion OVR', g.eachLeague(() => g.ovr(g.T(S().champion))).join('/'), 'senior OVR', g.eachLeague(() => { const ids = [S().champion, ...S().e4, ...S().gyms.map(x => x.leader)].filter(x => x != null); return Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length); }).join('/'));
+// a trainer below a League's prestige minimum never accepts its offer, and rival hiring never picks one
+g.eachLeague(i => { const blocked = g.challengers().filter(t => t && !g.willSign(t)); for (const t of blocked.slice(0, 5)) if (g.acceptsOffer(t, 'leader')) { console.log('FAIL a blocked trainer accepted an offer'); process.exitCode = 1; }
+  if (i !== g.ME()) { const c = g.rivalHire(0, [], 'leader'); if (c && !g.willSign(c)) { console.log('FAIL rival hiring picked a blocked trainer'); process.exitCode = 1; } if (c) c.bidMul = null; PG.blocked = (PG.blocked || 0) + blocked.length; } });
+console.log('prestige gating', 'blocked on rival circuits', PG.blocked || 0, 'blocked offers tried by hand', PGH.blocked);
+if (PG.famous) { console.log('FAIL a famous trainer on a founding staff'); process.exitCode = 1; }
+if (PG.start.some(x => x > 64)) { console.log('FAIL a founding staff far above the founding pool'); process.exitCode = 1; }
 console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));
 process.exit(fail.length ? 1 : 0);

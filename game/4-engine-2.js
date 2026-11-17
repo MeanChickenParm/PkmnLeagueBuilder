@@ -1426,8 +1426,9 @@ function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <=
 
 // a new Elite Four member from outside the circuit (sometimes a famous trainer)
 function outsiderE4(i) {
-  const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
-  const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(66), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(66), role: 'e4' });
+  const q = capQ(66); // (0.23.0) no stronger than the League's prestige can attract
+  const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
+  const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(q), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(q), role: 'e4' });
   installElite(nt, 'e4', i);
   return nt;
 }
@@ -1656,7 +1657,7 @@ function claimRefused(x, why) {
   const c = T(x.cand), me = S.lg || 0; c.claimOn = null;
   chalRecord(x, { refused: true, unanswered: why === 'unanswered' || undefined });
   S.prest = Math.max(0, (S.prest || 0) - CLAIM_PRESTIGE);
-  c.grudge = S.season;
+  c.grudge = S.season; c.grudgeLg = me;
   let away = null;
   if (claimFree(c) && c.rest != null && nLeagues() > 1) { // one out on a run stays, unhappy, until it ends
     const to = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== me && !(S.founding && i === ME())));
@@ -2104,10 +2105,11 @@ function openVacancy(post, slot) {
   const was = vacancyAt(post, slot), incoming = was ? was.incoming : null;
   for (const v of (S.vacancies || []).filter(v => v.post === post && v.slot === slot)) { const rest = (v.outsiders || []).filter(x => T(x) && T(x).role === 'prospect'); rest.forEach(x => { T(x).outsider = false; }); fillCircuits(rest); }
   S.vacancies = (S.vacancies || []).filter(v => !(v.post === post && v.slot === slot));
-  const q = (post === 'leader' ? 52 + slot * 2 : 66) + (playerLeague() ? 2 * scoutLv() : 0);
+  // (0.23.0) no stronger than the League's prestige can attract (scouting still finds a little better)
+  const q = capQ(post === 'leader' ? 52 + slot * 2 : 66) + (playerLeague() ? 2 * scoutLv() : 0);
   const outsiders = [];
   for (let k = 0; k < VACANCY_OUTSIDERS + (playerLeague() ? scoutLv() : 0); k++) {
-    const fam = rand() < FAMOUS_POST_CHANCE && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 18) : [];
+    const fam = famousOk(q) && rand() < FAMOUS_POST_CHANCE && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 18) : [];
     const t = fam.length ? makeFamous(pick(fam), 'prospect', staffQ(q), 30) : newTrainer({ age: ri(24, 46), quality: staffQ(q), role: 'prospect', specialty: rand() < 0.06 ? null : pick(TYPES) });
     if (!fam.length) fieldTeam(t, 5);
     t.outsider = true; outsiders.push(t.id);
@@ -2135,6 +2137,8 @@ function vacancyCands(v, opts = {}) {
   if (!opts.noStaff) for (const t of otherCircuits(() => true)) out.push({ t, from: 'away', lg: lgOf(t) });
   // (0.10.0) a member of staff may refuse the move (a step down, or a sideways move when they want to stay put)
   for (const c of out) if (c.from === 'leader' || c.from === 'e4') c.refuse = refusal(c.t, v.post, v.slot);
+  // (0.23.0) anyone joining from outside the League's staff must find its prestige enough
+  for (const c of out) if (['circuit', 'retired', 'rival', 'away'].includes(c.from)) c.refuse = prestBlock(c.t) || c.refuse;
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // fill vacancy v with trainer id (in the player's League). Unpicked outsiders go on to the circuit.
@@ -2191,6 +2195,7 @@ function autoFillVacancy(v) {
   if (v.incoming != null) return 'later';
   return inLeague(ME(), () => {
     for (const c of vacancyCands(v, { noStaff: true })) {
+      if (c.refuse) continue; // (0.23.0) below their prestige minimum
       if (c.from !== 'circuit') return fillVacancy(v, c.t.id);
       if (!canOffer(c.t)) continue;
       const o = offerPost({ post: v.post, slot: v.slot }, c.t);
@@ -2250,7 +2255,7 @@ function letGo(t, was) {
   severance(t, was);
   if (t.stepDown != null) {
     t.stepDown = null;
-    if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; return grudgeAway(t); }
+    if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; t.grudgeLg = S.lg || 0; return grudgeAway(t); }
     retire(t, `after being let go as ${was}`); return 'retired';
   }
   return retireOrReturn(t, `was let go as ${was}`);
@@ -2307,6 +2312,7 @@ function gymTrainerCands(i) {
   });
   S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && gymFits(t, L)) out.push({ t, from: 'e4', seat: k }); });
   for (const c of out) if (['gym', 'leader', 'e4'].includes(c.from)) c.refuse = refusal(c.t, 'gymtrainer', i);
+  for (const c of out) if (['circuit', 'retired'].includes(c.from)) c.refuse = prestBlock(c.t) || c.refuse; // (0.23.0)
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
@@ -2343,7 +2349,7 @@ function placeGymTrainer(i, k, id, opts = {}) {
 // and take a challenger at once. All numbers here are provisional (design doc 4.8).
 const HIRE_NOTICE = 8, REFUSED_WEEKS = 24;
 const RETIREE_YEARS = 3, RETIREE_MAX_AGE = 55, RETIREE_MIN_OVR = 55;
-const GYM_HIRE_MIN = 58, E4_HIRE_MIN = 64, E4_HIRE_EDGE = 5, POOR_YEARS = 3, E4_POOR_MIN_RUNS = 3, GT_OUTSIDERS = 2;
+const GYM_HIRE_MIN = 48, E4_HIRE_MIN = 54, E4_HIRE_EDGE = 5, POOR_YEARS = 3, E4_POOR_MIN_RUNS = 3, GT_OUTSIDERS = 2;
 // a retired trainer's age now (birthdays stop at retirement)
 const retAge = t => t.age + Math.max(0, (S.season || 0) - (t.retiredSeason || S.season || 0));
 // recent retirees who would come back for a post: retired in the last RETIREE_YEARS years, under RETIREE_MAX_AGE now,
@@ -2363,6 +2369,7 @@ const canOffer = t => t.refusedAt == null || S.turn - t.refusedAt >= REFUSED_WEE
 // does challenger t take the post offered? Younger trainers, title winners, those doing well on a run and anyone
 // holding a grudge are less keen; a gym trainer's place is less tempting than a seat on the Elite Four.
 function acceptsOffer(t, post) {
+  if (!willSign(t)) return false; // (0.23.0) below their prestige minimum, nobody signs
   let p = 0.75;
   if (t.age < 20) p -= 0.15; else if (t.age >= 35) p += 0.15;
   const cl = claimOn(t); // (0.22.0) a claimant waiting on the League's answer is glad of a post
@@ -2380,6 +2387,45 @@ function acceptsOffer(t, post) {
   p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);
 }
+// ================= PRESTIGE GATING (0.23.0, design doc 6.3) =================
+// Every trainer has a prestige minimum for joining a League: nothing below PM_FREE OVR, then PM_PER a point of OVR
+// above it, plus PM_REC of their own career prestige (titles, the Hall of Fame, badges, years; at most PM_REC_MAX),
+// plus PM_FAMOUS for a famous trainer. Ambition lowers it: a trainer hungry for a post (another League's staff who
+// want promotion, a claimant waiting on an answer, and about one challenger in four by nature) signs at PM_HUNGRY of
+// it, and one holding a grudge against another League at PM_GRUDGE. It applies at founding, to hires and to offers, in
+// every League; the League's own staff moving between its posts, outsiders the game makes for a post (made no
+// stronger than the League's prestige can attract: prestQ) and staff following the player to a new League are
+// exempt. All numbers provisional.
+const PM_FREE = 62, PM_PER = 4.5, PM_REC = 0.3, PM_REC_MAX = 20, PM_FAMOUS = 15, PM_HUNGRY = 0.7, PM_GRUDGE = 0.6, PM_HUNGRY_SHARE = 25;
+// a stable draw per trainer (from the id): about PM_HUNGRY_SHARE in 100 are hungry by nature
+const hungerDraw = t => ((t.id * 2654435761) >>> 0) % 100;
+function hungry(t) {
+  if (STAFF_ROLES.includes(t.role)) return !!(t.wish && t.wish.k === 'up');
+  return !!claimOn(t) || hungerDraw(t) < PM_HUNGRY_SHARE;
+}
+// trainer t's prestige minimum to join League lg (the bound League by default)
+function prestMin(t, lg) {
+  if (!t || !t.r) return 0;
+  if (lg == null) lg = S.lg || 0;
+  let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
+  if (hungry(t)) m *= PM_HUNGRY;
+  if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
+  return Math.round(m);
+}
+// would t sign for League lg now? (always in the report's fixed tiers)
+function willSign(t, lg) {
+  if (lg == null) lg = S.lg || 0;
+  if (!t || fixedStaff() || t.outsider || t.carried) return true;
+  if (STAFF_ROLES.includes(t.role) && homeLeague(t) === lg) return true;
+  return prestMin(t, lg) <= prestOf(lg);
+}
+// the reason shown on a candidate who won't sign, or null
+const prestBlock = (t, lg) => willSign(t, lg) ? null : `needs prestige ${prestMin(t, lg)} (you have ${Math.round(prestOf(lg == null ? (S.lg || 0) : lg))})`;
+// the strongest outsider the bound League's prestige can attract (a quality, about an OVR), and a post's outsider
+// quality capped by it; a famous outsider only when the League could sign one at that quality
+const prestQ = () => PM_FREE + prestOf(S.lg || 0) / PM_PER;
+const capQ = q => fixedStaff() ? q : Math.min(q, Math.floor(prestQ()));
+const famousOk = q => fixedStaff() || prestOf(S.lg || 0) >= PM_FAMOUS + Math.max(0, q - PM_FREE) * PM_PER;
 // (0.17.0, stage 5) a sponsored contender under contract to another League than `lg` (the bound League by default):
 // nobody else can hire them or seat them while the contract runs
 const underContract = (t, lg) => !!(t && t.spon && t.spon.lg !== (lg == null ? (S.lg || 0) : lg));
@@ -2460,7 +2506,7 @@ function hireArrivals() {
 function hireForVacancy(v, id, bid = 0) {
   return inLeague(ME(), () => {
     const t = T(id), c = vacancyCands(v).find(x => x.t === t);
-    if (!c) return { res: false };
+    if (!c || c.refuse) return { res: false };
     if (booksOn() && S.fin.money < 0 && !['leader', 'e4', 'gym', 'acting'].includes(c.from)) return { res: 'broke' };
     if (c.from === 'circuit' || c.from === 'away') return bidOffer({ post: v.post, slot: v.slot }, t, bid);
     return { res: 'now', r: fillVacancy(v, id) };
@@ -2469,7 +2515,7 @@ function hireForVacancy(v, id, bid = 0) {
 function hireForGymTrainer(i, k, id, bid = 0) {
   return inLeague(ME(), () => {
     const t = T(id), c = gymTrainerCands(i).find(x => x.t === t), g = S.gyms[i];
-    if (!c || k < 0 || k >= GYM_TRAINERS || (g.acting && !T((g.trainers || [])[k]))) return { res: false };
+    if (!c || c.refuse || k < 0 || k >= GYM_TRAINERS || (g.acting && !T((g.trainers || [])[k]))) return { res: false };
     if (booksOn() && S.fin.money < 0 && ['circuit', 'outsider', 'retired'].includes(c.from)) return { res: 'broke' };
     if (c.from === 'circuit') return bidOffer({ post: 'gymtrainer', slot: i, k }, t, bid);
     return { res: 'now', r: placeGymTrainer(i, k, id) };
@@ -2490,7 +2536,7 @@ function gymOutsiders(i) {
     g.outs = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
     const ty = specTypes(L);
     while (g.outs.length < GT_OUTSIDERS + scoutLv()) {
-      const t = newTrainer({ age: ri(18, 34), quality: staffQ(46 + i * 2 + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+      const t = newTrainer({ age: ri(18, 34), quality: staffQ(capQ(46 + i * 2) + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
       fieldTeam(t, 4); t.outsider = true; g.outs.push(t.id);
     }
     return g.outs.slice();
@@ -2517,7 +2563,7 @@ function rivalHire(min, exclude = [], post = null, bidAt = null) {
   const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
-    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).sort((a, b) => val(b) - val(a));
+    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
   for (const t of cs) {
     if (t.role === 'retired') return t;
     t.bidMul = bid ? 1 + bid : null;
@@ -2637,8 +2683,9 @@ function fillGym(i, changes) {
     nl = cand;
   } else {
     // sometimes the outsider is a famous trainer of the right type
-    const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
-    nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(52 + i * 2), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(52 + i * 2), role: 'leader' });
+    const q = capQ(52 + i * 2); // (0.23.0) no stronger than the League's prestige can attract
+    const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
+    nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(q), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(q), role: 'leader' });
     changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
     installElite(nl, 'leader', i);
   }
@@ -2752,7 +2799,7 @@ function comeback(t, was) {
 function leaveUnhappy(t, was) {
   t.wish = null; t.letGoAt = S.turn;
   if (retiresOnLosingPost(t)) { retire(t, `after leaving ${was}`); return 'retired'; }
-  returnToCircuit(t, `left ${was} unhappy`); t.grudge = S.season;
+  returnToCircuit(t, `left ${was} unhappy`); t.grudge = S.season; t.grudgeLg = S.lg || 0;
   return grudgeAway(t);
 }
 function grudgeAway(t) {
@@ -2827,7 +2874,7 @@ function promoteForVacancy(v) {
   if (v.incoming != null) return false;
   return inLeague(ME(), () => {
     const cs = vacancyCands(v);
-    const ext = cs.find(c => ['circuit', 'retired', 'outsider'].includes(c.from));
+    const ext = cs.find(c => ['circuit', 'retired', 'outsider'].includes(c.from) && !c.refuse);
     const own = cs.filter(c => ['gym', 'leader', 'e4'].includes(c.from) && !c.refuse && c.t.wish && c.t.wish.k === 'up' && moveKind(c.t, v.post, v.slot) === 'up' && c.t.stepDown == null)[0];
     if (!own || (ext && ovr(own.t) < ovr(ext.t) - PROMOTE_EDGE)) return false;
     return fillVacancy(v, own.t.id);
