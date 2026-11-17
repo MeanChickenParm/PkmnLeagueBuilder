@@ -1,5 +1,9 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 26, ver: '0.26.0', date: 'November 17, 2026', time: '9:40 AM ET', title: 'Clearing out the ranch', items: [
+    "Any ranch Pokémon can now be sold, released or listed straight from the Ranch page, even one a member of staff is fielding: they swap it out on the spot for the best fitting Pokémon left in the ranch (or a stopgap if nothing fits). The page says who is fielding it and what will happen.",
+    "Rival Leagues clear out their ranches: spares beyond the few their aim keeps are listed for other Leagues, then sold back once they have sat unused for a while (two months for a money-maker, three for a star-maker, four for a wall-builder).",
+  ] },
   { id: 25, ver: '0.25.0', date: 'November 16, 2026', time: '11:59 PM ET', title: 'The ranch', items: [
     "Every League now has a ranch: its own pool of Pokémon. Your Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch, and nothing comes free any more, so a new League starts thin and its teams grow as it catches and buys. Gym trainers keep their own teams.",
     "A new Ranch page (League menu) shows who fields what, the whole pool, catching trips and the market. Each Pokémon has a grade, 1 to 5 stars from its IVs, and takes the form its line has at the level of the post that fields it, one post at a time.",
@@ -578,7 +582,7 @@ document.addEventListener('click', ev => {
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b)); save(); render(); toast(w || 'The trip has set out.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
-    case 'ranchsell': case 'ranchrel': { const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.')); break; }
+    case 'ranchsell': case 'ranchrel': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.') + (!w && who ? ` ${who} swapped it out.` : '')); break; }
     case 'ranchlock': { const w = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e ? lockMon(e.uid, !e.lock) : 'Not in the ranch.'; }); save(); render(); if (w) toast(w); break; }
     case 'ranchlist': case 'ranchunlist': { const w = inLeague(ME(), () => (a === 'ranchlist' ? listMon : unlistMon)(+el.dataset.id)); save(); render(); toast(w || (a === 'ranchlist' ? 'Listed for other Leagues.' : 'Withdrawn.')); break; }
     case 'sendcon': { const r = inLeague(ME(), () => sendContender(+el.dataset.id, sendTo)); save(); render(); toast(r === 'ok' ? `${T(+el.dataset.id).name} is on the way.` : r === 'later' ? `${T(+el.dataset.id).name} signed, and goes after their run.` : r === 'refused' ? `${T(+el.dataset.id).name} turned the contract down.` : r); break; }

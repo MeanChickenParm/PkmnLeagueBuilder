@@ -23,7 +23,8 @@ const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, 
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
 const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
-const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0 }; // (0.25.0)
+const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
+const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -75,7 +76,11 @@ function check(tag) {
     const seen = new Set(); let stops = 0;
     for (const id of g.seniorIds()) for (const m of g.T(id).team) { if (m.rid != null) { if (seen.has(m.rid)) bad('one ranch Pokémon on two teams'); seen.add(m.rid); if (!ids.has(m.rid)) bad('a ranch Pokémon with no entry'); } if (m.stop) stops++; }
     RAN.stopMax = Math.max(RAN.stopMax, stops);
-    for (const gy of z.gyms) for (const id of gy.trainers || []) { const t = g.T(id); if (t && t.role === 'gymtrainer' && t.team.some(m => m.rid != null || m.stop)) bad('a gym trainer fields a ranch Pokémon or stopgap'); } });
+    // (0.26.0) rivals clear out: no spare beyond what their aim keeps sits unfielded much past their idle limit
+    const due = new Set();
+    if (z.fin && z.fin.aim) for (const e of g.ranchSpares(z.fin.aim)) { if (z.turn - (e.idle ?? z.turn) >= g.AI_IDLE[z.fin.aim]) due.add(e.uid); const w = z.turn - (e.idle ?? z.turn); RAN.aiIdleMax = Math.max(RAN.aiIdleMax, w); if (w >= g.AI_IDLE[z.fin.aim]) { if (!OVERDUE.has(e.uid)) OVERDUE.set(e.uid, z.turn); else if (z.turn - OVERDUE.get(e.uid) > 8) bad('a rival kept an unwanted ranch Pokémon ' + (z.turn - OVERDUE.get(e.uid)) + ' weeks past its limit'); } }
+    for (const e of R.mons) if (!due.has(e.uid)) OVERDUE.delete(e.uid);
+    for (const gy of z.gyms) for (const id of gy.trainers || []) { const t = g.T(id); if (t && t.role === 'gymtrainer' && t.team.some(m => m.rid != null || m.stop)) bad('a gym trainer fields a ranch Pokémon or stopgap: ' + t.name + ' ' + t.team.filter(m => m.rid != null || m.stop).map(m => m.sp + (m.stop ? ' stop' : ' rid')).join(',')); } });
   if (s.phase !== 'season') bad('unknown phase ' + s.phase);
   if (!(s.week >= 0 && s.week < g.YEAR_WEEKS)) bad('week out of range ' + s.week);
   if (s.turn !== (s.season - 1) * g.YEAR_WEEKS + s.week) bad('turn ' + s.turn + ' does not match year ' + s.season + ' week ' + s.week);
@@ -257,6 +262,8 @@ for (let i = 0; i < N; i++) {
         if (!w) { RAN.lbought++; if (z.fin.money !== m0 - pr || g.inLeague(x.lg, () => g.S.fin.money) !== sm + Math.round(pr * g.SALE_SHARE)) fail.push('League sale money wrong'); if (g.inLeague(x.lg, () => g.S.ranch.mons.some(e => e.uid === x.e.uid))) fail.push('a sold Pokémon stayed with the seller'); } } }
       else { g.ranchSync(); const free = z.ranch.mons.filter(e => e.at == null), e = rnd(z.ranch.mons), q = Math.random();
         if (q < 0.2 && free.length) { const f = rnd(free); if (f.sale) g.unlistMon(f.uid); const v = Math.round(g.entryValue(f) * g.SELL_BACK), mm = z.fin.money; if (!g.sellMon(f.uid)) { RAN.sold++; if (z.fin.money !== mm + v) fail.push('sell-back value wrong'); } }
+        else if (q < 0.27) { const f = rnd(z.ranch.mons.filter(x => x.at != null)); if (f) { const t = g.T(f.at), n0 = t.team.length, v = Math.round(g.entryValue(f) * g.SELL_BACK), mm = z.fin.money, rel = Math.random() < 0.3;
+          if (!g.sellMon(f.uid, rel)) { RAN.soldFielded++; if (t.team.length !== n0 || t.team.some(m => m.rid === f.uid) || z.ranch.mons.includes(f)) fail.push('selling a fielded ranch Pokémon left the team wrong'); if (z.fin.money !== mm + (rel ? 0 : v)) fail.push('selling a fielded ranch Pokémon paid wrong'); } else fail.push('could not sell a fielded ranch Pokémon'); } }
         else if (q < 0.35 && free.length) { const f = rnd(free); if (f.sale) g.unlistMon(f.uid); if (!g.sellMon(f.uid, true)) RAN.released++; if (z.fin.money !== m0) fail.push('release cost money'); }
         else if (q < 0.55 && e) { if (!g.lockMon(e.uid, !e.lock)) RAN.locked++; }
         else if (q < 0.8 && e) { if (!g.reserveMon(e.uid, rnd([null, 'champion', 'e4:1', 'gym:3', 'gym:6']))) RAN.reserved++; if (!g.reserveMon(e.uid, 'nowhere')) fail.push('a reservation for no post'); }
