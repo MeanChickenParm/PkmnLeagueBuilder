@@ -36,6 +36,11 @@ async def run(path):
           click('[data-act=foundclear][data-k=gym][data-v="0"]'); if (S.founding.gyms[0] != null) log.push('FAIL Clear did not clear the post');
           click('[data-act=foundshow][data-v=all]'); click('[data-act=foundpick]');
           if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the founding screen shows undefined');
+          // 0.23.0: no famous trainers in the pool, and anyone the new League can't sign shows the prestige they need
+          if (S.founding.cands.some(id => S.trainers[id].famous)) log.push('FAIL a famous trainer in the founding pool');
+          { const bl = foundPool().filter(id => !willSign(S.trainers[id])); click('[data-act=foundshow][data-v=all]');
+            if (bl.length && !/needs prestige \\d+ \\(you have 0\\)/.test(document.querySelector('#found-pool').textContent)) log.push('FAIL a blocked candidate shows no prestige need');
+            if (bl.length && foundPlace('gym', 1, bl[0])) log.push('FAIL a blocked candidate could be placed'); }
           if (!/a week/.test(document.querySelector('#main').textContent) || !/₽/.test(document.querySelector('#main').textContent)) log.push('FAIL the founding screen shows no pay or wage bill');
           click('[data-act=foundfill]'); if (document.querySelector('[data-act=foundgo]').disabled) log.push('FAIL Fill the rest left posts empty');
           const placedChamp = S.founding.champion; click('[data-act=foundgo]');
