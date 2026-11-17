@@ -99,6 +99,13 @@ function ranchSync() {
   const R = S.ranch; if (!R) return;
   const byUid = new Set(R.mons.map(e => e.uid)), held = new Map();
   for (const id of seniorIds()) for (const m of T(id).team) if (m.rid != null) { if (byUid.has(m.rid) && !held.has(m.rid)) held.set(m.rid, id); else m.rid = null; }
+  // (0.28.0) an acting holder sent back to a gym trainer's place keeps what they fielded, like anyone leaving the
+  // senior staff, even if the entry never recorded them; their stopgaps stay behind
+  const gone = new Set();
+  for (const g of S.gyms || []) for (const id of g.trainers || []) { const t = id != null && T(id); if (!t || t.role !== 'gymtrainer') continue;
+    if (t.team.some(m => m.stop) && t.team.some(m => !m.stop)) t.team = t.team.filter(m => !m.stop);
+    for (const m of t.team) if (m.rid != null) { if (!held.has(m.rid)) gone.add(m.rid); m.rid = null; } }
+  if (gone.size) R.mons = R.mons.filter(e => !gone.has(e.uid));
   R.mons = R.mons.filter(e => {
     if (held.has(e.uid)) { e.at = held.get(e.uid); e.idle = null; return true; }
     if (e.at != null) { const p = T(e.at); if (p && (p.team || []).some(m => m.rfrom === e.uid)) { for (const m of p.team) if (m.rfrom === e.uid) m.rid = null; return false; } e.at = null; }
@@ -129,8 +136,11 @@ function ranchMon(t, e, L, form) {
 // post still fields its full team; a swap replaces them first
 function stopPicks(t, L, n, lines, mixed) {
   const ty = mixed ? [] : specTypes(t), out = [];
-  let pool = [...new Set(regional(ranchSpecies()).filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
+  // (0.28.0) a region too thin for the type (250 species since nine regions) falls back to every species
+  const poolOf = list => [...new Set(list.filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
     .filter(f => (!ty.length || SP[f].types.some(x => ty.includes(x))) && !lines.has(LINE[f]) && !bannedIn(f, S.lg || 0)).sort((a, b) => SP[a].bst - SP[b].bst);
+  let pool = poolOf(regional(ranchSpecies()));
+  if (pool.length < n) pool = poolOf(ranchSpecies());
   pool = pool.slice(0, Math.max(n * 2, Math.ceil(pool.length * 0.3)));
   while (out.length < n && pool.length) {
     const sp = pick(pool); pool = pool.filter(x => LINE[x] !== LINE[sp]); lines.add(LINE[sp]);
@@ -434,8 +444,7 @@ function aimRanch(aim) {
 // Encounters are regional: each region has its own lines (about REGION_SIZE species), and everything else turns up
 // only through migration waves (from a neighbouring region, now and then from further off), a League's shipping lanes
 // (a port city's lane, or Goldenrod's railway), charters and the safari. The feature 'regional' (on by default) turns
-// it on; off is National Dex rules (every species everywhere). The four regions built so far share Gen V to IX out
-// between them until those regions are added (then the lists are reshuffled to about 250).
+// it on; off is National Dex rules (every species everywhere). (0.28.0) All nine regions exist, each with about 250.
 // A line belongs to every region of its family's generations (Pichu: Kanto and Johto); regional forms go with the
 // species they are a form of, and Hisuian ones (and the lines Hisui gave new evolutions) with Sinnoh. Lines with no
 // generation of the four are spread over them, each to the region with the fewest species, by type. Then each region
@@ -451,15 +460,30 @@ const GEN_SPECIES = [
   'Snorunt Glalie Ralts Kirlia Gardevoir Shuppet Banette Duskull Dusclops Swablu Altaria Trapinch Vibrava Flygon Bagon Shelgon Salamence Absol Aron Lairon Aggron Beldum Metang Metagross Mawile Azurill Treecko Grovyle Sceptile Torchic Combusken Blaziken Mudkip Marshtomp Swampert Taillow Swellow Corphish Crawdaunt Torkoal Lotad Lombre Ludicolo Luvdisc Nosepass Makuhita Hariyama Meditite Medicham Electrike Manectric Numel Camerupt Slakoth Vigoroth Slaking Spinda Zigzagoon Linoone Wingull Pelipper Tropius Lunatone Solrock Baltoy Claydol Feebas Milotic Wailmer Wailord Carvanha Sharpedo Barboach Whiscash Spheal Sealeo Walrein Wynaut Poochyena Mightyena Wurmple Silcoon Beautifly Cascoon Dustox Seedot Nuzleaf Shiftry Surskit Masquerain Shroomish Breloom Nincada Ninjask Shedinja Whismur Loudred Exploud Skitty Delcatty Sableye Plusle Minun Volbeat Illumise Roselia Gulpin Swalot Spoink Grumpig Cacnea Cacturne Zangoose Seviper Lileep Cradily Anorith Armaldo Castform Kecleon Chimecho Clamperl Huntail Gorebyss Relicanth',
   // Gen IV (and Hisui's new evolutions and forms, below)
   'Leafeon Glaceon Porygon-Z Tangrowth Magnezone Mamoswine Weavile Froslass Riolu Lucario Gible Gabite Garchomp Honchkrow Gallade Rhyperior Mismagius Dusknoir Bronzor Bronzong Probopass Electivire Magmortar Munchlax Togekiss Mime_Jr. Lickilicky Happiny Yanmega Gliscor Mantyke Ambipom Croagunk Toxicroak Bonsly Budew Roserade Chingling Turtwig Grotle Torterra Chimchar Monferno Infernape Piplup Prinplup Empoleon Starly Staravia Staraptor Bidoof Bibarel Kricketot Kricketune Shinx Luxio Luxray Cranidos Rampardos Shieldon Bastiodon Burmy Wormadam Mothim Combee Vespiquen Pachirisu Buizel Floatzel Cherubi Cherrim Shellos Gastrodon Drifloon Drifblim Buneary Lopunny Glameow Purugly Stunky Skuntank Chatot Spiritomb Hippopotas Hippowdon Skorupi Drapion Carnivine Finneon Lumineon Snover Abomasnow Rotom Kleavor Ursaluna Wyrdeer Sneasler Overqwil Basculegion',
+  // Gen V
+  'Snivy Servine Serperior Tepig Pignite Emboar Oshawott Dewott Samurott Patrat Watchog Lillipup Herdier Stoutland Purrloin Liepard Pansage Simisage Pansear Simisear Panpour Simipour Munna Musharna Pidove Tranquill Unfezant Blitzle Zebstrika Roggenrola Boldore Gigalith Woobat Swoobat Drilbur Excadrill Audino Timburr Gurdurr Conkeldurr Tympole Palpitoad Seismitoad Throh Sawk Sewaddle Swadloon Leavanny Venipede Whirlipede Scolipede Cottonee Whimsicott Petilil Lilligant Basculin Sandile Krokorok Krookodile Darumaka Darmanitan Maractus Dwebble Crustle Scraggy Scrafty Sigilyph Yamask Cofagrigus Tirtouga Carracosta Archen Archeops Trubbish Garbodor Zorua Zoroark Minccino Cinccino Gothita Gothorita Gothitelle Solosis Duosion Reuniclus Ducklett Swanna Vanillite Vanillish Vanilluxe Deerling Sawsbuck Emolga Karrablast Escavalier Foongus Amoonguss Frillish Jellicent Alomomola Joltik Galvantula Ferroseed Ferrothorn Klink Klang Klinklang Tynamo Eelektrik Eelektross Elgyem Beheeyem Litwick Lampent Chandelure Axew Fraxure Haxorus Cubchoo Beartic Cryogonal Shelmet Accelgor Stunfisk Mienfoo Mienshao Druddigon Golett Golurk Pawniard Bisharp Bouffalant Rufflet Braviary Vullaby Mandibuzz Heatmor Durant Deino Zweilous Hydreigon Larvesta Volcarona',
+  // Gen VI
+  'Chespin Quilladin Chesnaught Fennekin Braixen Delphox Froakie Frogadier Greninja Bunnelby Diggersby Fletchling Fletchinder Talonflame Scatterbug Spewpa Vivillon Litleo Pyroar Flabébé Floette Florges Skiddo Gogoat Pancham Pangoro Furfrou Espurr Meowstic Honedge Doublade Aegislash Spritzee Aromatisse Swirlix Slurpuff Inkay Malamar Binacle Barbaracle Skrelp Dragalge Clauncher Clawitzer Helioptile Heliolisk Tyrunt Tyrantrum Amaura Aurorus Sylveon Hawlucha Dedenne Carbink Goomy Sliggoo Goodra Klefki Phantump Trevenant Pumpkaboo Gourgeist Bergmite Avalugg Noibat Noivern',
+  // Gen VII
+  'Rowlet Dartrix Decidueye Litten Torracat Incineroar Popplio Brionne Primarina Pikipek Trumbeak Toucannon Yungoos Gumshoos Grubbin Charjabug Vikavolt Crabrawler Crabominable Oricorio Cutiefly Ribombee Rockruff Lycanroc Wishiwashi Mareanie Toxapex Mudbray Mudsdale Dewpider Araquanid Fomantis Lurantis Morelull Shiinotic Salandit Salazzle Stufful Bewear Bounsweet Steenee Tsareena Comfey Oranguru Passimian Wimpod Golisopod Sandygast Palossand Pyukumuku Minior Komala Turtonator Togedemaru Mimikyu Bruxish Drampa Dhelmise Jangmo-o Hakamo-o Kommo-o',
+  // Gen VIII (Hisui's are with Gen IV)
+  'Grookey Thwackey Rillaboom Scorbunny Raboot Cinderace Sobble Drizzile Inteleon Skwovet Greedent Rookidee Corvisquire Corviknight Blipbug Dottler Orbeetle Nickit Thievul Gossifleur Eldegoss Wooloo Dubwool Chewtle Drednaw Yamper Boltund Rolycoly Carkol Coalossal Applin Flapple Appletun Silicobra Sandaconda Cramorant Arrokuda Barraskewda Toxel Toxtricity Sizzlipede Centiskorch Clobbopus Grapploct Sinistea Polteageist Hatenna Hattrem Hatterene Impidimp Morgrem Grimmsnarl Obstagoon Perrserker Cursola Sirfetch\'d Mr._Rime Runerigus Milcery Alcremie Falinks Pincurchin Snom Frosmoth Stonjourner Eiscue Indeedee Morpeko Cufant Copperajah Dracozolt Arctozolt Dracovish Arctovish Duraludon Dreepy Drakloak Dragapult',
+  // Gen IX
+  'Sprigatito Floragato Meowscarada Fuecoco Crocalor Skeledirge Quaxly Quaxwell Quaquaval Lechonk Oinkologne Tarountula Spidops Nymble Lokix Pawmi Pawmo Pawmot Tandemaus Maushold Fidough Dachsbun Smoliv Dolliv Arboliva Squawkabilly Nacli Naclstack Garganacl Charcadet Armarouge Ceruledge Tadbulb Bellibolt Wattrel Kilowattrel Maschiff Mabosstiff Shroodle Grafaiai Bramblin Brambleghast Toedscool Toedscruel Klawf Capsakid Scovillain Rellor Rabsca Flittle Espathra Tinkatink Tinkatuff Tinkaton Wiglett Wugtrio Bombirdier Finizen Palafin Varoom Revavroom Cyclizar Orthworm Glimmet Glimmora Greavard Houndstone Flamigo Cetoddle Cetitan Veluza Dondozo Tatsugiri Annihilape Clodsire Farigiraf Dudunsparce Kingambit Frigibax Arctibax Baxcalibur Gimmighoul Gholdengo Dipplin Poltchageist Sinistcha Archaludon Hydrapple',
 ].map(s => s.split(' ').map(n => n.replace(/_/g, ' ')));
 const GEN_OF = {}; GEN_SPECIES.forEach((list, g) => { for (const n of list) GEN_OF[n] = g; });
-// the regions next to each other (migration comes from these): Kanto–Johto, Johto–Hoenn, Hoenn–Sinnoh, Sinnoh–Kanto
-const NEIGHBOURS = [[1, 3], [0, 2], [1, 3], [0, 2]];
-const REGION_SIZE = 350, REGION_FLOOR = 5, FLOOR_BST = 450;
+// the regions next to each other (migration comes from these), by canon geography: the four Japanese regions in a ring
+// (Kanto–Johto–Hoenn–Sinnoh–Kanto), Alola between Kanto, Hoenn and Unova, Unova across the ocean from Kalos and
+// Galar, and Kalos, Galar and Paldea next to each other
+const NEIGHBOURS = [[1, 3, 6], [0, 2], [1, 3, 6], [2, 0], [6, 5, 7], [4, 7, 8], [0, 2, 4], [5, 8, 4], [5, 7]];
+const REGION_SIZE = 250, REGION_FLOOR = 5, FLOOR_BST = 450;
 const regionalOn = () => featOn('regional');
 // the region a species name belongs to on its own (null: none of the four)
+// (0.28.0) regional forms belong to their region (Alolan to Alola, Galarian to Galar, Paldean to Paldea; Hisuian and
+// White-Striped to Sinnoh, as Hisui) on top of their family's generations
+const FORM_REGION = { Alolan: 6, Galarian: 7, Hisuian: 3, 'White-Striped': 3, Paldean: 8 };
 function genRegion(n) {
-  if (/^Hisuian /.test(n)) return 3;
+  const f = n.match(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /); if (f) return FORM_REGION[f[1]];
   const base = n.replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
   return GEN_OF[base] != null ? GEN_OF[base] : GEN_OF[n] != null ? GEN_OF[n] : null;
 }
@@ -575,7 +599,11 @@ function regional(list, r = S.region) { if (!homeSet(r)) return list; const out 
 // (x.src on the building), whose lines the League can then catch on targeted trips and find at its market all the time.
 // LANE_WEEK a week on top of the usual upkeep; changing the route costs LANE_ROUTE. It lapses in the red. A charter is a
 // one-off shipment from any other region: CHARTER_COST, CHARTER_WEEKS, two or three of that region's Pokémon.
-const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port' };
+const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port',
+  // (0.28.0) the later regions: Nimbasa's Gear Station, Lumiose's and Hammerlocke's stations are railways
+  Castelia: 'port', Virbank: 'port', Humilau: 'port', Nimbasa: 'railway', Coumarine: 'port', Shalour: 'port', Ambrette: 'port', Lumiose: 'railway',
+  "Hau'oli": 'port', Konikoni: 'port', Seafolk: 'port', Heahea: 'port', Hulbury: 'port', Spikemuth: 'port', Hammerlocke: 'railway',
+  Levincia: 'port', 'Porto Marinada': 'port', Cascarrafa: 'port' };
 const LANE_WEEK = 400, LANE_ROUTE = 10000, CHARTER_COST = 12000, CHARTER_WEEKS = 3;
 const isPort = c => !!(c && PORTS[c.name]);
 // the bound League's lanes: [{ gym, city, src, rail }]
