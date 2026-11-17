@@ -1,5 +1,9 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 29, ver: '0.29.0', date: 'November 17, 2026', time: '1:10 PM ET', title: 'No League cap', items: [
+    "The world no longer stops at six Leagues. New Leagues still open only when a distinguished retiree founds one, each needing more prestige than the last, and still at most two to a region, so a world can hold up to eighteen.",
+    "With many Leagues the world gets slower and the save larger: in testing, eighteen Leagues took about a minute a simulated year, against about thirteen seconds for six. If your browser can't store a very large save, the game says so; Download save file in the menu still keeps it.",
+  ] },
   { id: 28, ver: '0.28.0', date: 'November 17, 2026', time: '11:40 AM ET', title: 'Nine regions', items: [
     "Five new regions: Unova, Kalos, Alola, Galar and Paldea. Each has a League of the same size as the others (eight gyms, the Elite Four and a Champion), eight gym cities, three towns without a gym, its seat and a second League's seat. Unova's gyms follow Black 2 and White 2; Galar's and Paldea's are their own.",
     "Alola has no gyms, so its League is built on the island challenge: its gym cities are the challenge's stops in order (Hau'oli, Iki Town, Paniola, Konikoni, Malie, Tapu Village, Po Town, Seafolk), its Gym Leaders are Kahunas and their gym trainers Trial Captains, and the League sits on Mount Lanakila (a second Alolan League takes the Battle Tree).",
