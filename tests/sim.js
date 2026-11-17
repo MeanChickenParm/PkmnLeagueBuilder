@@ -5,6 +5,23 @@ const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'
 // holders until they are filled
 const [L, G, N, GOD, HAND] = process.argv.slice(2).map(Number);
 g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
+// (0.30.0) the world's regions are in the save: nine built-in records, neighbours two-way, every legendary home and port
+// kept; and where Leagues start (startRegions): picks honoured within room, your region only by a pick or a full world
+{ const S0 = g.S, R = S0.regions, nb = g.NEIGHBOURS, fail = m => { console.log('FAIL ' + m); process.exit(1); };
+  if (!Array.isArray(R) || R.length !== 9 || g.LEAGUE_SETS !== R) fail('the world has no region list of its own');
+  if (R.some(r => r.towns.length !== 8 || r.extra.length !== 3 || !r.seat || !r.seat2 || r.base == null)) fail('a malformed region');
+  nb.forEach((a, i) => a.forEach(x => { if (!nb[x].includes(i) || x === i) fail('neighbours not two-way ' + i + '-' + x); }));
+  if (Object.keys(g.LEGEND_HOME).length < 100 || R.reduce((a, r) => a + r.legends.length, 0) !== Object.keys(g.LEGEND_HOME).length) fail('legendary homes lost');
+  if (R.reduce((a, r) => a + Object.keys(r.ports).length, 0) !== 28) fail('ports lost: ' + R.reduce((a, r) => a + Object.keys(r.ports).length, 0));
+  if (R[6].posts.leader !== 'Kahuna' || R[0].posts) fail('post names');
+  const ord = [...Array(9).keys()], cnt = (a, r) => a.filter(x => x === r).length;
+  const full = g.startRegions(ord, 18, []); if (full.length !== 18 || ord.some(r => cnt(full, r) !== 2)) fail('a full world does not fill every seat');
+  const most = g.startRegions(ord, 17, []); if (cnt(most, 0) !== 1 || most.length !== 17) fail('a rival took your region unasked');
+  const pick = g.startRegions(ord, 4, [0, 5, 5]); if (pick.join() !== '0,0,5,5') fail('rival picks not honoured: ' + pick);
+  const over = g.startRegions(ord, 4, [3, 3, 3]); if (cnt(over, 3) !== 2 || over.length !== 4) fail('a pick past a region\'s room: ' + over);
+  if (g.maxStartLeagues() !== 18) fail('the most starting Leagues');
+  const regs = g.eachLeague(() => S0.region); if (regs.length !== (L || 1) || g.LEAGUE_SETS.some((_, r) => cnt(regs, r) > 2)) fail('starting Leagues ' + regs);
+  const names = g.eachLeague(() => S0.lgName); if (new Set(names).size !== names.length) fail('two Leagues share a name: ' + names); }
 if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); }
   // (0.23.0) nobody placed is above a new League's prestige, and a blocked candidate can't be placed
   if (g.foundPlaced().some(id => !g.willSign(g.T(id)))) { console.log('FAIL a founding post went to someone who would not sign'); process.exit(1); }
@@ -331,9 +348,11 @@ for (let i = 0; i < N; i++) {
           if (g.inLeague(old, () => S().fin.yr.out.founding) !== g.LEAVE_FEE) fail.push('leaving fee wrong');
           if (!g.inLeague(old, () => g.AIMS[S().fin.aim])) fail.push('the League left has no aim');
           if ((S().vacancies || []).length || (S().chalPending || []).length) fail.push('player state left behind');
-          for (const id of take) if (!S().founding.cands.includes(id)) fail.push('a carried member is not in the founding pool');
+          // (0.30.0) only those actually carried: since 0.29.0 anyone a waiting challenge moved out of their post stays behind
+          const went = take.filter(id => g.T(id).carried); if (take.length && !went.length) fail.push('nobody was carried');
+          for (const id of went) if (!S().founding.cands.includes(id)) fail.push('a carried member is not in the founding pool');
           g.inLeague(g.ME(), () => { g.foundingFill(); g.finishFounding(); });
-          for (const id of take) if (g.lgOf(g.T(id)) !== g.ME() || !['leader', 'e4', 'champion', 'gymtrainer'].includes(g.T(id).role)) fail.push('a carried member did not join the new League');
+          for (const id of went) if (g.lgOf(g.T(id)) !== g.ME() || !['leader', 'e4', 'champion', 'gymtrainer'].includes(g.T(id).role)) fail.push('a carried member did not join the new League');
           if (S().founding) fail.push('founding left open'); } }
       else fail.push('could not leave: ' + chk.why);
     }

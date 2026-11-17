@@ -475,7 +475,9 @@ const GEN_OF = {}; GEN_SPECIES.forEach((list, g) => { for (const n of list) GEN_
 // the regions next to each other (migration comes from these), by canon geography: the four Japanese regions in a ring
 // (Kanto–Johto–Hoenn–Sinnoh–Kanto), Alola between Kanto, Hoenn and Unova, Unova across the ocean from Kalos and
 // Galar, and Kalos, Galar and Paldea next to each other
-const NEIGHBOURS = [[1, 3, 6], [0, 2], [1, 3, 6], [2, 0], [6, 5, 7], [4, 7, 8], [0, 2, 4], [5, 8, 4], [5, 7]];
+const BUILTIN_NB = [[1, 3, 6], [0, 2], [1, 3, 6], [2, 0], [6, 5, 7], [4, 7, 8], [0, 2, 4], [5, 8, 4], [5, 7]];
+// (0.30.0) the bound world's neighbour map, two-way (applyRegions)
+let NEIGHBOURS = BUILTIN_NB;
 const REGION_SIZE = 250, REGION_FLOOR = 5, FLOOR_BST = 450;
 const regionalOn = () => featOn('regional');
 // the region a species name belongs to on its own (null: none of the four)
@@ -487,13 +489,14 @@ function genRegion(n) {
   const base = n.replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
   return GEN_OF[base] != null ? GEN_OF[base] : GEN_OF[n] != null ? GEN_OF[n] : null;
 }
-let REGION_LINES = null, LINE_MEMBERS = null;
+let REGION_LINES = null, BUILTIN_LINES = null, LINE_MEMBERS = null;
 const lineMembers = () => { if (!LINE_MEMBERS) { LINE_MEMBERS = {}; for (const n of Object.keys(SP)) { const b = LINE_BASE[LINE[n]]; if (b) (LINE_MEMBERS[b] = LINE_MEMBERS[b] || []).push(n); } } return LINE_MEMBERS; };
 // the types a line can field at its strongest (its forms at or near the top)
 const lineTypesTop = b => { const ms = lineMembers()[b] || [b], top = Math.max(...ms.map(n => SP[n].bst)); return [...new Set(ms.filter(n => SP[n].bst >= top - 60).flatMap(n => SP[n].types))]; };
-function regionLines() {
-  if (REGION_LINES) return REGION_LINES;
-  const nR = NEIGHBOURS.length, mem = lineMembers(), lines = ranchSpecies();
+// (0.30.0) the built-in nine's lists, always worked out on the built-in map so they stay the same in every world
+function builtinLines() {
+  if (BUILTIN_LINES) return BUILTIN_LINES;
+  const NEIGHBOURS = BUILTIN_NB, nR = BUILTIN_NB.length, mem = lineMembers(), lines = ranchSpecies();
   const sets = Array.from({ length: nR }, () => new Set()), size = Array(nR).fill(0), home = {};
   const n = b => (mem[b] || [b]).length;
   const add = (r, b) => { if (!sets[r].has(b)) { sets[r].add(b); size[r] += n(b); } };
@@ -528,17 +531,26 @@ function regionLines() {
       add(r, cands.shift());
     }
   }
-  REGION_LINES = { sets, home, size };
+  BUILTIN_LINES = { sets, home, size };
+  return BUILTIN_LINES;
+}
+// the bound world's lists: a built-in region uses its own list (or a pool given to it), a region with no list has none
+function regionLines() {
+  if (REGION_LINES && REGION_LINES.of === LEAGUE_SETS) return REGION_LINES;
+  const B = builtinLines(), mem = lineMembers();
+  const sets = LEAGUE_SETS.map(r => r.pool ? new Set(r.pool.filter(b => mem[b])) : r.base != null && B.sets[r.base] ? B.sets[r.base] : new Set());
+  const size = sets.map(st => [...st].reduce((a, b) => a + (mem[b] || [b]).length, 0));
+  REGION_LINES = { sets, size, of: LEAGUE_SETS };
   return REGION_LINES;
 }
 
 // (0.27.0) the caches above are rebuilt when a custom Pokédex changes the species (applyDex)
 function resetRegionCaches() {
-  REGION_LINES = null; LINE_MEMBERS = null; RANCH_SPECIES = null; LINE_TOP = null; MIGR_CACHE = { turn: -1 };
+  REGION_LINES = null; BUILTIN_LINES = null; LINE_MEMBERS = null; RANCH_SPECIES = null; LINE_TOP = null; MIGR_CACHE = { turn: -1 };
   for (const k of Object.keys(LINE_BASE)) delete LINE_BASE[k];
   for (const b of BASES) if (LINE[b] && LINE_BASE[LINE[b]] == null) LINE_BASE[LINE[b]] = b;
 }
-const nRegionsBuilt = () => NEIGHBOURS.length;
+const nRegionsBuilt = () => LEAGUE_SETS.length;
 const regionName = r => LEAGUE_SETS[r] ? LEAGUE_SETS[r].name.replace(' League', '') : 'elsewhere';
 // a region's own lines (null: no list, so everything: National Dex rules, or a region not built yet)
 const homeSet = r => (regionalOn() && r != null && r < nRegionsBuilt()) ? regionLines().sets[r] : null;
@@ -599,17 +611,19 @@ function regional(list, r = S.region) { if (!homeSet(r)) return list; const out 
 // (x.src on the building), whose lines the League can then catch on targeted trips and find at its market all the time.
 // LANE_WEEK a week on top of the usual upkeep; changing the route costs LANE_ROUTE. It lapses in the red. A charter is a
 // one-off shipment from any other region: CHARTER_COST, CHARTER_WEEKS, two or three of that region's Pokémon.
-const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port',
+const BUILTIN_PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port',
   // (0.28.0) the later regions: Nimbasa's Gear Station, Lumiose's and Hammerlocke's stations are railways
   Castelia: 'port', Virbank: 'port', Humilau: 'port', Nimbasa: 'railway', Coumarine: 'port', Shalour: 'port', Ambrette: 'port', Lumiose: 'railway',
   "Hau'oli": 'port', Konikoni: 'port', Seafolk: 'port', Heahea: 'port', Hulbury: 'port', Spikemuth: 'port', Hammerlocke: 'railway',
   Levincia: 'port', 'Porto Marinada': 'port', Cascarrafa: 'port' };
 const LANE_WEEK = 400, LANE_ROUTE = 10000, CHARTER_COST = 12000, CHARTER_WEEKS = 3;
-const isPort = c => !!(c && PORTS[c.name]);
+// (0.30.0) a city's port or railway comes from its region's own list (ports by name)
+const portKind = c => (c && LEAGUE_SETS[c.region] && (LEAGUE_SETS[c.region].ports || {})[c.name]) || null;
+const isPort = c => !!portKind(c);
 // the bound League's lanes: [{ gym, city, src, rail }]
 function lanesOf() {
   if (!S.gyms) return [];
-  return S.gyms.map((g, i) => { const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'lane'); return x ? { gym: i, city: c, x, src: laneSrc(x), rail: PORTS[c.name] === 'railway' } : null; }).filter(Boolean);
+  return S.gyms.map((g, i) => { const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'lane'); return x ? { gym: i, city: c, x, src: laneSrc(x), rail: portKind(c) === 'railway' } : null; }).filter(Boolean);
 }
 const laneSrc = x => (x.src != null && x.src !== S.region && x.src < nRegionsBuilt() ? x.src : (NEIGHBOURS[S.region] || [0])[0]);
 function laneSet() {
@@ -705,4 +719,29 @@ function steerGaps() {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { regionLines, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, NEIGHBOURS, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+// ================= THE WORLD'S REGIONS (0.30.0, design doc 6.8) =================
+// A world keeps its own list of regions in the save (S.regions), so custom regions (a 10th region, or one replacing a
+// built-in one) can join it. A region: { name, towns (8 gym cities), extra (3 towns with no gym), seat, seat2, nb (its
+// neighbours, by index), ports ({ city name: 'port' | 'railway' }), legends (the legendaries at home there), posts
+// (names for its posts, e.g. Alola's Kahuna and Trial Captain), base (the built-in region whose list it uses, or
+// null), pool (its own lines, or null) }. Neighbours are two-way: a region listing another is listed back.
+const REGION_FMT = 1;
+function builtinRegion(i) {
+  const r = BUILTIN_REGIONS[i], names = r.towns.concat(r.extra || []);
+  return { name: r.name, towns: r.towns.slice(), extra: (r.extra || []).slice(), seat: r.seat, seat2: r.seat2, nb: BUILTIN_NB[i].slice(),
+    ports: Object.fromEntries(names.filter(n => BUILTIN_PORTS[n]).map(n => [n, BUILTIN_PORTS[n]])),
+    legends: Object.keys(BUILTIN_LEGEND_HOME).filter(sp => BUILTIN_LEGEND_HOME[sp] === i), posts: r.posts ? Object.assign({}, r.posts) : null, base: i, pool: null };
+}
+const builtinRegions = () => BUILTIN_REGIONS.map((_, i) => builtinRegion(i));
+// bind the world's regions: S.regions (made the first time), the two-way neighbour map, the legendaries' homes
+function applyRegions() {
+  const regs = S && S.regions ? S.regions : builtinRegions();
+  if (S && !S.regions) S.regions = regs;
+  LEAGUE_SETS = regs;
+  NEIGHBOURS = regs.map(r => (r.nb || []).filter(x => x >= 0 && x < regs.length && regs[x] !== r));
+  NEIGHBOURS.forEach((nb, i) => nb.forEach(x => { if (!NEIGHBOURS[x].includes(i)) NEIGHBOURS[x].push(i); }));
+  LEGEND_HOME = {}; regs.forEach((r, i) => (r.legends || []).forEach(sp => { LEGEND_HOME[sp] = i; }));
+  REGION_LINES = null; MIGR_CACHE = { turn: -1 };
+}
+
+if (typeof module !== 'undefined') module.exports = { regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };

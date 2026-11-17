@@ -470,7 +470,7 @@ function legendElsewhere(sp) {
 const everCaught = sp => !!(S.greatCaught && S.greatCaught[sp]);
 // (0.20.0) legendaries belong to a region (all nine since 0.28.0): an event for one of a region's own turns up about
 // LEGEND_HOME_MUL times as often in a League of that region and LEGEND_AWAY_MUL as often elsewhere; the rest as before
-const LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew: 0, Raikou: 1, Entei: 1, Suicune: 1, Lugia: 1, 'Ho-Oh': 1, Celebi: 1,
+const BUILTIN_LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew: 0, Raikou: 1, Entei: 1, Suicune: 1, Lugia: 1, 'Ho-Oh': 1, Celebi: 1,
   Regirock: 2, Regice: 2, Registeel: 2, Latias: 2, Latios: 2, Kyogre: 2, Groudon: 2, Rayquaza: 2, Jirachi: 2, Deoxys: 2,
   Uxie: 3, Mesprit: 3, Azelf: 3, Dialga: 3, Palkia: 3, Giratina: 3, Heatran: 3, Regigigas: 3, Cresselia: 3, Darkrai: 3, Shaymin: 3, Manaphy: 3, Arceus: 3, Phione: 3, Enamorus: 3, 'Bloodmoon Ursaluna': 3,
   // (0.28.0) the later regions
@@ -481,6 +481,8 @@ const LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew: 0, Rai
   Zacian: 7, Zamazenta: 7, Eternatus: 7, Kubfu: 7, 'Urshifu (Single Strike)': 7, 'Urshifu (Rapid Strike)': 7, Zarude: 7, Regieleki: 7, Regidrago: 7, Glastrier: 7, Spectrier: 7, Calyrex: 7,
   'Galarian Articuno': 7, 'Galarian Zapdos': 7, 'Galarian Moltres': 7,
   'Wo-Chien': 8, 'Chien-Pao': 8, 'Ting-Lu': 8, 'Chi-Yu': 8, Koraidon: 8, Miraidon: 8, Okidogi: 8, Munkidori: 8, Fezandipiti: 8, Ogerpon: 8, Terapagos: 8, Pecharunt: 8 };
+// (0.30.0) the bound world's homes, from its regions' legends (applyRegions)
+let LEGEND_HOME = BUILTIN_LEGEND_HOME;
 const LEGEND_HOME_MUL = 3, LEGEND_AWAY_MUL = 0.5;
 function regionMul(sp) { const h = LEGEND_HOME[sp]; return h == null ? 1 : h === (S.region || 0) ? LEGEND_HOME_MUL : LEGEND_AWAY_MUL; }
 // a pick weighted by region
@@ -952,6 +954,7 @@ function logSky(text) { (S.skyLog = S.skyLog || []).unshift({ season: S.season, 
 function applyCfg() {
   S.cfg = S.cfg || {};
   S.cfg.leagues = S.cfg.leagues || 1;
+  applyRegions(); // (0.30.0) the world's own regions
 }
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
@@ -2090,10 +2093,11 @@ function stepDownChance(t) {
 function postName(t) {
   if (t.role === 'champion') return `Champion of the ${S.lgName}`;
   if (t.role === 'e4') return `Elite Four seat #${S.e4.indexOf(t.id) + 1}`;
-  // (0.28.0) Alola's gyms are its island challenge: a Kahuna's grand trial with Trial Captains before it
-  const alola = S.region === ALOLA;
-  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} ${alola ? 'Kahuna' : 'Gym Leader'}`;
-  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} ${alola ? 'Trial Captain' : 'Gym trainer'}`;
+  // (0.28.0) Alola's gyms are its island challenge: a Kahuna's grand trial with Trial Captains before it. (0.30.0) Any
+  // region can rename the posts (its `posts`)
+  const posts = (LEAGUE_SETS[S.region] || {}).posts || {};
+  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} ${posts.leader || 'Gym Leader'}`;
+  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} ${posts.gymtrainer || 'Gym trainer'}`;
   return '';
 }
 function announceStepDown(t) {

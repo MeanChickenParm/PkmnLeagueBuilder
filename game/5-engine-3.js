@@ -1194,7 +1194,9 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  S.cfg = { leagues: [1, 2, 3, 4].includes(cfg.leagues) ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  // (0.30.0) the world's regions: the built-in nine for now (custom ones join here later)
+  S.regions = builtinRegions(); applyRegions();
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 && cfg.leagues <= maxStartLeagues() ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good
@@ -1208,8 +1210,12 @@ function newWorld(cfg = {}) {
   S.regionOrder = shuffle(LEAGUE_SETS.map((_, i) => i));
   // cfg.region: the region the first League sits in (left out: drawn at random)
   if (LEAGUE_SETS[cfg.region]) S.regionOrder = [cfg.region, ...S.regionOrder.filter(r => r !== cfg.region)];
-  const regions = S.regionOrder.slice(0, S.cfg.leagues);
-  const blank = i => ({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: LEAGUE_SETS[regions[i]].name });
+  const regions = startRegions(S.regionOrder, S.cfg.leagues, cfg.rivals || []);
+  S.cfg.leagues = regions.length;
+  // a second League in a region at the start sits at its second seat and is named for it
+  const second = i => regions.slice(0, i).includes(regions[i]);
+  const blank = i => { const reg = LEAGUE_SETS[regions[i]], two = second(i);
+    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: two ? `${reg.seat2} League` : reg.name, seatName: two ? reg.seat2 : reg.seat }; };
   S.leagues = [null]; S.lg = 0;
   S.region = regions[0]; S.lgName = LEAGUE_SETS[regions[0]].name;
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
@@ -1219,6 +1225,21 @@ function newWorld(cfg = {}) {
   if (S.cfg.hand) return;
   foundingField(Array.from({ length: nLeagues() }, (_, i) => i));
   startWorld();
+}
+// (0.30.0) the most Leagues a world can start with: two a region (REGION_CAP)
+const maxStartLeagues = () => REGION_CAP * LEAGUE_SETS.length;
+// where the Leagues start: yours in order[0], then each rival where the player asked (picks[i]: a region index, or
+// null for anywhere) if that region has room; the rest spread out, regions with no League first, then second seats in
+// other regions. A rival goes into your region only when picked there, or when every other seat is taken.
+function startRegions(order, n, picks) {
+  const home = order[0], out = [home], count = r => out.filter(x => x === r).length;
+  for (let i = 1; i < n; i++) { const p = picks[i - 1]; out.push(p != null && LEAGUE_SETS[p] && count(p) < REGION_CAP ? p : null); }
+  for (let i = 1; i < n; i++) {
+    if (out[i] != null) continue;
+    const r = order.find(x => x !== home && !count(x)) ?? order.find(x => x !== home && count(x) < REGION_CAP) ?? (count(home) < REGION_CAP ? home : null);
+    out[i] = r;
+  }
+  return out.filter(r => r != null);
 }
 // one League's founding staff: eight Gym Leaders, the Elite Four and a Champion
 function foundLeague(opts = {}) {
