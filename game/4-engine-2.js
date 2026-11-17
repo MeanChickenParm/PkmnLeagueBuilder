@@ -457,15 +457,17 @@ function legendState(L) { if (L && !L.dmg) { L.dmg = {}; L.tries = {}; L.total =
 const legendRank = L => Object.entries(legendState(L).dmg).map(([id, d]) => ({ id: +id, d, n: L.tries[id] || 0 })).sort((a, b) => b.d - a.d);
 const greatFree = sp => !ownedLegends().has(sp) && !legendElsewhere(sp) && !bannedIn(sp, S.lg || 0);
 // (0.20.0) a legendary another League's event or gift has in hand (an encounter, a roamer, a storm, a wormhole, a gift on
-// its way) can't turn up here too: there is one of each in the world
+// its way) can't turn up here too: there is one of each in the world. (0.31.0) One for each region of the world that has
+// it at home (`legendCap`): true when those held and those other Leagues' events have in hand fill its places
 function legendElsewhere(sp) {
+  let n = legendHeld(sp);
   for (let i = 0; i < nLeagues(); i++) {
     if (i === (S.lg || 0)) continue;
     const L = S.leagues[i]; if (!L) continue;
-    if ((L.legend && L.legend.sp === sp) || (L.roamer && L.roamer.sp === sp) || (L.storm && L.storm.sp === sp) || (L.wormhole && L.wormhole.sp === sp)) return true;
-    if ((L.legendGifts || []).some(g => g.sp === sp)) return true;
+    for (const x of [L.legend, L.roamer, L.storm, L.wormhole]) if (x && x.sp === sp) n++;
+    n += (L.legendGifts || []).filter(g => g.sp === sp).length;
   }
-  return false;
+  return n >= legendCap(sp);
 }
 const everCaught = sp => !!(S.greatCaught && S.greatCaught[sp]);
 // (0.20.0) legendaries belong to a region (all nine since 0.28.0): an event for one of a region's own turns up about
@@ -483,8 +485,13 @@ const BUILTIN_LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew
   'Wo-Chien': 8, 'Chien-Pao': 8, 'Ting-Lu': 8, 'Chi-Yu': 8, Koraidon: 8, Miraidon: 8, Okidogi: 8, Munkidori: 8, Fezandipiti: 8, Ogerpon: 8, Terapagos: 8, Pecharunt: 8 };
 // (0.30.0) the bound world's homes, from its regions' legends (applyRegions)
 let LEGEND_HOME = BUILTIN_LEGEND_HOME;
+// (0.31.0) every region a legendary is at home in (a custom region can share one with its built-in home, or with another
+// custom region): the world holds one of it for each, at most
+let LEGEND_HOMES = {};
+const legendHomes = sp => LEGEND_HOMES[sp] || (LEGEND_HOME[sp] != null ? [LEGEND_HOME[sp]] : []);
+const legendCap = sp => Math.max(1, legendHomes(sp).length);
 const LEGEND_HOME_MUL = 3, LEGEND_AWAY_MUL = 0.5;
-function regionMul(sp) { const h = LEGEND_HOME[sp]; return h == null ? 1 : h === (S.region || 0) ? LEGEND_HOME_MUL : LEGEND_AWAY_MUL; }
+function regionMul(sp) { const h = legendHomes(sp); return !h.length ? 1 : h.includes(S.region || 0) ? LEGEND_HOME_MUL : LEGEND_AWAY_MUL; }
 // a pick weighted by region
 function regionPick(list) { const tot = list.reduce((a, sp) => a + regionMul(sp), 0); let r = rand() * tot; for (const sp of list) { r -= regionMul(sp); if (r <= 0) return sp; } return list[list.length - 1]; }
 // (0.20.0) Paradox Pokémon: an expedition to Area Zero (Koraidon, Miraidon or Terapagos appearing) opens the crater for a
@@ -2422,6 +2429,15 @@ function hireRetirees(fit) {
 }
 // a retiree takes a post: back into the world, the years away added to their age. A Hall of Famer stays one.
 function unretire(t) {
+  // (0.31.0) the duplicate-legendary bug: a retiree keeps an Ultra Beast, Paradox Pokémon or other legendary with no
+  // partner years, and retirees don't count toward one of each, so another could turn up meanwhile. One whose places
+  // are taken by the time they come back has moved on (checked while they still count as retired)
+  const full = ownedLegends(), px = paradoxHeld(), babies = new Set(freeBabies());
+  for (const m of t.team.slice()) {
+    const s = SP[m.sp]; if (!s) continue;
+    if ((s.legend && !s.baby && full.has(m.sp)) || (s.paradox && px.has(m.sp)) || (s.baby && !babies.has(LINE[m.sp]))) { farewell(t, m, `had moved on by the time ${t.name} came out of retirement`); t.team = t.team.filter(x => x !== m); }
+  }
+  if (t.mega && !t.team.some(m => m.uid === t.mega.uid)) t.mega = null;
   t.age = retAge(t); t.unretired = S.season; t.retiredSeason = null; t.prevRole = null; t.lg = S.lg || 0; t.role = 'free';
   t.leaving = null; t.stepDown = null;
 }

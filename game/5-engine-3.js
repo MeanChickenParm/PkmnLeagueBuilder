@@ -949,13 +949,20 @@ function simWeeks(n, stops) {
 }
 // legendaries held anywhere in the world (0.20.0: one of each; was this League). A baby legendary (Cosmog, Type: Null, Kubfu…) counts as every legendary it can grow into,
 // so nobody is handed a Solgaleo while a Cosmog that could become one is out there
-function ownedLegends() {
-  const set = new Set();
+// (0.31.0) a legendary at home in several regions of the world can be held once for each (`legendCap`): the set is those
+// whose places are all taken, and `legendHeld(sp)` counts the holders
+function legendCounts() {
+  const c = {};
   for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) {
-    if (SP[m.sp].legend) set.add(m.sp);
-    if (SP[m.sp].baby) { const q = [m.sp]; while (q.length) { const n = q.shift(); for (const e of SP[n].evos || []) { if (SP[e.to].legend) set.add(e.to); q.push(e.to); } } }
+    if (SP[m.sp].legend) c[m.sp] = (c[m.sp] || 0) + 1;
+    if (SP[m.sp].baby) { const q = [m.sp], seen = new Set(); while (q.length) { const n = q.shift(); for (const e of SP[n].evos || []) { if (seen.has(e.to)) continue; seen.add(e.to); if (SP[e.to].legend) c[e.to] = (c[e.to] || 0) + 1; q.push(e.to); } } }
   }
-  return set;
+  return c;
+}
+const legendHeld = sp => legendCounts()[sp] || 0;
+function ownedLegends() {
+  const c = legendCounts();
+  return new Set(Object.keys(c).filter(sp => c[sp] >= legendCap(sp)));
 }
 // ================= LEAGUE BANLIST (v194) =================
 // Each offseason the trainers of a League (challengers, Gym Leaders, the Elite Four and the Champion) vote on banning

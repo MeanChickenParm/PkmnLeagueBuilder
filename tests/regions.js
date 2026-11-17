@@ -40,7 +40,14 @@ const S = () => g.S, R = g.S.regions, B = g.builtinLines();
 if (R.length !== 10 || R[9].name !== 'Testland League' || !R[9].solo || R[9].posts.leader !== 'Warden' || R[9].nb.join() !== '0,6') fail('the 10th region: ' + JSON.stringify(R[9]).slice(0, 200));
 if (R[2].name !== 'Aqua League' || R[2].nb.join() !== g.builtinRegions()[2].nb.join() || !R[2].legends.includes('Rayquaza') || R[2].ports['Aqua 0'] !== 'railway') fail('the whole replacement: ' + JSON.stringify(R[2]).slice(0, 200));
 if (R[1].name !== 'Johto League' || R[1].towns[0] !== 'Violet' || !R[1].pool || R[1].from !== 'Sinnohish') fail('the pool swap');
-if (g.LEGEND_HOME.Mewtwo !== 9 || R[0].legends.includes('Mewtwo')) fail('Mewtwo did not move to Testland');
+// (0.31.0) Mewtwo stays at home in Kanto too: two places in this world, and a third can't turn up
+if (g.LEGEND_HOMES.Mewtwo.join() !== '0,9' || !R[0].legends.includes('Mewtwo') || g.legendCap('Mewtwo') !== 2 || g.legendCap('Lugia') !== 1) fail('Mewtwo\'s homes: ' + g.LEGEND_HOMES.Mewtwo);
+{ const ts = Object.values(g.S.trainers).filter(t => t.role === 'challenger' && t.team.length).slice(0, 2), mk = () => g.makeMon('Mewtwo', 70);
+  g.inLeague(0, () => { if (!g.greatFree('Mewtwo')) fail('Mewtwo not free with none held');
+    ts[0].team.push(mk()); if (!g.greatFree('Mewtwo') || g.ownedLegends().has('Mewtwo')) fail('the second Mewtwo is not free with one held');
+    ts[1].team.push(mk()); if (g.greatFree('Mewtwo') || !g.ownedLegends().has('Mewtwo')) fail('a third Mewtwo would be free with two held');
+    if (g.legendHeld('Mewtwo') !== 2) fail('two Mewtwo not counted'); });
+  ts.forEach(t => { t.team = t.team.filter(m => m.sp !== 'Mewtwo'); }); }
 g.NEIGHBOURS.forEach((a, i) => a.forEach(x => { if (!g.NEIGHBOURS[x].includes(i)) fail('neighbours not two-way ' + i + '-' + x); }));
 if (!g.SP.Testmon || g.SP.Testmon.homeOnly !== 9 || !g.homeSet(9).has('Testmon') || g.lineBaseOf('Testevo') !== 'Testmon') fail('Testland\'s own Pokémon');
 if (g.wildOk('Testmon', 0) || !g.wildOk('Testmon', 9)) fail('a locked line found away from home');
@@ -53,7 +60,7 @@ g.inLeague(0, () => { if (g.S.region !== 9 || g.regionMul('Testgod') !== 3) fail
   const hoennOnly = [...B.sets[2]].filter(b => B.sets.every((s, r) => r === 2 || !s.has(b)) && !sets[2].has(b));
   if (hoennOnly.some(b => !g.NEIGHBOURS[2].some(r => sets[r].has(b)))) fail('a Hoenn line not re-homed to a neighbour'); }
 const regs = () => g.eachLeague(() => S().region);
-let maxL = 0, locked = 0;
+let maxL = 0, locked = 0; const twice = new Set();
 for (let w = 0; w < YEARS * g.YEAR_WEEKS; w++) {
   g.simWeek();
   const rs = regs(), me = g.ME(); maxL = Math.max(maxL, rs.length);
@@ -62,12 +69,14 @@ for (let w = 0; w < YEARS * g.YEAR_WEEKS; w++) {
   g.eachLeague(i => { if (S().region === 9) return;
     for (const id of S().challengers) for (const m of g.T(id).team) { const b = g.lineBaseOf(m.sp); if (b && g.homeOnly(b) != null) { locked++; fail('a challenger away from Testland holds ' + m.sp); } }
     if (g.ranchOn() && g.laneSet && [...g.laneSet()].some(b => g.homeOnly(b) != null)) fail('a locked line on a lane'); });
+  { const c = {}; for (const t of Object.values(S().trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) if (g.SP[m.sp].legend && !g.SP[m.sp].baby) c[m.sp] = (c[m.sp] || 0) + 1;
+    for (const [sp, n] of Object.entries(c)) { if (n > g.legendCap(sp)) fail(n + ' of ' + sp + ' held'); if (n > 1) twice.add(sp); } }
   if (fails.length > 5) break;
 }
 // the world reloads
 { const copy = JSON.parse(JSON.stringify(S())); g.S = copy; g.applyDex(copy.cfg && copy.cfg.dex); g.applyCfg(); g.simYear();
-  if (g.S.regions.length !== 10 || g.LEGEND_HOME.Mewtwo !== 9 || !g.homeSet(9).has('Testmon')) fail('the reloaded world lost its regions'); }
+  if (g.S.regions.length !== 10 || !g.LEGEND_HOMES.Mewtwo.includes(9) || !g.homeSet(9).has('Testmon')) fail('the reloaded world lost its regions'); }
 const caught = g.eachLeague(() => S().challengers.filter(id => g.T(id).team.some(m => g.lineBaseOf(m.sp) === 'Testmon')).length);
-console.log('regions', R.map(r => g.regionName(R.indexOf(r))).join('/'), 'species', g.regionLines().size.join('/'), 'Leagues', maxL, 'at', regs().join(','), 'Testmon held by challengers', caught.join('/'));
+console.log('regions', R.map(r => g.regionName(R.indexOf(r))).join('/'), 'species', g.regionLines().size.join('/'), 'Leagues', maxL, 'at', regs().join(','), 'Testmon held by challengers', caught.join('/'), 'legendaries held twice at once', [...twice].join(', ') || 'none');
 if (fails.length) { console.log(fails.slice(0, 10).map(f => 'FAIL ' + f).join('\n')); process.exit(1); }
 console.log('ok');
