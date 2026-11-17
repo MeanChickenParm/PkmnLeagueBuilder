@@ -1568,23 +1568,24 @@ function weakestSeat(skip) {
   return seats.sort((a, b) => score(a) - score(b))[0].k;
 }
 function champChallenger() {
-  if (founderChamp(T(S.champion))) return null; // (0.15.0) nobody challenges a founder Champion in their window
+  if (founderChamp(T(S.champion)) || champGrace()) return null; // (0.15.0) nobody challenges a founder Champion in their window
   return S.e4.map(T).filter(t => t && t.role === 'e4' && canChallenge(t) && wantsUp(t) && !(t.e4Poor > 0) && seatYears(t) >= CHAL_SEAT_YEARS)
     .sort((a, b) => ovr(b) - ovr(a))[0] || null;
 }
-function seatChallenger(skip) {
+function seatChallenger(skip, not) {
   const slot = weakestSeat(skip); if (slot == null) return null;
   const inc = T(S.e4[slot]), cands = [];
   S.gyms.forEach((g, i) => { const t = T(g.leader); if (t && !g.acting && canChallenge(t) && wantsUp(t) && (t.wallStreak || 0) >= 1) cands.push({ t, from: 'leader', gym: i }); });
   for (const id of new Set(yearLeague().entries.map(e => e.id))) {
     const t = T(id);
-    if (t && t.role === 'challenger' && !t.spon && S.challengers.includes(id) && canChallenge(t) && !t.hired && !t.hireDue && !t.leaving && inc.age >= CHAL_OLD) cands.push({ t, from: 'circuit', gym: null });
+    if (t && t.id !== not && t.role === 'challenger' && !t.spon && S.challengers.includes(id) && canChallenge(t) && !t.hired && !t.hireDue && !t.leaving && inc.age >= CHAL_OLD) cands.push({ t, from: 'circuit', gym: null });
   }
   const c = cands.sort((a, b) => ovr(b.t) - ovr(a.t))[0];
   return c ? { k: 'e4', cand: c.t.id, inc: inc.id, slot, from: c.from, gym: c.gym } : null;
 }
 function chalText(x) {
   const c = T(x.cand), i = T(x.inc);
+  if (x.from === 'claim') return `${dn(c)}, who beat Champion ${i.name} for the title this year, claims the Champion's seat.`;
   if (x.k === 'champ') return `${dn(c)} (Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}) challenges Champion ${i.name} for the Champion's seat.`;
   return `${dn(c)} (${x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'}) challenges ${dn(i)} for Elite Four seat #${x.slot + 1}.`;
 }
@@ -1592,6 +1593,7 @@ function chalText(x) {
 function chalValid(x) {
   const c = T(x.cand), i = T(x.inc);
   if (!c || !i || i.acting || c.acting) return false;
+  if (x.from === 'claim') return S.champion === x.inc && claimFree(c);
   if (x.from === 'rival') return S.champion === x.inc && x.lg < nLeagues() && inLeague(x.lg, () => S.e4[x.slot] === x.cand);
   if (x.k === 'champ') return S.champion === x.inc && S.e4[x.slot] === x.cand;
   if (S.e4[x.slot] !== x.inc) return false;
@@ -1601,24 +1603,88 @@ function chalValid(x) {
 // at New Year (leagueNewYear, after the year's history entry): find this year's challenges; rival Leagues fight them at once
 function seatChallenges(changes) {
   if (fixedStaff() || S.founding) return;
-  const out = [], c = champChallenger();
-  if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
+  const out = [], cl = claimant(), c = cl ? null : champChallenger();
+  // (0.22.0) a title claim takes the year's one challenge for the Champion's seat
+  if (cl) out.push({ k: 'champ', cand: cl.id, inc: S.champion, slot: null, from: 'claim', gym: null });
+  else if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
   else { const r = rivalChampChallenger(); if (r) out.push(r); }
-  const s = seatChallenger(c ? S.e4.indexOf(c.id) : null);
+  const s = seatChallenger(c ? S.e4.indexOf(c.id) : null, cl ? cl.id : null);
   if (s) out.push(s);
   for (const x of out) { x.season = S.season; T(x.cand).chalAt = S.season; }
   if (playerLeague()) {
     for (const x of out) {
-      x.due = S.turn + CHAL_ANSWER; (S.chalPending = S.chalPending || []).push(x);
-      const msg = `${chalText(x)} Approve or refuse it by ${turnDate(x.due)}; unanswered, it goes ahead.`;
+      const claim = x.from === 'claim';
+      x.due = S.turn + (claim ? CLAIM_ANSWER : CHAL_ANSWER); (S.chalPending = S.chalPending || []).push(x);
+      if (claim) T(x.cand).claimOn = x.due;
+      const msg = claim ? `${chalText(x)} Allow the battle, turn the claim down, or offer them a post by ${turnDate(x.due)}; unanswered, the claim lapses and they leave unhappy.`
+        : `${chalText(x)} Approve or refuse it by ${turnDate(x.due)}; unanswered, it goes ahead.`;
       news(msg, 'move', x.cand); changes.push(msg); stopFor('challenge', msg);
     }
-  } else for (const x of out) changes.push(runChallenge(x));
+  } else for (const x of out) changes.push(x.from === 'claim' && rand() >= (CLAIM_AI_YES[S.fin && S.fin.aim] || 0.5) ? claimRefused(x, 'refused') : runChallenge(x));
+}
+// ---- title claims (0.22.0) ----
+// A challenger who beat the Champion for the title this year and wants a seat (most would rather keep travelling)
+// can claim the Champion's seat at New Year, but the League decides: in the player's League nothing changes without
+// the player. They can allow the claim battle (the Champion fields their full team with the seat's edge and a little
+// more), turn it down, or offer the claimant a post through the usual hiring (a claimant is glad to take one). A claim
+// turned down, or left unanswered for CLAIM_ANSWER weeks, costs the League CLAIM_PRESTIGE prestige and the claimant
+// leaves unhappy: with another League in the world they go to its circuit, and that League may sponsor them back as a
+// contender. A Champion in their first CLAIM_GRACE calendar years can't be challenged for the seat by anyone. A
+// Champion who loses a claim battle leaves the post: retired if their career is long enough, else back on the circuit
+// of another League (with one League, this one). Rival Leagues allow a claim by aim (CLAIM_AI_YES) and turn it down
+// otherwise. The multi-year sim turns every claim down. All numbers provisional.
+const CLAIM_WANT = 0.3, CLAIM_GRACE = 2, CLAIM_ANSWER = 8, CLAIM_EDGE = 1.05, CLAIM_PRESTIGE = 2, CLAIM_ACCEPT = 0.35;
+const CLAIM_AI_YES = { wall: 0.35, star: 0.7, money: 0.5 };
+const champGrace = () => { const c = T(S.champion); return !c || seatYears(c) < CLAIM_GRACE; };
+const claimOn = t => !!t && t.claimOn != null && S.turn <= t.claimOn;
+// still a challenger on this circuit, free to fight for the seat
+const claimFree = t => !!t && t.role === 'challenger' && S.challengers.includes(t.id) && !t.spon && !t.hired && !t.hireDue && !t.leaving;
+function wantsSeat(t) {
+  let p = CLAIM_WANT;
+  if (t.age < 20) p -= 0.2; else if (t.age >= 30) p += 0.15;
+  if ((t.titleSeasons || []).length >= 2) p += 0.1;
+  if (t.grudge != null) p -= 0.15;
+  return rand() < clamp(p, 0.05, 0.8);
+}
+function claimant() {
+  if (founderChamp(T(S.champion)) || champGrace()) return null;
+  const c = [...new Set(yearLeague().conceded)].map(T).filter(t => claimFree(t) && canChallenge(t) && wantsSeat(t));
+  return c.sort((a, b) => ovr(b) - ovr(a))[0] || null;
+}
+// a claim turned down (why: 'refused', 'unanswered'): prestige lost, and the claimant leaves unhappy
+function claimRefused(x, why) {
+  const c = T(x.cand), me = S.lg || 0; c.claimOn = null;
+  chalRecord(x, { refused: true, unanswered: why === 'unanswered' || undefined });
+  S.prest = Math.max(0, (S.prest || 0) - CLAIM_PRESTIGE);
+  c.grudge = S.season;
+  let away = null;
+  if (claimFree(c) && c.rest != null && nLeagues() > 1) { // one out on a run stays, unhappy, until it ends
+    const to = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== me && !(S.founding && i === ME())));
+    if (to != null) {
+      shiftLeague(c, to); away = to;
+      // the League they joined may send them straight back as its contender
+      if (!inLeague(to, () => playerLeague())) inLeague(to, () => { if (S.fin && S.fin.money > SPON_AIM_SPARE && rand() < CLAIM_SPON) sendContender(c.id, me); });
+    }
+  }
+  const back = c.spon && c.spon.to === me;
+  const msg = `${why === 'unanswered' ? `${c.name}'s claim to the Champion's seat lapsed unanswered` : `The ${S.lgName} turned down ${c.name}'s claim to the Champion's seat`}. ${c.name} left unhappy${away != null ? ` for the ${leagueName(away)}${back ? ', who signed them as a contender against the ' + S.lgName : ''}` : ''}.`;
+  news(msg, 'move', c.id);
+  return msg;
+}
+const CLAIM_SPON = 0.5;
+// the claimant took a post the player offered (or anything else ended the claim): no cost
+function claimEnded(x) {
+  const c = T(x.cand); if (c) c.claimOn = null;
+  const took = c && (c.hired || c.hireDue || STAFF_ROLES.includes(c.role));
+  chalRecord(x, took ? { offered: true } : { lapsed: true });
+  const msg = took ? `${c.name} took the post you offered instead of claiming the Champion's seat.` : `${c ? c.name : 'A'}'s claim to the Champion's seat lapsed: the Champion or the claimant moved on first.`;
+  news(msg, 'move', x.cand);
+  return msg;
 }
 // (0.15.0) an Elite Four member of another League who wants promotion and is restless, with two years in the seat and
 // not the worst of their four, may challenge this League's Champion (the strongest goes); at most one a League a year
 function rivalChampChallenger() {
-  if (nLeagues() < 2 || founderChamp(T(S.champion))) return null;
+  if (nLeagues() < 2 || founderChamp(T(S.champion)) || champGrace()) return null;
   const me = S.lg || 0; let best = null;
   for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => {
     for (const t of S.e4.map(T)) if (t && t.role === 'e4' && canChallenge(t) && wantsUp(t) && restless(t) && !(t.e4Poor > 0) && seatYears(t) >= CHAL_SEAT_YEARS && (!best || ovr(t) > ovr(T(best.cand)))) best = { k: 'champ', cand: t.id, inc: null, slot: S.e4.indexOf(t.id), from: 'rival', lg: j, gym: null };
@@ -1649,16 +1715,24 @@ function runChallenge(x) {
   if (x.from === 'leader') {
     cand.team = cand.team.slice();
     if (cand.team.length < E4_SIZE) staffPicks(cand, lvl, E4_SIZE - cand.team.length, { lines: cand.team.map(m => LINE[m.sp]), team: cand.team, mixed: !cand.specialty }).forEach(m => cand.team.push(stamp(m, 'assigned')));
-  } else if (x.from === 'circuit') setTeamLevel(cand, lvl);
+  } else if (x.from === 'circuit' || x.from === 'claim') setTeamLevel(cand, lvl);
+  const claim = x.from === 'claim'; if (claim) cand.claimOn = null;
   const seat = champ ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`;
-  const res = setBattle(cand, inc, lvl, 'league', `Seat challenge · ${champ ? 'Champion' : `Elite Four #${x.slot + 1}`}`);
+  const res = setBattle(cand, inc, lvl, 'league', `${claim ? 'Title claim' : 'Seat challenge'} · ${champ ? 'Champion' : `Elite Four #${x.slot + 1}`}`, undefined, claim ? homeEdge('seat') * CLAIM_EDGE : undefined);
   res.at = S.turn; res.cand = cand.id; res.when = { season: S.season, week: S.week };
   (S.seatLogs = S.seatLogs || []).push(res); if (S.seatLogs.length > SEAT_LOGS) S.seatLogs.shift();
   const won = res.winner === 0;
   chalRecord(x, { won, at: S.turn });
   let text;
   if (won) {
-    if (x.from === 'rival') {
+    if (claim) {
+      S.champion = null; inc.role = 'exchamp'; inc.letGoAt = S.turn; inc.deposedBy = cand.id; // (as when a Champion retires)
+      retireOrReturn(inc, `lost the Champion's seat to ${cand.name}`); const fate = inc.role === 'retired' ? 'retired' : 'returned';
+      let away = null;
+      if (fate === 'returned' && nLeagues() > 1) { away = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()))); if (away != null) shiftLeague(inc, away); }
+      installElite(cand, 'champion');
+      text = `${cand.name} won the claim battle against ${inc.name} and is the new Champion of the ${S.lgName}. ${inc.name} ${fate === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit'}.`;
+    } else if (x.from === 'rival') {
       // (0.15.0) across Leagues the two trade places, with no fees either way
       const home = S.lg || 0, quiet = L => { if (S.fin) S.fin.quiet = L; };
       inLeague(x.lg, () => { S.e4[x.slot] = null; });
@@ -1682,9 +1756,9 @@ function runChallenge(x) {
     }
   } else {
     if (x.from === 'leader') cand.team = keep;
-    else if (x.from === 'circuit') setTeamLevel(cand, challengerLevel(cand)); // back to the level of their next battle
+    else if (x.from === 'circuit' || claim) setTeamLevel(cand, challengerLevel(cand)); // back to the level of their next battle
     chalRestless(cand);
-    text = `${champ ? 'Champion ' : ''}${inc.name} defended ${seat} against ${cand.name} in a seat challenge${x.from !== 'circuit' && wantsUp(cand) ? `; ${cand.name} is restless` : ''}.`;
+    text = `${champ ? 'Champion ' : ''}${inc.name} defended ${seat} against ${cand.name} in a ${claim ? 'claim battle' : 'seat challenge'}${x.from !== 'circuit' && !claim && wantsUp(cand) ? `; ${cand.name} is restless` : ''}.`;
   }
   news(text, champ ? 'title' : 'move', won ? cand.id : inc.id);
   return text;
@@ -1696,6 +1770,7 @@ function answerChallenge(i, yes) {
     S.chalPending.splice(i, 1);
     let msg;
     if (yes) msg = runChallenge(x);
+    else if (x.from === 'claim') msg = claimRefused(x, 'refused');
     else {
       chalRecord(x, { refused: true }); const c = T(x.cand); chalRestless(c);
       msg = `You refused ${c.name}'s challenge for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`}${x.from !== 'circuit' && wantsUp(c) ? `; ${c.name} is restless` : ''}.`;
@@ -1706,17 +1781,22 @@ function answerChallenge(i, yes) {
   });
 }
 // every week: a challenge the player hasn't answered in CHAL_ANSWER weeks goes ahead
+// (0.22.0) a title claim is never fought without the player: unanswered, it lapses; one whose claimant took a post (or
+// whose Champion moved on) ends quietly
 function challengeWeek() {
-  if (!(S.chalPending || []).some(x => S.turn >= x.due)) return;
+  const ended = x => x.from === 'claim' && inLeague(ME(), () => !chalValid(x));
+  if (!(S.chalPending || []).some(x => S.turn >= x.due || ended(x))) return;
   inLeague(ME(), () => {
-    for (const x of S.chalPending.filter(x => S.turn >= x.due)) {
+    for (const x of S.chalPending.filter(x => S.turn >= x.due || ended(x))) {
       S.chalPending.splice(S.chalPending.indexOf(x), 1);
-      const msg = runChallenge(x); noteChange(msg); stopFor('challenge', msg);
+      const msg = x.from !== 'claim' ? runChallenge(x) : !chalValid(x) ? claimEnded(x) : claimRefused(x, 'unanswered');
+      noteChange(msg); stopFor('challenge', msg);
     }
   });
 }
-// the multi-year sim: nobody is there to answer, so every waiting challenge goes ahead
-function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, true); }
+// the multi-year sim: nobody is there to answer, so every waiting challenge goes ahead, except title claims, which
+// are turned down (no roster move without the player)
+function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); }
 
 
 // The meta: the five species that performed best this season on the circuit. Only challengers' Pokémon count (Gym
@@ -2285,12 +2365,14 @@ const canOffer = t => t.refusedAt == null || S.turn - t.refusedAt >= REFUSED_WEE
 function acceptsOffer(t, post) {
   let p = 0.75;
   if (t.age < 20) p -= 0.15; else if (t.age >= 35) p += 0.15;
-  if ((t.titleSeasons || []).length) p -= 0.25;
+  const cl = claimOn(t); // (0.22.0) a claimant waiting on the League's answer is glad of a post
+  if ((t.titleSeasons || []).length && !cl) p -= 0.25;
+  if (cl) p += CLAIM_ACCEPT;
   if (t.rest == null) { p -= 0.1; if (t.badges.length >= 6) p -= 0.25; }
   if (post === 'gymtrainer') p -= 0.1; else if (post === 'e4') p += 0.1;
   if (t.grudge != null) p -= 0.3;
   // (0.14.0, the balance retune) a challenger doing well against the League wants the title, not a post
-  if (impressed(t)) p -= IMPRESS_REFUSE;
+  if (impressed(t) && !cl) p -= IMPRESS_REFUSE;
   // (0.13.0) the scouting office and a bid over the asking pay (0.16.0: in every League, rival Leagues bid too)
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it

@@ -175,6 +175,24 @@ async def run(path):
                   if (!/Seat challenges/.test(tx) || !/refused by you/.test(tx)) log.push('FAIL the year report has no seat challenges');
                   if (!click('[data-act=watchseat]') || !document.querySelector('.sheet-battle')) log.push('FAIL no seat challenge to watch'); click('[data-act=bskip]'); click('[data-act=close]');
                   log.push('seat challenge: ' + (rec && rec.won ? 'challenger won' : 'defended') + ', one refused'); repYear = null; go('circuit'); }
+                // 0.22.0: title claims. Allow one (fought at once; a won claim seats the claimant and the old Champion
+                // leaves the post), turn one down (recorded, prestige lost), and check the claim's wording and the tag
+                if (S.season === 3 && seen.chal && !seen.claim) { seen.claim = 1; viewLg = 0; clearVac();
+                  const h = S.history[S.history.length - 1], free = S.challengers.map(T).filter(t => t && t.rest != null && !t.spon && !t.hired && !t.hireDue && !t.leaving);
+                  if (free.length < 2) log.push('FAIL no resting challengers to claim');
+                  else { const [a, b] = free, champ0 = S.champion, n0 = (h.chal || []).length;
+                    S.chalPending = [{ k: 'champ', cand: a.id, inc: champ0, slot: null, from: 'claim', gym: null, season: h.season, due: S.turn + 8 }]; a.claimOn = S.turn + 8;
+                    go('staff'); const tx = document.querySelector('#main').textContent;
+                    if (!/claims/.test(tx) || !/Allow the battle/.test(tx) || !/Turn it down/.test(tx)) log.push('FAIL a title claim is not in the staff notices');
+                    click('[data-act=chalyes][data-v="0"]'); const rec = (h.chal || [])[n0];
+                    if (!rec || rec.from !== 'claim' || rec.won == null) log.push('FAIL an allowed claim was not fought');
+                    else if (rec.won ? S.champion !== a.id || T(champ0).role === 'champion' : S.champion !== champ0) log.push('FAIL the claim result did not move the right people');
+                    const p0 = S.prest || 0, inc = S.champion;
+                    S.chalPending = [{ k: 'champ', cand: b.id, inc, slot: null, from: 'claim', gym: null, season: h.season, due: S.turn + 8 }]; b.claimOn = S.turn + 8;
+                    go('staff'); click('[data-act=chalno][data-v="0"]'); const r2 = (h.chal || [])[n0 + 1];
+                    if ((S.chalPending || []).length || !r2 || !r2.refused || S.champion !== inc || T(b.id).grudge == null || (p0 >= 2 && (S.prest || 0) > p0 - 2 + 0.01)) log.push('FAIL turning down a claim');
+                    repYear = h.season; go('recap'); if (!/title claim/.test(document.querySelector('#main').textContent) || !/turned down/.test(document.querySelector('#main').textContent)) log.push('FAIL claims not in the year report');
+                    log.push('title claim: ' + (rec && rec.won ? 'claimant won' : 'defended') + ', one turned down'); repYear = null; go('circuit'); } }
                 if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
                 if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];
                   if (!old) log.push('FAIL no year links on the History page'); else { const yv = old.dataset.v; old.click(); const tx = document.querySelector('#main').textContent;

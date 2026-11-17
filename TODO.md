@@ -163,3 +163,8 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Hall of Fame title battles** can be watched only while the League keeps them (this year's and last year's last few title battles).
 - **The cross-League stats page** (career honours for trainers and post holders) waits (design doc 6.2).
 
+## From 0.22.0 (title claims)
+- The title-claim numbers are provisional: `CLAIM_WANT` 0.3 (and its age, title and grudge steps), `CLAIM_GRACE` 2 years, `CLAIM_ANSWER` 8 weeks, `CLAIM_EDGE` 1.05, `CLAIM_PRESTIGE` 2, `CLAIM_ACCEPT` 0.35, `CLAIM_SPON` 0.5, `CLAIM_AI_YES` wall 0.35 / star 0.7 / money 0.5. Seen in the sims: about 6 to 12 claims in 12 to 20 years across a world of 1 to 6 Leagues.
+- Staff seat challenges (Elite Four for the Champion, Gym Leaders and deep runs for an Elite Four seat) still go ahead when unanswered; only title claims wait for the player. Ask the owner whether they should too.
+- Intermittent sim failure, not traced: `two of <legendary> in the world` / `(Paradox) held` twice, seen in 3 of about 10 god-mode growth sims (`3 1 12 1`, `1 1 20 1`) during the 0.22.0 chat, none in 5 runs of 0.21.0 and not in a probe without the sim's god edits; every test passed on the final code. Find which path puts the same legendary on two trainers (watch claims, deposed Champions and unretired trainers first).
+

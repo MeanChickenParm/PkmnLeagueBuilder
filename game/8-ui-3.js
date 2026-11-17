@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 22, ver: '0.22.0', date: 'November 16, 2026', time: '7:45 PM ET', title: 'Title claims', items: [
+    "Title claims. Beating the Champion still wins the title, not the seat, but at New Year the strongest of the year's title winners who wants a seat can claim the Champion's seat. Most would rather keep travelling, so most titles stay just titles. A claim takes the place of the year's other challenge for the Champion's seat.",
+    "In your League a claim never goes ahead without you. Allow the claim battle (one battle at the Champion's level, your Champion with their full team and a little more than the seat's usual edge), turn it down, or offer the claimant a post from the hiring pages: a claimant is glad to take one (tagged Claimant), and the claim ends there. A claim you turn down, or leave unanswered for eight weeks, costs your League 2 prestige, and the claimant leaves unhappy, often for another League, which may sign them as a contender against you.",
+    "A Champion who loses a claim battle leaves the post: they retire after a long career, or head for another League's circuit, from where they can challenge you again.",
+    "A new Champion can't be challenged for the seat, by a claim or by anyone else, in their first two calendar years.",
+    "Rival Leagues allow or turn down claims by their aim; the multi-year sim turns every claim down for you. The year report lists claims among the seat challenges, and the glossary has a Title claims entry.",
+  ] },
   { id: 21, ver: '0.21.0', date: 'November 16, 2026', time: '7:30 PM ET', title: 'Three Leagues, the progress board and the Hall of Fame on winning', items: [
     "The world starts with three Leagues: yours in the region you choose and two rivals, each in a different region, founded on their own. A new setup option, Starting Leagues (1 to 3), keeps the one-League start. The rivals count toward the prestige a founder needs, so the next League to open needs 50, then 60 and 70.",
     "The progress board, a page of its own (League menu, or Board in the header). One row per gym, Elite Four seat and the Champion: who is there now, how many it let through and walled this year, and the share of tries it held. Open a row for the line, who is there and on which try, who got through lately with the core of their team, who was walled and by whom, and the types beating it this year. A threats strip lists challengers with six badges or more, contenders and anyone who impressed. The League switcher shows any League's board.",
