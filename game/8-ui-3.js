@@ -1,5 +1,13 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 25, ver: '0.25.0', date: 'November 16, 2026', time: '11:59 PM ET', title: 'The ranch', items: [
+    "Every League now has a ranch: its own pool of Pokémon. Your Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch, and nothing comes free any more, so a new League starts thin and its teams grow as it catches and buys. Gym trainers keep their own teams.",
+    "A new Ranch page (League menu) shows who fields what, the whole pool, catching trips and the market. Each Pokémon has a grade, 1 to 5 stars from its IVs, and takes the form its line has at the level of the post that fields it, one post at a time.",
+    "Staff swap one Pokémon a month for a better one from the ranch, by their steer and as well as their Strategy lets them. A swap is an exchange: what they drop goes into the ranch (theirs to take back while they stay), and a ranch Pokémon they hold leaves with them if they go. Reserve a Pokémon for a post, or lock it away.",
+    "Pokémon come in from catching trips (a targeted trip after one line, or a cheaper area trip; your best senior member's Scouting and the scouting office set the odds and grades), from the market (a few each week, plus other Leagues' sales) and from what staff drop. Sell back for a third of the value, release, or list for other Leagues.",
+    "A new League starts with a small stock of low-grade commons, about enough for every post to field a full team. Each Pokémon costs upkeep a week by grade, and the ranch holds 60 until you build the Ranch at your seat (no slot, five levels). If nothing fits a post, weak stopgaps stand in and the page warns you.",
+    "Every species can be caught anywhere for now; regional encounters, migration, ports and the safari come next. Rival Leagues run their ranches by their aim. All the numbers are provisional.",
+  ] },
   { id: 24, ver: '0.24.0', date: 'November 16, 2026', time: '11:45 PM ET', title: 'Growth', items: [
     "Everyone grows on one curve, staff and challengers alike. Trainers improve on each birthday, fastest while young: a teenager is typically 6 to 10 OVR better within three years, a young adult 4 to 6. They peak in their late 20s, hold, and decline slowly from their mid 30s, faster with age. This replaces the old potential ceiling.",
     "Late starters grow too. Growth counts from the start of a career, not age, so someone who comes to the circuit or a post at 30 still improves for four years, and only declines six years in (by 40 at the latest).",
@@ -376,7 +384,7 @@ function render() {
   if (S.founding) useLeague(ME());
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders'].includes(view)) useLeague(ME());
+  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders', 'ranch'].includes(view)) useLeague(ME());
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -395,6 +403,7 @@ function render() {
   if (view === 'table') v = viewTable();
   if (view === 'board') v = viewBoard();
   if (view === 'cities') v = viewCities();
+  if (view === 'ranch') v = viewRanch();
   if (view === 'contenders') v = viewContenders();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
@@ -440,7 +449,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records', 'board'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -566,6 +575,12 @@ document.addEventListener('click', ev => {
     case 'foundclear': foundPlace(el.dataset.k, +el.dataset.v, null); foundSel = { post: el.dataset.k, slot: +el.dataset.v }; save(); render(); break;
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
+    case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
+    case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
+    case 'ranchsell': case 'ranchrel': { const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.')); break; }
+    case 'ranchlock': { const w = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e ? lockMon(e.uid, !e.lock) : 'Not in the ranch.'; }); save(); render(); if (w) toast(w); break; }
+    case 'ranchlist': case 'ranchunlist': { const w = inLeague(ME(), () => (a === 'ranchlist' ? listMon : unlistMon)(+el.dataset.id)); save(); render(); toast(w || (a === 'ranchlist' ? 'Listed for other Leagues.' : 'Withdrawn.')); break; }
     case 'sendcon': { const r = inLeague(ME(), () => sendContender(+el.dataset.id, sendTo)); save(); render(); toast(r === 'ok' ? `${T(+el.dataset.id).name} is on the way.` : r === 'later' ? `${T(+el.dataset.id).name} signed, and goes after their run.` : r === 'refused' ? `${T(+el.dataset.id).name} turned the contract down.` : r); break; }
     case 'recallcon': { const ok = recallContender(+el.dataset.id); save(); render(); toast(ok ? `${T(+el.dataset.id).name} is coming home.` : 'Could not recall them.'); break; }
     case 'renewcon': { const ok = renewContender(+el.dataset.id); save(); render(); toast(ok ? `Renewed for ${SPON_YEARS} more years.` : 'Could not renew.'); break; }
@@ -678,6 +693,9 @@ document.addEventListener('input', e => {
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
+  if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('ranchspsel')) { ranchSp = e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }

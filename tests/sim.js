@@ -23,6 +23,7 @@ const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, 
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
 const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
+const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0 }; // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -57,6 +58,24 @@ function check(tag) {
     for (const [id, gs] of Object.entries(m)) { if (!s.trainers[id]) bad('gym memory for a missing trainer');
       for (const [k, x] of Object.entries(gs)) { if (!(+k >= 0 && +k < 8) || !x.ty || !x.ty.length || x.ty.length > 4 || !Array.isArray(x.sps) || typeof x.line !== 'string') bad('a bad gym memory'); MEM.n++; } }
     for (const gy of g.S.gyms) { const r = gy.recent; if (r && (r.thru.length > 8 || r.wall.length > 8)) bad('a gym keeps too many recent names'); if ((gy.out || 0) < 0) bad('negative walled count'); } });
+  // (0.25.0) the ranch: every League with books has one; entries well-formed; each held by at most one senior team of
+  // its League (gym trainers never), stopgaps only on senior teams, trips within the limit, listings not fielded
+  g.eachLeague(i => { const z = g.S, R = z.ranch;
+    if (!!R !== !!z.fin) bad('League ' + i + ' ranch without books or books without ranch');
+    if (!R) return;
+    g.ranchSync();
+    const ids = new Set();
+    for (const e of R.mons) { if (ids.has(e.uid)) bad('a ranch entry twice'); ids.add(e.uid);
+      if (!(e.g >= 1 && e.g <= 5) || !g.ranchable(e.b) || !g.SP[e.sp] || g.LINE[e.sp] !== g.LINE[e.b] || !e.iv) bad('a bad ranch entry ' + JSON.stringify(e));
+      if (e.res != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(e.res)) bad('a bad reservation ' + e.res);
+      if (e.sale && e.at != null) bad('a listed ranch Pokémon is being fielded');
+      if (e.at != null) { const t = g.T(e.at); if (!t || !g.seniorIds().includes(t.id) || !t.team.some(m => m.rid === e.uid)) bad('a ranch entry held by someone not fielding it'); } }
+    if (R.mons.length > g.RANCH_CAP[g.RANCH_CAP.length - 1]) bad('a ranch over every capacity');
+    if (R.trips.length > g.TRIP_MAX + 3) bad('too many trips');
+    const seen = new Set(); let stops = 0;
+    for (const id of g.seniorIds()) for (const m of g.T(id).team) { if (m.rid != null) { if (seen.has(m.rid)) bad('one ranch Pokémon on two teams'); seen.add(m.rid); if (!ids.has(m.rid)) bad('a ranch Pokémon with no entry'); } if (m.stop) stops++; }
+    RAN.stopMax = Math.max(RAN.stopMax, stops);
+    for (const gy of z.gyms) for (const id of gy.trainers || []) { const t = g.T(id); if (t && t.role === 'gymtrainer' && t.team.some(m => m.rid != null || m.stop)) bad('a gym trainer fields a ranch Pokémon or stopgap'); } });
   if (s.phase !== 'season') bad('unknown phase ' + s.phase);
   if (!(s.week >= 0 && s.week < g.YEAR_WEEKS)) bad('week out of range ' + s.week);
   if (s.turn !== (s.season - 1) * g.YEAR_WEEKS + s.week) bad('turn ' + s.turn + ' does not match year ' + s.season + ' week ' + s.week);
@@ -229,6 +248,20 @@ for (let i = 0; i < N; i++) {
         if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
+    // (0.25.0) the ranch: trips, the market, other Leagues' sales, selling, releasing, locks, reserves and listings
+    if (HAND && Math.random() < 0.08) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const r = Math.random(), m0 = z.fin.money;
+      if (r < 0.15) { const b = rnd(g.ranchSpecies()), p = g.tripPlan(b), w = g.startTrip('target', b); if (!w) { RAN.trips++; if (z.fin.money !== m0 - p.cost) fail.push('trip cost wrong'); } else if (z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('trip refused: ' + w); }
+      else if (r < 0.25) { if (!g.startTrip('area')) { RAN.area++; if (z.fin.money !== m0 - g.AREA_COST) fail.push('area trip cost wrong'); } }
+      else if (r < 0.45) { const x = rnd(z.ranch.shop); if (x) { const n0 = z.ranch.mons.length, w = g.buyShop(x.uid); if (!w) { RAN.bought++; if (z.fin.money !== m0 - x.price || z.ranch.mons.length !== n0 + 1) fail.push('market purchase wrong'); } else if (g.ranchRoom() > 0 && m0 >= x.price) fail.push('market refused: ' + w); } }
+      else if (r < 0.55) { const L = g.listings(g.ME()), x = rnd(L); if (x) { const pr = x.e.sale.price, sm = g.inLeague(x.lg, () => g.S.fin.money), w = g.buyListing(x.lg, x.e.uid);
+        if (!w) { RAN.lbought++; if (z.fin.money !== m0 - pr || g.inLeague(x.lg, () => g.S.fin.money) !== sm + Math.round(pr * g.SALE_SHARE)) fail.push('League sale money wrong'); if (g.inLeague(x.lg, () => g.S.ranch.mons.some(e => e.uid === x.e.uid))) fail.push('a sold Pokémon stayed with the seller'); } } }
+      else { g.ranchSync(); const free = z.ranch.mons.filter(e => e.at == null), e = rnd(z.ranch.mons), q = Math.random();
+        if (q < 0.2 && free.length) { const f = rnd(free); if (f.sale) g.unlistMon(f.uid); const v = Math.round(g.entryValue(f) * g.SELL_BACK), mm = z.fin.money; if (!g.sellMon(f.uid)) { RAN.sold++; if (z.fin.money !== mm + v) fail.push('sell-back value wrong'); } }
+        else if (q < 0.35 && free.length) { const f = rnd(free); if (f.sale) g.unlistMon(f.uid); if (!g.sellMon(f.uid, true)) RAN.released++; if (z.fin.money !== m0) fail.push('release cost money'); }
+        else if (q < 0.55 && e) { if (!g.lockMon(e.uid, !e.lock)) RAN.locked++; }
+        else if (q < 0.8 && e) { if (!g.reserveMon(e.uid, rnd([null, 'champion', 'e4:1', 'gym:3', 'gym:6']))) RAN.reserved++; if (!g.reserveMon(e.uid, 'nowhere')) fail.push('a reservation for no post'); }
+        else if (free.length && g.nLeagues() > 1) { const f = rnd(free); if (f.sale) { if (!g.unlistMon(f.uid)) RAN.unlisted++; } else if (!g.listMon(f.uid)) RAN.listed++; } }
+      if (Math.random() < 0.1) { const ck = g.buildCheck('seat', 'ranch'); if (!ck.why && z.fin.money >= ck.cost) { const c0 = g.ranchCap(); if (!g.build('seat', 'ranch')) { RAN.built++; if (g.ranchCap() <= c0) fail.push('the Ranch did not add room'); } } } });
     // money and cities (0.13.0): build, ban, give raises and move gyms now and then
     if (HAND && S().season >= 2 && Math.random() < 0.05) g.inLeague(g.ME(), () => { const z = S(), r = Math.random();
       // (0.20.0) a Sanctuary where a gym city is a legendary site; never at the seat or a city that isn't one
@@ -356,6 +389,8 @@ console.log('world', 'founders', Object.values(S().trainers).filter(t => t.found
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
+console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
+  return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'famous at founding', PG.famous, 'now: prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'Champion OVR', g.eachLeague(() => g.ovr(g.T(S().champion))).join('/'), 'senior OVR', g.eachLeague(() => { const ids = [S().champion, ...S().e4, ...S().gyms.map(x => x.leader)].filter(x => x != null); return Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length); }).join('/'));

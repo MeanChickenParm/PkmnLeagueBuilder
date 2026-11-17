@@ -50,7 +50,7 @@ async def run(path):
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
           if (nLeagues() !== 3 || new Set(eachLeague(() => S.region)).size !== 3) log.push('FAIL the world did not start with three Leagues in three regions');
-          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities'];
+          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -163,6 +163,25 @@ async def run(path):
                     if (bn) { const sp = bn.dataset.sp; bn.click(); if (!inLeague(0, () => paidBans().some(x => x.sp === sp))) log.push('FAIL paying for a ban'); else log.push('banned ' + sp); } else log.push('nothing to ban yet');
                     go('money'); if (!/Ledger/.test(document.querySelector('#main').textContent) || !/Salaries/.test(document.querySelector('#main').textContent)) log.push('FAIL the Money page');
                     if (/undefined|NaN|\\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the Money page shows undefined'); }
+                  // 0.25.0: the ranch. Buy from the market, send an area trip and a targeted trip, reserve, lock and sell one,
+                  // and build the Ranch at the seat
+                  { const keep = S.fin.money; S.fin.money = 300000; go('ranch'); const txt = () => document.querySelector('#main').textContent, R = () => inLeague(0, () => S.ranch);
+                    if (!/Who fields what/.test(txt()) || !/The pool/.test(txt()) || !/The market/.test(txt())) log.push('FAIL the Ranch page');
+                    if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined');
+                    { const b = document.querySelector('[data-act=ranchbuy]'), n0 = R().mons.length, m0 = S.fin.money, x = b && R().shop.find(y => y.uid === +b.dataset.id);
+                      if (!b || !x) log.push('FAIL no market to buy from'); else if (!b.disabled) { b.click(); if (R().mons.length !== n0 + 1 || S.fin.money !== m0 - x.price) log.push('FAIL buying at the market'); else log.push('bought ' + x.b + ' at the market'); } else log.push('the ranch is full'); }
+                    { const b = document.querySelector('[data-act=rancharea]'), t0 = R().trips.length, m0 = S.fin.money; if (!b) log.push('FAIL no area trip button'); else if (!b.disabled) { b.click(); if (R().trips.length !== t0 + 1 || S.fin.money !== m0 - 2500) log.push('FAIL the area trip'); } }
+                    { const sel = document.querySelector('select.ranchtypesel'); if (!sel) log.push('FAIL no type picker'); else { sel.value = 'Water'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+                      const b = document.querySelector('[data-act=ranchtrip]'), t0 = R().trips.length; if (!b) log.push('FAIL no targeted trip button'); else if (!b.disabled) { const sp = b.dataset.b; b.click(); if (R().trips.length !== t0 + 1 || !R().trips.some(x => x.b === sp)) log.push('FAIL the targeted trip'); else log.push('sent a trip for ' + sp); } }
+                    { const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at == null && !x.sale); });
+                      if (!e) log.push('nothing free in the ranch');
+                      else { const sel = document.querySelector('select.ranchressel[data-id="' + e.uid + '"]'); if (!sel) log.push('FAIL no reserve picker'); else { sel.value = 'gym:0'; sel.dispatchEvent(new Event('change', { bubbles: true })); if (e.res !== 'gym:0') log.push('FAIL reserving'); }
+                        const lb = document.querySelector('[data-act=ranchlock][data-id="' + e.uid + '"]'); if (!lb) log.push('FAIL no lock button'); else { lb.click(); if (!e.lock || e.res) log.push('FAIL locking'); }
+                        const sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]'), v = inLeague(0, () => Math.round(entryValue(e) * SELL_BACK)), m0 = S.fin.money;
+                        if (!sb) log.push('FAIL no sell button'); else { sb.click(); if (S.fin.money !== m0 + v || R().mons.includes(e)) log.push('FAIL selling back'); else log.push('sold back ' + e.sp); } } }
+                    go('cities'); const rb = document.querySelector('[data-act=build][data-w=seat][data-k=ranch]'), c0 = inLeague(0, () => ranchCap());
+                    if (!rb) log.push('FAIL no Ranch to build'); else { rb.click(); if (inLeague(0, () => ranchCap()) <= c0) log.push('FAIL building the Ranch'); else log.push('built the Ranch'); }
+                    S.fin.money = keep; go('ranch'); }
                   log.push('managed staff'); go('circuit'); }
                 // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at
                 // once and recorded), refuse one for an Elite Four seat, and find both in the year report with a Watch button

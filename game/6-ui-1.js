@@ -266,7 +266,7 @@ let navOpen = null;
 function navGroups() {
   const league = [['circuit', 'Badge circuit'], ['board', 'Progress board'], ['gyms', 'Gyms & Elite']];
   if (handOn()) league.push(['staff', 'Your staff']);
-  if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities']);
+  if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities'], ['ranch', 'Ranch']);
   if (handOn() && nLeagues() > 1) league.push(['contenders', 'Contenders']);
   if (nLeagues() > 1) league.push(['table', 'League table']);
   if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
