@@ -283,7 +283,7 @@ function tripsWeek() {
   R.trips = R.trips.filter(x => x.due > S.turn);
   const sc = ranchScout(), mine = playerLeague();
   for (const tr of due) {
-    const here = hereLines(), home = homeSet(S.region), abroad = tr.k === 'charter' ? [...regionLines().sets[tr.r]].filter(b => !home || !home.has(b)) : null;
+    const here = hereLines(), home = homeSet(S.region), abroad = tr.k === 'charter' ? [...regionLines().sets[tr.r]].filter(b => (!home || !home.has(b)) && homeOnly(b) == null) : null;
     const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
       : Array.from({ length: 1 + (rand() < 0.5) + (sc >= 65 && rand() < 0.5) }, () => findSpecies(here));
     const got = [], lost = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
@@ -496,7 +496,8 @@ const lineTypesTop = b => { const ms = lineMembers()[b] || [b], top = Math.max(.
 // (0.30.0) the built-in nine's lists, always worked out on the built-in map so they stay the same in every world
 function builtinLines() {
   if (BUILTIN_LINES) return BUILTIN_LINES;
-  const NEIGHBOURS = BUILTIN_NB, nR = BUILTIN_NB.length, mem = lineMembers(), lines = ranchSpecies();
+  // (0.31.0) a custom region's own new Pokémon (regionSp) belong to that region's pool, never to the built-in lists
+  const NEIGHBOURS = BUILTIN_NB, nR = BUILTIN_NB.length, mem = lineMembers(), lines = ranchSpecies().filter(b => !SP[b].regionSp);
   const sets = Array.from({ length: nR }, () => new Set()), size = Array(nR).fill(0), home = {};
   const n = b => (mem[b] || [b]).length;
   const add = (r, b) => { if (!sets[r].has(b)) { sets[r].add(b); size[r] += n(b); } };
@@ -538,8 +539,25 @@ function builtinLines() {
 function regionLines() {
   if (REGION_LINES && REGION_LINES.of === LEAGUE_SETS) return REGION_LINES;
   const B = builtinLines(), mem = lineMembers();
-  const sets = LEAGUE_SETS.map(r => r.pool ? new Set(r.pool.filter(b => mem[b])) : r.base != null && B.sets[r.base] ? B.sets[r.base] : new Set());
+  const sets = LEAGUE_SETS.map(r => r.pool ? new Set(r.pool.filter(b => mem[b] && ranchable(b))) : r.base != null && B.sets[r.base] ? B.sets[r.base] : new Set());
   const size = sets.map(st => [...st].reduce((a, b) => a + (mem[b] || [b]).length, 0));
+  // (0.31.0) orphans: lines no region of this world has (a replaced region's own, a region's new Pokémon left out of
+  // its list) are re-homed by the spread rule: to the replaced region's neighbours (else the region's own neighbours,
+  // else anywhere), the smallest weighed by type
+  const inAny = new Set(); sets.forEach(st => st.forEach(b => inAny.add(b)));
+  const orphans = ranchSpecies().filter(b => !inAny.has(b));
+  if (orphans.length) {
+    for (let r = 0; r < sets.length; r++) sets[r] = new Set(sets[r]);
+    const all = [...Array(sets.length).keys()];
+    const typeCount = (r, ty) => [...sets[r]].filter(x => lineTypesTop(x).some(t => ty.includes(t))).length;
+    for (const b of orphans.sort((a, c) => lineTop(c) - lineTop(a))) {
+      let from = LEAGUE_SETS.findIndex(r => r.rep != null && B.sets[r.rep] && B.sets[r.rep].has(b));
+      if (from < 0 && SP[b].regionSp) from = LEAGUE_SETS.findIndex(r => r.from === SP[b].regionSp);
+      const ty = lineTypesTop(b), cands = from >= 0 && (NEIGHBOURS[from] || []).length ? NEIGHBOURS[from] : all;
+      const r = cands.slice().sort((a, c) => (size[a] + 6 * typeCount(a, ty)) - (size[c] + 6 * typeCount(c, ty)) || a - c)[0];
+      sets[r].add(b); size[r] += (mem[b] || [b]).length;
+    }
+  }
   REGION_LINES = { sets, size, of: LEAGUE_SETS };
   return REGION_LINES;
 }
@@ -555,6 +573,8 @@ const regionName = r => LEAGUE_SETS[r] ? LEAGUE_SETS[r].name.replace(' League', 
 // a region's own lines (null: no list, so everything: National Dex rules, or a region not built yet)
 const homeSet = r => (regionalOn() && r != null && r < nRegionsBuilt()) ? regionLines().sets[r] : null;
 const lineBaseOf = sp => LINE_BASE[LINE[sp]] || null;
+// (0.31.0) a custom region's new line its creator locked to the region: the region's index, else null
+const homeOnly = b => (SP[b] && SP[b].homeOnly != null ? SP[b].homeOnly : null);
 // the regions a line lives in
 const linesRegions = b => { const R = regionLines(); return [...Array(nRegionsBuilt()).keys()].filter(r => R.sets[r].has(b)); };
 
@@ -583,7 +603,7 @@ function migrationWeek() {
     const far = rand() < MIGR_FAR, srcs = far ? [...Array(nRegionsBuilt()).keys()].filter(x => x !== r && !NEIGHBOURS[r].includes(x)) : NEIGHBOURS[r];
     if (!srcs.length) continue;
     const from = pick(srcs), home = regionLines().sets[r];
-    let pool = [...regionLines().sets[from]].filter(b => !home.has(b));
+    let pool = [...regionLines().sets[from]].filter(b => !home.has(b) && homeOnly(b) == null);
     const n = ri(MIGR_LINES[0], MIGR_LINES[1]), lines = [];
     while (lines.length < n && pool.length) {
       const wts = pool.map(b => (SP[b].rare ? 0.3 : 1) * (SP[b].starter ? 0.3 : 1) * (lineTop(b) > 540 ? 0.4 : 1));
@@ -601,6 +621,7 @@ function migrationWeek() {
 function wildOk(sp, r = S.region) {
   const h = homeSet(r); if (!h) return true;
   const b = lineBaseOf(sp); if (!b) return true;
+  const ho = homeOnly(b); if (ho != null) return ho === r; // (0.31.0) a locked custom line
   return h.has(b) || migrantSet(r).has(b);
 }
 // a list kept to what the region has, unless that leaves nothing (then all of it)
@@ -629,7 +650,7 @@ const laneSrc = x => (x.src != null && x.src !== S.region && x.src < nRegionsBui
 function laneSet() {
   const out = new Set(); if (!homeSet(S.region) || lapsed()) return out;
   const home = homeSet(S.region);
-  for (const l of lanesOf()) for (const b of regionLines().sets[l.src]) if (!home.has(b)) out.add(b);
+  for (const l of lanesOf()) for (const b of regionLines().sets[l.src]) if (!home.has(b) && homeOnly(b) == null) out.add(b);
   return out;
 }
 // change lane i's route (gym index) to region src
@@ -655,7 +676,7 @@ function safariWeek() {
   const R = S.ranch, lv = safariLv();
   if (!lv || !homeSet(S.region)) { if (R.safari && !lv) R.safari = null; return; }
   if (R.safari && R.safari.until > S.turn && R.safari.lv === lv) return;
-  const home = homeSet(S.region), pool = ranchSpecies().filter(b => !home.has(b));
+  const home = homeSet(S.region), pool = ranchSpecies().filter(b => !home.has(b) && homeOnly(b) == null);
   const lines = []; let p = pool.slice();
   while (lines.length < SAFARI_SIZE[lv - 1] && p.length) { const b = pick(p); lines.push(b); p = p.filter(x => x !== b); }
   R.safari = { lines, until: R.safari && R.safari.lv !== lv && R.safari.until > S.turn ? R.safari.until : S.turn + SAFARI_WEEKS, lv };
@@ -686,8 +707,10 @@ function regionMove(t, fromR, toR) {
   if (fromR === toR || !homeSet(toR)) return;
   const home = homeSet(toR), foreign = t.team.filter(m => { const b = lineBaseOf(m.sp); return b && !home.has(b); });
   REGION_LOG.moves++;
-  if (foreign.length <= FOREIGN_MAX) return;
-  const keep = new Set(foreign.slice().sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, FOREIGN_MAX));
+  // (0.31.0) a line locked to its custom region never leaves it
+  const keepable = foreign.filter(m => homeOnly(lineBaseOf(m.sp)) == null);
+  if (foreign.length <= FOREIGN_MAX && keepable.length === foreign.length) return;
+  const keep = new Set(keepable.sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, FOREIGN_MAX));
   const gone = foreign.filter(m => !keep.has(m));
   for (const m of gone) farewell(t, m, `released on moving to ${regionName(toR)}`);
   t.team = t.team.filter(m => !gone.includes(m));
@@ -734,9 +757,10 @@ function builtinRegion(i) {
 }
 const builtinRegions = () => BUILTIN_REGIONS.map((_, i) => builtinRegion(i));
 // bind the world's regions: S.regions (made the first time), the two-way neighbour map, the legendaries' homes
-function applyRegions() {
-  const regs = S && S.regions ? S.regions : builtinRegions();
-  if (S && !S.regions) S.regions = regs;
+// (0.31.0) `given`: a list to bind with no world (the setup screen's preview of the regions chosen)
+function applyRegions(given) {
+  const regs = given || (S && S.regions ? S.regions : builtinRegions());
+  if (S && !S.regions && !given) S.regions = regs;
   LEAGUE_SETS = regs;
   NEIGHBOURS = regs.map(r => (r.nb || []).filter(x => x >= 0 && x < regs.length && regs[x] !== r));
   NEIGHBOURS.forEach((nb, i) => nb.forEach(x => { if (!NEIGHBOURS[x].includes(i)) NEIGHBOURS[x].push(i); }));
@@ -744,4 +768,222 @@ function applyRegions() {
   REGION_LINES = null; MIGR_CACHE = { turn: -1 };
 }
 
-if (typeof module !== 'undefined') module.exports = { regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+// ================= CUSTOM REGIONS (0.31.0, design doc 6.8) =================
+// The player's own regions, kept in this browser (REGION_KEY) like My Pokédex and trainer packs, made in the region
+// editor (Advanced options) and shared as a file or a paste code. A region in the library: { fmt, id, name, towns (8
+// gym cities), extra (3 towns), seat, seat2, nb (2 to 3 built-in regions next to it, by name), ports ({ place: 'port' |
+// 'railway' }), legends (the legendaries at home there; null: a replacement keeps the replaced region's), posts ({
+// leader, gymtrainer }: other names for the posts, or null), pool (its lines, by first stage), added (its own new
+// Pokémon, My Pokédex entries), lock (its new Pokémon never leave it), rivals (false: only the player's League may
+// start or open there) }. At a new game each one can be added as a new region, replace a built-in region's Pokémon
+// (keeping its name, cities, ports and neighbours) or replace the whole region. Every number is provisional (item 44).
+const REGION_KEY = 'plb-regions-v1', REGION_CODE = 'PLR1:', REGION_NAME_MAX = 24, POST_NAME_MAX = 20;
+const REGION_WARN_LOW = 180, REGION_WARN_HIGH = 330, REGION_NB = [2, 3];
+// older region files are brought up to REGION_FMT step by step: REGION_UPGRADES[n] turns format n into n + 1
+const REGION_UPGRADES = {};
+let regionLib = (() => {
+  try { const v = JSON.parse(localStorage.getItem(REGION_KEY) || 'null'); if (v && Array.isArray(v.regions)) return { regions: v.regions.map(r => regionNorm(r, { keepId: true, lib: { regions: [] } }).rec).filter(Boolean) }; } catch (e) {}
+  return { regions: [] };
+})();
+function saveRegionLib() { try { localStorage.setItem(REGION_KEY, JSON.stringify(regionLib)); return true; } catch (e) { return false; } }
+const builtinRegionName = i => BUILTIN_REGIONS[i].name.replace(' League', '');
+const builtinRegionIdx = n => BUILTIN_REGIONS.findIndex((r, i) => builtinRegionName(i).toLowerCase() === String(n).toLowerCase());
+const LEGEND_CHOICES = () => Object.keys(BUILTIN_LEGEND_HOME);
+const regionId = () => 'r' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+const placesOf = rec => rec.towns.concat(rec.extra, [rec.seat, rec.seat2]);
+
+// ---------- starting a region: blank, a copy of a built-in region, or generated ----------
+function regionBlank() {
+  return { fmt: REGION_FMT, id: null, name: 'New Region', towns: Array.from({ length: 8 }, (_, i) => `City ${i + 1}`), extra: ['Town 1', 'Town 2', 'Town 3'],
+    seat: 'League Seat', seat2: 'Second Seat', nb: [], ports: {}, legends: [], posts: null, pool: [], added: [], lock: false, rivals: true };
+}
+function regionCopy(i) {
+  const b = builtinRegion(i), rec = regionBlank();
+  return Object.assign(rec, { name: `My ${builtinRegionName(i)}`, towns: b.towns.slice(), extra: b.extra.slice(), seat: b.seat, seat2: b.seat2,
+    nb: b.nb.map(builtinRegionName), ports: Object.assign({}, b.ports), legends: b.legends.slice(), posts: b.posts ? Object.assign({}, b.posts) : null,
+    pool: [...builtinLines().sets[i]].sort() });
+}
+// the generation a line comes from (0 = Gen I … 8 = Gen IX), 'other' for custom lines
+function lineGen(b) { const g = genRegion(b); return g == null || SP[b].dexMod === 'new' ? 'other' : g; }
+// a generated list: lines of the chosen types (any, if none) and generations (any, if none), to about `size` species.
+// power: 'gentle' (nothing past 540, nothing rare), 'standard' (at most GEN_PSEUDO lines reaching 600), 'strong'
+// (strong lines likelier, no limit)
+const GEN_PSEUDO = 3;
+function generatePool(o = {}) {
+  const types = o.types || [], gens = o.gens || [], size = o.size || REGION_SIZE, power = o.power || 'standard', mem = lineMembers();
+  let cands = ranchSpecies().filter(b => (!types.length || lineTypesTop(b).some(t => types.includes(t))) && (!gens.length || gens.includes(lineGen(b))));
+  if (power === 'gentle') cands = cands.filter(b => lineTop(b) <= 540 && !SP[b].rare);
+  const out = []; let n = 0, pseudo = 0;
+  const wt = b => power === 'strong' ? Math.pow(lineTop(b) / 450, 3) : (SP[b].rare || SP[b].starter ? 0.5 : 1);
+  while (n < size && cands.length) {
+    const w = cands.map(wt); let x = rand() * w.reduce((a, c) => a + c, 0), i = 0;
+    for (; i < cands.length - 1; i++) { x -= w[i]; if (x <= 0) break; }
+    const b = cands.splice(i, 1)[0];
+    if (lineTop(b) >= 600 && power === 'standard') { if (pseudo >= GEN_PSEUDO) continue; pseudo++; }
+    out.push(b); n += (mem[b] || [b]).length;
+  }
+  return out.sort();
+}
+
+// ---------- checks (warn, don't block, except for names) ----------
+// a list's size in species, its lines, and the types under the floor (REGION_FLOOR lines reaching FLOOR_BST)
+function poolStats(pool) {
+  const mem = lineMembers(), lines = [...new Set(pool)].filter(b => mem[b] && ranchable(b));
+  const size = lines.reduce((a, b) => a + mem[b].length, 0);
+  const typeN = Object.fromEntries(TYPES.map(t => [t, 0]));
+  for (const b of lines) if (lineTop(b) >= FLOOR_BST) for (const t of lineTypesTop(b)) typeN[t]++;
+  return { lines, size, typeN, thin: TYPES.filter(t => typeN[t] < REGION_FLOOR), missing: pool.filter(b => !mem[b]) };
+}
+function regionChecks(rec, lib = regionLib) {
+  const errs = [], warns = [], st = poolStats(rec.pool), nm = String(rec.name || '').trim();
+  if (placesOf(rec).concat([nm], Object.values(rec.posts || {})).some(x => /[<>"`\\]/.test(String(x || '')))) errs.push('Names can\'t contain < > " ` or \\.');
+  if (!nm) errs.push('Give the region a name.'); else if (nm.length > REGION_NAME_MAX) errs.push(`Region names can be up to ${REGION_NAME_MAX} characters.`);
+  else if (lib.regions.some(r => r.id !== rec.id && r.name.toLowerCase() === nm.toLowerCase())) errs.push(`You already have a region called ${nm}.`);
+  const places = placesOf(rec).map(x => String(x || '').trim());
+  if (places.some(x => !x)) errs.push('Every city, town and seat needs a name.');
+  if (places.some(x => x.length > REGION_NAME_MAX)) errs.push(`Place names can be up to ${REGION_NAME_MAX} characters.`);
+  const low = places.map(x => x.toLowerCase()), dup = low.filter((x, i) => x && low.indexOf(x) !== i);
+  if (dup.length) errs.push(`Two places share a name (${places[low.indexOf(dup[0])]}).`);
+  if (rec.posts && Object.values(rec.posts).some(x => String(x || '').length > POST_NAME_MAX)) errs.push(`Post names can be up to ${POST_NAME_MAX} characters.`);
+  if (builtinRegionIdx(nm) >= 0) warns.push(`${nm} is also a built-in region's name; added as a new region the two would share it.`);
+  if (!st.lines.length) warns.push('The list is empty: challengers will find every Pokémon here until you add some.');
+  else if (st.size < REGION_WARN_LOW || st.size > REGION_WARN_HIGH) warns.push(`${st.size} species: the built-in regions have about ${REGION_SIZE}.`);
+  if (st.lines.length && st.thin.length) warns.push(`Thin types (fewer than ${REGION_FLOOR} lines reaching ${FLOOR_BST}): ${st.thin.join(', ')}. Staff of those types will fall back on what they can get.`);
+  if (rec.nb.length && (rec.nb.length < REGION_NB[0] || rec.nb.length > REGION_NB[1])) warns.push(`${rec.nb.length} neighbour${rec.nb.length === 1 ? '' : 's'}: regions usually have ${REGION_NB[0]} or ${REGION_NB[1]}.`);
+  if (!rec.nb.length) warns.push('No neighbours chosen: as a new region it takes the two built-in regions that share most of its Pokémon; as a replacement, the replaced region\'s.');
+  if (st.missing.length) warns.push(`${st.missing.length} Pokémon on the list aren't in the game with the Pokédex you're using (${st.missing.slice(0, 4).join(', ')}${st.missing.length > 4 ? '…' : ''}); they're skipped.`);
+  return { errs, warns, st };
+}
+
+// ---------- the shape of a region, from the editor or a file ----------
+// a region file or library entry made tidy, upgraded from older formats; Pokémon of its own whose names are taken
+// (the game's, My Pokédex's or another region's in the library) are left out and listed in `dropped`
+function regionNorm(raw, o = {}) {
+  if (raw && raw.plbRegion != null && raw.region) raw = Object.assign({}, raw.region, { fmt: raw.plbRegion });
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.towns)) return { err: "That isn't a region file." };
+  let fmt = Number.isInteger(raw.fmt) ? raw.fmt : 1;
+  if (fmt > REGION_FMT) return { err: 'That region was made with a newer version of the game. Update the game to load it.' };
+  raw = JSON.parse(JSON.stringify(raw));
+  while (fmt < REGION_FMT) { raw = (REGION_UPGRADES[fmt] || (x => x))(raw); fmt++; }
+  const str = (x, max = REGION_NAME_MAX) => String(x == null ? '' : x).replace(/[<>"`\\]/g, '').trim().replace(/\s+/g, ' ').slice(0, max);
+  const list = (x, n, def) => Array.from({ length: n }, (_, i) => str(Array.isArray(x) && x[i] != null ? x[i] : def(i)));
+  const rec = { fmt: REGION_FMT, id: o.keepId && typeof raw.id === 'string' ? raw.id : null, name: str(raw.name) || 'Region',
+    towns: list(raw.towns, 8, i => `City ${i + 1}`), extra: list(raw.extra, 3, i => `Town ${i + 1}`), seat: str(raw.seat) || 'League Seat', seat2: str(raw.seat2) || 'Second Seat' };
+  rec.nb = [...new Set((Array.isArray(raw.nb) ? raw.nb : []).map(n => builtinRegionIdx(n)).filter(i => i >= 0))].map(builtinRegionName);
+  const names = new Set(rec.towns.concat(rec.extra));
+  rec.ports = Object.fromEntries(Object.entries(raw.ports && typeof raw.ports === 'object' ? raw.ports : {}).filter(([k, v]) => names.has(k) && (v === 'port' || v === 'railway')));
+  rec.legends = raw.legends == null ? null : [...new Set((Array.isArray(raw.legends) ? raw.legends : []).filter(x => LEGEND_CHOICES().includes(x)))];
+  const posts = raw.posts && typeof raw.posts === 'object' ? { leader: str(raw.posts.leader, POST_NAME_MAX), gymtrainer: str(raw.posts.gymtrainer, POST_NAME_MAX) } : null;
+  rec.posts = posts && (posts.leader || posts.gymtrainer) ? posts : null;
+  rec.lock = !!raw.lock; rec.rivals = raw.rivals !== false;
+  // its own Pokémon: My Pokédex entries (never a legendary encounter), checked with every other new Pokémon in view
+  const dropped = [], others = (o.lib || regionLib).regions.filter(r => !rec.id || r.id !== rec.id).flatMap(r => r.added || []);
+  let added = (Array.isArray(raw.added) ? raw.added : []).map(e => { const x = dexNorm(e); delete x.legend; return x; }).filter(x => { if (dexEntryOk(x) && x.name) return true; dropped.push({ name: x.name || '?', why: 'broken' }); return false; });
+  if (!o.keepId) {
+    dexSnapshot();
+    const taken = n => { const low = n.toLowerCase(); return Object.keys(DEX_BASE).some(x => x.toLowerCase() === low) || Object.values(MEGA).flat().some(f => f.name.toLowerCase() === low) || dexLib.added.some(x => x.name.toLowerCase() === low) || others.some(x => x.name.toLowerCase() === low); };
+    added = added.filter(x => { if (!taken(x.name)) return true; dropped.push({ name: x.name, why: 'taken' }); return false; });
+    for (let changed = true; changed;) {
+      changed = false;
+      const lib = { edits: {}, added: dexLib.added.concat(others, added) };
+      for (const x of added.slice()) if (checkDexEntry(x, true, x.name, lib).length) { added.splice(added.indexOf(x), 1); dropped.push({ name: x.name, why: 'broken' }); changed = true; }
+    }
+  }
+  rec.added = added;
+  const gone = new Set(dropped.map(d => d.name));
+  rec.pool = [...new Set((Array.isArray(raw.pool) ? raw.pool : []).map(x => String(x)).filter(x => x && !gone.has(x)))];
+  return { rec, dropped };
+}
+
+// ---------- sharing: a file (JSON) or a paste code ----------
+const regionFileText = rec => JSON.stringify({ plbRegion: REGION_FMT, region: Object.assign({}, rec, { id: undefined }) });
+const regionFileName = rec => `pokemon-league-builder-region-${String(rec.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'region'}.json`;
+function utf8B64(str) { const b = new TextEncoder().encode(str); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); }
+const b64Utf8 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+const regionCode = rec => REGION_CODE + utf8B64(regionFileText(rec));
+// read a file's text or a paste code into a region for the library (not saved yet)
+function regionRead(txt) {
+  let raw; txt = String(txt || '').trim();
+  try { raw = JSON.parse(txt.startsWith(REGION_CODE) ? b64Utf8(txt.slice(REGION_CODE.length).replace(/\s+/g, '')) : txt); } catch (e) { return { err: "That isn't a region file or code. Paste the whole code from Export." }; }
+  return regionNorm(raw);
+}
+// a name not yet used in the library
+function regionUniqueName(n, id) {
+  const used = new Set(regionLib.regions.filter(r => r.id !== id).map(r => r.name.toLowerCase()));
+  if (!used.has(n.toLowerCase())) return n;
+  for (let k = 2; ; k++) { const x = `${n.slice(0, REGION_NAME_MAX - 3)} ${k}`; if (!used.has(x.toLowerCase())) return x; }
+}
+// save a region to the library (new or changed); returns the problems that stop it, else []
+function saveRegion(rec) {
+  const c = regionChecks(rec); if (c.errs.length) return c.errs;
+  rec = JSON.parse(JSON.stringify(rec)); rec.fmt = REGION_FMT; rec.name = rec.name.trim();
+  const at = rec.id ? regionLib.regions.findIndex(r => r.id === rec.id) : -1;
+  if (at >= 0) regionLib.regions[at] = rec; else { rec.id = regionId(); regionLib.regions.push(rec); }
+  saveRegionLib();
+  return [];
+}
+function addImportedRegion(rec) { rec = Object.assign({}, rec, { id: regionId(), name: regionUniqueName(rec.name, null) }); regionLib.regions.push(rec); saveRegionLib(); return rec; }
+function deleteRegion(id) { regionLib.regions = regionLib.regions.filter(r => r.id !== id); saveRegionLib(); }
+const libRegion = id => regionLib.regions.find(r => r.id === id) || null;
+// the editor's preview: the region's own Pokémon on top of My Pokédex, so its lists and checks see them
+function regionDex(rec) {
+  const base = dexLib.on ? dexLib : { edits: {}, added: [] };
+  return rec && rec.added.length ? { edits: base.edits, added: base.added.concat(rec.added.map(e => Object.assign({}, e, { reg: rec.name }))) } : (dexLib.on ? dexLib : null);
+}
+
+// ---------- a new game's regions ----------
+// choices: [{ rec, mode: 'add' | 'pool' | 'whole', of: a built-in region (pool and whole) }]; a later replacement of
+// the same region wins, and anything broken is left out. Each gets the index it will have in the world (`at`).
+function regionChoices(list) {
+  const out = [];
+  for (const c of Array.isArray(list) ? list : []) {
+    if (!c || !c.rec || !['add', 'pool', 'whole'].includes(c.mode)) continue;
+    const n = regionNorm(c.rec, { keepId: true }); if (!n.rec) continue;
+    if (c.mode !== 'add') { if (!BUILTIN_REGIONS[c.of]) continue; const k = out.findIndex(x => x.mode !== 'add' && x.of === c.of); if (k >= 0) out.splice(k, 1); }
+    out.push({ rec: n.rec, mode: c.mode, of: c.mode === 'add' ? null : c.of });
+  }
+  let next = BUILTIN_REGIONS.length;
+  for (const c of out) c.at = c.mode === 'add' ? next++ : c.of;
+  return out;
+}
+// the world's Pokédex with the chosen regions' own Pokémon (tagged with their region, and its index if locked)
+function withRegionSpecies(dex, choices) {
+  const extra = [], names = new Set(dex ? (dex.added || []).map(x => x.name.toLowerCase()) : []);
+  for (const c of choices) for (const e of c.rec.added) {
+    const low = e.name.toLowerCase(); if (names.has(low)) continue; names.add(low);
+    extra.push(Object.assign({}, e, { reg: c.rec.name, home: c.rec.lock ? c.at : undefined }));
+  }
+  if (!extra.length) return dex;
+  return { edits: dex ? dex.edits || {} : {}, added: (dex ? dex.added || [] : []).concat(extra) };
+}
+function worldRegions(choices) {
+  const regs = builtinRegions(), adds = [];
+  const nbOf = rec => rec.nb.map(builtinRegionIdx).filter(i => i >= 0);
+  const make = (rec, old, at) => ({ name: rec.name + ' League', towns: rec.towns.slice(), extra: rec.extra.slice(), seat: rec.seat, seat2: rec.seat2,
+    nb: nbOf(rec).length ? nbOf(rec) : old ? old.nb.slice() : null, ports: Object.assign({}, rec.ports),
+    legends: rec.legends ? rec.legends.slice() : old ? old.legends.slice() : [], claims: rec.legends ? rec.legends.slice() : null,
+    posts: rec.posts ? Object.assign({}, rec.posts) : null, base: null, pool: rec.pool.slice(), rep: old ? at : null, from: rec.name, lock: !!rec.lock, solo: rec.rivals === false });
+  for (const c of choices) {
+    if (c.mode === 'pool') Object.assign(regs[c.of], { pool: c.rec.pool.slice(), base: null, rep: c.of, from: c.rec.name, lock: !!c.rec.lock, solo: c.rec.rivals === false });
+    else if (c.mode === 'whole') regs[c.of] = make(c.rec, regs[c.of], c.of);
+    else adds.push(make(c.rec, null, null));
+  }
+  regs.push(...adds);
+  // a new region with no neighbours (or none left) takes the two built-in regions sharing most of its Pokémon
+  const B = builtinLines();
+  for (const r of regs) if (!r.nb || !r.nb.length) {
+    const pool = new Set(r.pool || []);
+    r.nb = BUILTIN_REGIONS.map((_, i) => i).filter(i => regs[i] !== r).sort((a, b) => [...B.sets[b]].filter(x => pool.has(x)).length - [...B.sets[a]].filter(x => pool.has(x)).length || a - b).slice(0, 2);
+  }
+  // legendaries a custom region claims move out of their built-in home
+  regs.forEach(r => { if (r.claims) regs.forEach(o => { if (o !== r) o.legends = o.legends.filter(sp => !r.claims.includes(sp)); }); delete r.claims; });
+  return regs;
+}
+// what the chosen regions' own Pokémon lose at a new game: names already in My Pokédex or another chosen region
+function regionClashes(choices) {
+  const seen = new Set((dexLib.on ? dexLib.added : []).map(x => x.name.toLowerCase())), out = [];
+  for (const c of regionChoices(choices)) for (const e of c.rec.added) { const low = e.name.toLowerCase(); if (seen.has(low)) out.push(`${e.name} (${c.rec.name})`); seen.add(low); }
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };

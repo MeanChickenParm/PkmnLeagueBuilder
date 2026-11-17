@@ -3085,12 +3085,14 @@ const regionOrder = () => S.regionOrder || LEAGUE_SETS.map((_, i) => i);
 const regionCount = r => regionsUsed().filter(x => x === r).length;
 // regions a new League could open in (the player leaving picks from these)
 const regionsWithRoom = () => regionOrder().filter(r => regionCount(r) < REGION_CAP);
+// (0.31.0) a custom region its creator closed to rival Leagues (solo) only ever holds the player's League
+const rivalOk = r => !(LEAGUE_SETS[r] && LEAGUE_SETS[r].solo);
 function nextRegion() {
   const home = regionsUsed()[ME()];
-  if (regionCount(home) < REGION_CAP) return home;
-  const r = regionOrder().find(x => !regionCount(x));
+  if (rivalOk(home) && regionCount(home) < REGION_CAP) return home;
+  const r = regionOrder().find(x => rivalOk(x) && !regionCount(x));
   if (r != null) return r;
-  const r2 = regionOrder().find(x => regionCount(x) < REGION_CAP);
+  const r2 = regionOrder().find(x => rivalOk(x) && regionCount(x) < REGION_CAP);
   return r2 == null ? null : r2;
 }
 const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');

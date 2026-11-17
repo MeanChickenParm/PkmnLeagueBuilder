@@ -636,6 +636,20 @@ details.hist .it-bag { padding: 0 12px 8px; margin: 0; }
 .pack-more { margin: -4px 0 4px 2px; }
 .cf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin: 10px 0 12px; }
 .cf-grid.six { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+/* (0.31.0) the region editor */
+.rg-places { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.rg-place { display: flex; gap: 6px; align-items: end; }
+.rg-place .cf-field { flex: 1; min-width: 0; }
+.rg-place select { width: 92px; }
+.rg-pool { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; max-height: 340px; overflow: auto; }
+.rg-sp { display: inline-flex; align-items: center; gap: 3px; font-size: 0.78rem; border: 1px solid var(--line); border-radius: 4px; padding: 1px 2px 1px 6px; }
+.rg-sp button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 2px 4px; min-width: 24px; min-height: 24px; }
+.rg-sp button:hover { color: var(--red); }
+.rg-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.rg-chips .seg { min-height: 32px; }
+.rg-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 8px 0; }
+.rg-lib-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); }
+.rg-lib-row select { max-width: 100%; }
 .cf-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cf-field.wide { grid-column: 1 / -1; max-width: 340px; }
 .cf-in, .cf-field select { font: inherit; font-size: 0.95rem; color: var(--ink); background: var(--sunk); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; min-width: 0; }

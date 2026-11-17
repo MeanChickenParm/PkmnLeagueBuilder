@@ -34,6 +34,43 @@ async def run(path):
           // Advanced: rival 2 starts in Hoenn, the region this test picks for the player's League
           click('[data-act=setuppage][data-v=advanced]');
           { const sels = document.querySelectorAll('.rivalsel'); if (sels.length !== 2) log.push('FAIL the rival picker lists ' + sels.length + ' rivals'); else { sels[1].value = '2'; sels[1].dispatchEvent(new Event('change', { bubbles: true })); } }
+          // 0.31.0: the region editor. Make a region (rename it and a city, a port, neighbours, a legendary, a generated
+          // list, a line added and removed, a Pokémon of its own), save it, export it, import the code back (its own
+          // Pokémon's name is taken, so it is left out and flagged), delete the copy, and use the first as a 10th region
+          // closed to rivals
+          { const setIn = (sel, v, ev = 'input') => { const el = document.querySelector(sel); if (!el) { log.push('FAIL no field ' + sel); return; } el.value = v; el.dispatchEvent(new Event(ev, { bubbles: true })); };
+            if (!document.querySelector('[data-act=rgnew]')) { click('[data-act=advfold][data-k=regions]'); }
+            if (!click('[data-act=rgnew]')) log.push('FAIL no New region button');
+            if (!document.querySelector('.rg-places')) log.push('FAIL the region editor did not open');
+            setIn('.rg-f[data-f=name]', 'Testland'); setIn('.rg-f[data-f="towns.0"]', 'Portwick'); setIn('.rg-port[data-i="0"]', 'port', 'change');
+            setIn('.rg-f[data-f="posts.leader"]', 'Warden');
+            click('[data-act=rgnb][data-k=Kanto]'); click('[data-act=rgnb][data-k=Hoenn]');
+            setIn('#rg-leg', 'Mewtwo'); click('[data-act=rglegadd]');
+            click('[data-act=rggent][data-k=Water]'); click('[data-act=rggent][data-k=Ice]'); click('[data-act=rggen]');
+            if (!/Generated a list/.test(document.body.textContent)) log.push('FAIL the generator made no list');
+            setIn('#rg-add', 'Ekans'); click('[data-act=rgadd]'); click('[data-act=rgrm][data-k=Ekans]');
+            click('[data-act=rgspnew]'); setIn('#rgs-name', 'Testmon'); setIn('#rgs-t1', 'Water', 'change'); click('[data-act=rgspsave]');
+            if (!/Added Testmon/.test(document.body.textContent)) log.push('FAIL the own Pokémon of the region was not added');
+            if (!document.querySelector('[data-act=rgrm][data-k=Testmon]')) log.push('FAIL Testmon is not on the list');
+            if (!/Strong lines by type/.test(document.body.textContent)) log.push('FAIL no type checks in the editor');
+            click('[data-act=rgsave]');
+            const rec = regionLib.regions.find(r => r.name === 'Testland');
+            if (!rec) log.push('FAIL Testland was not saved'); else {
+              if (rec.towns[0] !== 'Portwick' || rec.ports.Portwick !== 'port' || !rec.legends.includes('Mewtwo') || rec.nb.length !== 2 || !rec.added.some(x => x.name === 'Testmon') || !rec.pool.includes('Testmon') || rec.pool.includes('Ekans') || (rec.posts || {}).leader !== 'Warden') log.push('FAIL Testland saved wrong: ' + JSON.stringify(rec).slice(0, 300));
+              click(`[data-act=rgexport][data-k=${rec.id}]`);
+              const code = (document.querySelector('#rg-exptext') || {}).value || '';
+              if (!code.startsWith('PLR1:')) log.push('FAIL no region code');
+              setIn('#rg-imp', code); click('[data-act=rgimport]');
+              const copy = regionLib.regions.find(r => r.name === 'Testland 2');
+              if (!copy) log.push('FAIL the imported region is missing'); else {
+                if (copy.added.length || !/already taken: Testmon/.test(document.body.textContent)) log.push('FAIL the taken name was not left out and flagged');
+                click(`[data-act=rgdel][data-k=${copy.id}]`); click(`[data-act=rgdelyes][data-k=${copy.id}]`);
+                if (regionLib.regions.some(r => r.name === 'Testland 2')) log.push('FAIL the copy was not deleted'); }
+              click(`[data-act=rgedit][data-k=${rec.id}]`); click('[data-act=rgflag][data-k=rivals]'); click('[data-act=rgsave]');
+              setIn(`.rguse[data-k=${rec.id}]`, 'add', 'change');
+              if (!/Testland: added as a new region/.test((click('[data-act=setuppage][data-v=main]'), document.body.textContent))) log.push('FAIL the main page does not list the custom region');
+              if (document.querySelectorAll('[data-act=newworld]').length !== 10) log.push('FAIL ' + document.querySelectorAll('[data-act=newworld]').length + ' region cards, not 10');
+              click('[data-act=setuppage][data-v=advanced]'); } }
           click('[data-act=setuppage][data-v=main]');
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
@@ -56,6 +93,11 @@ async def run(path):
           if (!S || S.founding || S.phase !== 'season' || S.season !== 1) { log.push('FAIL the world did not start'); return log; }
           if (S.champion !== placedChamp) log.push('FAIL the Champion placed is not the Champion');
           if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
+          // 0.31.0: the world has Testland as its 10th region, its own Pokémon and Mewtwo at home there, and no rival in it
+          { const r = S.regions[9];
+            if (!r || r.name !== 'Testland League' || !r.solo || r.posts.leader !== 'Warden' || r.ports.Portwick !== 'port') log.push('FAIL the 10th region of the world: ' + JSON.stringify(r || {}).slice(0, 200));
+            if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || LEGEND_HOME.Mewtwo !== 9) log.push('FAIL the Pokémon or legendary of Testland');
+            if (eachLeague(() => S.region).slice(1).includes(9)) log.push('FAIL a rival started in a region closed to rivals'); }
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }

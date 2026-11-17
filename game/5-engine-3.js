@@ -664,6 +664,9 @@ function applyDex(d) {
         SP[e.name] = { name: e.name, types: e.types.slice(), bst, rare: !legend && !e.from && !!e.rare, starter: !legend && !e.from && !!e.starter, dexMod: 'new' };
         // a legendary of your own: like Missingno, a legendary in every rule but outside the game's own pools; it only comes as a rare encounter
         if (legend) { SP[e.name].legend = true; SP[e.name].dexLegend = true; DEX_LEGENDS.push(e.name); }
+        // (0.31.0) a custom region's own Pokémon: e.reg names the region; e.home (a region index) keeps it there (locked)
+        if (e.reg) SP[e.name].regionSp = e.reg;
+        if (Number.isInteger(e.home)) SP[e.name].homeOnly = e.home;
         BASE_STATS[e.name] = e.stats.slice(); SPECIES_AB[e.name] = abOf(e); DEX_ADDED.push(e.name);
         if (e.from) { const p = SP[e.from]; p.evos = (p.evos || []).concat({ to: e.name, lvl: e.lvl }); p.evo = p.evos[0]; }
         left.splice(i--, 1); moved = true;
@@ -684,7 +687,9 @@ function applyDex(d) {
   CUSTOM_SPECIES = null;
 }
 // the Pokédex the screen in front of the player should be using
-const dexWanted = () => S ? (S.cfg && S.cfg.dex) || null : (dexLib.on ? dexLib : null);
+// (0.31.0) the region editor previews a region's own new Pokémon (dexPreview) while it is open
+let dexPreview = null;
+const dexWanted = () => S ? (S.cfg && S.cfg.dex) || null : dexPreview || (dexLib.on ? dexLib : null);
 // abilities that work in battle (Missingno's Glitch is its own)
 let DEX_ABILITIES = null;
 const dexAbilities = () => DEX_ABILITIES || (DEX_ABILITIES = Object.keys(ABILITIES).filter(a => a !== 'Glitch').sort());
@@ -1194,14 +1199,18 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  // (0.30.0) the world's regions: the built-in nine for now (custom ones join here later)
-  S.regions = builtinRegions(); applyRegions();
-  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 && cfg.leagues <= maxStartLeagues() ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good
   S.cfg.dex = cfg.dex !== undefined ? dexCopy(cfg.dex) : (dexLib.on ? dexCopy(dexLib) : null);
+  // (0.31.0) the world's regions: the built-in nine with any custom regions chosen (cfg.regions: [{ rec, mode, of }]);
+  // their own new Pokémon join the world's Pokédex as if added to My Pokédex (a name already taken is left out)
+  const choices = regionChoices(cfg.regions);
+  S.cfg.dex = withRegionSpecies(S.cfg.dex, choices);
   applyDex(S.cfg.dex);
+  S.regions = worldRegions(choices); applyRegions();
+  if (S.cfg.leagues > maxStartLeagues()) S.cfg.leagues = maxStartLeagues();
   // the league keeps its own copy of the player's packs that are switched on
   S.customPacks = JSON.parse(JSON.stringify(customLib.filter(p => S.cfg.packs.includes(p.key))));
   customFor = undefined; ensureCustom();
@@ -1227,16 +1236,17 @@ function newWorld(cfg = {}) {
   startWorld();
 }
 // (0.30.0) the most Leagues a world can start with: two a region (REGION_CAP)
-const maxStartLeagues = () => REGION_CAP * LEAGUE_SETS.length;
+// (0.31.0) a region closed to rival Leagues counts for one (yours)
+const maxStartLeagues = () => LEAGUE_SETS.reduce((a, r, i) => a + (rivalOk(i) ? REGION_CAP : 1), 0);
 // where the Leagues start: yours in order[0], then each rival where the player asked (picks[i]: a region index, or
 // null for anywhere) if that region has room; the rest spread out, regions with no League first, then second seats in
 // other regions. A rival goes into your region only when picked there, or when every other seat is taken.
 function startRegions(order, n, picks) {
   const home = order[0], out = [home], count = r => out.filter(x => x === r).length;
-  for (let i = 1; i < n; i++) { const p = picks[i - 1]; out.push(p != null && LEAGUE_SETS[p] && count(p) < REGION_CAP ? p : null); }
+  for (let i = 1; i < n; i++) { const p = picks[i - 1]; out.push(p != null && LEAGUE_SETS[p] && rivalOk(p) && count(p) < REGION_CAP ? p : null); }
   for (let i = 1; i < n; i++) {
     if (out[i] != null) continue;
-    const r = order.find(x => x !== home && !count(x)) ?? order.find(x => x !== home && count(x) < REGION_CAP) ?? (count(home) < REGION_CAP ? home : null);
+    const r = order.find(x => x !== home && rivalOk(x) && !count(x)) ?? order.find(x => x !== home && rivalOk(x) && count(x) < REGION_CAP) ?? (rivalOk(home) && count(home) < REGION_CAP ? home : null);
     out[i] = r;
   }
   return out.filter(r => r != null);
