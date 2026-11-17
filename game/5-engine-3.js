@@ -679,6 +679,7 @@ function applyDex(d) {
   for (const n of LEGENDS.concat(PARADOX, ['Missingno'], DEX_LEGENDS)) LINE[n] = n;
   for (const b of BABY_LEGENDS) markLine(b, b);
   GREAT_LEGENDS.length = 0; GREAT_LEGENDS.push(...LEGENDS.filter(n => SP[n].bst >= 660));
+  resetRegionCaches(); // (0.27.0)
   REWARD_LEGENDS.length = 0; REWARD_LEGENDS.push(...LEGENDS.filter(n => SP[n].bst < 660));
   CUSTOM_SPECIES = null;
 }
@@ -1284,6 +1285,7 @@ function shiftLeague(t, to) {
   inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
   t.lg = to;
   inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
+  regionMove(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.27.0) at most 3 foreign Pokémon
   (t.lgMoves = t.lgMoves || []).push({ season: S.season, from, to });
 }
 // ---------- Grand Slam: Champion (at a season's end) of every League in the world ----------
@@ -1652,6 +1654,10 @@ const UPGRADES = {
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in more than an attraction every week while the site lasts (an attraction\'s income after), and a point of prestige a level each New Year while it lasts.', site: true, income: [250, 500, 800] },
   // (0.25.0) the Ranch: how many Pokémon the League's ranch holds
   ranch:   { name: 'Ranch',           text: 'Seat only, takes no slot. Each level lets your ranch hold more Pokémon (60 with none, then 80, 105, 135, 170, 210).', seat: true, slotless: true, max: 5, cost: [30000, 60000, 120000, 240000, 480000] },
+  // (0.27.0) a port city's shipping lane (Goldenrod's railway): a source region's Pokémon on trips and at the market
+  lane:    { name: 'Shipping lane',   text: 'Only in a port city (Goldenrod: the railway). Choose a region on the Ranch page: its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 400 a week on top of upkeep; changing the route costs 10,000.', port: true, max: 1, cost: [60000] },
+  // (0.27.0) the safari: one per League, in a gym city; foreign Pokémon for its own trips, changing every few months
+  safari:  { name: 'Safari Zone',     text: 'One per League, in a gym city. Holds 10 Pokémon from other regions (13, 16 at levels 2 and 3), changing every 12 weeks, that only your targeted trips can catch; each level also makes those finds better.', one: true },
   academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
 };
 const upMax = k => UPGRADES[k].max || 3;
@@ -1680,6 +1686,10 @@ function buildCheck(where, k) {
   const U = UPGRADES[k]; if (!U) return { why: 'No such upgrade.' };
   if (U.seat && where !== 'seat') return { why: 'Only at the seat.' };
   if (U.site && (where === 'seat' || !siteOn(S.cities[(S.gyms[where] || {}).city]))) return { why: 'Only at a legendary site.' };
+  // (0.27.0) lanes only in ports (and only with regional encounters), one safari a League
+  if (U.port && (where === 'seat' || !isPort(S.cities[(S.gyms[where] || {}).city]) || !homeSet(S.region))) return { why: 'Only in a port city (or Goldenrod, for its railway).' };
+  if ((U.one || U.port) && !homeSet(S.region)) return { why: 'Every species is found everywhere (National Dex rules).' };
+  if (U.one && (where === 'seat' || S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k)))) return { why: where === 'seat' ? 'Only in a gym city.' : 'Your League already has one.' };
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
@@ -1695,7 +1705,7 @@ function build(where, k, lg = ME()) {
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push({ k, lv: 1 });
+    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : { k, lv: 1 });
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; addStanding(c, ck.cost / STAND_SPEND); }
@@ -1874,9 +1884,9 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['seat', 'hall'], ['seat', 'attract'], ['seat', 'academy']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['seat', 'scout'], ['seat', 'attract']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['seat', 'academy']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -2143,7 +2153,8 @@ function leaveLeague(region, takeIds = [], name = null) {
   S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: second ? reg.seat2 : reg.seat, founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
-  const carried = take.map(T);
+  // (0.27.0) someone a waiting challenge just moved out of their post stays behind
+  const carried = take.map(T).filter(t => t && inLeague(old, () => postOf(t)));
   for (const t of carried) { inLeague(old, () => { const p = postOf(t); t.lastRole = p.post; t.carriedFrom = p.slot; }); leaveForPost(t, lgName); t.carried = true; }
   const prospects = Object.values(S.trainers).filter(t => t.academy === old && t.role === 'challenger' && !t.spon && !t.hired && !t.hireDue).map(t => t.id);
   inLeague(i, () => { initBooks(); prepFounding({ mid: true, carry: carried.map(t => t.id), prospects }); });

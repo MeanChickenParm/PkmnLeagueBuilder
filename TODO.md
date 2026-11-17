@@ -35,7 +35,17 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The AI doesn't use reserves or locks.** Since 0.26.0 it lists and sells back spares it won't keep (`ranchSpares`, `AI_IDLE`).
 - **Hunting by condition (the owner, Nov 17):** eventually targeted trips should be able to hunt a species in a particular condition for more money (for example a plain Ledyba for about 1,000, a Delta Ledyba for about 5,000; shiny and other conditions likewise). Not designed yet; fits catching trips and the long-term idea of rarer finds tied to money (item 34).
 - **Ranch Pokémon aren't counted in wealth** (the economy report counts cash and buildings); a ranch is a sink.
-- **Parts 2 and 3** (regional encounters, migration, ports, the railway, the safari; challenger storage, picking at hire, the Sanctuary rework) are designed (6.5) and not built.
+- **Part 3** (challenger storage, picking at hire, the Sanctuary rework) is designed (6.5) and not built. Part 2 was built in 0.27.0.
+
+## Left over from regional encounters (0.27.0)
+- **All the numbers are provisional** (item 41): `REGION_SIZE` 350, `REGION_FLOOR` 5 at `FLOOR_BST` 450, the neighbour ring, migration odds, length and size, the far share, lane and route prices and the weekly fee, charter cost and size, safari sizes, refresh and grade bonus, `FOREIGN_MAX` 3, `STEER_GAP` 0.5. Which port cities count is a judgment call (`PORTS`).
+- **The lists are algorithmic,** not the real regional dexes: Gen I to IV by generation, Gen V to IX spread by size and type, then borrowing. Hand-tuning by theme could come with the five new regions (when the lists shrink to about 250).
+- **Delta forms** stay with their base species' regions; the owner may want Deltas found elsewhere as flavour (open).
+- **The five new regions** (Unova, Kalos, Alola, Galar, Paldea: cities, towns, seats, ports, Alola's gym cities) are a later build; `NEIGHBOURS`, `GEN_SPECIES` and `PORTS` grow then.
+- **Released on moving region:** part 3's storage should take these instead of `farewell`.
+- **Not measured:** the wall and the economy under regional rules (lighter testing). Thinner home pools may mean more stopgaps early; worth a look when balance comes back.
+- **Obedience by region** left as is (owner, Nov 17).
+- **Steer gaps** are shown, not acted on; rivals don't read them.
 
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
