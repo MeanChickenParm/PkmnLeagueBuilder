@@ -774,7 +774,8 @@ function applyRegions(given) {
 // gym cities), extra (3 towns), seat, seat2, nb (2 to 3 built-in regions next to it, by name), ports ({ place: 'port' |
 // 'railway' }), legends (the legendaries at home there; null: a replacement keeps the replaced region's), posts ({
 // leader, gymtrainer }: other names for the posts, or null), pool (its lines, by first stage), added (its own new
-// Pokémon, My Pokédex entries), lock (its new Pokémon never leave it), rivals (false: only the player's League may
+// Pokémon, My Pokédex entries; one over DEX_LEGEND_BST can be a legendary encounter, at home there), lock (its new
+// Pokémon never leave it), rivals (false: only the player's League may
 // start or open there) }. At a new game each one can be added as a new region, replace a built-in region's Pokémon
 // (keeping its name, cities, ports and neighbours) or replace the whole region. Every number is provisional (item 44).
 const REGION_KEY = 'plb-regions-v1', REGION_CODE = 'PLR1:', REGION_NAME_MAX = 24, POST_NAME_MAX = 20;
@@ -876,9 +877,10 @@ function regionNorm(raw, o = {}) {
   const posts = raw.posts && typeof raw.posts === 'object' ? { leader: str(raw.posts.leader, POST_NAME_MAX), gymtrainer: str(raw.posts.gymtrainer, POST_NAME_MAX) } : null;
   rec.posts = posts && (posts.leader || posts.gymtrainer) ? posts : null;
   rec.lock = !!raw.lock; rec.rivals = raw.rivals !== false;
-  // its own Pokémon: My Pokédex entries (never a legendary encounter), checked with every other new Pokémon in view
+  // its own Pokémon: My Pokédex entries (a legendary encounter too, over DEX_LEGEND_BST), checked with every other new
+  // Pokémon in view
   const dropped = [], others = (o.lib || regionLib).regions.filter(r => !rec.id || r.id !== rec.id).flatMap(r => r.added || []);
-  let added = (Array.isArray(raw.added) ? raw.added : []).map(e => { const x = dexNorm(e); delete x.legend; return x; }).filter(x => { if (dexEntryOk(x) && x.name) return true; dropped.push({ name: x.name || '?', why: 'broken' }); return false; });
+  let added = (Array.isArray(raw.added) ? raw.added : []).map(e => dexNorm(e)).filter(x => { if (dexEntryOk(x) && x.name) return true; dropped.push({ name: x.name || '?', why: 'broken' }); return false; });
   if (!o.keepId) {
     dexSnapshot();
     const taken = n => { const low = n.toLowerCase(); return Object.keys(DEX_BASE).some(x => x.toLowerCase() === low) || Object.values(MEGA).flat().some(f => f.name.toLowerCase() === low) || dexLib.added.some(x => x.name.toLowerCase() === low) || others.some(x => x.name.toLowerCase() === low); };
@@ -891,7 +893,8 @@ function regionNorm(raw, o = {}) {
   }
   rec.added = added;
   const gone = new Set(dropped.map(d => d.name));
-  rec.pool = [...new Set((Array.isArray(raw.pool) ? raw.pool : []).map(x => String(x)).filter(x => x && !gone.has(x)))];
+  const legs = new Set(added.filter(x => x.legend).map(x => x.name));
+  rec.pool = [...new Set((Array.isArray(raw.pool) ? raw.pool : []).map(x => String(x)).filter(x => x && !gone.has(x) && !legs.has(x)))];
   return { rec, dropped };
 }
 
@@ -959,12 +962,14 @@ function withRegionSpecies(dex, choices) {
 function worldRegions(choices) {
   const regs = builtinRegions(), adds = [];
   const nbOf = rec => rec.nb.map(builtinRegionIdx).filter(i => i >= 0);
+  // (0.31.0) a region's own legendaries (legendary encounters among its new Pokémon) are at home there
+  const ownLegs = rec => rec.added.filter(e => e.legend && !e.from).map(e => e.name);
   const make = (rec, old, at) => ({ name: rec.name + ' League', towns: rec.towns.slice(), extra: rec.extra.slice(), seat: rec.seat, seat2: rec.seat2,
     nb: nbOf(rec).length ? nbOf(rec) : old ? old.nb.slice() : null, ports: Object.assign({}, rec.ports),
-    legends: rec.legends ? rec.legends.slice() : old ? old.legends.slice() : [], claims: rec.legends ? rec.legends.slice() : null,
+    legends: (rec.legends ? rec.legends.slice() : old ? old.legends.slice() : []).concat(ownLegs(rec)), claims: rec.legends ? rec.legends.slice() : null,
     posts: rec.posts ? Object.assign({}, rec.posts) : null, base: null, pool: rec.pool.slice(), rep: old ? at : null, from: rec.name, lock: !!rec.lock, solo: rec.rivals === false });
   for (const c of choices) {
-    if (c.mode === 'pool') Object.assign(regs[c.of], { pool: c.rec.pool.slice(), base: null, rep: c.of, from: c.rec.name, lock: !!c.rec.lock, solo: c.rec.rivals === false });
+    if (c.mode === 'pool') Object.assign(regs[c.of], { pool: c.rec.pool.slice(), base: null, rep: c.of, from: c.rec.name, lock: !!c.rec.lock, solo: c.rec.rivals === false, legends: regs[c.of].legends.concat(ownLegs(c.rec)) });
     else if (c.mode === 'whole') regs[c.of] = make(c.rec, regs[c.of], c.of);
     else adds.push(make(c.rec, null, null));
   }

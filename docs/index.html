@@ -7690,7 +7690,8 @@ function legendWeek() {
   // v184: rare encounters of their own
   for (const sp of shuffle(['Regigigas', 'Darkrai', 'Cresselia', 'Deoxys', 'Heatran', 'Genesect'])) if (rand() < RARE_ENCOUNTER * regionMul(sp) && startLegend(sp)) return;
   // v185: legendaries from this league's own Pokédex, rarer still
-  for (const sp of shuffle(DEX_LEGENDS.slice())) if (SP[sp] && SP[sp].dexLegend && rand() < DEX_LEGEND_CHANCE && startLegend(sp, `A legendary Pokémon no one has ever recorded has appeared: ${sp}.`)) return;
+  // (0.31.0) a custom region's own legendary is at home there (×3), elsewhere ×0.5, and never away from home if locked
+  for (const sp of shuffle(DEX_LEGENDS.slice())) if (SP[sp] && SP[sp].dexLegend && rand() < DEX_LEGEND_CHANCE * (SP[sp].homeOnly != null && SP[sp].homeOnly !== S.region ? 0 : regionMul(sp)) && startLegend(sp, `A legendary Pokémon no one has ever recorded has appeared: ${sp}.`)) return;
 }
 // v184: Missingno. Very rarely it glitches onto a random challenger's team (weighted toward those having a poor
 // season, but anyone can get it). It stays 6–10 seasons, and now and then it glitches away mid-season.
@@ -13455,7 +13456,8 @@ function applyRegions(given) {
 // gym cities), extra (3 towns), seat, seat2, nb (2 to 3 built-in regions next to it, by name), ports ({ place: 'port' |
 // 'railway' }), legends (the legendaries at home there; null: a replacement keeps the replaced region's), posts ({
 // leader, gymtrainer }: other names for the posts, or null), pool (its lines, by first stage), added (its own new
-// Pokémon, My Pokédex entries), lock (its new Pokémon never leave it), rivals (false: only the player's League may
+// Pokémon, My Pokédex entries; one over DEX_LEGEND_BST can be a legendary encounter, at home there), lock (its new
+// Pokémon never leave it), rivals (false: only the player's League may
 // start or open there) }. At a new game each one can be added as a new region, replace a built-in region's Pokémon
 // (keeping its name, cities, ports and neighbours) or replace the whole region. Every number is provisional (item 44).
 const REGION_KEY = 'plb-regions-v1', REGION_CODE = 'PLR1:', REGION_NAME_MAX = 24, POST_NAME_MAX = 20;
@@ -13557,9 +13559,10 @@ function regionNorm(raw, o = {}) {
   const posts = raw.posts && typeof raw.posts === 'object' ? { leader: str(raw.posts.leader, POST_NAME_MAX), gymtrainer: str(raw.posts.gymtrainer, POST_NAME_MAX) } : null;
   rec.posts = posts && (posts.leader || posts.gymtrainer) ? posts : null;
   rec.lock = !!raw.lock; rec.rivals = raw.rivals !== false;
-  // its own Pokémon: My Pokédex entries (never a legendary encounter), checked with every other new Pokémon in view
+  // its own Pokémon: My Pokédex entries (a legendary encounter too, over DEX_LEGEND_BST), checked with every other new
+  // Pokémon in view
   const dropped = [], others = (o.lib || regionLib).regions.filter(r => !rec.id || r.id !== rec.id).flatMap(r => r.added || []);
-  let added = (Array.isArray(raw.added) ? raw.added : []).map(e => { const x = dexNorm(e); delete x.legend; return x; }).filter(x => { if (dexEntryOk(x) && x.name) return true; dropped.push({ name: x.name || '?', why: 'broken' }); return false; });
+  let added = (Array.isArray(raw.added) ? raw.added : []).map(e => dexNorm(e)).filter(x => { if (dexEntryOk(x) && x.name) return true; dropped.push({ name: x.name || '?', why: 'broken' }); return false; });
   if (!o.keepId) {
     dexSnapshot();
     const taken = n => { const low = n.toLowerCase(); return Object.keys(DEX_BASE).some(x => x.toLowerCase() === low) || Object.values(MEGA).flat().some(f => f.name.toLowerCase() === low) || dexLib.added.some(x => x.name.toLowerCase() === low) || others.some(x => x.name.toLowerCase() === low); };
@@ -13572,7 +13575,8 @@ function regionNorm(raw, o = {}) {
   }
   rec.added = added;
   const gone = new Set(dropped.map(d => d.name));
-  rec.pool = [...new Set((Array.isArray(raw.pool) ? raw.pool : []).map(x => String(x)).filter(x => x && !gone.has(x)))];
+  const legs = new Set(added.filter(x => x.legend).map(x => x.name));
+  rec.pool = [...new Set((Array.isArray(raw.pool) ? raw.pool : []).map(x => String(x)).filter(x => x && !gone.has(x) && !legs.has(x)))];
   return { rec, dropped };
 }
 
@@ -13640,12 +13644,14 @@ function withRegionSpecies(dex, choices) {
 function worldRegions(choices) {
   const regs = builtinRegions(), adds = [];
   const nbOf = rec => rec.nb.map(builtinRegionIdx).filter(i => i >= 0);
+  // (0.31.0) a region's own legendaries (legendary encounters among its new Pokémon) are at home there
+  const ownLegs = rec => rec.added.filter(e => e.legend && !e.from).map(e => e.name);
   const make = (rec, old, at) => ({ name: rec.name + ' League', towns: rec.towns.slice(), extra: rec.extra.slice(), seat: rec.seat, seat2: rec.seat2,
     nb: nbOf(rec).length ? nbOf(rec) : old ? old.nb.slice() : null, ports: Object.assign({}, rec.ports),
-    legends: rec.legends ? rec.legends.slice() : old ? old.legends.slice() : [], claims: rec.legends ? rec.legends.slice() : null,
+    legends: (rec.legends ? rec.legends.slice() : old ? old.legends.slice() : []).concat(ownLegs(rec)), claims: rec.legends ? rec.legends.slice() : null,
     posts: rec.posts ? Object.assign({}, rec.posts) : null, base: null, pool: rec.pool.slice(), rep: old ? at : null, from: rec.name, lock: !!rec.lock, solo: rec.rivals === false });
   for (const c of choices) {
-    if (c.mode === 'pool') Object.assign(regs[c.of], { pool: c.rec.pool.slice(), base: null, rep: c.of, from: c.rec.name, lock: !!c.rec.lock, solo: c.rec.rivals === false });
+    if (c.mode === 'pool') Object.assign(regs[c.of], { pool: c.rec.pool.slice(), base: null, rep: c.of, from: c.rec.name, lock: !!c.rec.lock, solo: c.rec.rivals === false, legends: regs[c.of].legends.concat(ownLegs(c.rec)) });
     else if (c.mode === 'whole') regs[c.of] = make(c.rec, regs[c.of], c.of);
     else adds.push(make(c.rec, null, null));
   }
@@ -14488,10 +14494,10 @@ function rgOpen(rec) { rgDraft = JSON.parse(JSON.stringify(rec)); rgPorts = rgDr
 function rgRec() { const d = rgDraft, names = d.towns.concat(d.extra); return Object.assign({}, d, { ports: Object.fromEntries(names.map((n, i) => [n.trim(), rgPorts[i]]).filter(([n, k]) => n && k)) }); }
 function rgSet(path, v) { const ks = path.split('.'); let o = rgDraft; for (const k of ks.slice(0, -1)) { if (o[k] == null) o[k] = {}; o = o[k]; } o[ks[ks.length - 1]] = v; }
 const rgField = (label, path, val, max = REGION_NAME_MAX, ph = '') => `<label class="cf-field"><span class="eyebrow">${label}</span><input class="cf-in rg-f" data-f="${path}" maxlength="${max}" value="${esc(val || '')}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off"></label>`;
-function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false }; }
+function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false }; }
 function rgSpRead() {
   const v = id => (($(id) || {}).value || '').trim(), ck = id => !!($(id) || {}).checked;
-  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter') });
+  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend') });
 }
 // the new Pokémon of every other region in the library, and My Pokédex's, for name and evolution checks
 const rgOthers = () => dexLib.added.concat(regionLib.regions.filter(r => r.id !== rgDraft.id).flatMap(r => r.added));
@@ -14503,7 +14509,9 @@ function rgSpSave() {
   if (errs.length) { rgSpErrs = [...new Set(errs)]; rgSp = Object.assign({}, e, { types: [e.types[0] || 'Normal', e.types[1] || ''] }); return; }
   if (rgSpWas) { const i = rgDraft.added.findIndex(x => x.name === rgSpWas); rgDraft.added[i] = e; rgDraft.pool = rgDraft.pool.map(b => b === rgSpWas ? e.name : b); rgDraft.added.forEach(x => { if (x.from === rgSpWas) x.from = e.name; }); }
   else rgDraft.added.push(e);
-  if (!e.from && !rgDraft.pool.includes(e.name)) rgDraft.pool.push(e.name);
+  // a legendary encounter is never on the list (it only comes as an encounter, at home in this region)
+  if (e.legend) rgDraft.pool = rgDraft.pool.filter(b => b !== e.name);
+  else if (!e.from && !rgDraft.pool.includes(e.name)) rgDraft.pool.push(e.name);
   rgMsg = `${rgSpWas ? 'Saved' : 'Added'} ${e.name}.`; rgSp = null; rgSpWas = null; rgSpErrs = [];
 }
 function rgSpDelete(n) {
@@ -14522,8 +14530,9 @@ function rgSpForm() {
     <div class="cf-grid">${field('Ability', sel('rgs-ab0', d.ab[0], abOpts('Choose…')))}${field('Second ability', sel('rgs-ab1', d.ab[1], abOpts('None')))}${field('Hidden ability', sel('rgs-ab2', d.ab[2], abOpts('None')))}</div>
     <div class="cf-grid">${field('Evolves from', `<input id="rgs-from" class="cf-in" list="rgs-parents" value="${esc(d.from || '')}" placeholder="Nothing: found in the wild" autocomplete="off">`)}${field('At level', `<input id="rgs-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl || 30)}">`)}</div>
     <datalist id="rgs-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <div class="adv-list"><label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
-    <p class="muted small">It works as if added to My Pokédex, in every world that uses this region. A first-stage Pokémon joins the region's list; one that evolves from another joins that line.</p>
+    <div class="adv-list"><label class="cf-imp-row"><input id="rgs-legend" type="checkbox"${d.legend ? ' checked' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Only for a base stat total over ${DEX_LEGEND_BST}, with nothing it evolves from and nothing evolving from it. Never found in the wild: it appears as a very rare legendary encounter, three times likelier in this region (only here if its new Pokémon are kept here), and one trainer holds it at a time. Rare and Starter don't apply to it.</span></span></label>
+      <label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
+    <p class="muted small">It works as if added to My Pokédex, in every world that uses this region. A first-stage Pokémon joins the region's list; one that evolves from another joins that line; a legendary encounter is kept off the list.</p>
     ${rgSpErrs.length ? `<ul class="warn cf-errs">${rgSpErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <div class="confirm-row"><button class="btn primary" data-act="rgspsave">${rgSpWas ? 'Save Pokémon' : 'Add Pokémon'}</button><button class="btn" data-act="rgspcancel">Cancel</button></div></div>`;
 }
@@ -14544,7 +14553,7 @@ function viewRegionEditor() {
       <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}</div>
       <div class="adv-list">
         <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
-        <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away. Off: they travel like any Pokémon.</span></span></button>
+        <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>
       </div></section>
     <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
       <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
@@ -14573,7 +14582,7 @@ function viewRegionEditor() {
       ${st.missing.length ? `<p class="muted small">Not in the game with the Pokédex in use: ${st.missing.map(b => `<span class="rg-sp">${esc(b)}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`).join(' ')}</p>` : ''}
       <div class="eyebrow">Strong lines by type</div><p class="muted small">${TYPES.map(t => `<span class="${st.typeN[t] < 5 ? 'bad' : ''}">${t} ${st.typeN[t]}</span>`).join(' · ')}</p></section>
     <section class="panel"><div class="ph"><h2>Its own new Pokémon</h2><span class="muted">${d.added.length} new</span></div>
-      ${d.added.length ? `<div class="cf-list">${d.added.map(e => `<div class="cf-row${rgSpWas === e.name ? ' on' : ''}"><div class="cf-info"><b>${esc(e.name)}</b> ${chips(e.types)}<div class="muted small">${dxStatLine(e.stats)} · total ${e.stats.reduce((a, x) => a + x, 0)} · ${e.from ? `evolves from ${esc(e.from)} at Lv ${e.lvl}` : 'found in the wild'}</div></div>
+      ${d.added.length ? `<div class="cf-list">${d.added.map(e => `<div class="cf-row${rgSpWas === e.name ? ' on' : ''}"><div class="cf-info"><b>${esc(e.name)}</b> ${chips(e.types)}${e.legend ? ' <span class="tag legend">Legendary encounter</span>' : ''}<div class="muted small">${dxStatLine(e.stats)} · total ${e.stats.reduce((a, x) => a + x, 0)} · ${e.from ? `evolves from ${esc(e.from)} at Lv ${e.lvl}` : e.legend ? 'a very rare legendary encounter, at home here' : 'found in the wild'}</div></div>
         <div class="cf-acts"><button class="btn small" data-act="rgspedit" data-k="${esc(e.name)}">Edit</button><button class="btn small danger" data-act="rgspdel" data-k="${esc(e.name)}" aria-label="Delete ${esc(e.name)}">Delete</button></div></div>`).join('')}</div>` : '<p class="muted small">None. Pokémon of its own come with the region when it is shared.</p>'}
       ${rgSp ? rgSpForm() : '<div class="confirm-row"><button class="btn" data-act="rgspnew">Add a new Pokémon</button></div>'}</section>
     <section class="panel"><div class="ph"><h2>Checks</h2><span class="muted">Warnings don't stop you saving</span></div>
@@ -16373,7 +16382,7 @@ const GLOSS_TERMS = {
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
     ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When nothing fits a post, weak stopgaps stand in. Rival Leagues run their ranches by their aim.`],
     ['Regional encounters', `Each region has its own Pokémon (about ${REGION_SIZE} species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto; Sylveon brings Eevee's family to Kalos), and regional forms belong to their region as well (Alolan forms to Alola, Galarian to Galar, Paldean to Paldea, Hisuian ones to Sinnoh). Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. Neighbours: ${NEIGHBOURS.map((ns, r) => `${regionName(r)} (${ns.map(regionName).join(', ')})`).join('; ')}. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
-    ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 3 towns and 2 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
+    ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 3 towns and 2 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region; one with a base stat total over ${DEX_LEGEND_BST} can be a legendary encounter, at home in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
     ['Shipping lanes, charters and the safari', `A shipping lane is built in a port city where the League has a gym (Vermilion, Cinnabar, Olivine, Cianwood, Slateport, Lilycove, Dewford, Canalave, Sunyshore; Goldenrod's is the railway) and serves one other region: its Pokémon can be caught on the League's targeted trips and turn up at its market all the time. It costs a weekly fee besides upkeep, and a fee to change the route. A charter is a one-off shipment of two or three Pokémon from any other region. The Safari Zone (one per League, in a gym city) holds foreign Pokémon from mixed regions, changing every 12 weeks, that only the League's own targeted trips can catch; higher levels hold more and bring back better grades. All lapse while the League is in the red. When a post's steer wants a Pokémon the League can't reach, the Ranch page says where it lives.`],
     ['Youth academy', `A League-level purchase at the seat that takes no slot. Each of its three levels raises a young prospect a year who sets out on your circuit as one of your own: ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers and paid ${Math.round((1 - ACADEMY_PAY) * 100)}% less by you. Rival Leagues build academies too.`],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
@@ -16482,7 +16491,8 @@ const UPDATES = [
   { id: 31, ver: '0.31.0', date: 'November 17, 2026', time: '3:45 PM ET', title: 'Custom regions: the region editor and sharing', items: [
     "Advanced options has a new section, Custom regions, beside My Pokédex. Make a region of your own from nothing, as a copy of a built-in region, or with a generated list, then edit it: its name, its eight gym cities, three towns and two League seats, which places are ports or railways, two or three neighbouring regions, the legendaries at home there, and other names for its Gym Leaders and gym trainers (as Alola has Kahunas and Trial Captains).",
     "The list of Pokémon found in a region can be copied from a built-in region, added to, cleared, or generated by type, generation and strength (gentle, standard with at most three pseudo-legendaries, or strong), then edited line by line. The editor flags thin types (fewer than five strong lines) and a list far from the usual 250 species, but never stops you: an all-Water archipelago is allowed.",
-    "A region can have new Pokémon of its own. They work as if added to My Pokédex in any world that uses the region, and come along when the region is shared. Tick Keep its new Pokémon here and they never migrate, ride lanes or charters, or leave with a challenger moving away.",
+"A region can have new Pokémon of its own. They work as if added to My Pokédex in any world that uses the region, and come along when the region is shared. Tick Keep its new Pokémon here and they never migrate, ride lanes or charters, or leave with a challenger moving away.",
+    "A region's own new Pokémon with a base stat total over 650 can be tagged as a legendary encounter, as in My Pokédex. It's never found in the wild; it turns up as a very rare legendary encounter, three times likelier in its own region (and only there if the region keeps its new Pokémon), with one trainer holding it at a time.",
     "Each region can be open to rival Leagues or kept for your League alone.",
     "Share a region as a file or a paste code, and import either. A region from a newer version of the game is refused with a message. If one of its new Pokémon has a name that's already taken (a game Pokémon, one in My Pokédex or in another of your regions), it's left out and the import tells you which.",
     "When starting a new world, each of your regions can be left out, added as a new region beside the nine, swapped in for a built-in region's Pokémon only (keeping its name, cities, ports and neighbours), or swapped in for the whole region. Legendaries a custom region claims move out of their usual home. Pokémon that only lived in a replaced region move to its neighbours, so nothing disappears.",

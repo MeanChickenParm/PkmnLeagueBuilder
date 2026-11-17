@@ -9,19 +9,23 @@ const YEARS = +process.argv[2] || 5, fails = [], fail = m => fails.push(m);
 g.seedRandom(31);
 // ---------- the region files ----------
 const land = g.regionCopy(0); land.name = 'Testland'; land.lock = true; land.rivals = false; land.legends = ['Mewtwo']; land.nb = ['Kanto', 'Alola'];
-land.added = [{ name: 'Testmon', types: ['Water'], stats: [70, 80, 70, 60, 60, 90], ab: ['Torrent', '', ''] }, { name: 'Testevo', types: ['Water', 'Dark'], stats: [90, 110, 85, 80, 80, 105], ab: ['Torrent', '', ''], from: 'Testmon', lvl: 30 }];
+land.added = [{ name: 'Testmon', types: ['Water'], stats: [70, 80, 70, 60, 60, 90], ab: ['Torrent', '', ''] }, { name: 'Testevo', types: ['Water', 'Dark'], stats: [90, 110, 85, 80, 80, 105], ab: ['Torrent', '', ''], from: 'Testmon', lvl: 30 },
+  { name: 'Testgod', types: ['Water', 'Dragon'], stats: [120, 120, 120, 120, 120, 120], ab: ['Pressure', '', ''], legend: true }];
 land.pool.push('Testmon'); land.ports = { Vermilion: 'port' }; land.posts = { leader: 'Warden', gymtrainer: '' };
 { const r = g.regionRead(g.regionCode(land));
-  if (r.err || r.dropped.length || r.rec.added.length !== 2 || r.rec.pool.length !== land.pool.length || r.rec.posts.leader !== 'Warden' || r.rec.ports.Vermilion !== 'port') fail('the paste code round trip: ' + JSON.stringify(r).slice(0, 200));
+  if (r.err || r.dropped.length || r.rec.added.length !== 3 || !r.rec.added[2].legend || r.rec.pool.length !== land.pool.length || r.rec.posts.leader !== 'Warden' || r.rec.ports.Vermilion !== 'port') fail('the paste code round trip: ' + JSON.stringify(r).slice(0, 200));
   const newer = g.regionNorm({ plbRegion: 99, region: land }); if (!newer.err || !/newer/.test(newer.err)) fail('a newer format was not refused');
   // a taken name (a game Pokémon's) is left out and flagged; what evolved from it now branches from the game's own
   const clash = JSON.parse(JSON.stringify(land)); clash.added[0].name = 'Pikachu'; clash.added[1].from = 'Pikachu';
   const c = g.regionRead(g.regionFileText(clash));
-  if (c.rec.added.length !== 1 || c.dropped.length !== 1 || c.dropped[0].name !== 'Pikachu' || c.dropped[0].why !== 'taken') fail('a taken name: ' + JSON.stringify(c.dropped));
+  if (c.rec.added.length !== 2 || c.dropped.length !== 1 || c.dropped[0].name !== 'Pikachu' || c.dropped[0].why !== 'taken') fail('a taken name: ' + JSON.stringify(c.dropped));
   // one that evolves from a dropped Pokémon of the region's own is left out too
   const orphan = JSON.parse(JSON.stringify(land)); orphan.added[0].name = 'Pikachu'; const o2 = g.regionRead(g.regionFileText(orphan));
-  if (o2.rec.added.length || !o2.dropped.some(d => d.name === 'Testevo')) fail('an evolution of a dropped Pokémon: ' + JSON.stringify(o2.dropped));
+  if (o2.rec.added.length !== 1 || !o2.dropped.some(d => d.name === 'Testevo')) fail('an evolution of a dropped Pokémon: ' + JSON.stringify(o2.dropped));
   if (!g.regionRead('not a region').err) fail('junk read as a region');
+  // a legendary encounter needs a total over DEX_LEGEND_BST (650): a weak one is left out as broken
+  const weak = JSON.parse(JSON.stringify(land)); weak.added[2].stats = [100, 100, 100, 100, 100, 100]; const w = g.regionRead(g.regionFileText(weak));
+  if (w.rec.added.some(x => x.name === 'Testgod') || !w.dropped.some(d => d.name === 'Testgod' && d.why === 'broken')) fail('a legendary encounter under the bar was kept');
   const chk = g.regionChecks(Object.assign(g.regionBlank(), { towns: ['A', 'A', 'B', 'C', 'D', 'E', 'F', 'G'] })); if (!chk.errs.length) fail('two places with one name passed the checks');
   const thin = g.regionChecks(Object.assign(g.regionBlank(), { pool: g.generatePool({ types: ['Water'] }) })); if (!thin.warns.some(w => /Thin types/.test(w)) || thin.errs.length) fail('a themed list: no thin-type warning, or blocked');
   for (const power of ['gentle', 'standard', 'strong']) { const p = g.generatePool({ power }), st = g.poolStats(p); if (st.size < 230 || st.size > 270) fail(`generated ${power} list of ${st.size} species`);
@@ -40,6 +44,9 @@ if (g.LEGEND_HOME.Mewtwo !== 9 || R[0].legends.includes('Mewtwo')) fail('Mewtwo 
 g.NEIGHBOURS.forEach((a, i) => a.forEach(x => { if (!g.NEIGHBOURS[x].includes(i)) fail('neighbours not two-way ' + i + '-' + x); }));
 if (!g.SP.Testmon || g.SP.Testmon.homeOnly !== 9 || !g.homeSet(9).has('Testmon') || g.lineBaseOf('Testevo') !== 'Testmon') fail('Testland\'s own Pokémon');
 if (g.wildOk('Testmon', 0) || !g.wildOk('Testmon', 9)) fail('a locked line found away from home');
+// its legendary: a legendary encounter at home in Testland, never on a list
+if (!g.SP.Testgod || !g.SP.Testgod.dexLegend || g.LEGEND_HOME.Testgod !== 9 || g.regionLines().sets.some(s => s.has('Testgod')) || g.ranchSpecies().includes('Testgod')) fail('Testland\'s legendary: ' + JSON.stringify(g.SP.Testgod));
+g.inLeague(0, () => { if (g.S.region !== 9 || g.regionMul('Testgod') !== 3) fail('Testgod is not three times likelier at home'); });
 // orphans: every line lives in some region; Hoenn's own lines that Aqua dropped went to Hoenn's neighbours
 { const sets = g.regionLines().sets, inAny = new Set(); sets.forEach(s => s.forEach(b => inAny.add(b)));
   const lost = g.ranchSpecies().filter(b => !inAny.has(b)); if (lost.length) fail('lines in no region: ' + lost.slice(0, 5));
