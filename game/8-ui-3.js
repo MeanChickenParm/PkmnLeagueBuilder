@@ -1,5 +1,17 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 28, ver: '0.28.0', date: 'November 17, 2026', time: '11:40 AM ET', title: 'Nine regions', items: [
+    "Five new regions: Unova, Kalos, Alola, Galar and Paldea. Each has a League of the same size as the others (eight gyms, the Elite Four and a Champion), eight gym cities, three towns without a gym, its seat and a second League's seat. Unova's gyms follow Black 2 and White 2; Galar's and Paldea's are their own.",
+    "Alola has no gyms, so its League is built on the island challenge: its gym cities are the challenge's stops in order (Hau'oli, Iki Town, Paniola, Konikoni, Malie, Tapu Village, Po Town, Seafolk), its Gym Leaders are Kahunas and their gym trainers Trial Captains, and the League sits on Mount Lanakila (a second Alolan League takes the Battle Tree).",
+    "Every generation now has its own region, so the regional lists were rebuilt: about 250 species a region (was 350), each line in two or three regions on average. Regional forms belong to their region as well as their family's (Alolan Vulpix to Alola, Galarian Meowth to Galar, Paldean Wooper to Paldea; Hisuian forms stay with Sinnoh). Every type still has at least five strong lines in every region.",
+    "Migration has a bigger map: the four Japanese regions keep their ring, Alola sits between Kanto, Hoenn and Unova, Unova faces Kalos and Galar across the sea, and Kalos, Galar and Paldea neighbour each other.",
+    "New ports for shipping lanes: Castelia, Virbank, Humilau, Coumarine, Shalour, Ambrette, Hau'oli, Konikoni, Seafolk, Heahea, Hulbury, Spikemuth, Levincia, Cascarrafa and Porto Marinada, with railways at Nimbasa, Lumiose and Hammerlocke.",
+    "Every region's own legendaries now turn up three times as often there (Unova's Swords of Justice and Forces of Nature, Kalos's Xerneas and Yveltal, Alola's Tapus and Ultra Beasts, Galar's Zacian and Zamazenta, Paldea's Treasures of Ruin, and so on).",
+    "The world still holds at most six Leagues, two to a region; with nine regions the starting rivals and new Leagues have more places to open.",
+    "Fixed: a member of staff whose type has few common Pokémon in a small region could be left a Pokémon short when a stopgap was needed (stopgaps now come from anywhere if the region has none).",
+    "Fixed: an acting Gym Leader sent back to their gym trainer's place could keep a ranch Pokémon or stopgap the ranch still counted.",
+    "Old saves don't load (save version 15).",
+  ] },
   { id: 27, ver: '0.27.0', date: 'November 17, 2026', time: '11:20 AM ET', title: 'Regional encounters', items: [
     "Pokémon are regional now. Kanto, Johto, Hoenn and Sinnoh each have their own species (about 350, counting evolutions): a family belongs to every region of its generations (Pichu is found in Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions until their own regions are added. Every type has at least five strong lines in every region. Wild Pokémon, new challengers' teams, mass outbreaks, the market, area trips and stopgaps all come from the region.",
     "Migration: three or four times a year, 10 to 20 kinds of Pokémon from a neighbouring region (now and then from further off) arrive for about two months, for challengers and for your ranch alike.",

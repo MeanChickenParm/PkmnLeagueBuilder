@@ -31,7 +31,7 @@ let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, 
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
   // (0.27.0) migration waves: from another region, lines that aren't the region's own, not past their end
-  for (const [r, w] of Object.entries(s.migr || {})) { if (!w || w.from === +r || !(w.from >= 0 && w.from < 4) || !w.lines.length || w.until < s.turn) bad('a bad migration ' + r + ' ' + JSON.stringify(w)); else { for (const b of w.lines) if (g.regionLines().sets[r].has(b)) bad('a migrant ' + b + ' already lives in region ' + r); const key = r + ':' + w.at; if (!WAVES.has(key)) { WAVES.add(key); REG.waves++; if (w.far) REG.far++; } } }
+  for (const [r, w] of Object.entries(s.migr || {})) { if (!w || w.from === +r || !(w.from >= 0 && w.from < g.nRegionsBuilt()) || !w.lines.length || w.until < s.turn) bad('a bad migration ' + r + ' ' + JSON.stringify(w)); else { for (const b of w.lines) if (g.regionLines().sets[r].has(b)) bad('a migrant ' + b + ' already lives in region ' + r); const key = r + ':' + w.at; if (!WAVES.has(key)) { WAVES.add(key); REG.waves++; if (w.far) REG.far++; } } }
   if (s.cfg && s.cfg.hand) g.inLeague(g.ME(), () => { if (g.S.ranch && !g.S.founding) REG.gapsMax = Math.max(REG.gapsMax, g.steerGaps().length); });
   // (0.17.0) sponsored contenders and the player's League
   if (g.ME() >= g.nLeagues()) bad('the player League index is out of range');
@@ -82,7 +82,7 @@ function check(tag) {
       if (R.safari) for (const b of R.safari.lines) if (g.homeSet(z.region).has(b)) bad('a home line in the safari');
       for (const l of g.lanesOf()) { if (!g.isPort(l.city)) bad('a lane off a port'); if (l.src === z.region) bad('a lane from home'); }
       if (z.gyms.filter(gy => (g.myPlaces().find(p => p.c && p.c.id === gy.city) || { b: [] }).b.some(x => x.k === 'safari')).length > 1) bad('two safaris'); }
-    for (const tr of R.trips) if (tr.k === 'charter' && (tr.r === z.region || !(tr.r >= 0 && tr.r < 4))) bad('a bad charter');
+    for (const tr of R.trips) if (tr.k === 'charter' && (tr.r === z.region || !(tr.r >= 0 && tr.r < g.nRegionsBuilt()))) bad('a bad charter');
     if (R.trips.length > g.TRIP_MAX + 3) bad('too many trips');
     const seen = new Set(); let stops = 0;
     for (const id of g.seniorIds()) for (const m of g.T(id).team) { if (m.rid != null) { if (seen.has(m.rid)) bad('one ranch Pokémon on two teams'); seen.add(m.rid); if (!ids.has(m.rid)) bad('a ranch Pokémon with no entry'); } if (m.stop) stops++; }
@@ -270,12 +270,12 @@ for (let i = 0; i < N; i++) {
         if (!w) { RAN.trips++; if (!avail) fail.push('a trip for a line out of reach: ' + b); if (z.fin.money !== m0 - p.cost) fail.push('trip cost wrong'); if (g.lineSource(b) === 'safari') REG.safariTrips++; }
         else if (!avail) REG.refusedTrips++; else if (z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('trip refused: ' + w); }
       // (0.27.0) charters, a lane (where a gym city is a port) and its route, the safari
-      else if (r < 0.19) { const to = rnd([0, 1, 2, 3].filter(x => x !== z.region)), w = g.startTrip('charter', to); if (!w) { REG.charters++; if (z.fin.money !== m0 - g.CHARTER_COST) fail.push('charter cost wrong'); } if (!g.startTrip('charter', z.region)) fail.push('a charter from home'); }
+      else if (r < 0.19) { const to = rnd([...Array(g.nRegionsBuilt()).keys()].filter(x => x !== z.region)), w = g.startTrip('charter', to); if (!w) { REG.charters++; if (z.fin.money !== m0 - g.CHARTER_COST) fail.push('charter cost wrong'); } if (!g.startTrip('charter', z.region)) fail.push('a charter from home'); }
       else if (r < 0.22) { const i = [0, 1, 2, 3, 4, 5, 6, 7].find(k => !g.buildCheck(k, 'lane').why), l = g.lanesOf()[0];
         if (!g.buildCheck('seat', 'lane').why) fail.push('a lane at the seat');
         for (let k = 0; k < 8; k++) if (!g.buildCheck(k, 'lane').why && !g.isPort(z.cities[z.gyms[k].city])) fail.push('a lane allowed off a port');
         if (i != null && z.fin.money >= g.buildCheck(i, 'lane').cost) { const c = g.buildCheck(i, 'lane').cost; if (!g.build(i, 'lane')) { REG.lanes++; if (z.fin.money !== m0 - c) fail.push('lane cost wrong'); if (!g.laneSet().size) fail.push('a lane brings nothing'); } }
-        else if (l) { const to = rnd([0, 1, 2, 3].filter(x => x !== z.region && x !== l.src)), mm = z.fin.money; if (to != null && !g.setLane(l.gym, to)) { REG.routes++; if (z.fin.money !== mm - g.LANE_ROUTE || g.lanesOf()[0].src !== to) fail.push('lane route change wrong'); } } }
+        else if (l) { const to = rnd([...Array(g.nRegionsBuilt()).keys()].filter(x => x !== z.region && x !== l.src)), mm = z.fin.money; if (to != null && !g.setLane(l.gym, to)) { REG.routes++; if (z.fin.money !== mm - g.LANE_ROUTE || g.lanesOf()[0].src !== to) fail.push('lane route change wrong'); } } }
       else if (r < 0.25) { const i = [0, 1, 2, 3, 4, 5, 6, 7].find(k => !g.buildCheck(k, 'safari').why); if (i != null && z.fin.money >= g.buildCheck(i, 'safari').cost) { if (!g.build(i, 'safari')) REG.safari++; if ([0, 1, 2, 3, 4, 5, 6, 7].some(k => k !== i && !g.buildCheck(k, 'safari').why)) fail.push('a second safari allowed'); } }
       else if (r < 0.25) { if (!g.startTrip('area')) { RAN.area++; if (z.fin.money !== m0 - g.AREA_COST) fail.push('area trip cost wrong'); } }
       else if (r < 0.45) { const x = rnd(z.ranch.shop); if (x) { const n0 = z.ranch.mons.length, w = g.buyShop(x.uid); if (!w) { RAN.bought++; if (z.fin.money !== m0 - x.price || z.ranch.mons.length !== n0 + 1) fail.push('market purchase wrong'); } else if (g.ranchRoom() > 0 && m0 >= x.price) fail.push('market refused: ' + w); } }

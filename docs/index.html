@@ -4846,7 +4846,7 @@ const FEATURES = [
   { group: 'Wild Pokémon', items: [
     ['shiny', 'Shiny Pokémon', 'Rare shinies with perfect IVs, arriving on fire.'],
     ['radiant', 'Radiant Pokémon', 'Rarer than shinies: they wear the shiny colors, have at least Good IVs and a stronger ability than their species ever gets.'],
-    ['regional', 'Regional encounters', 'Each region has its own Pokémon (about 350 species); others turn up only with migration waves, shipping lanes, charters and the safari. Off: National Dex rules, every species everywhere.'],
+    ['regional', 'Regional encounters', 'Each region has its own Pokémon (about 250 species); others turn up only with migration waves, shipping lanes, charters and the safari. Off: National Dex rules, every species everywhere.'],
     ['delta', 'Delta Pokémon', 'Rarer than alphas, more common than shinies: an unusual second type and outstanding IVs.'],
     ['alpha', 'Alpha Pokémon', 'Uncommon alphas with outstanding IVs, already hot.'],
     ['outbreak', 'Mass outbreaks', 'One species swarms near a town for a week, with better shiny and alpha odds.'],
@@ -4904,7 +4904,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 14; // 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 15; // 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -4924,7 +4924,16 @@ const LEAGUE_SETS = [
   { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver', seat2: "Dragon's Den" },
   { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande', seat2: 'Sky Pillar' },
   { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar', seat2: 'Stark Mountain' },
+  // (0.28.0) the five later regions. Unova follows Black 2 and White 2's gyms; Galar's and Paldea's gyms fit as they are.
+  // Alola has no gyms: its eight gym cities are the island challenge's stops (trial sites and the kahunas' towns, in
+  // the challenge's order), its seat the League on Mount Lanakila, and its second League's seat the Battle Tree
+  { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm' },
+  { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette'], seat: 'Battle Château', seat2: 'Terminus Cave' },
+  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island'], seat: 'Mount Lanakila', seat2: 'Battle Tree' },
+  { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington'], seat: 'Wyndon', seat2: 'Crown Tundra' },
+  { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico'], seat: 'Mesagoza', seat2: 'Great Crater' },
 ];
+const ALOLA = 6;
 // (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
 // (gym.city), and more than one League can come to have a gym in the same city. Each region's cities are made the
@@ -7456,11 +7465,19 @@ function legendElsewhere(sp) {
   return false;
 }
 const everCaught = sp => !!(S.greatCaught && S.greatCaught[sp]);
-// (0.20.0) legendaries belong to a region: an event for one of Kanto's, Johto's, Hoenn's or Sinnoh's own turns up about
+// (0.20.0) legendaries belong to a region (all nine since 0.28.0): an event for one of a region's own turns up about
 // LEGEND_HOME_MUL times as often in a League of that region and LEGEND_AWAY_MUL as often elsewhere; the rest as before
 const LEGEND_HOME = { Articuno: 0, Zapdos: 0, Moltres: 0, Mewtwo: 0, Mew: 0, Raikou: 1, Entei: 1, Suicune: 1, Lugia: 1, 'Ho-Oh': 1, Celebi: 1,
   Regirock: 2, Regice: 2, Registeel: 2, Latias: 2, Latios: 2, Kyogre: 2, Groudon: 2, Rayquaza: 2, Jirachi: 2, Deoxys: 2,
-  Uxie: 3, Mesprit: 3, Azelf: 3, Dialga: 3, Palkia: 3, Giratina: 3, Heatran: 3, Regigigas: 3, Cresselia: 3, Darkrai: 3, Shaymin: 3, Manaphy: 3, Arceus: 3 };
+  Uxie: 3, Mesprit: 3, Azelf: 3, Dialga: 3, Palkia: 3, Giratina: 3, Heatran: 3, Regigigas: 3, Cresselia: 3, Darkrai: 3, Shaymin: 3, Manaphy: 3, Arceus: 3, Phione: 3, Enamorus: 3, 'Bloodmoon Ursaluna': 3,
+  // (0.28.0) the later regions
+  Victini: 4, Cobalion: 4, Terrakion: 4, Virizion: 4, Tornadus: 4, Thundurus: 4, Landorus: 4, Reshiram: 4, Zekrom: 4, Kyurem: 4, Keldeo: 4, Meloetta: 4, Genesect: 4,
+  Xerneas: 5, Yveltal: 5, Zygarde: 5, 'Zygarde 10%': 5, Diancie: 5, Hoopa: 5, Volcanion: 5, 'Eternal Flower Floette': 5,
+  'Type: Null': 6, Silvally: 6, 'Tapu Koko': 6, 'Tapu Lele': 6, 'Tapu Bulu': 6, 'Tapu Fini': 6, Cosmog: 6, Cosmoem: 6, Solgaleo: 6, Lunala: 6, Necrozma: 6, Magearna: 6, Marshadow: 6, Zeraora: 6, Meltan: 6, Melmetal: 6,
+  Nihilego: 6, Buzzwole: 6, Pheromosa: 6, Xurkitree: 6, Celesteela: 6, Kartana: 6, Guzzlord: 6, Poipole: 6, Naganadel: 6, Stakataka: 6, Blacephalon: 6,
+  Zacian: 7, Zamazenta: 7, Eternatus: 7, Kubfu: 7, 'Urshifu (Single Strike)': 7, 'Urshifu (Rapid Strike)': 7, Zarude: 7, Regieleki: 7, Regidrago: 7, Glastrier: 7, Spectrier: 7, Calyrex: 7,
+  'Galarian Articuno': 7, 'Galarian Zapdos': 7, 'Galarian Moltres': 7,
+  'Wo-Chien': 8, 'Chien-Pao': 8, 'Ting-Lu': 8, 'Chi-Yu': 8, Koraidon: 8, Miraidon: 8, Okidogi: 8, Munkidori: 8, Fezandipiti: 8, Ogerpon: 8, Terapagos: 8, Pecharunt: 8 };
 const LEGEND_HOME_MUL = 3, LEGEND_AWAY_MUL = 0.5;
 function regionMul(sp) { const h = LEGEND_HOME[sp]; return h == null ? 1 : h === (S.region || 0) ? LEGEND_HOME_MUL : LEGEND_AWAY_MUL; }
 // a pick weighted by region
@@ -9070,8 +9087,10 @@ function stepDownChance(t) {
 function postName(t) {
   if (t.role === 'champion') return `Champion of the ${S.lgName}`;
   if (t.role === 'e4') return `Elite Four seat #${S.e4.indexOf(t.id) + 1}`;
-  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} Gym Leader`;
-  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} Gym trainer`;
+  // (0.28.0) Alola's gyms are its island challenge: a Kahuna's grand trial with Trial Captains before it
+  const alola = S.region === ALOLA;
+  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} ${alola ? 'Kahuna' : 'Gym Leader'}`;
+  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} ${alola ? 'Trial Captain' : 'Gym trainer'}`;
   return '';
 }
 function announceStepDown(t) {
@@ -9199,7 +9218,7 @@ function fillVacancy(v, id, opts = {}) {
       if (a === t) { t.acting = false; g.acting = false; installElite(t, 'leader', v.slot); }
       else {
         // the acting leader goes back to the gym trainer's place they left
-        if (a && a.acting) { closePost(a); a.acting = false; a.role = 'gymtrainer'; const k = g.trainers.indexOf(null); g.trainers[k >= 0 ? k : g.trainers.length] = a.id; openPost(a, 'gymtrainer'); relevelElite(a); }
+        if (a && a.acting) { closePost(a); a.acting = false; a.role = 'gymtrainer'; const k = g.trainers.indexOf(null); g.trainers[k >= 0 ? k : g.trainers.length] = a.id; openPost(a, 'gymtrainer'); relevelElite(a); ranchSync(); }
         g.acting = false; g.leader = null;
         installElite(t, 'leader', v.slot);
       }
@@ -12697,6 +12716,13 @@ function ranchSync() {
   const R = S.ranch; if (!R) return;
   const byUid = new Set(R.mons.map(e => e.uid)), held = new Map();
   for (const id of seniorIds()) for (const m of T(id).team) if (m.rid != null) { if (byUid.has(m.rid) && !held.has(m.rid)) held.set(m.rid, id); else m.rid = null; }
+  // (0.28.0) an acting holder sent back to a gym trainer's place keeps what they fielded, like anyone leaving the
+  // senior staff, even if the entry never recorded them; their stopgaps stay behind
+  const gone = new Set();
+  for (const g of S.gyms || []) for (const id of g.trainers || []) { const t = id != null && T(id); if (!t || t.role !== 'gymtrainer') continue;
+    if (t.team.some(m => m.stop) && t.team.some(m => !m.stop)) t.team = t.team.filter(m => !m.stop);
+    for (const m of t.team) if (m.rid != null) { if (!held.has(m.rid)) gone.add(m.rid); m.rid = null; } }
+  if (gone.size) R.mons = R.mons.filter(e => !gone.has(e.uid));
   R.mons = R.mons.filter(e => {
     if (held.has(e.uid)) { e.at = held.get(e.uid); e.idle = null; return true; }
     if (e.at != null) { const p = T(e.at); if (p && (p.team || []).some(m => m.rfrom === e.uid)) { for (const m of p.team) if (m.rfrom === e.uid) m.rid = null; return false; } e.at = null; }
@@ -12727,8 +12753,11 @@ function ranchMon(t, e, L, form) {
 // post still fields its full team; a swap replaces them first
 function stopPicks(t, L, n, lines, mixed) {
   const ty = mixed ? [] : specTypes(t), out = [];
-  let pool = [...new Set(regional(ranchSpecies()).filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
+  // (0.28.0) a region too thin for the type (250 species since nine regions) falls back to every species
+  const poolOf = list => [...new Set(list.filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
     .filter(f => (!ty.length || SP[f].types.some(x => ty.includes(x))) && !lines.has(LINE[f]) && !bannedIn(f, S.lg || 0)).sort((a, b) => SP[a].bst - SP[b].bst);
+  let pool = poolOf(regional(ranchSpecies()));
+  if (pool.length < n) pool = poolOf(ranchSpecies());
   pool = pool.slice(0, Math.max(n * 2, Math.ceil(pool.length * 0.3)));
   while (out.length < n && pool.length) {
     const sp = pick(pool); pool = pool.filter(x => LINE[x] !== LINE[sp]); lines.add(LINE[sp]);
@@ -13032,8 +13061,7 @@ function aimRanch(aim) {
 // Encounters are regional: each region has its own lines (about REGION_SIZE species), and everything else turns up
 // only through migration waves (from a neighbouring region, now and then from further off), a League's shipping lanes
 // (a port city's lane, or Goldenrod's railway), charters and the safari. The feature 'regional' (on by default) turns
-// it on; off is National Dex rules (every species everywhere). The four regions built so far share Gen V to IX out
-// between them until those regions are added (then the lists are reshuffled to about 250).
+// it on; off is National Dex rules (every species everywhere). (0.28.0) All nine regions exist, each with about 250.
 // A line belongs to every region of its family's generations (Pichu: Kanto and Johto); regional forms go with the
 // species they are a form of, and Hisuian ones (and the lines Hisui gave new evolutions) with Sinnoh. Lines with no
 // generation of the four are spread over them, each to the region with the fewest species, by type. Then each region
@@ -13049,15 +13077,30 @@ const GEN_SPECIES = [
   'Snorunt Glalie Ralts Kirlia Gardevoir Shuppet Banette Duskull Dusclops Swablu Altaria Trapinch Vibrava Flygon Bagon Shelgon Salamence Absol Aron Lairon Aggron Beldum Metang Metagross Mawile Azurill Treecko Grovyle Sceptile Torchic Combusken Blaziken Mudkip Marshtomp Swampert Taillow Swellow Corphish Crawdaunt Torkoal Lotad Lombre Ludicolo Luvdisc Nosepass Makuhita Hariyama Meditite Medicham Electrike Manectric Numel Camerupt Slakoth Vigoroth Slaking Spinda Zigzagoon Linoone Wingull Pelipper Tropius Lunatone Solrock Baltoy Claydol Feebas Milotic Wailmer Wailord Carvanha Sharpedo Barboach Whiscash Spheal Sealeo Walrein Wynaut Poochyena Mightyena Wurmple Silcoon Beautifly Cascoon Dustox Seedot Nuzleaf Shiftry Surskit Masquerain Shroomish Breloom Nincada Ninjask Shedinja Whismur Loudred Exploud Skitty Delcatty Sableye Plusle Minun Volbeat Illumise Roselia Gulpin Swalot Spoink Grumpig Cacnea Cacturne Zangoose Seviper Lileep Cradily Anorith Armaldo Castform Kecleon Chimecho Clamperl Huntail Gorebyss Relicanth',
   // Gen IV (and Hisui's new evolutions and forms, below)
   'Leafeon Glaceon Porygon-Z Tangrowth Magnezone Mamoswine Weavile Froslass Riolu Lucario Gible Gabite Garchomp Honchkrow Gallade Rhyperior Mismagius Dusknoir Bronzor Bronzong Probopass Electivire Magmortar Munchlax Togekiss Mime_Jr. Lickilicky Happiny Yanmega Gliscor Mantyke Ambipom Croagunk Toxicroak Bonsly Budew Roserade Chingling Turtwig Grotle Torterra Chimchar Monferno Infernape Piplup Prinplup Empoleon Starly Staravia Staraptor Bidoof Bibarel Kricketot Kricketune Shinx Luxio Luxray Cranidos Rampardos Shieldon Bastiodon Burmy Wormadam Mothim Combee Vespiquen Pachirisu Buizel Floatzel Cherubi Cherrim Shellos Gastrodon Drifloon Drifblim Buneary Lopunny Glameow Purugly Stunky Skuntank Chatot Spiritomb Hippopotas Hippowdon Skorupi Drapion Carnivine Finneon Lumineon Snover Abomasnow Rotom Kleavor Ursaluna Wyrdeer Sneasler Overqwil Basculegion',
+  // Gen V
+  'Snivy Servine Serperior Tepig Pignite Emboar Oshawott Dewott Samurott Patrat Watchog Lillipup Herdier Stoutland Purrloin Liepard Pansage Simisage Pansear Simisear Panpour Simipour Munna Musharna Pidove Tranquill Unfezant Blitzle Zebstrika Roggenrola Boldore Gigalith Woobat Swoobat Drilbur Excadrill Audino Timburr Gurdurr Conkeldurr Tympole Palpitoad Seismitoad Throh Sawk Sewaddle Swadloon Leavanny Venipede Whirlipede Scolipede Cottonee Whimsicott Petilil Lilligant Basculin Sandile Krokorok Krookodile Darumaka Darmanitan Maractus Dwebble Crustle Scraggy Scrafty Sigilyph Yamask Cofagrigus Tirtouga Carracosta Archen Archeops Trubbish Garbodor Zorua Zoroark Minccino Cinccino Gothita Gothorita Gothitelle Solosis Duosion Reuniclus Ducklett Swanna Vanillite Vanillish Vanilluxe Deerling Sawsbuck Emolga Karrablast Escavalier Foongus Amoonguss Frillish Jellicent Alomomola Joltik Galvantula Ferroseed Ferrothorn Klink Klang Klinklang Tynamo Eelektrik Eelektross Elgyem Beheeyem Litwick Lampent Chandelure Axew Fraxure Haxorus Cubchoo Beartic Cryogonal Shelmet Accelgor Stunfisk Mienfoo Mienshao Druddigon Golett Golurk Pawniard Bisharp Bouffalant Rufflet Braviary Vullaby Mandibuzz Heatmor Durant Deino Zweilous Hydreigon Larvesta Volcarona',
+  // Gen VI
+  'Chespin Quilladin Chesnaught Fennekin Braixen Delphox Froakie Frogadier Greninja Bunnelby Diggersby Fletchling Fletchinder Talonflame Scatterbug Spewpa Vivillon Litleo Pyroar Flabébé Floette Florges Skiddo Gogoat Pancham Pangoro Furfrou Espurr Meowstic Honedge Doublade Aegislash Spritzee Aromatisse Swirlix Slurpuff Inkay Malamar Binacle Barbaracle Skrelp Dragalge Clauncher Clawitzer Helioptile Heliolisk Tyrunt Tyrantrum Amaura Aurorus Sylveon Hawlucha Dedenne Carbink Goomy Sliggoo Goodra Klefki Phantump Trevenant Pumpkaboo Gourgeist Bergmite Avalugg Noibat Noivern',
+  // Gen VII
+  'Rowlet Dartrix Decidueye Litten Torracat Incineroar Popplio Brionne Primarina Pikipek Trumbeak Toucannon Yungoos Gumshoos Grubbin Charjabug Vikavolt Crabrawler Crabominable Oricorio Cutiefly Ribombee Rockruff Lycanroc Wishiwashi Mareanie Toxapex Mudbray Mudsdale Dewpider Araquanid Fomantis Lurantis Morelull Shiinotic Salandit Salazzle Stufful Bewear Bounsweet Steenee Tsareena Comfey Oranguru Passimian Wimpod Golisopod Sandygast Palossand Pyukumuku Minior Komala Turtonator Togedemaru Mimikyu Bruxish Drampa Dhelmise Jangmo-o Hakamo-o Kommo-o',
+  // Gen VIII (Hisui's are with Gen IV)
+  'Grookey Thwackey Rillaboom Scorbunny Raboot Cinderace Sobble Drizzile Inteleon Skwovet Greedent Rookidee Corvisquire Corviknight Blipbug Dottler Orbeetle Nickit Thievul Gossifleur Eldegoss Wooloo Dubwool Chewtle Drednaw Yamper Boltund Rolycoly Carkol Coalossal Applin Flapple Appletun Silicobra Sandaconda Cramorant Arrokuda Barraskewda Toxel Toxtricity Sizzlipede Centiskorch Clobbopus Grapploct Sinistea Polteageist Hatenna Hattrem Hatterene Impidimp Morgrem Grimmsnarl Obstagoon Perrserker Cursola Sirfetch\'d Mr._Rime Runerigus Milcery Alcremie Falinks Pincurchin Snom Frosmoth Stonjourner Eiscue Indeedee Morpeko Cufant Copperajah Dracozolt Arctozolt Dracovish Arctovish Duraludon Dreepy Drakloak Dragapult',
+  // Gen IX
+  'Sprigatito Floragato Meowscarada Fuecoco Crocalor Skeledirge Quaxly Quaxwell Quaquaval Lechonk Oinkologne Tarountula Spidops Nymble Lokix Pawmi Pawmo Pawmot Tandemaus Maushold Fidough Dachsbun Smoliv Dolliv Arboliva Squawkabilly Nacli Naclstack Garganacl Charcadet Armarouge Ceruledge Tadbulb Bellibolt Wattrel Kilowattrel Maschiff Mabosstiff Shroodle Grafaiai Bramblin Brambleghast Toedscool Toedscruel Klawf Capsakid Scovillain Rellor Rabsca Flittle Espathra Tinkatink Tinkatuff Tinkaton Wiglett Wugtrio Bombirdier Finizen Palafin Varoom Revavroom Cyclizar Orthworm Glimmet Glimmora Greavard Houndstone Flamigo Cetoddle Cetitan Veluza Dondozo Tatsugiri Annihilape Clodsire Farigiraf Dudunsparce Kingambit Frigibax Arctibax Baxcalibur Gimmighoul Gholdengo Dipplin Poltchageist Sinistcha Archaludon Hydrapple',
 ].map(s => s.split(' ').map(n => n.replace(/_/g, ' ')));
 const GEN_OF = {}; GEN_SPECIES.forEach((list, g) => { for (const n of list) GEN_OF[n] = g; });
-// the regions next to each other (migration comes from these): Kanto–Johto, Johto–Hoenn, Hoenn–Sinnoh, Sinnoh–Kanto
-const NEIGHBOURS = [[1, 3], [0, 2], [1, 3], [0, 2]];
-const REGION_SIZE = 350, REGION_FLOOR = 5, FLOOR_BST = 450;
+// the regions next to each other (migration comes from these), by canon geography: the four Japanese regions in a ring
+// (Kanto–Johto–Hoenn–Sinnoh–Kanto), Alola between Kanto, Hoenn and Unova, Unova across the ocean from Kalos and
+// Galar, and Kalos, Galar and Paldea next to each other
+const NEIGHBOURS = [[1, 3, 6], [0, 2], [1, 3, 6], [2, 0], [6, 5, 7], [4, 7, 8], [0, 2, 4], [5, 8, 4], [5, 7]];
+const REGION_SIZE = 250, REGION_FLOOR = 5, FLOOR_BST = 450;
 const regionalOn = () => featOn('regional');
 // the region a species name belongs to on its own (null: none of the four)
+// (0.28.0) regional forms belong to their region (Alolan to Alola, Galarian to Galar, Paldean to Paldea; Hisuian and
+// White-Striped to Sinnoh, as Hisui) on top of their family's generations
+const FORM_REGION = { Alolan: 6, Galarian: 7, Hisuian: 3, 'White-Striped': 3, Paldean: 8 };
 function genRegion(n) {
-  if (/^Hisuian /.test(n)) return 3;
+  const f = n.match(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /); if (f) return FORM_REGION[f[1]];
   const base = n.replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
   return GEN_OF[base] != null ? GEN_OF[base] : GEN_OF[n] != null ? GEN_OF[n] : null;
 }
@@ -13173,7 +13216,11 @@ function regional(list, r = S.region) { if (!homeSet(r)) return list; const out 
 // (x.src on the building), whose lines the League can then catch on targeted trips and find at its market all the time.
 // LANE_WEEK a week on top of the usual upkeep; changing the route costs LANE_ROUTE. It lapses in the red. A charter is a
 // one-off shipment from any other region: CHARTER_COST, CHARTER_WEEKS, two or three of that region's Pokémon.
-const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port' };
+const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port',
+  // (0.28.0) the later regions: Nimbasa's Gear Station, Lumiose's and Hammerlocke's stations are railways
+  Castelia: 'port', Virbank: 'port', Humilau: 'port', Nimbasa: 'railway', Coumarine: 'port', Shalour: 'port', Ambrette: 'port', Lumiose: 'railway',
+  "Hau'oli": 'port', Konikoni: 'port', Seafolk: 'port', Heahea: 'port', Hulbury: 'port', Spikemuth: 'port', Hammerlocke: 'railway',
+  Levincia: 'port', 'Porto Marinada': 'port', Cascarrafa: 'port' };
 const LANE_WEEK = 400, LANE_ROUTE = 10000, CHARTER_COST = 12000, CHARTER_WEEKS = 3;
 const isPort = c => !!(c && PORTS[c.name]);
 // the bound League's lanes: [{ gym, city, src, rail }]
@@ -15693,7 +15740,7 @@ const GLOSS_TERMS = {
     ['Shiny (✦)', 'A rare wild Pokémon with perfect IVs that arrives on fire.'],
     ['Radiant (✧)', "Rarer than a shiny. It wears its species' shiny colors, always has at least Good IVs, and has an ability its species never gets that's stronger in battle than any it does. The ability stays through evolution."],
     ['Delta (Δ)', 'A rare Pokémon with an unusual second type and outstanding IVs.'],
-    ['Legendary / Mythical', `One-of-a-kind Pokémon: there is one of each in the whole world, held by one trainer or waiting for a new partner. The great legendaries appear through story events; others roam, come with storms, are found while exploring or choose a trainer. Kanto's, Johto's, Hoenn's and Sinnoh's own legendaries turn up about ${LEGEND_HOME_MUL} times as often in a League of their region and half as often elsewhere. A legendary (an Ultra Beast or a Paradox Pokémon too) only battles for a challenger with enough badges for its strength: base stats under 600 from ${OBEY_BADGES[0][1]} badges, under 680 from ${OBEY_BADGES[1][1]}, the strongest from ${OBEY_BADGES[2][1]}. At the Elite Four every Pokémon obeys. Your staff are never held back.`],
+    ['Legendary / Mythical', `One-of-a-kind Pokémon: there is one of each in the whole world, held by one trainer or waiting for a new partner. The great legendaries appear through story events; others roam, come with storms, are found while exploring or choose a trainer. Each region's own legendaries turn up about ${LEGEND_HOME_MUL} times as often in a League of their region and half as often elsewhere. A legendary (an Ultra Beast or a Paradox Pokémon too) only battles for a challenger with enough badges for its strength: base stats under 600 from ${OBEY_BADGES[0][1]} badges, under 680 from ${OBEY_BADGES[1][1]}, the strongest from ${OBEY_BADGES[2][1]}. At the Elite Four every Pokémon obeys. Your staff are never held back.`],
     ['Legendary site', `A gym city where a legendary appeared or was caught, for ${SITE_YEARS} years (a new one there starts the count again). Every League with a gym there can build a Sanctuary: it earns ${UPGRADES.sanct.income.map(money).join(', ')} a week by level while the site lasts (an attraction's income after) and adds ${SANCT_PRESTIGE} prestige a level each New Year while it lasts. Rival Leagues build them too.`],
     ['Roaming legendary', "Raikou, Entei, Suicune, Latias or Latios moving between towns for 7–9 weeks. Challengers exploring on the way to its town (or the next one) may find it among their wild Pokémon and catch it like any other."],
     ['Legendary storm', "Four weeks of weather over the whole region, brought by Articuno (blizzard), Moltres (heat wave), Zapdos (electric storm), Thundurus (thunderstorm), Tornadus (gale) or Landorus (who calms the skies after Tornadus or Thundurus). It powers up one type for everyone, and when it passes the legendary chooses the challenger who won the most battles in it, whatever their type."],
@@ -15730,7 +15777,7 @@ const GLOSS_TERMS = {
     ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
     ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When nothing fits a post, weak stopgaps stand in. Rival Leagues run their ranches by their aim.`],
-    ['Regional encounters', `Each region has its own Pokémon (about 350 species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions built so far. Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region: Kanto and Johto, Johto and Hoenn, Hoenn and Sinnoh, Sinnoh and Kanto), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
+    ['Regional encounters', `Each region has its own Pokémon (about ${REGION_SIZE} species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto; Sylveon brings Eevee's family to Kalos), and regional forms belong to their region as well (Alolan forms to Alola, Galarian to Galar, Paldean to Paldea, Hisuian ones to Sinnoh). Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. Neighbours: ${NEIGHBOURS.map((ns, r) => `${regionName(r)} (${ns.map(regionName).join(', ')})`).join('; ')}. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
     ['Shipping lanes, charters and the safari', `A shipping lane is built in a port city where the League has a gym (Vermilion, Cinnabar, Olivine, Cianwood, Slateport, Lilycove, Dewford, Canalave, Sunyshore; Goldenrod's is the railway) and serves one other region: its Pokémon can be caught on the League's targeted trips and turn up at its market all the time. It costs a weekly fee besides upkeep, and a fee to change the route. A charter is a one-off shipment of two or three Pokémon from any other region. The Safari Zone (one per League, in a gym city) holds foreign Pokémon from mixed regions, changing every 12 weeks, that only the League's own targeted trips can catch; higher levels hold more and bring back better grades. All lapse while the League is in the red. When a post's steer wants a Pokémon the League can't reach, the Ranch page says where it lives.`],
     ['Youth academy', `A League-level purchase at the seat that takes no slot. Each of its three levels raises a young prospect a year who sets out on your circuit as one of your own: ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers and paid ${Math.round((1 - ACADEMY_PAY) * 100)}% less by you. Rival Leagues build academies too.`],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
@@ -15836,6 +15883,18 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 28, ver: '0.28.0', date: 'November 17, 2026', time: '11:40 AM ET', title: 'Nine regions', items: [
+    "Five new regions: Unova, Kalos, Alola, Galar and Paldea. Each has a League of the same size as the others (eight gyms, the Elite Four and a Champion), eight gym cities, three towns without a gym, its seat and a second League's seat. Unova's gyms follow Black 2 and White 2; Galar's and Paldea's are their own.",
+    "Alola has no gyms, so its League is built on the island challenge: its gym cities are the challenge's stops in order (Hau'oli, Iki Town, Paniola, Konikoni, Malie, Tapu Village, Po Town, Seafolk), its Gym Leaders are Kahunas and their gym trainers Trial Captains, and the League sits on Mount Lanakila (a second Alolan League takes the Battle Tree).",
+    "Every generation now has its own region, so the regional lists were rebuilt: about 250 species a region (was 350), each line in two or three regions on average. Regional forms belong to their region as well as their family's (Alolan Vulpix to Alola, Galarian Meowth to Galar, Paldean Wooper to Paldea; Hisuian forms stay with Sinnoh). Every type still has at least five strong lines in every region.",
+    "Migration has a bigger map: the four Japanese regions keep their ring, Alola sits between Kanto, Hoenn and Unova, Unova faces Kalos and Galar across the sea, and Kalos, Galar and Paldea neighbour each other.",
+    "New ports for shipping lanes: Castelia, Virbank, Humilau, Coumarine, Shalour, Ambrette, Hau'oli, Konikoni, Seafolk, Heahea, Hulbury, Spikemuth, Levincia, Cascarrafa and Porto Marinada, with railways at Nimbasa, Lumiose and Hammerlocke.",
+    "Every region's own legendaries now turn up three times as often there (Unova's Swords of Justice and Forces of Nature, Kalos's Xerneas and Yveltal, Alola's Tapus and Ultra Beasts, Galar's Zacian and Zamazenta, Paldea's Treasures of Ruin, and so on).",
+    "The world still holds at most six Leagues, two to a region; with nine regions the starting rivals and new Leagues have more places to open.",
+    "Fixed: a member of staff whose type has few common Pokémon in a small region could be left a Pokémon short when a stopgap was needed (stopgaps now come from anywhere if the region has none).",
+    "Fixed: an acting Gym Leader sent back to their gym trainer's place could keep a ranch Pokémon or stopgap the ranch still counted.",
+    "Old saves don't load (save version 15).",
+  ] },
   { id: 27, ver: '0.27.0', date: 'November 17, 2026', time: '11:20 AM ET', title: 'Regional encounters', items: [
     "Pokémon are regional now. Kanto, Johto, Hoenn and Sinnoh each have their own species (about 350, counting evolutions): a family belongs to every region of its generations (Pichu is found in Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions until their own regions are added. Every type has at least five strong lines in every region. Wild Pokémon, new challengers' teams, mass outbreaks, the market, area trips and stopgaps all come from the region.",
     "Migration: three or four times a year, 10 to 20 kinds of Pokémon from a neighbouring region (now and then from further off) arrive for about two months, for challengers and for your ranch alike.",

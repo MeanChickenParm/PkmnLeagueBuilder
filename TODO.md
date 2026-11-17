@@ -38,14 +38,20 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Part 3** (challenger storage, picking at hire, the Sanctuary rework) is designed (6.5) and not built. Part 2 was built in 0.27.0.
 
 ## Left over from regional encounters (0.27.0)
-- **All the numbers are provisional** (item 41): `REGION_SIZE` 350, `REGION_FLOOR` 5 at `FLOOR_BST` 450, the neighbour ring, migration odds, length and size, the far share, lane and route prices and the weekly fee, charter cost and size, safari sizes, refresh and grade bonus, `FOREIGN_MAX` 3, `STEER_GAP` 0.5. Which port cities count is a judgment call (`PORTS`).
-- **The lists are algorithmic,** not the real regional dexes: Gen I to IV by generation, Gen V to IX spread by size and type, then borrowing. Hand-tuning by theme could come with the five new regions (when the lists shrink to about 250).
+- **All the numbers are provisional** (item 41): `REGION_SIZE` 250 (350 before 0.28.0), `REGION_FLOOR` 5 at `FLOOR_BST` 450, the neighbour ring, migration odds, length and size, the far share, lane and route prices and the weekly fee, charter cost and size, safari sizes, refresh and grade bonus, `FOREIGN_MAX` 3, `STEER_GAP` 0.5. Which port cities count is a judgment call (`PORTS`).
+- **The lists are algorithmic,** not the real regional dexes: each generation to its own region (regional forms to their region too), then borrowing for the type floor and to reach `REGION_SIZE`. Borrowing spreads some starters widely (Rowlet is in five regions). Hand-tuning by theme is still open.
 - **Delta forms** stay with their base species' regions; the owner may want Deltas found elsewhere as flavour (open).
-- **The five new regions** (Unova, Kalos, Alola, Galar, Paldea: cities, towns, seats, ports, Alola's gym cities) are a later build; `NEIGHBOURS`, `GEN_SPECIES` and `PORTS` grow then.
 - **Released on moving region:** part 3's storage should take these instead of `farewell`.
 - **Not measured:** the wall and the economy under regional rules (lighter testing). Thinner home pools may mean more stopgaps early; worth a look when balance comes back.
 - **Obedience by region** left as is (owner, Nov 17).
 - **Steer gaps** are shown, not acted on; rivals don't read them.
+
+## Left over from nine regions (0.28.0)
+- **The League cap stays at 6 (2 a region)** with nine regions, for speed and save size; reconsider once the game is played with more regions.
+- **Place names are judgment calls:** each new region's three towns, its two seats (Unova: Dragonspiral Tower, Giant Chasm; Kalos: Battle Château, Terminus Cave; Alola: Mount Lanakila, Battle Tree; Galar: Wyndon, Crown Tundra; Paldea: Mesagoza, Great Crater), the neighbour map and the new ports and railways.
+- **Alola's flavour is only names:** its gyms are the island challenge's stops, its Gym Leaders show as Kahunas and its gym trainers as Trial Captains (`postName`); everywhere else says Gym Leader. The League itself works like every other (the owner asked for the same size).
+- **Paradox Pokémon and Area Zero** are not tied to Paldea (Koraidon, Miraidon and Terapagos are Paldea's legendaries, so Area Zero opens there more often).
+- **Not measured:** the wall and the economy with 250-species regions.
 
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
@@ -187,7 +193,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## From 0.22.0 (title claims)
 - The title-claim numbers are provisional: `CLAIM_WANT` 0.3 (and its age, title and grudge steps), `CLAIM_GRACE` 2 years, `CLAIM_ANSWER` 8 weeks, `CLAIM_EDGE` 1.05, `CLAIM_PRESTIGE` 2, `CLAIM_ACCEPT` 0.35, `CLAIM_SPON` 0.5, `CLAIM_AI_YES` wall 0.35 / star 0.7 / money 0.5. Seen in the sims: about 6 to 12 claims in 12 to 20 years across a world of 1 to 6 Leagues.
 - Staff seat challenges (Elite Four for the Champion, Gym Leaders and deep runs for an Elite Four seat) still go ahead when unanswered; only title claims wait for the player. Ask the owner whether they should too.
-- Intermittent sim failure, not traced: `two of <legendary> in the world` / `(Paradox) held` twice, seen in 3 of about 10 god-mode growth sims (`3 1 12 1`, `1 1 20 1`) during the 0.22.0 chat, none in 5 runs of 0.21.0 and not in a probe without the sim's god edits; every test passed on the final code. Find which path puts the same legendary on two trainers (watch claims, deposed Champions and unretired trainers first).
+- Intermittent sim failure, not traced: `two of <legendary> in the world` / `(Paradox) held` twice, seen in 3 of about 10 god-mode growth sims (`3 1 12 1`, `1 1 20 1`) during the 0.22.0 chat, none in 5 runs of 0.21.0 and not in a probe without the sim's god edits; every test passed on the final code. Seen again once in the hand-placed sim in the 0.28.0 chat (`two of Celesteela`), passing on rerun. Find which path puts the same legendary on two trainers (watch claims, deposed Champions and unretired trainers first).
 
 
 - **New, 0.23.0 (prestige gating): all numbers provisional.** `PM_FREE` 62, `PM_PER` 4.5, `PM_REC` 0.3 (cap 20), `PM_FAMOUS` 15, `PM_HUNGRY` 0.7, `PM_HUNGRY_SHARE` 25, `PM_GRUDGE` 0.6; the founding pool (40, OVR 45–55, 4–6 at 58–62); rival floors 48/54. **League prestige climbs fast** (often 30–70 by year 3 and 100–250 by year 8, mostly from perfect years and wealth rank), so the gate mostly matters in the first three to five years; whether prestige earning should slow is open. **Rival Leagues stay weak for long** even with high prestige: they only hire at vacancies, poor-staff replacements and the yearly upgrade (300,000 spare), so some sat at senior OVR 55–60 after 8–14 years in the sims. Growth (0.24.0) may answer it; if not, the AI needs a reason to upgrade when prestige lets it.
