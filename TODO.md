@@ -55,7 +55,7 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 
 ## Left over from custom regions (0.31.0)
 - **All the numbers are provisional** (item 44): the warning band 180 to 330 species, the generator's power bands (gentle ≤ 540 and nothing rare; standard at most 3 lines reaching 600; strong weighted by strength cubed), two built-in neighbours for a new region with none chosen.
-- **A region's own new Pokémon can't be legendary encounters** (My Pokédex can make those); flag if the owner wants them.
+- **A region's own legendary encounters** (owner, Nov 17) use My Pokédex's bar (`DEX_LEGEND_BST` 650) and odds (`DEX_LEGEND_CHANCE` 0.001 a week) × the home multiplier (3 at home, 0.5 away, 0 away when locked). They can't be picked as another region's legendary in the editor (the list is the built-in legendaries).
 - **Neighbours are built-in regions only.** Two custom regions can't neighbour each other (design: the creator picks from the built-in nine). A whole replacement's neighbours are listed by built-in name, so naming the replaced region's own slot points at the replacement.
 - **Locked Pokémon can still change hands between Leagues** through ranch sales (listings); the lock covers the wild, migration, lanes, the safari, charters and challengers moving region.
 - **The size estimate on setup counts Leagues only,** not regions or list sizes (a world's speed barely depends on them).

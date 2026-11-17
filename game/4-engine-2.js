@@ -668,7 +668,8 @@ function legendWeek() {
   // v184: rare encounters of their own
   for (const sp of shuffle(['Regigigas', 'Darkrai', 'Cresselia', 'Deoxys', 'Heatran', 'Genesect'])) if (rand() < RARE_ENCOUNTER * regionMul(sp) && startLegend(sp)) return;
   // v185: legendaries from this league's own Pokédex, rarer still
-  for (const sp of shuffle(DEX_LEGENDS.slice())) if (SP[sp] && SP[sp].dexLegend && rand() < DEX_LEGEND_CHANCE && startLegend(sp, `A legendary Pokémon no one has ever recorded has appeared: ${sp}.`)) return;
+  // (0.31.0) a custom region's own legendary is at home there (×3), elsewhere ×0.5, and never away from home if locked
+  for (const sp of shuffle(DEX_LEGENDS.slice())) if (SP[sp] && SP[sp].dexLegend && rand() < DEX_LEGEND_CHANCE * (SP[sp].homeOnly != null && SP[sp].homeOnly !== S.region ? 0 : regionMul(sp)) && startLegend(sp, `A legendary Pokémon no one has ever recorded has appeared: ${sp}.`)) return;
 }
 // v184: Missingno. Very rarely it glitches onto a random challenger's team (weighted toward those having a poor
 // season, but anyone can get it). It stays 6–10 seasons, and now and then it glitches away mid-season.

@@ -51,12 +51,17 @@ async def run(path):
             setIn('#rg-add', 'Ekans'); click('[data-act=rgadd]'); click('[data-act=rgrm][data-k=Ekans]');
             click('[data-act=rgspnew]'); setIn('#rgs-name', 'Testmon'); setIn('#rgs-t1', 'Water', 'change'); click('[data-act=rgspsave]');
             if (!/Added Testmon/.test(document.body.textContent)) log.push('FAIL the own Pokémon of the region was not added');
+            // a legendary encounter of its own: refused under the bar, added over it, kept off the list
+            click('[data-act=rgspnew]'); setIn('#rgs-name', 'Testgod'); document.querySelector('#rgs-legend').checked = true; click('[data-act=rgspsave]');
+            if (!/over 650/.test(document.body.textContent)) log.push('FAIL a weak legendary encounter was not refused');
+            for (let i = 0; i < 6; i++) setIn('#rgs-st' + i, '120'); document.querySelector('#rgs-legend').checked = true; click('[data-act=rgspsave]');
+            if (!/Added Testgod/.test(document.body.textContent) || document.querySelector('[data-act=rgrm][data-k=Testgod]')) log.push('FAIL the legendary encounter was not added, or is on the list');
             if (!document.querySelector('[data-act=rgrm][data-k=Testmon]')) log.push('FAIL Testmon is not on the list');
             if (!/Strong lines by type/.test(document.body.textContent)) log.push('FAIL no type checks in the editor');
             click('[data-act=rgsave]');
             const rec = regionLib.regions.find(r => r.name === 'Testland');
             if (!rec) log.push('FAIL Testland was not saved'); else {
-              if (rec.towns[0] !== 'Portwick' || rec.ports.Portwick !== 'port' || !rec.legends.includes('Mewtwo') || rec.nb.length !== 2 || !rec.added.some(x => x.name === 'Testmon') || !rec.pool.includes('Testmon') || rec.pool.includes('Ekans') || (rec.posts || {}).leader !== 'Warden') log.push('FAIL Testland saved wrong: ' + JSON.stringify(rec).slice(0, 300));
+              if (rec.towns[0] !== 'Portwick' || rec.ports.Portwick !== 'port' || !rec.legends.includes('Mewtwo') || rec.nb.length !== 2 || !rec.added.some(x => x.name === 'Testmon') || !rec.added.some(x => x.name === 'Testgod' && x.legend) || rec.pool.includes('Testgod') || !rec.pool.includes('Testmon') || rec.pool.includes('Ekans') || (rec.posts || {}).leader !== 'Warden') log.push('FAIL Testland saved wrong: ' + JSON.stringify(rec).slice(0, 300));
               click(`[data-act=rgexport][data-k=${rec.id}]`);
               const code = (document.querySelector('#rg-exptext') || {}).value || '';
               if (!code.startsWith('PLR1:')) log.push('FAIL no region code');
@@ -96,7 +101,7 @@ async def run(path):
           // 0.31.0: the world has Testland as its 10th region, its own Pokémon and Mewtwo at home there, and no rival in it
           { const r = S.regions[9];
             if (!r || r.name !== 'Testland League' || !r.solo || r.posts.leader !== 'Warden' || r.ports.Portwick !== 'port') log.push('FAIL the 10th region of the world: ' + JSON.stringify(r || {}).slice(0, 200));
-            if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || LEGEND_HOME.Mewtwo !== 9) log.push('FAIL the Pokémon or legendary of Testland');
+            if (!SP.Testmon || !homeSet(9) || !homeSet(9).has('Testmon') || LEGEND_HOME.Mewtwo !== 9 || LEGEND_HOME.Testgod !== 9 || !SP.Testgod || !SP.Testgod.dexLegend) log.push('FAIL the Pokémon or legendary of Testland');
             if (eachLeague(() => S.region).slice(1).includes(9)) log.push('FAIL a rival started in a region closed to rivals'); }
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region

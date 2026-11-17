@@ -816,10 +816,10 @@ function rgOpen(rec) { rgDraft = JSON.parse(JSON.stringify(rec)); rgPorts = rgDr
 function rgRec() { const d = rgDraft, names = d.towns.concat(d.extra); return Object.assign({}, d, { ports: Object.fromEntries(names.map((n, i) => [n.trim(), rgPorts[i]]).filter(([n, k]) => n && k)) }); }
 function rgSet(path, v) { const ks = path.split('.'); let o = rgDraft; for (const k of ks.slice(0, -1)) { if (o[k] == null) o[k] = {}; o = o[k]; } o[ks[ks.length - 1]] = v; }
 const rgField = (label, path, val, max = REGION_NAME_MAX, ph = '') => `<label class="cf-field"><span class="eyebrow">${label}</span><input class="cf-in rg-f" data-f="${path}" maxlength="${max}" value="${esc(val || '')}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off"></label>`;
-function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false }; }
+function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false }; }
 function rgSpRead() {
   const v = id => (($(id) || {}).value || '').trim(), ck = id => !!($(id) || {}).checked;
-  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter') });
+  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend') });
 }
 // the new Pokémon of every other region in the library, and My Pokédex's, for name and evolution checks
 const rgOthers = () => dexLib.added.concat(regionLib.regions.filter(r => r.id !== rgDraft.id).flatMap(r => r.added));
@@ -831,7 +831,9 @@ function rgSpSave() {
   if (errs.length) { rgSpErrs = [...new Set(errs)]; rgSp = Object.assign({}, e, { types: [e.types[0] || 'Normal', e.types[1] || ''] }); return; }
   if (rgSpWas) { const i = rgDraft.added.findIndex(x => x.name === rgSpWas); rgDraft.added[i] = e; rgDraft.pool = rgDraft.pool.map(b => b === rgSpWas ? e.name : b); rgDraft.added.forEach(x => { if (x.from === rgSpWas) x.from = e.name; }); }
   else rgDraft.added.push(e);
-  if (!e.from && !rgDraft.pool.includes(e.name)) rgDraft.pool.push(e.name);
+  // a legendary encounter is never on the list (it only comes as an encounter, at home in this region)
+  if (e.legend) rgDraft.pool = rgDraft.pool.filter(b => b !== e.name);
+  else if (!e.from && !rgDraft.pool.includes(e.name)) rgDraft.pool.push(e.name);
   rgMsg = `${rgSpWas ? 'Saved' : 'Added'} ${e.name}.`; rgSp = null; rgSpWas = null; rgSpErrs = [];
 }
 function rgSpDelete(n) {
@@ -850,8 +852,9 @@ function rgSpForm() {
     <div class="cf-grid">${field('Ability', sel('rgs-ab0', d.ab[0], abOpts('Choose…')))}${field('Second ability', sel('rgs-ab1', d.ab[1], abOpts('None')))}${field('Hidden ability', sel('rgs-ab2', d.ab[2], abOpts('None')))}</div>
     <div class="cf-grid">${field('Evolves from', `<input id="rgs-from" class="cf-in" list="rgs-parents" value="${esc(d.from || '')}" placeholder="Nothing: found in the wild" autocomplete="off">`)}${field('At level', `<input id="rgs-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl || 30)}">`)}</div>
     <datalist id="rgs-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <div class="adv-list"><label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
-    <p class="muted small">It works as if added to My Pokédex, in every world that uses this region. A first-stage Pokémon joins the region's list; one that evolves from another joins that line.</p>
+    <div class="adv-list"><label class="cf-imp-row"><input id="rgs-legend" type="checkbox"${d.legend ? ' checked' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Only for a base stat total over ${DEX_LEGEND_BST}, with nothing it evolves from and nothing evolving from it. Never found in the wild: it appears as a very rare legendary encounter, three times likelier in this region (only here if its new Pokémon are kept here), and one trainer holds it at a time. Rare and Starter don't apply to it.</span></span></label>
+      <label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
+    <p class="muted small">It works as if added to My Pokédex, in every world that uses this region. A first-stage Pokémon joins the region's list; one that evolves from another joins that line; a legendary encounter is kept off the list.</p>
     ${rgSpErrs.length ? `<ul class="warn cf-errs">${rgSpErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <div class="confirm-row"><button class="btn primary" data-act="rgspsave">${rgSpWas ? 'Save Pokémon' : 'Add Pokémon'}</button><button class="btn" data-act="rgspcancel">Cancel</button></div></div>`;
 }
@@ -872,7 +875,7 @@ function viewRegionEditor() {
       <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}</div>
       <div class="adv-list">
         <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
-        <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away. Off: they travel like any Pokémon.</span></span></button>
+        <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>
       </div></section>
     <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
       <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
@@ -901,7 +904,7 @@ function viewRegionEditor() {
       ${st.missing.length ? `<p class="muted small">Not in the game with the Pokédex in use: ${st.missing.map(b => `<span class="rg-sp">${esc(b)}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`).join(' ')}</p>` : ''}
       <div class="eyebrow">Strong lines by type</div><p class="muted small">${TYPES.map(t => `<span class="${st.typeN[t] < 5 ? 'bad' : ''}">${t} ${st.typeN[t]}</span>`).join(' · ')}</p></section>
     <section class="panel"><div class="ph"><h2>Its own new Pokémon</h2><span class="muted">${d.added.length} new</span></div>
-      ${d.added.length ? `<div class="cf-list">${d.added.map(e => `<div class="cf-row${rgSpWas === e.name ? ' on' : ''}"><div class="cf-info"><b>${esc(e.name)}</b> ${chips(e.types)}<div class="muted small">${dxStatLine(e.stats)} · total ${e.stats.reduce((a, x) => a + x, 0)} · ${e.from ? `evolves from ${esc(e.from)} at Lv ${e.lvl}` : 'found in the wild'}</div></div>
+      ${d.added.length ? `<div class="cf-list">${d.added.map(e => `<div class="cf-row${rgSpWas === e.name ? ' on' : ''}"><div class="cf-info"><b>${esc(e.name)}</b> ${chips(e.types)}${e.legend ? ' <span class="tag legend">Legendary encounter</span>' : ''}<div class="muted small">${dxStatLine(e.stats)} · total ${e.stats.reduce((a, x) => a + x, 0)} · ${e.from ? `evolves from ${esc(e.from)} at Lv ${e.lvl}` : e.legend ? 'a very rare legendary encounter, at home here' : 'found in the wild'}</div></div>
         <div class="cf-acts"><button class="btn small" data-act="rgspedit" data-k="${esc(e.name)}">Edit</button><button class="btn small danger" data-act="rgspdel" data-k="${esc(e.name)}" aria-label="Delete ${esc(e.name)}">Delete</button></div></div>`).join('')}</div>` : '<p class="muted small">None. Pokémon of its own come with the region when it is shared.</p>'}
       ${rgSp ? rgSpForm() : '<div class="confirm-row"><button class="btn" data-act="rgspnew">Add a new Pokémon</button></div>'}</section>
     <section class="panel"><div class="ph"><h2>Checks</h2><span class="muted">Warnings don't stop you saving</span></div>
