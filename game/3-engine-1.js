@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 13; // 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 14; // 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -726,6 +726,7 @@ function fitScore(sp, weak, threats) {
 }
 // n new Pokémon for trainer t at level L, none from an evolution line in opts.lines, fitted around opts.team
 function staffPicks(t, L, n, opts = {}) {
+  if (ranchFor(t)) return ranchPicks(t, L, n, opts); // (0.25.0) senior staff of a League with a ranch draw on it
   const lines = new Set(opts.lines || []), out = [];
   let pool = staffPool(t, L, opts.mixed, n + lines.size + 3).filter(sp => !lines.has(LINE[sp]));
   const weak = {}, addWeak = sp => { for (const a of TYPES) if (SP[sp].types.reduce((m, d) => m * effOne(a, d), 1) >= 2) weak[a] = (weak[a] || 0) + 1; };
@@ -782,7 +783,7 @@ function adaptGym(i) {
   // how well a Pokémon handles the types that have been winning: hits them hard, and isn't hit hard by them
   const vs = sp => { let sc = 0; for (const [ty, c] of Object.entries(foes)) sc += c / n * (bestMult(SP[sp].types, [ty]) - bestMult([ty], SP[sp].types)); return sc; };
   const lines = new Set(L.team.map(m => LINE[m.sp]));
-  const cands = staffPicks(L, slot.lvl, 8, { lines, noOff: L.team.some(m => m.offType) });
+  const cands = staffPicks(L, slot.lvl, 8, { lines, team: L.team, noOff: L.team.some(m => m.offType), stop: false });
   if (!cands.length) return;
   const best = cands.sort((a, b) => vs(b.sp) + SP[b.sp].bst / 900 - vs(a.sp) - SP[a.sp].bst / 900)[0];
   // drop the one doing least this season (knockouts minus faints), never their strongest
@@ -790,7 +791,7 @@ function adaptGym(i) {
   const perf = m => { const s = m.ss && m.ss.season === S.season ? m.ss : null; return s ? s.ko - s.f + vs(m.sp) : vs(m.sp); };
   const drop = L.team.filter(m => m !== ace && !isSpecial(m)).sort((a, b) => perf(a) - perf(b))[0];
   if (!drop) return;
-  farewell(L, drop, `swapped out after a losing streak at ${townName(i)} Gym`);
+  (ranchFor(L) ? dropMon : farewell)(L, drop, `swapped out after a losing streak at ${townName(i)} Gym`);
   L.team = L.team.filter(m => m !== drop);
   stamp(best, 'swap'); best.fr = 120;
   L.team.push(best); relevelElite(L);
@@ -865,7 +866,9 @@ function installElite(t, role, slotIndex) {
   if (role === 'champion') S.champion = t.id;
   openPost(t, role);
   const slot = eliteSlot(t);
-  if (role === 'champion' && t.team.length >= 4) {
+  // (0.25.0) with a ranch: their own Pokémon that fit and the ranch, best first (what they don't field goes into it)
+  if (ranchFor(t)) ranchInstall(t, slot, mixed || role === 'champion', role === 'e4' ? 'Elite Four' : role === 'leader' ? 'Gym Leader' : 'Champion');
+  else if (role === 'champion' && t.team.length >= 4) {
     while (t.team.length < 6) t.team.push(stamp(makeMon(pick(BASES), slot.lvl), 'assigned'));
   } else if (role === 'e4' && t.team.length >= 3) {
     // a new Elite Four member keeps the whole team they qualified with; the League only tops up a short team
@@ -883,7 +886,7 @@ function installElite(t, role, slotIndex) {
   // as for gym trainers since 0.7.0
   const off = t.specialty && role === 'leader' ? t.team.filter(m => !isSpecial(m) && !m.offType && !specFit(t, m.sp)) : [];
   if (off.length) {
-    for (const m of off) farewell(t, m, 'left behind on becoming Gym Leader');
+    for (const m of off) (ranchFor(t) ? dropMon : farewell)(t, m, 'left behind on becoming Gym Leader');
     t.team = t.team.filter(m => !off.includes(m));
     staffPicks(t, slot.lvl, slot.size - t.team.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed }).forEach(m => t.team.push(stamp(m, 'assigned')));
     relevelElite(t);

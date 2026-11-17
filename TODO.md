@@ -26,6 +26,16 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Speed and save size.** A year takes about a second to sim since 0.5.0 (48 weeks, 150 to 200 runs). A four-League world was about 10 MB after 25 years; the browser's own storage holds about 5 MB before the game falls back to its larger store. Worth measuring before rival Leagues (stage 4).
 - **Unused styles** for the old phase buttons can go with the other pruning.
 
+## Left over from the ranch core (0.25.0)
+- **All the numbers are provisional** (item 43): capacities, upkeep, values and grade multipliers, the grade odds, trip costs, lengths and odds, the area trip, the market's size and life, the sale share and sell-back, the starting stock (about 45 to 55 at founding, sized to fill every post beside its holder's own starter-sized team, larger than the 20 to 25 the design guessed), and the AI's spending shares.
+- **Not measured:** the wall and the economy with the ranch (lighter testing). In single-League sims an AI League alone in its world built a strong wall (77% perfect years over 12 years in one run, seed-dependent); the passive player buys nothing and lives on its stock and staff exchanges. Run `report.js --hand` and `econ.js` when the owner wants balance.
+- **Stopgaps** are free weak stand-ins so a post always fields a full team; the design said nothing comes free. They are only used when nothing in the ranch fits.
+- **A demoted senior member (to gym trainer) counts as leaving the ranch:** they keep the ranch Pokémon they held.
+- **Other places that still hand out Pokémon outside the ranch:** a Gym Leader's temporary top-up for a seat challenge draws on the ranch but an acting Elite Four stand-in and acting leaders keep the old builder; legendary departures refill through `staffPicks` (so from the ranch); the `keep` steer no longer conjures signature Pokémon for senior staff (it only favours their lines).
+- **The AI doesn't use reserves or locks,** and lists only its cheapest spare beyond what its aim keeps.
+- **Ranch Pokémon aren't counted in wealth** (the economy report counts cash and buildings); a ranch is a sink.
+- **Parts 2 and 3** (regional encounters, migration, ports, the railway, the safari; challenger storage, picking at hire, the Sanctuary rework) are designed (6.5) and not built.
+
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
 
