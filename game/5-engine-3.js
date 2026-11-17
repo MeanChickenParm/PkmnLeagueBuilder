@@ -2109,8 +2109,8 @@ function sponsorNewYear() {
 
 // ---------- leaving your League to found your own ----------
 // The player can leave their League for a new one of their own: it costs LEAVE_FEE from the League's money (which must
-// stay at or above zero), the League's prestige must be at PRESTIGE_BAR, and the world needs room (MAX_LEAGUES,
-// REGION_CAP). The League left carries on as a rival with an aim drawn as any other, keeping its money, buildings,
+// stay at or above zero), the League's prestige must be at PRESTIGE_BAR, and the world needs room (REGION_CAP;
+// no world cap since 0.29.0). The League left carries on as a rival with an aim drawn as any other, keeping its money, buildings,
 // staff, contracts and history. Up to LEAVE_TAKE members of staff who want promotion come along (not the Champion);
 // the League refills their posts at once. Academy prospects on its circuit follow and take the new League's tag. The
 // new League opens with START_FUND and is founded by hand on the founding screen, the staff who came already placed.
@@ -2154,8 +2154,12 @@ function leaveLeague(region, takeIds = [], name = null) {
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
   // (0.27.0) someone a waiting challenge just moved out of their post stays behind
-  const carried = take.map(T).filter(t => t && inLeague(old, () => postOf(t)));
-  for (const t of carried) { inLeague(old, () => { const p = postOf(t); t.lastRole = p.post; t.carriedFrom = p.slot; }); leaveForPost(t, lgName); t.carried = true; }
+  // (0.29.0) and so does anyone moved out of their post by an earlier carried member's leaving (the old League refills at once)
+  const carried = [];
+  for (const t of take.map(T)) {
+    const p = t && inLeague(old, () => postOf(t)); if (!p) continue;
+    t.lastRole = p.post; t.carriedFrom = p.slot; leaveForPost(t, lgName); t.carried = true; carried.push(t);
+  }
   const prospects = Object.values(S.trainers).filter(t => t.academy === old && t.role === 'challenger' && !t.spon && !t.hired && !t.hireDue).map(t => t.id);
   inLeague(i, () => { initBooks(); prepFounding({ mid: true, carry: carried.map(t => t.id), prospects }); });
   (S.myLeagues = S.myLeagues || [{ lg: old, from: 1 }]).push({ lg: i, from: S.season });
@@ -2380,7 +2384,7 @@ function foldLeague(k) {
 function foldRegions() {
   if (!S.founding || !S.founding.fold) return [];
   const me = ME(), used = eachLeague(i => (i === me ? null : S.region));
-  return nLeagues() > MAX_LEAGUES ? [] : regionOrder().filter(r => used.filter(x => x === r).length < REGION_CAP);
+  return regionOrder().filter(r => used.filter(x => x === r).length < REGION_CAP);
 }
 function foldRegion(r) {
   if (!foldRegions().includes(r)) return 'No room there.';

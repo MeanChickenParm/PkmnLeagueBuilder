@@ -3073,16 +3073,15 @@ function leagueNewYear(changes) {
 
 // ================= WORLD STRUCTURE =================
 // New Leagues open as the years go by. (0.15.0, stage 4) the next League opens in the player's region while it has
-// fewer than REGION_CAP, then in a region with none; (0.17.0, stage 5) then in any region with room, up to MAX_LEAGUES
-// (6: speed and save size were measured at 4, see the design doc 5.8), and openings are driven by founders (below).
-const MAX_LEAGUES = 6, REGION_CAP = 2, LEAGUE_MIN_GAP = 8;
+// fewer than REGION_CAP, then in a region with none; (0.17.0, stage 5) then in any region with room, and openings are
+// driven by founders (below). (0.29.0) No cap on the world (it was 6, MAX_LEAGUES); only REGION_CAP a region.
+const REGION_CAP = 2, LEAGUE_MIN_GAP = 8;
 const regionsUsed = () => eachLeague(() => S.region);
 const regionOrder = () => S.regionOrder || LEAGUE_SETS.map((_, i) => i);
 const regionCount = r => regionsUsed().filter(x => x === r).length;
 // regions a new League could open in (the player leaving picks from these)
-const regionsWithRoom = () => nLeagues() >= MAX_LEAGUES ? [] : regionOrder().filter(r => regionCount(r) < REGION_CAP);
+const regionsWithRoom = () => regionOrder().filter(r => regionCount(r) < REGION_CAP);
 function nextRegion() {
-  if (nLeagues() >= MAX_LEAGUES) return null;
   const home = regionsUsed()[ME()];
   if (regionCount(home) < REGION_CAP) return home;
   const r = regionOrder().find(x => !regionCount(x));
@@ -3131,7 +3130,6 @@ const founderChamp = t => !!t && t.founderUntil != null && S.season < t.founderU
 // open a new League: gyms, Elite Four, a Champion and (when the newcomers arrive) a circuit of challengers. `f` is its
 // founder (picked if not given), `r` its region (the next region if not given)
 function openNewLeague(f, r) {
-  if (nLeagues() >= MAX_LEAGUES) return null;
   if (r == null) r = nextRegion(); if (r == null || regionCount(r) >= REGION_CAP) return null;
   if (f === undefined) f = pickFounder();
   const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r);
@@ -3160,7 +3158,7 @@ function openNewLeague(f, r) {
 const FOUNDER_BAR_BASE = 30, FOUNDER_BAR_STEP = 10;
 const founderBar = () => FOUNDER_BAR_BASE + FOUNDER_BAR_STEP * Math.max(0, nLeagues() - 1);
 function worldGrowth() {
-  if (!S.cfg || !S.cfg.growth || nLeagues() >= MAX_LEAGUES || nextRegion() == null) return;
+  if (!S.cfg || !S.cfg.growth || nextRegion() == null) return;
   if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
   const f = pickFounder(), p = trainerPrestige(f), bar = founderBar();
   if (!f || p < bar) return;
