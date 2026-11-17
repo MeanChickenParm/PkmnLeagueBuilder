@@ -4835,7 +4835,7 @@ function maybeOutbreak() {
   }
   if (!featOn('outbreak') || S.outbreak || rand() >= OUTBREAK_CHANCE * EVENT_PACE) return;
   // usually a common Pokémon; sometimes something rarer worth chasing
-  const pool = BASES.filter(b => !SP[b].starter && SP[b].bst < 420 && (rand() < 0.3 ? SP[b].rare : !SP[b].rare));
+  const pool = regional(BASES).filter(b => !SP[b].starter && SP[b].bst < 420 && (rand() < 0.3 ? SP[b].rare : !SP[b].rare)); // (0.27.0) the region's
   if (!pool.length) return;
   const sp = pick(pool), town = townName(ri(0, S.gyms.length - 1));
   S.outbreak = { sp, town, turn: S.turn, season: S.season, week: S.week, caught: 0, alpha: 0, shiny: 0 };
@@ -4846,6 +4846,7 @@ const FEATURES = [
   { group: 'Wild Pokémon', items: [
     ['shiny', 'Shiny Pokémon', 'Rare shinies with perfect IVs, arriving on fire.'],
     ['radiant', 'Radiant Pokémon', 'Rarer than shinies: they wear the shiny colors, have at least Good IVs and a stronger ability than their species ever gets.'],
+    ['regional', 'Regional encounters', 'Each region has its own Pokémon (about 350 species); others turn up only with migration waves, shipping lanes, charters and the safari. Off: National Dex rules, every species everywhere.'],
     ['delta', 'Delta Pokémon', 'Rarer than alphas, more common than shinies: an unusual second type and outstanding IVs.'],
     ['alpha', 'Alpha Pokémon', 'Uncommon alphas with outstanding IVs, already hot.'],
     ['outbreak', 'Mass outbreaks', 'One species swarms near a town for a week, with better shiny and alpha odds.'],
@@ -5329,22 +5330,24 @@ function signaturePicks(team) { const used = new Set(); return team.map(sp => { 
 function signatureTeam(t, lvl) { return signaturePicks(t.famousTeam).map((sp, i) => stamp(makeMon(sp, Math.max(5, lvl - i * 2), t.specialty), 'starter')); }
 function starterTeam(t, lvl) {
   if (t.famousTeam) { t.team = signatureTeam(t, lvl); return; }
-  const starterPool = STARTERS.concat(t.r.sct > 70 && rand() < 0.3 ? ['Dratini', 'Bagon', 'Gible', 'Larvitar', 'Beldum', 'Riolu'] : []);
+  // (0.27.0) a newcomer starts with what their region has (regional() keeps the full list when nothing fits)
+  const starterPool = regional(STARTERS.concat(t.r.sct > 70 && rand() < 0.3 ? ['Dratini', 'Bagon', 'Gible', 'Larvitar', 'Beldum', 'Riolu'] : []));
   if (t.specialty) {
     const has = (b, ty) => SP[formAt(b, lvl, t.specialty)].types.includes(ty);
     const fits = b => specTypes(t).some(ty => has(b, ty));
-    let spec = BASES.filter(b => fits(b) && SP[b].bst < 360 && !SP[b].rare);
-    if (spec.length < 2) spec = spec.concat(BASES.filter(b => fits(b) && SP[b].bst < 360 && SP[b].rare));
+    let spec = regional(BASES).filter(b => fits(b) && SP[b].bst < 360 && !SP[b].rare);
+    if (spec.length < 2) spec = spec.concat(regional(BASES).filter(b => fits(b) && SP[b].bst < 360 && SP[b].rare));
+    if (spec.length < 2) spec = spec.concat(BASES.filter(b => fits(b) && SP[b].bst < 360));
     // a dual specialist starts with one Pokémon of each of their types where it can
     const firstPool = t.spec2 ? spec.filter(b => has(b, t.specialty)) : spec;
     const first = pick(firstPool.length ? firstPool : spec.length ? spec : starterPool);
     if (t.spec2) { const sec = spec.filter(b => b !== first && has(b, t.spec2)); if (sec.length) { t.team = [makeMon(first, lvl), makeMon(pick(sec), lvl - 2)]; t.team.forEach(m => stamp(m, 'starter')); return; } }
     const rest = spec.filter(b => b !== first);
-    const second = rest.length && rand() < 0.75 ? pick(rest) : pick(BASES.filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare));
+    const second = rest.length && rand() < 0.75 ? pick(rest) : pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare));
     t.team = [makeMon(first, lvl), makeMon(second, lvl - 2)];
   } else {
     const first = pick(starterPool);
-    t.team = [makeMon(first, lvl), makeMon(pick(BASES.filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
+    t.team = [makeMon(first, lvl), makeMon(pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
   }
   t.team.forEach(m => stamp(m, 'starter'));
 }
@@ -5390,11 +5393,12 @@ const typeLabel = t => specTypes(t).join('/') || 'mixed';
 // species a trainer could field at level L: on their type, under their Scouting ceiling, best first
 function staffPool(t, L, mixed, need) {
   const ty = mixed ? [] : specTypes(t);
-  let cap = 300 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, pool = [];
+  let cap = 300 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, pool = [], here = regional(BASES); // (0.27.0) the region's lines
   for (let tries = 0; tries < 10 && pool.length < need; tries++) {
     const set = new Set();
-    for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
+    for (const b of here) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
     pool = [...set]; cap += 40;
+    if (tries === 9 && pool.length < need && here !== BASES) { here = BASES; tries = 0; } // (0.27.0) the region can't fill it
   }
   pool.sort((a, b) => SP[b].bst - SP[a].bst);
   return pool.slice(0, Math.max(need, Math.ceil(pool.length * scoutShare(t))));
@@ -7169,7 +7173,7 @@ function wildOffers(t) {
   const items = [];
   for (const b of BASES) {
     const f = formAt(b, L, t.specialty); const s = SP[f];
-    if (s.bst > cap || t.team.some(m => LINE[m.sp] === b)) continue;
+    if (s.bst > cap || t.team.some(m => LINE[m.sp] === b) || !wildOk(b)) continue; // (0.27.0) only what the region has
     let w = SP[b].rare ? 0.12 + sctOf(t) / 400 : 1;
     const fit = specFit(t, f); if (fit) w *= fit === 2 ? 7 : t.spec2 ? 2.6 : 4;
     if (SP[b].starter) w *= 0.25;
@@ -8332,6 +8336,7 @@ function leagueRun(q, entry) {
 // one week of the whole world
 function simWeek() {
   S.stop = null;
+  migrationWeek(); // (0.27.0) migration waves, world-level, before anyone catches or buys
   eachLeague(leagueWeek);
   moneyWeek();
   sponsorWeek();
@@ -8858,7 +8863,7 @@ function steerScore(s, sp, weak, meta) {
 // under their Scouting ceiling
 function offTypePool(t, L, meta) {
   const ty = specTypes(t), cap = 340 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, set = new Set();
-  for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s && s.bst <= cap && !s.types.some(x => ty.includes(x)) && !bannedIn(f, S.lg || 0)) set.add(f); }
+  for (const b of regional(BASES)) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s && s.bst <= cap && !s.types.some(x => ty.includes(x)) && !bannedIn(f, S.lg || 0)) set.add(f); }
   return [...set].map(sp => [sp, steerScore('trend', sp, {}, meta) + SP[sp].bst / 300]).filter(x => x[1] > 2).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
 }
 // the lines of a famous trainer's signature team
@@ -10833,6 +10838,7 @@ function applyDex(d) {
   for (const n of LEGENDS.concat(PARADOX, ['Missingno'], DEX_LEGENDS)) LINE[n] = n;
   for (const b of BABY_LEGENDS) markLine(b, b);
   GREAT_LEGENDS.length = 0; GREAT_LEGENDS.push(...LEGENDS.filter(n => SP[n].bst >= 660));
+  resetRegionCaches(); // (0.27.0)
   REWARD_LEGENDS.length = 0; REWARD_LEGENDS.push(...LEGENDS.filter(n => SP[n].bst < 660));
   CUSTOM_SPECIES = null;
 }
@@ -11438,6 +11444,7 @@ function shiftLeague(t, to) {
   inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
   t.lg = to;
   inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
+  regionMove(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.27.0) at most 3 foreign Pokémon
   (t.lgMoves = t.lgMoves || []).push({ season: S.season, from, to });
 }
 // ---------- Grand Slam: Champion (at a season's end) of every League in the world ----------
@@ -11806,6 +11813,10 @@ const UPGRADES = {
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in more than an attraction every week while the site lasts (an attraction\'s income after), and a point of prestige a level each New Year while it lasts.', site: true, income: [250, 500, 800] },
   // (0.25.0) the Ranch: how many Pokémon the League's ranch holds
   ranch:   { name: 'Ranch',           text: 'Seat only, takes no slot. Each level lets your ranch hold more Pokémon (60 with none, then 80, 105, 135, 170, 210).', seat: true, slotless: true, max: 5, cost: [30000, 60000, 120000, 240000, 480000] },
+  // (0.27.0) a port city's shipping lane (Goldenrod's railway): a source region's Pokémon on trips and at the market
+  lane:    { name: 'Shipping lane',   text: 'Only in a port city (Goldenrod: the railway). Choose a region on the Ranch page: its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 400 a week on top of upkeep; changing the route costs 10,000.', port: true, max: 1, cost: [60000] },
+  // (0.27.0) the safari: one per League, in a gym city; foreign Pokémon for its own trips, changing every few months
+  safari:  { name: 'Safari Zone',     text: 'One per League, in a gym city. Holds 10 Pokémon from other regions (13, 16 at levels 2 and 3), changing every 12 weeks, that only your targeted trips can catch; each level also makes those finds better.', one: true },
   academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
 };
 const upMax = k => UPGRADES[k].max || 3;
@@ -11834,6 +11845,10 @@ function buildCheck(where, k) {
   const U = UPGRADES[k]; if (!U) return { why: 'No such upgrade.' };
   if (U.seat && where !== 'seat') return { why: 'Only at the seat.' };
   if (U.site && (where === 'seat' || !siteOn(S.cities[(S.gyms[where] || {}).city]))) return { why: 'Only at a legendary site.' };
+  // (0.27.0) lanes only in ports (and only with regional encounters), one safari a League
+  if (U.port && (where === 'seat' || !isPort(S.cities[(S.gyms[where] || {}).city]) || !homeSet(S.region))) return { why: 'Only in a port city (or Goldenrod, for its railway).' };
+  if ((U.one || U.port) && !homeSet(S.region)) return { why: 'Every species is found everywhere (National Dex rules).' };
+  if (U.one && (where === 'seat' || S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k)))) return { why: where === 'seat' ? 'Only in a gym city.' : 'Your League already has one.' };
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
@@ -11849,7 +11864,7 @@ function build(where, k, lg = ME()) {
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push({ k, lv: 1 });
+    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : { k, lv: 1 });
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; addStanding(c, ck.cost / STAND_SPEND); }
@@ -12028,9 +12043,9 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['seat', 'hall'], ['seat', 'attract'], ['seat', 'academy']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['seat', 'scout'], ['seat', 'attract']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['seat', 'academy']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -12297,7 +12312,8 @@ function leaveLeague(region, takeIds = [], name = null) {
   S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: second ? reg.seat2 : reg.seat, founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
-  const carried = take.map(T);
+  // (0.27.0) someone a waiting challenge just moved out of their post stays behind
+  const carried = take.map(T).filter(t => t && inLeague(old, () => postOf(t)));
   for (const t of carried) { inLeague(old, () => { const p = postOf(t); t.lastRole = p.post; t.carriedFrom = p.slot; }); leaveForPost(t, lgName); t.carried = true; }
   const prospects = Object.values(S.trainers).filter(t => t.academy === old && t.role === 'challenger' && !t.spon && !t.hired && !t.hireDue).map(t => t.id);
   inLeague(i, () => { initBooks(); prepFounding({ mid: true, carry: carried.map(t => t.id), prospects }); });
@@ -12643,9 +12659,10 @@ function gradeRoll(sc) {
   for (let i = 0; i < 5; i++) { r -= w[i]; if (r <= 0) return i + 1; }
   return 5;
 }
-// a species for the market or an area trip: commons far likelier than rare, starter or very strong lines
-function findSpecies() {
-  const all = ranchSpecies(), w = all.map(b => (SP[b].rare ? 0.25 : 1) * (SP[b].starter ? 0.4 : 1) * (lineTop(b) > 540 ? 0.35 : 1));
+// a species for the market or an area trip: commons far likelier than rare, starter or very strong lines (0.27.0: from
+// the lines given, default every line)
+function findSpecies(pool) {
+  const all = pool && pool.length ? pool : ranchSpecies(), w = all.map(b => (SP[b].rare ? 0.25 : 1) * (SP[b].starter ? 0.4 : 1) * (lineTop(b) > 540 ? 0.35 : 1));
   let r = rand() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < all.length; i++) { r -= w[i]; if (r <= 0) return all[i]; }
   return all[all.length - 1];
@@ -12710,7 +12727,7 @@ function ranchMon(t, e, L, form) {
 // post still fields its full team; a swap replaces them first
 function stopPicks(t, L, n, lines, mixed) {
   const ty = mixed ? [] : specTypes(t), out = [];
-  let pool = [...new Set(ranchSpecies().filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
+  let pool = [...new Set(regional(ranchSpecies()).filter(b => !SP[b].rare && !SP[b].starter).map(b => formAt(b, L, t.specialty)))]
     .filter(f => (!ty.length || SP[f].types.some(x => ty.includes(x))) && !lines.has(LINE[f]) && !bannedIn(f, S.lg || 0)).sort((a, b) => SP[a].bst - SP[b].bst);
   pool = pool.slice(0, Math.max(n * 2, Math.ceil(pool.length * 0.3)));
   while (out.length < n && pool.length) {
@@ -12810,7 +12827,9 @@ function ranchStock(posts) {
     const lines = new Set(t.team.filter(m => mixed || onSpec(t, m.sp)).map(m => LINE[m.sp]));
     let need = Math.max(0, size - lines.size);
     const fit = b => { const f = formAt(b, L, t.specialty); return (!ty.length || SP[f].types.some(x => ty.includes(x))) && !lines.has(LINE[b]); };
-    let pool = ranchSpecies().filter(b => !SP[b].rare && !SP[b].starter && lineTop(b) <= 500 && fit(b));
+    const here = regional(ranchSpecies()); // (0.27.0) the region's own lines
+    let pool = here.filter(b => !SP[b].rare && !SP[b].starter && lineTop(b) <= 500 && fit(b));
+    if (pool.length < need) pool = here.filter(fit);
     if (pool.length < need) pool = ranchSpecies().filter(fit);
     pool.sort((a, b) => lineTop(a) - lineTop(b)); pool = pool.slice(0, Math.max(need * 2, Math.ceil(pool.length * 0.4)));
     while (need > 0 && pool.length && S.ranch.mons.length < cap) {
@@ -12818,7 +12837,7 @@ function ranchStock(posts) {
       S.ranch.mons.push(newEntry(b, ri(1, 2), 'stock')); need--;
     }
   }
-  for (let i = 0; i < STOCK_EXTRA && S.ranch.mons.length < cap; i++) { let b = findSpecies(); while (SP[b].rare || lineTop(b) > 500) b = findSpecies(); S.ranch.mons.push(newEntry(b, 1, 'stock')); }
+  { const pool = hereLines().filter(b => !SP[b].rare && lineTop(b) <= 500); for (let i = 0; i < STOCK_EXTRA && S.ranch.mons.length < cap && pool.length; i++) S.ranch.mons.push(newEntry(findSpecies(pool), 1, 'stock')); }
 }
 // the senior posts of a founding, for the stock: placed = { champion, e4[4], gyms[8] } (ids)
 const stockPosts = placed => [{ t: T(placed.champion), role: 'champion', slot: 0 }].concat(placed.e4.map((id, k) => ({ t: T(id), role: 'e4', slot: k })), placed.gyms.map((id, i) => ({ t: T(id), role: 'leader', slot: i })));
@@ -12833,14 +12852,17 @@ function tripPlan(b) {
   return { cost: Math.round((1500 + 0.4 * monValue(b, 3)) / 50) * 50, weeks: clamp(2 + (rare ? 1 : 0) + Math.floor((top - 400) / 100), 2, 6), odds: Math.round(clamp(0.6 + (sc - 50) / 100 - (rare ? 0.2 : 0) - Math.max(0, (top - 500) / 500), 0.15, 0.95) * 100) / 100 };
 }
 // the bound League sends a trip: kind 'target' (line b) or 'area' (random finds); null, or why not
+// (0.27.0) kind 'charter' (b = a region): a shipment of two or three of that region's Pokémon; a targeted trip only for
+// a line the League can reach (its region, a migration, a lane, the safari)
 function startTrip(kind, b) {
   if (!ranchOn() || !booksOn()) return 'This League has no ranch.';
   if (S.ranch.trips.length >= tripMax()) return `At most ${tripMax()} trips out at once.`;
   let tr;
-  if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn }; }
+  if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; if (!tripOk(b)) return `${b} isn't found in ${regionName(S.region)} now.`; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn, safari: lineSource(b) === 'safari' || undefined }; }
+  else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: CHARTER_COST, due: S.turn + CHARTER_WEEKS, at: S.turn }; }
   else tr = { id: uid(), k: 'area', cost: AREA_COST, due: S.turn + 2, at: S.turn };
   if (!canSpend(tr.cost)) return 'Not enough money.';
-  book(-tr.cost, 'trips', kind === 'target' ? `Catching trip for ${b}` : 'Catching trip (area)');
+  book(-tr.cost, 'trips', kind === 'target' ? `Catching trip for ${b}` : kind === 'charter' ? `Charter from ${regionName(tr.r)}` : 'Catching trip (area)');
   S.ranch.trips.push(tr);
   return null;
 }
@@ -12849,10 +12871,13 @@ function tripsWeek() {
   R.trips = R.trips.filter(x => x.due > S.turn);
   const sc = ranchScout(), mine = playerLeague();
   for (const tr of due) {
-    const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : Array.from({ length: 1 + (rand() < 0.5) + (sc >= 65 && rand() < 0.5) }, findSpecies);
-    const got = [], lost = [];
-    for (const b of finds) { const e = newEntry(b, gradeRoll(sc), tr.k === 'target' ? 'trip' : 'area'); (ranchAdd(e) ? got : lost).push(`${b} ${gradeStars(e.g)}`); }
-    if (mine) news(tr.k === 'target' ? (got.length ? `The catching trip for ${tr.b} came back with one (${got[0]}).` : lost.length ? `The catching trip for ${tr.b} found one, but the ranch was full and it was let go.` : `The catching trip for ${tr.b} came back empty-handed.`)
+    const here = hereLines(), home = homeSet(S.region), abroad = tr.k === 'charter' ? [...regionLines().sets[tr.r]].filter(b => !home || !home.has(b)) : null;
+    const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
+      : Array.from({ length: 1 + (rand() < 0.5) + (sc >= 65 && rand() < 0.5) }, () => findSpecies(here));
+    const got = [], lost = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
+    for (const b of finds) { const e = newEntry(b, gradeRoll(gsc), tr.k === 'target' ? 'trip' : tr.k === 'charter' ? 'charter' : 'area'); (ranchAdd(e) ? got : lost).push(`${b} ${gradeStars(e.g)}`); }
+    if (mine && tr.k === 'charter') news(`The charter from ${regionName(tr.r)} came in${got.length ? ` with ${got.join(', ')}` : ' empty'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
+    else if (mine) news(tr.k === 'target' ? (got.length ? `The catching trip for ${tr.b} came back with one (${got[0]}).` : lost.length ? `The catching trip for ${tr.b} found one, but the ranch was full and it was let go.` : `The catching trip for ${tr.b} came back empty-handed.`)
       : `The area catching trip came back${got.length ? ` with ${got.join(', ')}` : ' empty-handed'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
   }
 }
@@ -12860,7 +12885,9 @@ function tripsWeek() {
 function shopWeek() {
   const R = S.ranch;
   R.shop = R.shop.filter(x => x.until > S.turn);
-  while (R.shop.length < SHOP_SIZE) { const b = findSpecies(), g = gradeRoll(45); R.shop.push({ uid: uid(), b, g, iv: gradeIVs(g), price: monValue(b, g), until: S.turn + ri(2, 4) }); }
+  const pool = marketLines(); // (0.27.0) the region's lines, a migration and the League's lanes
+  R.shop = R.shop.filter(x => pool.includes(x.b));
+  while (R.shop.length < SHOP_SIZE) { const b = findSpecies(pool), g = gradeRoll(45); R.shop.push({ uid: uid(), b, g, iv: gradeIVs(g), price: monValue(b, g), until: S.turn + ri(2, 4) }); }
 }
 function buyShop(id) {
   if (!ranchOn() || !booksOn()) return 'This League has no ranch.';
@@ -12944,7 +12971,8 @@ function ranchWeek() {
   if (!ranchOn()) return;
   ranchSync();
   const u = ranchUpkeep(); if (u && booksOn()) book(-u, 'ranch');
-  tripsWeek(); shopWeek();
+  const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
+  safariWeek(); tripsWeek(); shopWeek();
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -12987,14 +13015,267 @@ function aimRanch(aim) {
   if (opts.length && ranchRoom() > 0) { const o = opts[0]; if (o.shop) buyShop(o.shop.uid); else buyListing(o.list.lg, o.list.e.uid); return; }
   if (R.trips.length >= tripMax()) return;
   if (aim !== 'money' || p.worst.m.stop) {
-    const t2 = ranchSpecies().filter(b => fits(b) && !R.trips.some(x => x.b === b)).map(b => ({ b, plan: tripPlan(b) })).filter(x => x.plan.cost <= budget)
+    const t2 = ranchSpecies().filter(b => fits(b) && tripOk(b) && !R.trips.some(x => x.b === b)).map(b => ({ b, plan: tripPlan(b) })).filter(x => x.plan.cost <= budget)
       .map(x => Object.assign(x, { v: gain(x.b, 3) * x.plan.odds })).filter(x => x.v > 0).sort((a, b) => b.v - a.v)[0];
     if (t2) { startTrip('target', t2.b); return; }
+  }
+  // (0.27.0) a stopgap of a type the region can't answer: a charter from the region with most of that type
+  if (p.worst.m.stop && homeSet(S.region) && CHARTER_COST <= budget && ranchRoom() > 3 && p.ty.length) {
+    const has = r => [...regionLines().sets[r]].filter(b => !homeSet(S.region).has(b) && fits(b)).length;
+    const r = [...Array(nRegionsBuilt()).keys()].filter(x => x !== S.region).sort((a, c) => has(c) - has(a))[0];
+    if (r != null && has(r) && !ranchSpecies().some(b => fits(b) && tripOk(b))) { startTrip('charter', r); return; }
   }
   if (AREA_COST <= budget && ranchRoom() > 3) startTrip('area');
 }
 
-if (typeof module !== 'undefined') module.exports = { ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+// ================= REGIONS (0.27.0, design doc 6.6: ranch part 2, regional) =================
+// Encounters are regional: each region has its own lines (about REGION_SIZE species), and everything else turns up
+// only through migration waves (from a neighbouring region, now and then from further off), a League's shipping lanes
+// (a port city's lane, or Goldenrod's railway), charters and the safari. The feature 'regional' (on by default) turns
+// it on; off is National Dex rules (every species everywhere). The four regions built so far share Gen V to IX out
+// between them until those regions are added (then the lists are reshuffled to about 250).
+// A line belongs to every region of its family's generations (Pichu: Kanto and Johto); regional forms go with the
+// species they are a form of, and Hisuian ones (and the lines Hisui gave new evolutions) with Sinnoh. Lines with no
+// generation of the four are spread over them, each to the region with the fewest species, by type. Then each region
+// borrows lines from its neighbours until every type has REGION_FLOOR usable lines (reaching FLOOR_BST), and evens out
+// to REGION_SIZE. Built once from the data (the same every game); custom species without a family here are spread
+// like Gen V to IX. All numbers are provisional (item 41).
+const GEN_SPECIES = [
+  // Gen I
+  'Rattata Raticate Pidgey Pidgeotto Pidgeot Spearow Fearow Eevee Vaporeon Jolteon Flareon Porygon Tauros Kangaskhan Charmander Charmeleon Charizard Growlithe Arcanine Vulpix Ninetales Ponyta Rapidash Squirtle Wartortle Blastoise Psyduck Golduck Poliwag Poliwhirl Poliwrath Magikarp Gyarados Staryu Starmie Seel Dewgong Lapras Omanyte Omastar Bulbasaur Ivysaur Venusaur Oddish Gloom Vileplume Bellsprout Weepinbell Victreebel Exeggcute Exeggutor Tangela Magnemite Magneton Voltorb Electrode Machop Machoke Machamp Mankey Primeape Ekans Arbok Grimer Muk Koffing Weezing Venonat Venomoth Sandshrew Sandslash Diglett Dugtrio Cubone Marowak Rhyhorn Rhydon Aerodactyl Abra Kadabra Alakazam Drowzee Hypno Scyther Pinsir Geodude Graveler Golem Onix Gastly Haunter Gengar Horsea Seadra Dratini Dragonair Dragonite Pikachu Raichu Clefairy Clefable Jynx Electabuzz Magmar Hitmonlee Hitmonchan Snorlax Caterpie Metapod Butterfree Weedle Kakuna Beedrill Krabby Kingler Zubat Golbat Goldeen Seaking Mr._Mime Nidoran♀ Nidorina Nidoqueen Nidoran♂ Nidorino Nidoking Meowth Persian Doduo Dodrio Tentacool Tentacruel Jigglypuff Wigglytuff Paras Parasect Slowpoke Slowbro Farfetch\'d Shellder Cloyster Lickitung Chansey Ditto Kabuto Kabutops',
+  // Gen II
+  'Umbreon Espeon Porygon2 Cyndaquil Quilava Typhlosion Houndour Houndoom Totodile Croconaw Feraligatr Politoed Chikorita Bayleef Meganium Bellossom Mareep Flaaffy Ampharos Swinub Piloswine Sneasel Heracross Skarmory Murkrow Scizor Steelix Larvitar Pupitar Tyranitar Misdreavus Kingdra Snubbull Granbull Pichu Cleffa Marill Azumarill Smoochum Elekid Magby Tyrogue Hitmontop Hoothoot Noctowl Phanpy Donphan Crobat Pineco Forretress Sudowoodo Togepi Togetic Corsola Hoppip Skiploom Jumpluff Spinarak Ariados Slugma Magcargo Miltank Natu Xatu Igglybuff Slowking Blissey Sentret Furret Ledyba Ledian Chinchou Lanturn Aipom Sunkern Sunflora Yanma Wooper Quagsire Unown Wobbuffet Girafarig Dunsparce Gligar Qwilfish Shuckle Teddiursa Ursaring Remoraid Octillery Delibird Mantine Stantler Smeargle',
+  // Gen III
+  'Snorunt Glalie Ralts Kirlia Gardevoir Shuppet Banette Duskull Dusclops Swablu Altaria Trapinch Vibrava Flygon Bagon Shelgon Salamence Absol Aron Lairon Aggron Beldum Metang Metagross Mawile Azurill Treecko Grovyle Sceptile Torchic Combusken Blaziken Mudkip Marshtomp Swampert Taillow Swellow Corphish Crawdaunt Torkoal Lotad Lombre Ludicolo Luvdisc Nosepass Makuhita Hariyama Meditite Medicham Electrike Manectric Numel Camerupt Slakoth Vigoroth Slaking Spinda Zigzagoon Linoone Wingull Pelipper Tropius Lunatone Solrock Baltoy Claydol Feebas Milotic Wailmer Wailord Carvanha Sharpedo Barboach Whiscash Spheal Sealeo Walrein Wynaut Poochyena Mightyena Wurmple Silcoon Beautifly Cascoon Dustox Seedot Nuzleaf Shiftry Surskit Masquerain Shroomish Breloom Nincada Ninjask Shedinja Whismur Loudred Exploud Skitty Delcatty Sableye Plusle Minun Volbeat Illumise Roselia Gulpin Swalot Spoink Grumpig Cacnea Cacturne Zangoose Seviper Lileep Cradily Anorith Armaldo Castform Kecleon Chimecho Clamperl Huntail Gorebyss Relicanth',
+  // Gen IV (and Hisui's new evolutions and forms, below)
+  'Leafeon Glaceon Porygon-Z Tangrowth Magnezone Mamoswine Weavile Froslass Riolu Lucario Gible Gabite Garchomp Honchkrow Gallade Rhyperior Mismagius Dusknoir Bronzor Bronzong Probopass Electivire Magmortar Munchlax Togekiss Mime_Jr. Lickilicky Happiny Yanmega Gliscor Mantyke Ambipom Croagunk Toxicroak Bonsly Budew Roserade Chingling Turtwig Grotle Torterra Chimchar Monferno Infernape Piplup Prinplup Empoleon Starly Staravia Staraptor Bidoof Bibarel Kricketot Kricketune Shinx Luxio Luxray Cranidos Rampardos Shieldon Bastiodon Burmy Wormadam Mothim Combee Vespiquen Pachirisu Buizel Floatzel Cherubi Cherrim Shellos Gastrodon Drifloon Drifblim Buneary Lopunny Glameow Purugly Stunky Skuntank Chatot Spiritomb Hippopotas Hippowdon Skorupi Drapion Carnivine Finneon Lumineon Snover Abomasnow Rotom Kleavor Ursaluna Wyrdeer Sneasler Overqwil Basculegion',
+].map(s => s.split(' ').map(n => n.replace(/_/g, ' ')));
+const GEN_OF = {}; GEN_SPECIES.forEach((list, g) => { for (const n of list) GEN_OF[n] = g; });
+// the regions next to each other (migration comes from these): Kanto–Johto, Johto–Hoenn, Hoenn–Sinnoh, Sinnoh–Kanto
+const NEIGHBOURS = [[1, 3], [0, 2], [1, 3], [0, 2]];
+const REGION_SIZE = 350, REGION_FLOOR = 5, FLOOR_BST = 450;
+const regionalOn = () => featOn('regional');
+// the region a species name belongs to on its own (null: none of the four)
+function genRegion(n) {
+  if (/^Hisuian /.test(n)) return 3;
+  const base = n.replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
+  return GEN_OF[base] != null ? GEN_OF[base] : GEN_OF[n] != null ? GEN_OF[n] : null;
+}
+let REGION_LINES = null, LINE_MEMBERS = null;
+const lineMembers = () => { if (!LINE_MEMBERS) { LINE_MEMBERS = {}; for (const n of Object.keys(SP)) { const b = LINE_BASE[LINE[n]]; if (b) (LINE_MEMBERS[b] = LINE_MEMBERS[b] || []).push(n); } } return LINE_MEMBERS; };
+// the types a line can field at its strongest (its forms at or near the top)
+const lineTypesTop = b => { const ms = lineMembers()[b] || [b], top = Math.max(...ms.map(n => SP[n].bst)); return [...new Set(ms.filter(n => SP[n].bst >= top - 60).flatMap(n => SP[n].types))]; };
+function regionLines() {
+  if (REGION_LINES) return REGION_LINES;
+  const nR = NEIGHBOURS.length, mem = lineMembers(), lines = ranchSpecies();
+  const sets = Array.from({ length: nR }, () => new Set()), size = Array(nR).fill(0), home = {};
+  const n = b => (mem[b] || [b]).length;
+  const add = (r, b) => { if (!sets[r].has(b)) { sets[r].add(b); size[r] += n(b); } };
+  const spread = [];
+  for (const b of lines) {
+    const rs = new Set((mem[b] || [b]).map(genRegion).filter(r => r != null));
+    home[b] = rs; if (rs.size) for (const r of rs) add(r, b); else spread.push(b);
+  }
+  // Gen V to IX (and anything else without a home): the smallest region, weighed against how many lines of its types it has
+  const typeCount = (r, ty) => [...sets[r]].filter(x => lineTypesTop(x).some(t => ty.includes(t))).length;
+  for (const b of spread.sort((a, c) => lineTop(c) - lineTop(a))) {
+    const ty = lineTypesTop(b);
+    const r = [...Array(nR).keys()].sort((a, c) => (size[a] + 6 * typeCount(a, ty)) - (size[c] + 6 * typeCount(c, ty)) || a - c)[0];
+    add(r, b); home[b] = new Set([r]);
+  }
+  // borrowing, from neighbours first: commons before rare, starters and pseudo-legends
+  const borrowOrder = (r, ok) => lines.filter(b => !sets[r].has(b) && ok(b))
+    .sort((a, c) => (NEIGHBOURS[r].some(x => home[c].has(x)) - NEIGHBOURS[r].some(x => home[a].has(x))) || ((SP[a].rare || SP[a].starter ? 1 : 0) - (SP[c].rare || SP[c].starter ? 1 : 0)) || lineTop(a) - lineTop(c) || (a < c ? -1 : 1));
+  for (let r = 0; r < nR; r++) {
+    for (const ty of TYPES) {
+      const usable = b => lineTop(b) >= FLOOR_BST && lineTypesTop(b).includes(ty);
+      let have = [...sets[r]].filter(usable).length;
+      for (const b of borrowOrder(r, usable)) { if (have >= REGION_FLOOR) break; add(r, b); have++; }
+    }
+  }
+  for (let r = 0; r < nR; r++) {
+    const cands = borrowOrder(r, b => NEIGHBOURS[r].some(x => home[b].has(x)));
+    while (size[r] < REGION_SIZE && cands.length) {
+      // the type the region has least of decides the next line
+      const tc = {}; for (const b of sets[r]) for (const t of lineTypesTop(b)) tc[t] = (tc[t] || 0) + 1;
+      cands.sort((a, c) => Math.min(...lineTypesTop(a).map(t => tc[t] || 0)) - Math.min(...lineTypesTop(c).map(t => tc[t] || 0)));
+      add(r, cands.shift());
+    }
+  }
+  REGION_LINES = { sets, home, size };
+  return REGION_LINES;
+}
+
+// (0.27.0) the caches above are rebuilt when a custom Pokédex changes the species (applyDex)
+function resetRegionCaches() {
+  REGION_LINES = null; LINE_MEMBERS = null; RANCH_SPECIES = null; LINE_TOP = null; MIGR_CACHE = { turn: -1 };
+  for (const k of Object.keys(LINE_BASE)) delete LINE_BASE[k];
+  for (const b of BASES) if (LINE[b] && LINE_BASE[LINE[b]] == null) LINE_BASE[LINE[b]] = b;
+}
+const nRegionsBuilt = () => NEIGHBOURS.length;
+const regionName = r => LEAGUE_SETS[r] ? LEAGUE_SETS[r].name.replace(' League', '') : 'elsewhere';
+// a region's own lines (null: no list, so everything: National Dex rules, or a region not built yet)
+const homeSet = r => (regionalOn() && r != null && r < nRegionsBuilt()) ? regionLines().sets[r] : null;
+const lineBaseOf = sp => LINE_BASE[LINE[sp]] || null;
+// the regions a line lives in
+const linesRegions = b => { const R = regionLines(); return [...Array(nRegionsBuilt()).keys()].filter(r => R.sets[r].has(b)); };
+
+// ---------- migration waves ----------
+// Each region has MIGR_YEAR waves a year on average (a weekly chance while none is on), each MIGR_WEEKS long, bringing
+// MIGR_LINES lines from a neighbouring region (MIGR_FAR of the time from further off) into wild finds, the market and
+// catching trips there. World-level: S.migr[r] = { from, lines, at, until } while a wave is on.
+const MIGR_ODDS = 0.175, MIGR_WEEKS = [6, 10], MIGR_LINES = [10, 20], MIGR_FAR = 0.15;
+let MIGR_CACHE = { turn: -1 };
+function migrantSet(r) {
+  if (MIGR_CACHE.turn !== S.turn || MIGR_CACHE.migr !== S.migr) MIGR_CACHE = { turn: S.turn, migr: S.migr };
+  if (!MIGR_CACHE[r]) { const w = S.migr && S.migr[r]; MIGR_CACHE[r] = new Set(w ? w.lines : []); }
+  return MIGR_CACHE[r];
+}
+const migrationOf = r => (S.migr && S.migr[r]) || null;
+// news of a wave in every League of the region
+function regionNews(r, text) { eachLeague(() => { if (S.region === r) news(text, 'catch'); }); }
+function migrationWeek() {
+  if (!regionalOn()) { S.migr = null; return; }
+  S.migr = S.migr || {};
+  const used = new Set(eachLeague(() => S.region));
+  for (let r = 0; r < nRegionsBuilt(); r++) {
+    const w = S.migr[r];
+    if (w && w.until <= S.turn) { delete S.migr[r]; MIGR_CACHE = { turn: -1 }; regionNews(r, `The migration from ${regionName(w.from)} has moved on; ${regionName(w.from)}'s Pokémon are no longer found in ${regionName(r)}.`); continue; }
+    if (w || !used.has(r) || rand() >= MIGR_ODDS) continue;
+    const far = rand() < MIGR_FAR, srcs = far ? [...Array(nRegionsBuilt()).keys()].filter(x => x !== r && !NEIGHBOURS[r].includes(x)) : NEIGHBOURS[r];
+    if (!srcs.length) continue;
+    const from = pick(srcs), home = regionLines().sets[r];
+    let pool = [...regionLines().sets[from]].filter(b => !home.has(b));
+    const n = ri(MIGR_LINES[0], MIGR_LINES[1]), lines = [];
+    while (lines.length < n && pool.length) {
+      const wts = pool.map(b => (SP[b].rare ? 0.3 : 1) * (SP[b].starter ? 0.3 : 1) * (lineTop(b) > 540 ? 0.4 : 1));
+      let x = rand() * wts.reduce((a, c) => a + c, 0), i = 0; for (; i < pool.length - 1; i++) { x -= wts[i]; if (x <= 0) break; }
+      lines.push(pool[i]); pool.splice(i, 1);
+    }
+    if (!lines.length) continue;
+    S.migr[r] = { from, lines, at: S.turn, until: S.turn + ri(MIGR_WEEKS[0], MIGR_WEEKS[1]), far };
+    MIGR_CACHE = { turn: -1 };
+    regionNews(r, `Migration! ${lines.length} kinds of Pokémon from ${regionName(from)} have arrived in ${regionName(r)} (${lines.slice(0, 5).join(', ')}${lines.length > 5 ? '…' : ''}) and can be found here until ${turnDate(S.migr[r].until)}.`);
+  }
+}
+// can line b be found in the wild in region r now (its own lines plus a migration)? Anything without a line (a
+// legendary) is left to its own rules
+function wildOk(sp, r = S.region) {
+  const h = homeSet(r); if (!h) return true;
+  const b = lineBaseOf(sp); if (!b) return true;
+  return h.has(b) || migrantSet(r).has(b);
+}
+// a list kept to what the region has, unless that leaves nothing (then all of it)
+function regional(list, r = S.region) { if (!homeSet(r)) return list; const out = list.filter(sp => wildOk(sp, r)); return out.length ? out : list; }
+
+// ---------- shipping lanes, Goldenrod's railway, charters ----------
+// A lane is a building in a port city where the League has a gym (Goldenrod's is a railway): it serves one source region
+// (x.src on the building), whose lines the League can then catch on targeted trips and find at its market all the time.
+// LANE_WEEK a week on top of the usual upkeep; changing the route costs LANE_ROUTE. It lapses in the red. A charter is a
+// one-off shipment from any other region: CHARTER_COST, CHARTER_WEEKS, two or three of that region's Pokémon.
+const PORTS = { Vermilion: 'port', Cinnabar: 'port', Olivine: 'port', Cianwood: 'port', Goldenrod: 'railway', Slateport: 'port', Lilycove: 'port', Dewford: 'port', Canalave: 'port', Sunyshore: 'port' };
+const LANE_WEEK = 400, LANE_ROUTE = 10000, CHARTER_COST = 12000, CHARTER_WEEKS = 3;
+const isPort = c => !!(c && PORTS[c.name]);
+// the bound League's lanes: [{ gym, city, src, rail }]
+function lanesOf() {
+  if (!S.gyms) return [];
+  return S.gyms.map((g, i) => { const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'lane'); return x ? { gym: i, city: c, x, src: laneSrc(x), rail: PORTS[c.name] === 'railway' } : null; }).filter(Boolean);
+}
+const laneSrc = x => (x.src != null && x.src !== S.region && x.src < nRegionsBuilt() ? x.src : (NEIGHBOURS[S.region] || [0])[0]);
+function laneSet() {
+  const out = new Set(); if (!homeSet(S.region) || lapsed()) return out;
+  const home = homeSet(S.region);
+  for (const l of lanesOf()) for (const b of regionLines().sets[l.src]) if (!home.has(b)) out.add(b);
+  return out;
+}
+// change lane i's route (gym index) to region src
+function setLane(gi, src) {
+  return inLeague(ME(), () => {
+    const l = lanesOf().find(x => x.gym === gi); if (!l) return 'No lane there.';
+    if (src === S.region || !(src >= 0 && src < nRegionsBuilt())) return 'Choose another region.';
+    if (src === l.src) return null;
+    if (!canSpend(LANE_ROUTE)) return 'Not enough money.';
+    book(-LANE_ROUTE, 'lanes', `${l.rail ? 'Railway' : 'Shipping lane'} from ${l.city.name} now serves ${regionName(src)}`);
+    l.x.src = src;
+    return null;
+  });
+}
+const laneFee = () => lapsed() ? 0 : lanesOf().length * LANE_WEEK;
+
+// ---------- the safari ----------
+// A building in one of the League's gym cities: SAFARI_SIZE foreign lines from mixed regions, changing every
+// SAFARI_WEEKS, catchable only on the League's own targeted trips (each level adds lines and SAFARI_SCOUT to the grade).
+const SAFARI_SIZE = [10, 13, 16], SAFARI_WEEKS = 12, SAFARI_SCOUT = 6;
+function safariLv() { if (!S.gyms || lapsed()) return 0; return Math.max(0, ...S.gyms.map(g => S.cities[g.city] ? upLevel(cityB(S.cities[g.city]), 'safari') : 0)); }
+function safariWeek() {
+  const R = S.ranch, lv = safariLv();
+  if (!lv || !homeSet(S.region)) { if (R.safari && !lv) R.safari = null; return; }
+  if (R.safari && R.safari.until > S.turn && R.safari.lv === lv) return;
+  const home = homeSet(S.region), pool = ranchSpecies().filter(b => !home.has(b));
+  const lines = []; let p = pool.slice();
+  while (lines.length < SAFARI_SIZE[lv - 1] && p.length) { const b = pick(p); lines.push(b); p = p.filter(x => x !== b); }
+  R.safari = { lines, until: R.safari && R.safari.lv !== lv && R.safari.until > S.turn ? R.safari.until : S.turn + SAFARI_WEEKS, lv };
+}
+const safariSet = () => new Set(S.ranch && S.ranch.safari && safariLv() ? S.ranch.safari.lines : []);
+
+// ---------- what the bound League can get ----------
+// wild finds here (area trips): the region's lines plus a migration; the market: those plus lanes; targeted trips:
+// those plus the safari
+function hereLines() { const h = homeSet(S.region); return h ? ranchSpecies().filter(b => h.has(b) || migrantSet(S.region).has(b)) : ranchSpecies(); }
+function marketLines() { if (!homeSet(S.region)) return ranchSpecies(); const ln = laneSet(); return ranchSpecies().filter(b => wildOk(b) || ln.has(b)); }
+function tripOk(b) { if (!homeSet(S.region)) return true; return wildOk(b) || laneSet().has(b) || safariSet().has(b); }
+// where a line can be had by the bound League, in words (for the Ranch page)
+function lineSource(b) {
+  const h = homeSet(S.region); if (!h || h.has(b)) return 'home';
+  if (migrantSet(S.region).has(b)) return 'migrating';
+  if (laneSet().has(b)) return 'lane';
+  if (safariSet().has(b)) return 'safari';
+  return null;
+}
+
+// ---------- moving region with at most FOREIGN_MAX foreign Pokémon ----------
+// A challenger who moves to a League in another region keeps their best FOREIGN_MAX Pokémon from outside it (special
+// ones first); the rest are released (part 3 will put them in storage instead).
+const FOREIGN_MAX = 3;
+const REGION_LOG = { released: 0, moves: 0 };
+function regionMove(t, fromR, toR) {
+  if (fromR === toR || !homeSet(toR)) return;
+  const home = homeSet(toR), foreign = t.team.filter(m => { const b = lineBaseOf(m.sp); return b && !home.has(b); });
+  REGION_LOG.moves++;
+  if (foreign.length <= FOREIGN_MAX) return;
+  const keep = new Set(foreign.slice().sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, FOREIGN_MAX));
+  const gone = foreign.filter(m => !keep.has(m));
+  for (const m of gone) farewell(t, m, `released on moving to ${regionName(toR)}`);
+  t.team = t.team.filter(m => !gone.includes(m));
+  REGION_LOG.released += gone.length;
+  if (t.mega && !t.team.some(m => m.uid === t.mega.uid)) t.mega = null;
+}
+
+// ---------- steers the region can't answer ----------
+// For each senior post with a steer, the best Pokémon of its type the steer would want, against the best the League
+// can get (its region, a migration, lanes, the safari and the ranch). A gap of STEER_GAP or more is flagged on the
+// Ranch page with where that Pokémon lives; nothing is bought. Staff just use the best they can get meanwhile.
+const STEER_GAP = 0.5;
+function steerGaps() {
+  if (!ranchOn() || !homeSet(S.region)) return [];
+  const have = new Set(S.ranch.mons.map(e => e.b)), out = [];
+  for (const t of seniorIds().map(T)) {
+    const s = steerOf(t); if (s === 'bal' || s === 'keep') continue;
+    const slot = eliteSlot(t); if (!slot) continue;
+    const mixed = t.role === 'champion' || !t.specialty, ty = mixed ? [] : specTypes(t), meta = steerMeta(s), weak = weakOf(t.team);
+    const score = b => { const sp = formAt(b, slot.lvl, t.specialty); if (ty.length && !SP[sp].types.some(x => ty.includes(x))) return null; if (bannedIn(sp, S.lg || 0)) return null; return steerScore(s, sp, weak, meta) + SP[sp].bst / 300; };
+    let best = null, mine = -99;
+    for (const b of ranchSpecies()) {
+      const v = score(b); if (v == null) continue;
+      if (tripOk(b) || have.has(b)) mine = Math.max(mine, v);
+      else if (!best || v > best.v) best = { b, v };
+    }
+    if (best && best.v - mine >= STEER_GAP) out.push({ t, s, b: best.b, sp: formAt(best.b, slot.lvl, t.specialty), regions: linesRegions(best.b) });
+  }
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { regionLines, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, NEIGHBOURS, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -14468,7 +14749,7 @@ function viewCities0() {
 }
 // ---------- the ranch (0.25.0, design doc 6.5) ----------
 // Your League's pool of Pokémon: who fields what, the pool with reserves, locks and sales, catching trips and the market
-let ranchType = 'Normal', ranchSp = null;
+let ranchType = 'Normal', ranchSp = null, charterReg = null;
 function ranchPostOpts() {
   return [['champion', 'Champion']].concat(S.e4.map((_, k) => [`e4:${k}`, `Elite Four #${k + 1}`]), S.gyms.map((_, i) => [`gym:${i}`, `Gym ${i + 1} · ${townName(i)}`]));
 }
@@ -14490,31 +14771,51 @@ function viewRanch0() {
     if (nLeagues() > 1) acts.push(e.sale ? `<button class="btn small ghost" data-act="ranchunlist" data-id="${e.uid}">Withdraw (${money(e.sale.price)})</button>` : `<button class="btn small ghost" data-act="ranchlist" data-id="${e.uid}">List for ${money(v)}</button>`);
     return `<tr><td>${esc(e.sp)}${e.sp !== e.b ? ` <span class="small muted">(${esc(e.b)} line)</span>` : ''}</td><td>${chips(SP[e.sp].types)}</td><td class="small">${gradeStars(e.g)}</td><td class="num">${money(v)}</td><td class="small">${e.at != null ? holder(e.at) : e.sale ? '<span class="tag small">listed</span>' : e.lock ? '<span class="tag small">locked</span>' : 'in the ranch'}${e.of != null && T(e.of) ? `<br><span class="muted">from ${esc(T(e.of).name)}</span>` : ''}</td><td>${res}</td><td>${acts.join(' ')}${free ? '' : `<br><span class="small muted">Fielded by ${esc(T(e.at).name)}: selling, releasing or listing it swaps it out now for the best left in the ranch (or a stopgap). Lock it to take it back at the next monthly swap instead.</span>`}</td></tr>`;
   };
-  // catching trips
-  const species = ranchSpecies().filter(b => { const f = SP[b].types; return f.includes(ranchType) || SP[formAt(b, 100)].types.includes(ranchType); }).sort();
+  // catching trips (0.27.0: only lines the League can reach, marked by where they come from)
+  const srcTag = b => { const w = lineSource(b); return w === 'migrating' ? ', migrating' : w === 'lane' ? ', by lane' : w === 'safari' ? ', safari' : ''; };
+  const species = ranchSpecies().filter(b => { const f = SP[b].types; return (f.includes(ranchType) || SP[formAt(b, 100)].types.includes(ranchType)) && tripOk(b); }).sort();
   if (!species.includes(ranchSp)) ranchSp = species[0] || null;
   const plan = ranchSp ? tripPlan(ranchSp) : null, full = R.trips.length >= tripMax();
-  const trips = R.trips.map(x => `<li>${x.k === 'target' ? `For <b>${esc(x.b)}</b> (${Math.round(x.odds * 100)}% odds)` : 'An area trip'}: back ${turnDate(x.due)} <span class="muted small">(${money(x.cost)})</span></li>`).join('');
-  const shop = R.shop.map(x => `<tr><td>${esc(x.b)}</td><td>${chips(SP[x.b].types)}</td><td class="small">${gradeStars(x.g)}</td><td class="num">${money(x.price)}</td><td class="small muted">until ${turnDate(x.until)}</td><td><button class="btn small" data-act="ranchbuy" data-id="${x.uid}"${canSpend(x.price) && ranchRoom() > 0 ? '' : ' disabled'}>Buy</button></td></tr>`).join('');
+  const trips = R.trips.map(x => `<li>${x.k === 'target' ? `For <b>${esc(x.b)}</b> (${Math.round(x.odds * 100)}% odds${x.safari ? ', the safari' : ''})` : x.k === 'charter' ? `A charter from ${esc(regionName(x.r))}` : 'An area trip'}: back ${turnDate(x.due)} <span class="muted small">(${money(x.cost)})</span></li>`).join('');
+  const shop = R.shop.map(x => `<tr><td>${esc(x.b)}${srcTag(x.b) ? ` <span class="tag small">${srcTag(x.b).slice(2)}</span>` : ''}</td><td>${chips(SP[x.b].types)}</td><td class="small">${gradeStars(x.g)}</td><td class="num">${money(x.price)}</td><td class="small muted">until ${turnDate(x.until)}</td><td><button class="btn small" data-act="ranchbuy" data-id="${x.uid}"${canSpend(x.price) && ranchRoom() > 0 ? '' : ' disabled'}>Buy</button></td></tr>`).join('');
   const others = listings(S.lg || 0).map(({ lg, e }) => `<tr><td>${esc(e.sp)}</td><td>${chips(SP[e.sp].types)}</td><td class="small">${gradeStars(e.g)}</td><td class="num">${money(e.sale.price)}</td><td class="small">${esc(leagueName(lg))}</td><td><button class="btn small" data-act="ranchlbuy" data-lg="${lg}" data-id="${e.uid}"${canSpend(e.sale.price) && ranchRoom() > 0 ? '' : ' disabled'}>Buy</button></td></tr>`).join('');
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Ranch</h2>
     <p>Your Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the League's ranch; gym trainers keep their own. Each month a member of staff swaps one Pokémon for a better one from the ranch, by their steer and as well as their Strategy lets them; one they drop goes into the ranch (it is theirs to take back while they stay), and a ranch Pokémon they hold leaves with them if they go. A ranch Pokémon is fielded by one post at a time and takes the form its line has at that post's level. Its grade (1 to 5 stars) comes from its IVs; better grades cost more. <b>Reserve</b> one for a post (only that post fields it, first) or <b>lock</b> it away (nobody does); a holder gives it back at the next swap.</p>
     <p>The ranch holds <b>${R.mons.length} of ${ranchCap()}</b> (a Ranch building at the seat holds more; build it on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page). Upkeep: <b>${money(ranchUpkeep())}</b> a week (${RANCH_UPKEEP.map(money).join(', ')} a Pokémon by grade). Your Scouting for finds: <b>${sc}</b> (your best senior member's, plus ${RANCH_SCOUT_OFFICE} a scouting office level).</p>
     ${stops.length ? `<p class="warn">Fielding stopgaps (weak stand-ins, because nothing in the ranch fits): ${stops.map(t => `${esc(postName(t))} (${t.team.filter(m => m.stop).length})`).join(', ')}. Catch or buy Pokémon of their type.</p>` : ''}</section>
+${regionPanel()}
   <section class="panel"><div class="ph"><h2>Who fields what</h2><span class="muted">Own: the trainer's own; ranch: from the ranch; stopgap: a weak stand-in</span></div>
     <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Trainer</th><th>Team</th></tr></thead><tbody>${teams}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>The pool</h2><span class="muted">${R.mons.length} of ${ranchCap()} · ${R.mons.filter(e => e.at == null).length} not fielded. Sell back for a third of the value or release for nothing (a fielded one is swapped out at once)${nLeagues() > 1 ? `, or list for other Leagues at its value (you get ${Math.round(SALE_SHARE * 100)}%, for up to ${SALE_WEEKS / 4} months)` : ''}.</span></div>
     ${pool.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Value</th><th>Now</th><th>Reserved for</th><th></th></tr></thead><tbody>${pool.map(row).join('')}</tbody></table></div>` : '<p class="muted">Empty.</p>'}</section>
   <section class="panel"><div class="ph"><h2>Catching trips</h2><span class="muted">${R.trips.length} of ${tripMax()} out (one more a scouting office level)</span></div>
     ${trips ? `<ul>${trips}</ul>` : '<p class="muted">None out.</p>'}
-    <p class="small">A <b>targeted trip</b> goes after one line and costs more the rarer and stronger it is; your Scouting sets the odds and the grade. An <b>area trip</b> (${money(AREA_COST)}, two weeks) brings back one to three Pokémon at random. A find that comes back to a full ranch is let go. Every species can be caught for now (regional encounters come later).</p>
+    <p class="small">A <b>targeted trip</b> goes after one line and costs more the rarer and stronger it is; your Scouting sets the odds and the grade. An <b>area trip</b> (${money(AREA_COST)}, two weeks) brings back one to three Pokémon at random. A find that comes back to a full ranch is let go. ${homeSet(S.region) ? `Trips catch what ${esc(regionName(S.region))} has, plus any migration, your lanes' regions and your safari (the list shows only those).` : 'Every species can be caught (National Dex rules).'}</p>
     <div class="confirm-row"><select class="ranchtypesel" aria-label="Type">${TYPES.map(ty => `<option${ty === ranchType ? ' selected' : ''}>${ty}</option>`).join('')}</select>
-      <select class="ranchspsel" aria-label="Pokémon">${species.map(b => `<option value="${esc(b)}"${b === ranchSp ? ' selected' : ''}>${esc(b)} (to ${lineTop(b)} base stats)</option>`).join('')}</select>
+      <select class="ranchspsel" aria-label="Pokémon">${species.map(b => `<option value="${esc(b)}"${b === ranchSp ? ' selected' : ''}>${esc(b)} (to ${lineTop(b)} base stats${srcTag(b)})</option>`).join('')}</select>
       ${plan ? `<button class="btn small" data-act="ranchtrip" data-b="${esc(ranchSp)}"${full || !canSpend(plan.cost) ? ' disabled' : ''}>Send for ${esc(ranchSp)} (${money(plan.cost)}, ${plan.weeks} weeks, ${Math.round(plan.odds * 100)}%)</button>` : ''}
       <button class="btn small" data-act="rancharea"${full || !canSpend(AREA_COST) ? ' disabled' : ''}>Area trip (${money(AREA_COST)})</button></div></section>
   <section class="panel"><div class="ph"><h2>The market</h2><span class="muted">A few Pokémon each week, each for two to four weeks, priced by strength, grade, rarity and your meta</span></div>
     ${shop ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Price</th><th></th><th></th></tr></thead><tbody>${shop}</tbody></table></div>` : '<p class="muted">Nothing this week.</p>'}
     ${nLeagues() > 1 ? `<h3>Other Leagues' sales</h3>${others ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Price</th><th>From</th><th></th></tr></thead><tbody>${others}</tbody></table></div>` : '<p class="muted">Nothing listed.</p>'}` : ''}</section>`;
+}
+// (0.27.0) the region: its own Pokémon, a migration, lanes, the safari, charters, and steers the region can't answer
+function regionPanel() {
+  const home = homeSet(S.region);
+  if (!home) return `<section class="panel"><div class="ph"><h2>${esc(regionName(S.region))}</h2><span class="muted">National Dex rules</span></div><p class="small">Every species is found everywhere in this world (regional encounters are off).</p></section>`;
+  const mg = migrationOf(S.region), lanes = lanesOf(), saf = S.ranch.safari && safariLv() ? S.ranch.safari : null, gaps = steerGaps();
+  const others = [0, 1, 2, 3].filter(r => r !== S.region);
+  if (!others.includes(charterReg)) charterReg = (NEIGHBOURS[S.region] || others)[0];
+  const ports = S.gyms.map((g, i) => ({ i, c: S.cities[g.city] })).filter(x => isPort(x.c));
+  const laneRow = l => `<li><b>${l.rail ? 'Railway' : 'Shipping lane'}</b> from ${esc(l.city.name)}: <select class="lanesel" data-g="${l.gym}" aria-label="Route">${others.map(r => `<option value="${r}"${r === l.src ? ' selected' : ''}>${esc(regionName(r))}</option>`).join('')}</select> <span class="small muted">${money(LANE_WEEK)} a week; a new route costs ${money(LANE_ROUTE)}${lapsed() ? '; lapsed while in the red' : ''}</span></li>`;
+  const gapRow = x => `<li>${esc(postName(x.t))} (${esc(steerName(x.s))}) would want <b>${esc(x.sp)}</b>, found in ${x.regions.map(regionName).map(esc).join(' and ')}: a lane or a charter from there, a migration, or the safari could bring it.</li>`;
+  return `<section class="panel"><div class="ph"><h2>${esc(regionName(S.region))}'s Pokémon</h2><span class="muted">${home.size} kinds (lines) found here · ${ports.length ? `ports: ${ports.map(x => esc(x.c.name)).join(', ')}` : 'no port among your gym cities'}</span></div>
+    <p class="small">Wild Pokémon, your market, area trips and new challengers' teams come from ${esc(regionName(S.region))}'s own Pokémon, plus whatever a migration brings. Other regions' Pokémon reach your ranch through a <b>shipping lane</b> (built on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page in a port city where you have a gym, or Goldenrod's railway: its region's Pokémon on your trips and at your market all the time), a <b>charter</b> (a one-off shipment of two or three of a region's Pokémon, ${money(CHARTER_COST)}, ${CHARTER_WEEKS} weeks) or the <b>Safari Zone</b> (one per League, in a gym city: ${SAFARI_SIZE[0]} foreign Pokémon at a time, changing every ${SAFARI_WEEKS} weeks, for your targeted trips). A challenger moving to another region brings at most ${FOREIGN_MAX} Pokémon from outside it.</p>
+    <p>${mg ? `<b>Migration:</b> ${mg.lines.length} kinds from ${esc(regionName(mg.from))}${mg.far ? ' (from far off)' : ''} until ${turnDate(mg.until)}: ${mg.lines.map(esc).join(', ')}.` : '<span class="muted">No migration on now. Three or four come a year, mostly from a neighbouring region, for about two months each.</span>'}</p>
+    ${lanes.length ? `<ul>${lanes.map(laneRow).join('')}</ul>` : ''}
+    ${saf ? `<p><b>Safari Zone</b> (level ${saf.lv}), until ${turnDate(saf.until)}: ${saf.lines.map(esc).join(', ')}.</p>` : ''}
+    <div class="confirm-row"><span class="small">Charter from <select class="charterreg" aria-label="Region">${others.map(r => `<option value="${r}"${r === charterReg ? ' selected' : ''}>${esc(regionName(r))}</option>`).join('')}</select></span> <button class="btn small" data-act="ranchcharter" data-v="${charterReg}"${S.ranch.trips.length >= tripMax() || !canSpend(CHARTER_COST) ? ' disabled' : ''}>Send a charter (${money(CHARTER_COST)})</button></div>
+    ${gaps.length ? `<p class="warn small">Steers ${esc(regionName(S.region))} can't answer well (staff use the best they can get meanwhile):</p><ul class="small">${gaps.map(gapRow).join('')}</ul>` : ''}</section>`;
 }
 // (0.19.0) distress sales offered to you: a rival's level lost in a city where you have a gym
 function distressPanel() {
@@ -15429,6 +15730,8 @@ const GLOSS_TERMS = {
     ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
     ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When nothing fits a post, weak stopgaps stand in. Rival Leagues run their ranches by their aim.`],
+    ['Regional encounters', `Each region has its own Pokémon (about 350 species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions built so far. Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region: Kanto and Johto, Johto and Hoenn, Hoenn and Sinnoh, Sinnoh and Kanto), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
+    ['Shipping lanes, charters and the safari', `A shipping lane is built in a port city where the League has a gym (Vermilion, Cinnabar, Olivine, Cianwood, Slateport, Lilycove, Dewford, Canalave, Sunyshore; Goldenrod's is the railway) and serves one other region: its Pokémon can be caught on the League's targeted trips and turn up at its market all the time. It costs a weekly fee besides upkeep, and a fee to change the route. A charter is a one-off shipment of two or three Pokémon from any other region. The Safari Zone (one per League, in a gym city) holds foreign Pokémon from mixed regions, changing every 12 weeks, that only the League's own targeted trips can catch; higher levels hold more and bring back better grades. All lapse while the League is in the red. When a post's steer wants a Pokémon the League can't reach, the Ranch page says where it lives.`],
     ['Youth academy', `A League-level purchase at the seat that takes no slot. Each of its three levels raises a young prospect a year who sets out on your circuit as one of your own: ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers and paid ${Math.round((1 - ACADEMY_PAY) * 100)}% less by you. Rival Leagues build academies too.`],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
     ['Steers', 'A standing instruction for how a post\'s team is built: Balanced, Counter the trend, Counter the year\'s meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. Set on Your staff for each Gym Leader\'s gym (its gym trainers follow it), each Elite Four seat and the Champion, plus a League line for posts with none. It belongs to the post, so a new holder follows it. Everyone follows a steer, as closely as their Strategy allows; it trades some raw strength for what it asks. A team moves one Pokémon closer each month, and someone new to a post builds to it at once. A countering trainer may field one Pokémon off their type. Rival Leagues steer themselves: posts that can answer the meta on their type counter it.'],
@@ -15533,6 +15836,18 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 27, ver: '0.27.0', date: 'November 17, 2026', time: '11:20 AM ET', title: 'Regional encounters', items: [
+    "Pokémon are regional now. Kanto, Johto, Hoenn and Sinnoh each have their own species (about 350, counting evolutions): a family belongs to every region of its generations (Pichu is found in Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions until their own regions are added. Every type has at least five strong lines in every region. Wild Pokémon, new challengers' teams, mass outbreaks, the market, area trips and stopgaps all come from the region.",
+    "Migration: three or four times a year, 10 to 20 kinds of Pokémon from a neighbouring region (now and then from further off) arrive for about two months, for challengers and for your ranch alike.",
+    "Shipping lanes: build one in a port city where you have a gym (Goldenrod has the railway instead) and choose a region on the Ranch page. Its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 60,000 to build, 400 a week to run, 10,000 to change the route.",
+    "Charters: a one-off shipment of two or three Pokémon from any other region, 12,000, three weeks.",
+    "The Safari Zone: one per League, in a gym city. It holds 10 Pokémon from other regions (13 and 16 at higher levels), changing every 12 weeks, that only your own targeted trips can catch; higher levels also bring back better grades.",
+    "When a steer asks for something your region can't give (say, a Ground type to cover weaknesses), staff use the best they can get, and the Ranch page flags it and says where that Pokémon lives.",
+    "A challenger moving to a League in another region brings at most three Pokémon from outside it (their best, special ones first). For now the rest are released.",
+    "Rival Leagues build lanes and safaris by their aim and send charters when a post is stuck with stopgaps.",
+    "Fixed: leaving your League to found another could crash if a waiting seat challenge moved one of the staff coming with you.",
+    "Regional encounters is a feature in Advanced options (on by default). Turn it off to play with every species everywhere.",
+  ] },
   { id: 26, ver: '0.26.0', date: 'November 17, 2026', time: '9:40 AM ET', title: 'Clearing out the ranch', items: [
     "Any ranch Pokémon can now be sold, released or listed straight from the Ranch page, even one a member of staff is fielding: they swap it out on the spot for the best fitting Pokémon left in the ranch (or a stopgap if nothing fits). The page says who is fielding it and what will happen.",
     "Rival Leagues clear out their ranches: spares beyond the few their aim keeps are listed for other Leagues, then sold back once they have sat unused for a while (two months for a money-maker, three for a star-maker, four for a wall-builder).",
@@ -16113,6 +16428,7 @@ document.addEventListener('click', ev => {
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'ranchcharter': { const w = inLeague(ME(), () => startTrip('charter', +el.dataset.v)); save(); render(); toast(w || 'The charter is on its way.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchsell': case 'ranchrel': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.') + (!w && who ? ` ${who} swapped it out.` : '')); break; }
@@ -16232,6 +16548,8 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchspsel')) { ranchSp = e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('charterreg')) { charterReg = +e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }

@@ -186,6 +186,24 @@ async def run(path):
                         else { sb.click(); if (t.team.length !== n0 || t.team.some(m => m.rid === e.uid) || R().mons.includes(e)) log.push('FAIL selling a fielded ranch Pokémon'); else log.push('sold a fielded ' + e.sp); } } }
                     go('cities'); const rb = document.querySelector('[data-act=build][data-w=seat][data-k=ranch]'), c0 = inLeague(0, () => ranchCap());
                     if (!rb) log.push('FAIL no Ranch to build'); else { rb.click(); if (inLeague(0, () => ranchCap()) <= c0) log.push('FAIL building the Ranch'); else log.push('built the Ranch'); }
+                    // 0.27.0: the region panel, a charter, a lane in a port (moving a gym there if needed) and its route, the safari
+                    { S.fin.money = 400000; R().trips.length = 0; go('ranch'); const txt = () => document.querySelector('#main').textContent;
+                      if (!/Pokémon/.test(txt()) || !/Charter from/.test(txt())) log.push('FAIL no region panel on the Ranch page');
+                      { const b = document.querySelector('[data-act=ranchcharter]'), t0 = R().trips.length, m0 = S.fin.money; if (!b) log.push('FAIL no charter button'); else if (b.disabled) log.push('charter button disabled (trips out ' + R().trips.length + ')'); else { b.click(); if (R().trips.length !== t0 + 1 || S.fin.money !== m0 - 12000 || !R().trips.some(x => x.k === 'charter')) log.push('FAIL the charter'); else log.push('sent a charter'); } }
+                      const opts = [...document.querySelectorAll('select.ranchspsel option')].map(o => o.value);
+                      if (opts.some(b => !inLeague(0, () => tripOk(b)))) log.push('FAIL the trip list offers a line out of reach');
+                      go('cities');
+                      let li = inLeague(0, () => S.gyms.findIndex(g => isPort(S.cities[g.city])));
+                      if (li < 0) { const port = inLeague(0, () => myPlaces().find(p => p.none && isPort(p.c))); if (port) { const sel = document.querySelector('#move-' + port.c.id), mb = document.querySelector('[data-act=movegym][data-c="' + port.c.id + '"]'); if (sel && mb) { sel.value = '0'; mb.click(); go('cities'); li = 0; log.push('moved a gym to ' + port.c.name); } } }
+                      if (li >= 0) { inLeague(0, () => { cityB(S.cities[S.gyms[li].city]).length = 0; }); go('cities'); } // clear its slot for the lane
+                      const lb = document.querySelector('[data-act=build][data-k=lane]');
+                      if (li < 0) log.push('no port to build a lane in');
+                      else if (!lb) { const why = inLeague(0, () => buildCheck(li, 'lane').why); if (/port/.test(why || '')) log.push('FAIL no lane to build in a port'); else log.push('no lane built: ' + why); }
+                      else { const m0 = S.fin.money; lb.click(); const ln = inLeague(0, () => lanesOf()); if (!ln.length || S.fin.money !== m0 - 60000) log.push('FAIL building a lane'); else { log.push('built a lane in ' + ln[0].city.name);
+                        go('ranch'); const sel = document.querySelector('select.lanesel'); if (!sel) log.push('FAIL no route picker'); else { const to = [...sel.options].map(o => +o.value).find(v => v !== ln[0].src), m1 = S.fin.money; sel.value = String(to); sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => lanesOf()[0].src) !== to || S.fin.money !== m1 - 10000) log.push('FAIL changing the route'); else log.push('changed the lane route'); } } }
+                      go('cities'); const sb = document.querySelector('[data-act=build][data-k=safari]');
+                      if (!sb) log.push('no safari to build (no free slot)'); else { const w = sb.dataset.w; sb.click(); if ([...document.querySelectorAll('[data-act=build][data-k=safari]')].some(x => x.dataset.w !== w)) log.push('FAIL a second safari offered'); else log.push('built a safari'); }
+                      go('ranch'); if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the region steps'); }
                     S.fin.money = keep; go('ranch'); }
                   log.push('managed staff'); go('circuit'); }
                 // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at

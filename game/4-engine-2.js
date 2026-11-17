@@ -185,7 +185,7 @@ function wildOffers(t) {
   const items = [];
   for (const b of BASES) {
     const f = formAt(b, L, t.specialty); const s = SP[f];
-    if (s.bst > cap || t.team.some(m => LINE[m.sp] === b)) continue;
+    if (s.bst > cap || t.team.some(m => LINE[m.sp] === b) || !wildOk(b)) continue; // (0.27.0) only what the region has
     let w = SP[b].rare ? 0.12 + sctOf(t) / 400 : 1;
     const fit = specFit(t, f); if (fit) w *= fit === 2 ? 7 : t.spec2 ? 2.6 : 4;
     if (SP[b].starter) w *= 0.25;
@@ -1348,6 +1348,7 @@ function leagueRun(q, entry) {
 // one week of the whole world
 function simWeek() {
   S.stop = null;
+  migrationWeek(); // (0.27.0) migration waves, world-level, before anyone catches or buys
   eachLeague(leagueWeek);
   moneyWeek();
   sponsorWeek();
@@ -1874,7 +1875,7 @@ function steerScore(s, sp, weak, meta) {
 // under their Scouting ceiling
 function offTypePool(t, L, meta) {
   const ty = specTypes(t), cap = 340 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, set = new Set();
-  for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s && s.bst <= cap && !s.types.some(x => ty.includes(x)) && !bannedIn(f, S.lg || 0)) set.add(f); }
+  for (const b of regional(BASES)) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s && s.bst <= cap && !s.types.some(x => ty.includes(x)) && !bannedIn(f, S.lg || 0)) set.add(f); }
   return [...set].map(sp => [sp, steerScore('trend', sp, {}, meta) + SP[sp].bst / 300]).filter(x => x[1] > 2).sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0]);
 }
 // the lines of a famous trainer's signature team

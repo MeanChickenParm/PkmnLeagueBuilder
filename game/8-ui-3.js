@@ -1,5 +1,17 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 27, ver: '0.27.0', date: 'November 17, 2026', time: '11:20 AM ET', title: 'Regional encounters', items: [
+    "Pokémon are regional now. Kanto, Johto, Hoenn and Sinnoh each have their own species (about 350, counting evolutions): a family belongs to every region of its generations (Pichu is found in Kanto and Johto), regional forms go with the species they are forms of (Hisuian ones with Sinnoh), and Generations V to IX are shared out among the four regions until their own regions are added. Every type has at least five strong lines in every region. Wild Pokémon, new challengers' teams, mass outbreaks, the market, area trips and stopgaps all come from the region.",
+    "Migration: three or four times a year, 10 to 20 kinds of Pokémon from a neighbouring region (now and then from further off) arrive for about two months, for challengers and for your ranch alike.",
+    "Shipping lanes: build one in a port city where you have a gym (Goldenrod has the railway instead) and choose a region on the Ranch page. Its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 60,000 to build, 400 a week to run, 10,000 to change the route.",
+    "Charters: a one-off shipment of two or three Pokémon from any other region, 12,000, three weeks.",
+    "The Safari Zone: one per League, in a gym city. It holds 10 Pokémon from other regions (13 and 16 at higher levels), changing every 12 weeks, that only your own targeted trips can catch; higher levels also bring back better grades.",
+    "When a steer asks for something your region can't give (say, a Ground type to cover weaknesses), staff use the best they can get, and the Ranch page flags it and says where that Pokémon lives.",
+    "A challenger moving to a League in another region brings at most three Pokémon from outside it (their best, special ones first). For now the rest are released.",
+    "Rival Leagues build lanes and safaris by their aim and send charters when a post is stuck with stopgaps.",
+    "Fixed: leaving your League to found another could crash if a waiting seat challenge moved one of the staff coming with you.",
+    "Regional encounters is a feature in Advanced options (on by default). Turn it off to play with every species everywhere.",
+  ] },
   { id: 26, ver: '0.26.0', date: 'November 17, 2026', time: '9:40 AM ET', title: 'Clearing out the ranch', items: [
     "Any ranch Pokémon can now be sold, released or listed straight from the Ranch page, even one a member of staff is fielding: they swap it out on the spot for the best fitting Pokémon left in the ranch (or a stopgap if nothing fits). The page says who is fielding it and what will happen.",
     "Rival Leagues clear out their ranches: spares beyond the few their aim keeps are listed for other Leagues, then sold back once they have sat unused for a while (two months for a money-maker, three for a star-maker, four for a wall-builder).",
@@ -580,6 +592,7 @@ document.addEventListener('click', ev => {
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'ranchcharter': { const w = inLeague(ME(), () => startTrip('charter', +el.dataset.v)); save(); render(); toast(w || 'The charter is on its way.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchsell': case 'ranchrel': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.') + (!w && who ? ` ${who} swapped it out.` : '')); break; }
@@ -699,6 +712,8 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchspsel')) { ranchSp = e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('charterreg')) { charterReg = +e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }

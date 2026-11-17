@@ -146,7 +146,7 @@ function maybeOutbreak() {
   }
   if (!featOn('outbreak') || S.outbreak || rand() >= OUTBREAK_CHANCE * EVENT_PACE) return;
   // usually a common Pokémon; sometimes something rarer worth chasing
-  const pool = BASES.filter(b => !SP[b].starter && SP[b].bst < 420 && (rand() < 0.3 ? SP[b].rare : !SP[b].rare));
+  const pool = regional(BASES).filter(b => !SP[b].starter && SP[b].bst < 420 && (rand() < 0.3 ? SP[b].rare : !SP[b].rare)); // (0.27.0) the region's
   if (!pool.length) return;
   const sp = pick(pool), town = townName(ri(0, S.gyms.length - 1));
   S.outbreak = { sp, town, turn: S.turn, season: S.season, week: S.week, caught: 0, alpha: 0, shiny: 0 };
@@ -157,6 +157,7 @@ const FEATURES = [
   { group: 'Wild Pokémon', items: [
     ['shiny', 'Shiny Pokémon', 'Rare shinies with perfect IVs, arriving on fire.'],
     ['radiant', 'Radiant Pokémon', 'Rarer than shinies: they wear the shiny colors, have at least Good IVs and a stronger ability than their species ever gets.'],
+    ['regional', 'Regional encounters', 'Each region has its own Pokémon (about 350 species); others turn up only with migration waves, shipping lanes, charters and the safari. Off: National Dex rules, every species everywhere.'],
     ['delta', 'Delta Pokémon', 'Rarer than alphas, more common than shinies: an unusual second type and outstanding IVs.'],
     ['alpha', 'Alpha Pokémon', 'Uncommon alphas with outstanding IVs, already hot.'],
     ['outbreak', 'Mass outbreaks', 'One species swarms near a town for a week, with better shiny and alpha odds.'],
@@ -640,22 +641,24 @@ function signaturePicks(team) { const used = new Set(); return team.map(sp => { 
 function signatureTeam(t, lvl) { return signaturePicks(t.famousTeam).map((sp, i) => stamp(makeMon(sp, Math.max(5, lvl - i * 2), t.specialty), 'starter')); }
 function starterTeam(t, lvl) {
   if (t.famousTeam) { t.team = signatureTeam(t, lvl); return; }
-  const starterPool = STARTERS.concat(t.r.sct > 70 && rand() < 0.3 ? ['Dratini', 'Bagon', 'Gible', 'Larvitar', 'Beldum', 'Riolu'] : []);
+  // (0.27.0) a newcomer starts with what their region has (regional() keeps the full list when nothing fits)
+  const starterPool = regional(STARTERS.concat(t.r.sct > 70 && rand() < 0.3 ? ['Dratini', 'Bagon', 'Gible', 'Larvitar', 'Beldum', 'Riolu'] : []));
   if (t.specialty) {
     const has = (b, ty) => SP[formAt(b, lvl, t.specialty)].types.includes(ty);
     const fits = b => specTypes(t).some(ty => has(b, ty));
-    let spec = BASES.filter(b => fits(b) && SP[b].bst < 360 && !SP[b].rare);
-    if (spec.length < 2) spec = spec.concat(BASES.filter(b => fits(b) && SP[b].bst < 360 && SP[b].rare));
+    let spec = regional(BASES).filter(b => fits(b) && SP[b].bst < 360 && !SP[b].rare);
+    if (spec.length < 2) spec = spec.concat(regional(BASES).filter(b => fits(b) && SP[b].bst < 360 && SP[b].rare));
+    if (spec.length < 2) spec = spec.concat(BASES.filter(b => fits(b) && SP[b].bst < 360));
     // a dual specialist starts with one Pokémon of each of their types where it can
     const firstPool = t.spec2 ? spec.filter(b => has(b, t.specialty)) : spec;
     const first = pick(firstPool.length ? firstPool : spec.length ? spec : starterPool);
     if (t.spec2) { const sec = spec.filter(b => b !== first && has(b, t.spec2)); if (sec.length) { t.team = [makeMon(first, lvl), makeMon(pick(sec), lvl - 2)]; t.team.forEach(m => stamp(m, 'starter')); return; } }
     const rest = spec.filter(b => b !== first);
-    const second = rest.length && rand() < 0.75 ? pick(rest) : pick(BASES.filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare));
+    const second = rest.length && rand() < 0.75 ? pick(rest) : pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare));
     t.team = [makeMon(first, lvl), makeMon(second, lvl - 2)];
   } else {
     const first = pick(starterPool);
-    t.team = [makeMon(first, lvl), makeMon(pick(BASES.filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
+    t.team = [makeMon(first, lvl), makeMon(pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
   }
   t.team.forEach(m => stamp(m, 'starter'));
 }
@@ -701,11 +704,12 @@ const typeLabel = t => specTypes(t).join('/') || 'mixed';
 // species a trainer could field at level L: on their type, under their Scouting ceiling, best first
 function staffPool(t, L, mixed, need) {
   const ty = mixed ? [] : specTypes(t);
-  let cap = 300 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, pool = [];
+  let cap = 300 + L * 6.2 + (bld(t, 'sct') - 50) * SCOUT_BST, pool = [], here = regional(BASES); // (0.27.0) the region's lines
   for (let tries = 0; tries < 10 && pool.length < need; tries++) {
     const set = new Set();
-    for (const b of BASES) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
+    for (const b of here) { const f = formAt(b, L, t.specialty), s = SP[f]; if (s.bst <= cap && (!ty.length || s.types.some(x => ty.includes(x))) && !bannedIn(f, S.lg || 0)) set.add(f); }
     pool = [...set]; cap += 40;
+    if (tries === 9 && pool.length < need && here !== BASES) { here = BASES; tries = 0; } // (0.27.0) the region can't fill it
   }
   pool.sort((a, b) => SP[b].bst - SP[a].bst);
   return pool.slice(0, Math.max(need, Math.ceil(pool.length * scoutShare(t))));

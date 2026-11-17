@@ -24,10 +24,15 @@ const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, 
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
 const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
+const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
+const WAVES = new Set();
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
   const s = S(), bad = m => fail.push(tag + ' ' + m);
+  // (0.27.0) migration waves: from another region, lines that aren't the region's own, not past their end
+  for (const [r, w] of Object.entries(s.migr || {})) { if (!w || w.from === +r || !(w.from >= 0 && w.from < 4) || !w.lines.length || w.until < s.turn) bad('a bad migration ' + r + ' ' + JSON.stringify(w)); else { for (const b of w.lines) if (g.regionLines().sets[r].has(b)) bad('a migrant ' + b + ' already lives in region ' + r); const key = r + ':' + w.at; if (!WAVES.has(key)) { WAVES.add(key); REG.waves++; if (w.far) REG.far++; } } }
+  if (s.cfg && s.cfg.hand) g.inLeague(g.ME(), () => { if (g.S.ranch && !g.S.founding) REG.gapsMax = Math.max(REG.gapsMax, g.steerGaps().length); });
   // (0.17.0) sponsored contenders and the player's League
   if (g.ME() >= g.nLeagues()) bad('the player League index is out of range');
   // (0.18.0) after folding and renumbering, every League reference points at a real League
@@ -72,6 +77,12 @@ function check(tag) {
       if (e.sale && e.at != null) bad('a listed ranch Pokémon is being fielded');
       if (e.at != null) { const t = g.T(e.at); if (!t || !g.seniorIds().includes(t.id) || !t.team.some(m => m.rid === e.uid)) bad('a ranch entry held by someone not fielding it'); } }
     if (R.mons.length > g.RANCH_CAP[g.RANCH_CAP.length - 1]) bad('a ranch over every capacity');
+    // (0.27.0) the market only sells what the League can reach; the safari holds foreign lines; lanes only in ports
+    if (g.homeSet(z.region) && !g.lapsed()) { const ml = new Set(g.marketLines()); for (const x of R.shop) { if (!ml.has(x.b)) bad('the market sells ' + x.b + ' out of reach'); if (!g.homeSet(z.region).has(x.b)) REG.shopForeign++; }
+      if (R.safari) for (const b of R.safari.lines) if (g.homeSet(z.region).has(b)) bad('a home line in the safari');
+      for (const l of g.lanesOf()) { if (!g.isPort(l.city)) bad('a lane off a port'); if (l.src === z.region) bad('a lane from home'); }
+      if (z.gyms.filter(gy => (g.myPlaces().find(p => p.c && p.c.id === gy.city) || { b: [] }).b.some(x => x.k === 'safari')).length > 1) bad('two safaris'); }
+    for (const tr of R.trips) if (tr.k === 'charter' && (tr.r === z.region || !(tr.r >= 0 && tr.r < 4))) bad('a bad charter');
     if (R.trips.length > g.TRIP_MAX + 3) bad('too many trips');
     const seen = new Set(); let stops = 0;
     for (const id of g.seniorIds()) for (const m of g.T(id).team) { if (m.rid != null) { if (seen.has(m.rid)) bad('one ranch Pokémon on two teams'); seen.add(m.rid); if (!ids.has(m.rid)) bad('a ranch Pokémon with no entry'); } if (m.stop) stops++; }
@@ -255,7 +266,17 @@ for (let i = 0; i < N; i++) {
     });
     // (0.25.0) the ranch: trips, the market, other Leagues' sales, selling, releasing, locks, reserves and listings
     if (HAND && Math.random() < 0.08) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const r = Math.random(), m0 = z.fin.money;
-      if (r < 0.15) { const b = rnd(g.ranchSpecies()), p = g.tripPlan(b), w = g.startTrip('target', b); if (!w) { RAN.trips++; if (z.fin.money !== m0 - p.cost) fail.push('trip cost wrong'); } else if (z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('trip refused: ' + w); }
+      if (r < 0.15) { const ok = g.tripOk, b = Math.random() < 0.3 ? rnd(g.ranchSpecies()) : rnd(g.ranchSpecies().filter(x => ok(x))), p = g.tripPlan(b), avail = ok(b), w = g.startTrip('target', b);
+        if (!w) { RAN.trips++; if (!avail) fail.push('a trip for a line out of reach: ' + b); if (z.fin.money !== m0 - p.cost) fail.push('trip cost wrong'); if (g.lineSource(b) === 'safari') REG.safariTrips++; }
+        else if (!avail) REG.refusedTrips++; else if (z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('trip refused: ' + w); }
+      // (0.27.0) charters, a lane (where a gym city is a port) and its route, the safari
+      else if (r < 0.19) { const to = rnd([0, 1, 2, 3].filter(x => x !== z.region)), w = g.startTrip('charter', to); if (!w) { REG.charters++; if (z.fin.money !== m0 - g.CHARTER_COST) fail.push('charter cost wrong'); } if (!g.startTrip('charter', z.region)) fail.push('a charter from home'); }
+      else if (r < 0.22) { const i = [0, 1, 2, 3, 4, 5, 6, 7].find(k => !g.buildCheck(k, 'lane').why), l = g.lanesOf()[0];
+        if (!g.buildCheck('seat', 'lane').why) fail.push('a lane at the seat');
+        for (let k = 0; k < 8; k++) if (!g.buildCheck(k, 'lane').why && !g.isPort(z.cities[z.gyms[k].city])) fail.push('a lane allowed off a port');
+        if (i != null && z.fin.money >= g.buildCheck(i, 'lane').cost) { const c = g.buildCheck(i, 'lane').cost; if (!g.build(i, 'lane')) { REG.lanes++; if (z.fin.money !== m0 - c) fail.push('lane cost wrong'); if (!g.laneSet().size) fail.push('a lane brings nothing'); } }
+        else if (l) { const to = rnd([0, 1, 2, 3].filter(x => x !== z.region && x !== l.src)), mm = z.fin.money; if (to != null && !g.setLane(l.gym, to)) { REG.routes++; if (z.fin.money !== mm - g.LANE_ROUTE || g.lanesOf()[0].src !== to) fail.push('lane route change wrong'); } } }
+      else if (r < 0.25) { const i = [0, 1, 2, 3, 4, 5, 6, 7].find(k => !g.buildCheck(k, 'safari').why); if (i != null && z.fin.money >= g.buildCheck(i, 'safari').cost) { if (!g.build(i, 'safari')) REG.safari++; if ([0, 1, 2, 3, 4, 5, 6, 7].some(k => k !== i && !g.buildCheck(k, 'safari').why)) fail.push('a second safari allowed'); } }
       else if (r < 0.25) { if (!g.startTrip('area')) { RAN.area++; if (z.fin.money !== m0 - g.AREA_COST) fail.push('area trip cost wrong'); } }
       else if (r < 0.45) { const x = rnd(z.ranch.shop); if (x) { const n0 = z.ranch.mons.length, w = g.buyShop(x.uid); if (!w) { RAN.bought++; if (z.fin.money !== m0 - x.price || z.ranch.mons.length !== n0 + 1) fail.push('market purchase wrong'); } else if (g.ranchRoom() > 0 && m0 >= x.price) fail.push('market refused: ' + w); } }
       else if (r < 0.55) { const L = g.listings(g.ME()), x = rnd(L); if (x) { const pr = x.e.sale.price, sm = g.inLeague(x.lg, () => g.S.fin.money), w = g.buyListing(x.lg, x.e.uid);
@@ -398,6 +419,7 @@ console.log('legendaries', JSON.stringify(LEG));
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
+console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'famous at founding', PG.famous, 'now: prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'Champion OVR', g.eachLeague(() => g.ovr(g.T(S().champion))).join('/'), 'senior OVR', g.eachLeague(() => { const ids = [S().champion, ...S().e4, ...S().gyms.map(x => x.leader)].filter(x => x != null); return Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length); }).join('/'));
