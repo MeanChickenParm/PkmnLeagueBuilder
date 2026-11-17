@@ -24,8 +24,17 @@ async def run(path):
           click('[data-act=updates]'); click('[data-act=nav]');
           click('[data-act=setgod][data-v="1"]');
           // 0.21.0: three starting Leagues by default (the option is pressed anyway)
-          if (!document.querySelector('[data-act=setleagues][data-v="3"].on')) log.push('FAIL Starting Leagues does not default to 3');
-          click('[data-act=setleagues][data-v="3"]');
+          if ((document.querySelector('.setleaguesn') || {}).textContent !== '3') log.push('FAIL Starting Leagues does not default to 3');
+          // 0.30.0: the stepper goes to the world's full room (two a region), with the speed estimate warning on big worlds
+          for (let n = 0; n < 20; n++) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent + 1) + '"]');
+          if (document.querySelector('.setleaguesn').textContent !== '18') log.push('FAIL Starting Leagues stops at ' + document.querySelector('.setleaguesn').textContent + ', not 18');
+          if (!document.querySelector('.speed-est.red')) log.push('FAIL no warning for an 18-League world');
+          while (+document.querySelector('.setleaguesn').textContent > 3) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent - 1) + '"]');
+          if (!document.querySelector('.speed-est') || document.querySelector('.speed-est.amber, .speed-est.red')) log.push('FAIL the speed estimate for three Leagues');
+          // Advanced: rival 2 starts in Hoenn, the region this test picks for the player's League
+          click('[data-act=setuppage][data-v=advanced]');
+          { const sels = document.querySelectorAll('.rivalsel'); if (sels.length !== 2) log.push('FAIL the rival picker lists ' + sels.length + ' rivals'); else { sels[1].value = '2'; sels[1].dispatchEvent(new Event('change', { bubbles: true })); } }
+          click('[data-act=setuppage][data-v=main]');
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
           if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
@@ -49,7 +58,7 @@ async def run(path):
           if (S.gyms.some(g => g.trainers.length !== 2 || g.trainers.some(id => !T(id) || T(id).role !== 'gymtrainer'))) log.push('FAIL gym trainers were not taken on');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
-          if (nLeagues() !== 3 || new Set(eachLeague(() => S.region)).size !== 3) log.push('FAIL the world did not start with three Leagues in three regions');
+          { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
           const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
@@ -300,12 +309,15 @@ async def run(path):
         after = await pg.evaluate("""() => { const done = !!(modal && modal.done); document.querySelector('[data-act=simmanyclose]') && document.querySelector('[data-act=simmanyclose]').click(); save(); return { done, season: S.season, phase: S.phase, n: Object.keys(S.trainers).length }; }""")
         await pg.wait_for_timeout(1500)
         keys = await pg.evaluate("() => Object.keys(localStorage)")
+        # 0.30.0: the save is in IndexedDB, not localStorage
+        idb = await pg.evaluate("""() => new Promise(res => { const rq = indexedDB.open('plb-save-db'); rq.onsuccess = () => { try { const g = rq.result.transaction('save').objectStore('save').get('world'); g.onsuccess = () => res(g.result ? { v: g.result.v, bytes: g.result.z ? g.result.z.length : -1 } : null); g.onerror = () => res(null); } catch (e) { res(null); } }; rq.onerror = () => res(null); })""")
         await pg.reload(); await pg.wait_for_timeout(1500)
         back = await pg.evaluate("() => S ? { season: S.season, phase: S.phase, n: Object.keys(S.trainers).length, view } : null")
         if not after['done']: out.append('FAIL the sim dialog did not finish')
         if not back or back['season'] != after['season'] or back['n'] != after['n']: out.append('FAIL the save did not come back after a reload: %s vs %s' % (back, after))
-        if any(k.startswith('plgm') or 'league-gm' in k for k in keys) or 'plb-save' not in keys: out.append('FAIL storage keys: %s' % keys)
-        out.append('after sim %s · reloaded %s · keys %s' % (after, back, keys))
+        if any(k.startswith('plgm') or 'league-gm' in k for k in keys) or 'plb-save' in keys: out.append('FAIL storage keys: %s' % keys)
+        if not idb or idb['bytes'] < 1000: out.append('FAIL no save in IndexedDB: %s' % idb)
+        out.append('after sim %s · reloaded %s · keys %s · IndexedDB %s' % (after, back, keys, idb))
         await pg.screenshot(path='/tmp/shot.png')
         # the itch.io build loads its data from a second file
         await b.close()

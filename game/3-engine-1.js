@@ -229,8 +229,9 @@ const dateName = (y = S.season, w = S.week) => `Year ${y}, ${weekName(w)}`;
 // the date of an absolute turn, counted from today
 function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.season + Math.floor(d / YEAR_WEEKS), w = ((d % YEAR_WEEKS) + YEAR_WEEKS) % YEAR_WEEKS; return y === S.season ? weekName(w) : `${weekName(w)}, Year ${y}`; }
 // the regions: each has a name for its League and eight cities. A League sits in one region (gym types are random
-// and reshuffle)
-const LEAGUE_SETS = [
+// and reshuffle). (0.30.0) These are the built-in nine; a world keeps its own copy (S.regions, made by applyRegions
+// in 5-engine-4) and LEAGUE_SETS is always the bound world's list, so custom regions can join it later.
+const BUILTIN_REGIONS = [
   { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau', seat2: 'Victory Road' },
   { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver', seat2: "Dragon's Den" },
   { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande', seat2: 'Sky Pillar' },
@@ -240,11 +241,12 @@ const LEAGUE_SETS = [
   // the challenge's order), its seat the League on Mount Lanakila, and its second League's seat the Battle Tree
   { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm' },
   { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette'], seat: 'Battle Château', seat2: 'Terminus Cave' },
-  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island'], seat: 'Mount Lanakila', seat2: 'Battle Tree' },
+  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island'], seat: 'Mount Lanakila', seat2: 'Battle Tree', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain' } },
   { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington'], seat: 'Wyndon', seat2: 'Crown Tundra' },
   { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico'], seat: 'Mesagoza', seat2: 'Great Crater' },
 ];
-const ALOLA = 6;
+// the world's regions (S.regions once a world exists; the built-in nine before that): set by applyRegions
+let LEAGUE_SETS = BUILTIN_REGIONS;
 // (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
 // (gym.city), and more than one League can come to have a gym in the same city. Each region's cities are made the

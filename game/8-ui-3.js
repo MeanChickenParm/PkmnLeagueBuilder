@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 30, ver: '0.30.0', date: 'November 17, 2026', time: '3:30 PM ET', title: 'Bigger worlds: more starting Leagues, a larger save', items: [
+    "Your world is now saved in the browser's larger storage (IndexedDB) instead of the small one, so long games and big worlds no longer run out of room. An existing save is moved over the first time it's saved again.",
+    "Starting Leagues now goes up to eighteen, two to a region, using the − and + buttons. The setup screen shows roughly how long a simulated year will take, and warns when a world will be slow.",
+    "Advanced options has a new section, Where rival Leagues start: leave a rival to start anywhere, or pick its region. Picking your own region puts a rival beside you from the first week. Otherwise rivals spread over the other regions first, and only share your region when every other seat is taken.",
+    "A second League in a region at the start is named for its seat (Hoenn's is the Sky Pillar League).",
+    "Behind the scenes, each world now keeps its own list of regions, the groundwork for custom regions. Nothing about the nine regions has changed.",
+  ] },
   { id: 29, ver: '0.29.0', date: 'November 17, 2026', time: '1:10 PM ET', title: 'No League cap', items: [
     "The world no longer stops at six Leagues. New Leagues still open only when a distinguished retiree founds one, each needing more prestige than the last, and still at most two to a region, so a world can hold up to eighteen.",
     "With many Leagues the world gets slower and the save larger: in testing, eighteen Leagues took about a minute a simulated year, against about thirteen seconds for six. If your browser can't store a very large save, the game says so; Download save file in the menu still keeps it.",
@@ -549,7 +556,7 @@ document.addEventListener('click', ev => {
     case 'imgclear': imgClearArm = true; imgRefresh(); break;
     case 'imgclearno': imgClearArm = false; imgRefresh(); break;
     case 'imgclearyes': imgClearAll().then(() => render()); break;
-    case 'setleagues': setupLeagues = +el.dataset.v; render(); break;
+    case 'setleagues': setupLeagues = Math.max(1, Math.min(maxStartLeagues(), +el.dataset.v)); render(); break;
     case 'setgrowth': setupGrowth = el.dataset.v === '1'; render(); break;
     case 'setgod': setupGod = el.dataset.v === '1'; render(); break;
     case 'godleague': { const why = godOpenLeague(); save(); render(); toast(why || `The ${leagueName(nLeagues() - 1)} is open.`); break; }
@@ -600,7 +607,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, leagues: setupLeagues, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -619,7 +626,7 @@ document.addEventListener('click', ev => {
     case 'renewcon': { const ok = renewContender(+el.dataset.id); save(); render(); toast(ok ? `Renewed for ${SPON_YEARS} more years.` : 'Could not renew.'); break; }
     case 'leaveask': leaveAsk = !leaveAsk; render(); break;
     case 'leavego': { const w = leaveLeague(leaveRegion, [...leaveTake]); leaveAsk = false; leaveTake = new Set(); save(); render(); window.scrollTo(0, 0); toast(w || 'Place your new League\'s staff.'); break; }
-    case 'foundquit': saveSeq++; S = null; view = 'circuit'; foundSel = null; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} render(); break;
+    case 'foundquit': clearSave(); S = null; view = 'circuit'; foundSel = null; render(); break;
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
@@ -704,7 +711,7 @@ document.addEventListener('click', ev => {
     case 'setuploadgo': { parseSave(($('#setupload') || {}).value).then(v => { if (!v) { setupLoadErr = SAVE_ERR; render(); return; } setupLoadErr = ''; setupPage = 'main'; adoptSave(v); save(); go(view); toast(`Loaded Year ${S.season || 1}.`); }); break; }
     case 'newask': modal.confirmNew = true; renderModal(); break;
     case 'newcancel': modal.confirmNew = false; renderModal(); break;
-    case 'newgo': try { localStorage.removeItem(SAVE_KEY); } catch (e) {} S = null; modal = null; renderModal(); render(); break;
+    case 'newgo': clearSave(); S = null; modal = null; renderModal(); render(); break;
   }
 });
 document.addEventListener('input', e => {
@@ -732,6 +739,7 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(ME(), () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
@@ -787,18 +795,11 @@ async function parseSave(txt) {
 const SAVE_ERR = "That isn't a save from this version of Pokémon League Builder. Use the whole save text, or a file from the menu's Download save file.";
 function boot(data) {
   imgBootDone = false; imgLoadAll();
-  const saved = (data && data.S && data.S.version === SAVE_VERSION && data.S) || load();
-  if (saved && saved.packed) {
-    $('#app').innerHTML = '<p class="muted" style="padding:24px">Loading your world…</p>';
-    if (!CAN_DEFLATE) { S = null; imgBootDone = true; render(); return; }
-    inflateText(saved.packed).then(txt => { const v = JSON.parse(txt); if (v && v.version === SAVE_VERSION) adoptSave(v, data && data.view); else S = null; imgBootDone = true; render(); receiveFromEmbed(); }, () => { S = null; imgBootDone = true; render(); receiveFromEmbed(); });
-    return;
-  }
-  if (saved) adoptSave(saved, data && data.view);
-  else S = null;
-  imgBootDone = true;
-  render();
-  receiveFromEmbed();
+  const done = () => { imgBootDone = true; render(); receiveFromEmbed(); };
+  if (data && data.S && data.S.version === SAVE_VERSION) { adoptSave(data.S, data.view); return done(); }
+  // (0.30.0) the save is read from IndexedDB, which takes a moment
+  $('#app').innerHTML = '<p class="muted" style="padding:24px">Loading your world…</p>';
+  loadSaved().then(v => { if (v) adoptSave(v, data && data.view); else S = null; done(); }, () => { S = null; done(); });
 }
 window.claude?.hot?.snapshot?.(() => ({ S, view }));
 window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});

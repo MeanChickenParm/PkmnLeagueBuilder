@@ -43,13 +43,42 @@ async function saveCode() {
 }
 async function inflateText(txt) { const ds = new Blob([textToBytes(txt)]).stream().pipeThrough(new DecompressionStream('deflate-raw')); return await new Response(ds).text(); }
 let saveSeq = 0;
+// (0.30.0) the save lives in IndexedDB (plb-save-db), which browsers let grow far past localStorage's ~5 MB: the deflated
+// JSON as bytes under the key 'world', with its version. localStorage (SAVE_KEY, packed text) is only the fallback for
+// a browser without IndexedDB, and where an older save is read from once.
+const SAVE_DB = 'plb-save-db', SAVE_STORE = 'save', SAVE_REC = 'world';
+let saveDbP = null;
+function saveDb() {
+  if (saveDbP) return saveDbP;
+  saveDbP = new Promise(res => {
+    try {
+      if (!window.indexedDB) return res(null);
+      const rq = indexedDB.open(SAVE_DB, 1);
+      rq.onupgradeneeded = () => { const db = rq.result; if (!db.objectStoreNames.contains(SAVE_STORE)) db.createObjectStore(SAVE_STORE); };
+      rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); rq.onblocked = () => res(null);
+    } catch (e) { res(null); }
+  });
+  return saveDbP;
+}
+function saveTx(mode, fn) {
+  return saveDb().then(db => db ? new Promise((res, rej) => {
+    try { const tx = db.transaction(SAVE_STORE, mode), rq = fn(tx.objectStore(SAVE_STORE)); tx.oncomplete = () => res(rq ? rq.result : true); tx.onerror = tx.onabort = () => rej(tx.error || new Error('tx')); }
+    catch (e) { rej(e); }
+  }) : Promise.reject(new Error('no-db')));
+}
+async function deflateBytes(str) { const cs = new Blob([str]).stream().pipeThrough(new CompressionStream('deflate-raw')); return new Uint8Array(await new Response(cs).arrayBuffer()); }
+async function inflateBytes(bytes) { const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')); return await new Response(ds).text(); }
 function save() {
   if (!S) return;
   const raw = JSON.stringify(S), seq = ++saveSeq;
-  const put = v => { try { localStorage.setItem(SAVE_KEY, v); } catch (e) { if (!save.warned) { save.warned = true; setTimeout(() => toast("This browser couldn't store the save. Use Download save file in the menu to keep it."), 50); } } };
-  if (!CAN_DEFLATE) return put(raw);
-  deflateText(raw).then(z => { if (seq === saveSeq) put(DF_TAG + z); }, () => { if (seq === saveSeq) put(raw); });
+  const warn = () => { if (!save.warned) { save.warned = true; setTimeout(() => toast("This browser couldn't store the save. Use Download save file in the menu to keep it."), 50); } };
+  const putLocal = v => { try { localStorage.setItem(SAVE_KEY, v); } catch (e) { warn(); } };
+  const local = () => { if (!CAN_DEFLATE) return putLocal(raw); deflateText(raw).then(z => { if (seq === saveSeq) putLocal(DF_TAG + z); }, () => { if (seq === saveSeq) putLocal(raw); }); };
+  (CAN_DEFLATE ? deflateBytes(raw).then(z => ({ v: SAVE_VERSION, z }), () => ({ v: SAVE_VERSION, json: raw })) : Promise.resolve({ v: SAVE_VERSION, json: raw }))
+    .then(rec => { if (seq !== saveSeq) return; return saveTx('readwrite', st => st.put(rec, SAVE_REC)).then(() => { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }); })
+    .catch(() => { if (seq === saveSeq) local(); });
 }
+// the old localStorage save (a browser without IndexedDB, or a save from before 0.30.0)
 function load() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -58,6 +87,18 @@ function load() {
   } catch (e) {}
   return null;
 }
+// the saved world, or null: IndexedDB first, then localStorage
+async function loadSaved() {
+  try {
+    const rec = await saveTx('readonly', st => st.get(SAVE_REC));
+    if (rec && rec.v === SAVE_VERSION) { const v = JSON.parse(rec.z ? await inflateBytes(rec.z) : rec.json); if (v && v.version === SAVE_VERSION) return v; }
+  } catch (e) {}
+  const old = load();
+  if (old && old.packed) { if (!CAN_DEFLATE) return null; try { const v = JSON.parse(await inflateText(old.packed)); return v && v.version === SAVE_VERSION ? v : null; } catch (e) { return null; } }
+  return old;
+}
+// forget the saved world (a new game)
+function clearSave() { saveSeq++; try { localStorage.removeItem(SAVE_KEY); } catch (e) {} saveTx('readwrite', st => st.delete(SAVE_REC)).catch(() => {}); }
 
 // ---------- small renderers ----------
 const chip = ty => !ty ? `<span class="ty mixed">Mixed</span>` : `<span class="ty" style="--tc:${TYPE_COLOR[ty]};--tt:${DARK_TEXT.has(ty) ? '#1a1a1a' : '#fff'}">${ty}</span>`;
@@ -295,12 +336,35 @@ function nav() {
 }
 // ---------- setup ----------
 let setupGrowth = true, setupGod = false, setupLeagues = 3; // (0.21.0) Leagues at the start, yours included
+// (0.30.0) where each rival starts (Advanced): a region index, or null for anywhere
+let setupRivals = [];
+// (0.30.0) how long a simulated year takes with n Leagues, in seconds: measured in Node at 0.29.0 (a browser may be
+// slower), straight lines between the measurements and on past the last; a guide for the setup screen's warning
+const SPEED_AT = [[1, 2], [3, 5.5], [6, 14], [10, 20], [14, 37], [18, 65]], SPEED_AMBER = 20, SPEED_RED = 40;
+function speedEst(n) {
+  let i = SPEED_AT.findIndex(p => p[0] >= n); if (i < 1) i = i === 0 ? 1 : SPEED_AT.length - 1;
+  const [a, b] = [SPEED_AT[i - 1], SPEED_AT[i]];
+  return Math.max(1, Math.round(a[1] + (b[1] - a[1]) * (n - a[0]) / (b[0] - a[0])));
+}
+function speedNote(n) {
+  const s = speedEst(n), lvl = s > SPEED_RED ? 'red' : s > SPEED_AMBER ? 'amber' : '';
+  return `<p class="small speed-est${lvl ? ' ' + lvl : ' muted'}">${lvl ? `<b>${lvl === 'red' ? 'A very big world.' : 'A big world.'}</b> ` : ''}About ${s} second${s === 1 ? '' : 's'} a simulated year on a fast computer (a phone or an older computer may be slower)${lvl ? ', and slower as the world ages. Fewer Leagues play faster.' : '.'}</p>`;
+}
 let setupPage = 'main', setupAdv = { allFamous: false }, setupBaseOff = false, setupPacks = {}, setupPackOpen = {}, setupOff = {};
 // every section on the Advanced page folds; folded sections show a one-line summary
 let setupFold = {};
 function foldSec(key, title, sub, summary, body, extra = '') {
   const shut = !!setupFold[key];
   return `<section class="panel fold${shut ? ' shut' : ''}"><div class="ph fold-h"><button class="fold-btn" data-act="advfold" data-k="${key}" aria-expanded="${!shut}"><span class="fold-chev" aria-hidden="true">${shut ? '▸' : '▾'}</span><h2>${title}</h2></button><span class="muted">${shut ? summary : sub}</span></div>${shut ? '' : extra + body}</section>`;
+}
+// (0.30.0) where the rival Leagues start: anywhere (the default spread) or a region of your choosing. A region holds two
+// Leagues; your own region (chosen on the main page) can take one rival here
+function rivalsSection() {
+  const n = setupLeagues - 1, placed = setupRivals.slice(0, n).filter(x => x != null).length;
+  const body = n < 1 ? '<p class="muted small">The world starts with your League alone. Set Starting Leagues above 1 on the main page to place rivals.</p>'
+    : `<p class="muted small">Each rival starts anywhere (spread over regions with no League first) or in the region you pick. A region holds two Leagues; picking your own region puts a rival beside you at its second seat. Picks past a region's room start anywhere.</p>
+    <div class="adv-list rival-list">${Array.from({ length: n }, (_, i) => `<label class="rival-row"><span>Rival ${i + 1}</span> <select class="rivalsel" data-i="${i}"><option value="">Anywhere</option>${LEAGUE_SETS.map((r, k) => `<option value="${k}"${setupRivals[i] === k ? ' selected' : ''}>${esc(regionName(k))}</option>`).join('')}</select></label>`).join('')}</div>`;
+  return foldSec('rivals', 'Where rival Leagues start', 'Your region is chosen on the main page', n < 1 ? 'No rivals' : placed ? `${placed} of ${n} placed` : 'Anywhere', body);
 }
 function viewAdvanced() {
   const opt = (k, title, desc) => `<button class="adv-opt${setupAdv[k] ? ' on' : ''}" data-act="advtoggle" data-k="${k}" role="switch" aria-checked="${setupAdv[k]}">
@@ -311,7 +375,7 @@ function viewAdvanced() {
   const groups = FEATURES.map(g => { const gk = 'feat-' + g.group, shut = !!setupFold[gk], off = g.items.filter(i => setupOff[i[0]]).length;
     return `<div class="feat-group fold${shut ? ' shut' : ''}"><button class="fold-btn small" data-act="advfold" data-k="${gk}" aria-expanded="${!shut}"><span class="fold-chev" aria-hidden="true">${shut ? '▸' : '▾'}</span><span class="eyebrow">${g.group}</span><span class="muted small">${off ? off + ' of ' + g.items.length + ' off' : 'all on'}</span></button>${shut ? '' : `<div class="adv-list">${g.items.map(([k, name, desc]) => `<button class="adv-opt${setupOff[k] ? '' : ' on'}" data-act="feattoggle" data-k="${k}" role="switch" aria-checked="${!setupOff[k]}">
         <span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>${name}</b><span class="muted small">${desc}</span></span></button>`).join('')}</div>`}</div>`; }).join('');
-  const keys = ['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)];
+  const keys = ['rules', 'rivals', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)];
   const anyOpen = keys.some(k => !setupFold[k]);
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>Advanced options</h1>
     <p>Optional rules for the new world. These aren't balanced; they're here for fun.</p>
@@ -319,6 +383,7 @@ function viewAdvanced() {
     ${foldSec('rules', 'Rules', 'Optional league rules', setupAdv.allFamous ? 'All-famous league on' : 'Nothing on', `<div class="adv-list">
       ${opt('allFamous', 'All-famous league', `Every trainer is a famous trainer from the games and anime: Gym Leaders, Elite Four, Champions, rivals and newcomers. Draws from ${famousCount} famous trainers${famousCount ? '' : ' (none are switched on, so the league will use ordinary trainers)'}; once every one has debuted, they come round again as V2 (Kanto Leader Misty V2), then V3, and so on.`)}
     </div>`)}
+    ${rivalsSection()}
     ${foldSec('features', 'Game features', 'Everything is on by default. Settings are fixed once the league starts.', offCount ? `${offCount} feature${offCount === 1 ? '' : 's'} off` : 'Everything on', groups + (offCount ? '<div class="confirm-row"><button class="btn small" data-act="featreset">Turn everything back on</button></div>' : ''))}
     ${foldSec('packs', 'Famous trainer packs', "The game's own famous trainers, plus extras from outside Pokémon", `${setupBaseOff ? 'Pokémon trainers off' : 'Pokémon trainers on'} · ${packsOn} of ${packKeys.length} other pack${packKeys.length === 1 ? '' : 's'} on`, `<div class="adv-list">
       <button class="adv-opt${setupBaseOff ? '' : ' on'}" data-act="basetoggle" role="switch" aria-checked="${!setupBaseOff}">
@@ -722,11 +787,12 @@ function viewSetup() {
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
     <p>You run a Pokémon League and try to let nobody through. After you choose a region you place its first staff by hand: a Champion, four Elite Four members and eight Gym Leaders. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
     <div class="setup-opts">
-      <div><div class="eyebrow">Starting Leagues</div><div class="segs setup-segs">${[1, 2, 3].map(n => opt('setleagues', n, setupLeagues, String(n))).join('')}</div></div>
+      <div><div class="eyebrow">Starting Leagues</div><div class="segs setup-segs stepper"><button class="seg" data-act="setleagues" data-v="${setupLeagues - 1}"${setupLeagues <= 1 ? ' disabled' : ''} aria-label="Fewer">−</button><span class="seg on setleaguesn" aria-live="polite">${setupLeagues}</span><button class="seg" data-act="setleagues" data-v="${setupLeagues + 1}"${setupLeagues >= maxStartLeagues() ? ' disabled' : ''} aria-label="More">+</button></div></div>
       <div><div class="eyebrow">New Leagues open over time</div><div class="segs setup-segs">${opt('setgrowth', 1, setupGrowth ? 1 : 0, 'On')}${opt('setgrowth', 0, setupGrowth ? 1 : 0, 'Off')}</div></div>
       <div><div class="eyebrow">God mode</div><div class="segs setup-segs">${opt('setgod', 0, setupGod ? 1 : 0, 'Off')}${opt('setgod', 1, setupGod ? 1 : 0, 'On')}</div></div>
     </div>
-    <p class="muted small">${setupLeagues > 1 ? `The world starts with ${setupLeagues} Leagues: yours in the region you choose and ${setupLeagues === 2 ? 'a rival in another region' : 'two rivals, each in a different region'}, founded on their own. Their Champions meet in a World Championship every year. ` : 'The world starts with your League alone, in the region you choose. '}${setupGrowth ? `More Leagues open over time when a distinguished retired trainer founds one (up to two a region); each new one needs more prestige than the last. ` : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
+    <p class="muted small">${setupLeagues > 1 ? `The world starts with ${setupLeagues} Leagues: yours in the region you choose and ${setupLeagues === 2 ? 'a rival' : `${setupLeagues - 1} rivals`}, founded on their own${setupRivals.slice(0, setupLeagues - 1).some(x => x != null) ? ' where you placed them in Advanced options, the rest' : ''} ${setupLeagues - 1 < LEAGUE_SETS.length ? 'in other regions' : 'two to a region where needed (one shares your region only when every other seat is taken or you place it there)'}. Their Champions meet in a World Championship every year. ` : 'The world starts with your League alone, in the region you choose. '}${setupGrowth ? `More Leagues open over time when a distinguished retired trainer founds one (up to two a region); each new one needs more prestige than the last. ` : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
+    ${speedNote(setupLeagues)}
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
