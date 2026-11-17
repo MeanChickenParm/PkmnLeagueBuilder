@@ -375,7 +375,7 @@ function viewAdvanced() {
   const groups = FEATURES.map(g => { const gk = 'feat-' + g.group, shut = !!setupFold[gk], off = g.items.filter(i => setupOff[i[0]]).length;
     return `<div class="feat-group fold${shut ? ' shut' : ''}"><button class="fold-btn small" data-act="advfold" data-k="${gk}" aria-expanded="${!shut}"><span class="fold-chev" aria-hidden="true">${shut ? '▸' : '▾'}</span><span class="eyebrow">${g.group}</span><span class="muted small">${off ? off + ' of ' + g.items.length + ' off' : 'all on'}</span></button>${shut ? '' : `<div class="adv-list">${g.items.map(([k, name, desc]) => `<button class="adv-opt${setupOff[k] ? '' : ' on'}" data-act="feattoggle" data-k="${k}" role="switch" aria-checked="${!setupOff[k]}">
         <span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>${name}</b><span class="muted small">${desc}</span></span></button>`).join('')}</div>`}</div>`; }).join('');
-  const keys = ['rules', 'rivals', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)];
+  const keys = ['rules', 'rivals', 'features', 'packs', 'mypacks', 'dex', 'regions', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)];
   const anyOpen = keys.some(k => !setupFold[k]);
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>Advanced options</h1>
     <p>Optional rules for the new world. These aren't balanced; they're here for fun.</p>
@@ -397,6 +397,7 @@ function viewAdvanced() {
     </div>`, `<div class="confirm-row"><button class="btn small" data-act="packall" data-v="${allPacks ? 0 : 1}">${allPacks ? 'Turn all packs off' : 'Turn on all packs'}</button><span class="muted small">${packsOn + (setupBaseOff ? 0 : 1)} of ${packKeys.length + 1} on · ${famousCount} famous trainers in all, counting your own packs</span></div>`)}
     ${myPacksSection()}
     ${dexSection()}
+    ${regionsSection()}
     ${foldSec('images', 'Images', 'Your own Pokémon pictures and trainer portraits, kept in this browser', imgSummary(), imagesBody())}
     ${foldSec('load', 'Load a save', 'Pick up a league you exported earlier', 'Pick up a league you exported earlier', `
       <p class="muted small">Choose a save file from the menu's <b>Download save file</b>, or paste the text from <b>Export save</b>. Loading replaces the league on this device.</p>
@@ -776,13 +777,196 @@ function dexAction(a, el) {
   }
   return false;
 }
+// ================= CUSTOM REGIONS (0.31.0): the region editor and picking regions for a new game =================
+// setupCustom: how each region in the library is used in the next new game: { id: 'add' | 'pool:<i>' | 'whole:<i>' }
+let setupCustom = {};
+let rgDraft = null, rgPorts = [], rgErrs = [], rgMsg = '', rgAddText = '', rgLegText = '', rgGen = { types: [], gens: [], power: 'standard' }, rgSp = null, rgSpWas = null, rgSpErrs = [];
+let rgExport = null, rgImpText = '', rgImpMsg = '', rgDelArm = null;
+const GEN_NAMES = ['Gen I', 'Gen II', 'Gen III', 'Gen IV', 'Gen V', 'Gen VI', 'Gen VII', 'Gen VIII', 'Gen IX'];
+function setupChoices() {
+  return Object.entries(setupCustom).map(([id, v]) => { const rec = libRegion(id); if (!rec || !v) return null; const [mode, of] = v.split(':'); return { rec, mode, of: of == null ? null : +of }; }).filter(Boolean);
+}
+// the setup screen shows the regions the new world will have (bound with no world)
+function previewSetupRegions() { if (!S) applyRegions(worldRegions(regionChoices(setupChoices()))); }
+const useLabel = v => { if (!v) return 'Not used'; const [m, i] = v.split(':'); return m === 'add' ? 'Added as a new region' : m === 'pool' ? `Replaces ${builtinRegionName(+i)}'s Pokémon` : `Replaces ${builtinRegionName(+i)}`; };
+function regionsSection() {
+  const lib = regionLib.regions, used = lib.filter(r => setupCustom[r.id]).length, clash = regionClashes(setupChoices());
+  const opts = cur => ['', 'add'].concat(BUILTIN_REGIONS.flatMap((_, i) => [`pool:${i}`, `whole:${i}`])).map(v => `<option value="${v}"${(cur || '') === v ? ' selected' : ''}>${esc(useLabel(v))}</option>`).join('');
+  const reps = {}; for (const r of lib) { const v = setupCustom[r.id]; if (v && v !== 'add') { const i = v.split(':')[1]; (reps[i] = reps[i] || []).push(r.name); } }
+  const row = r => { const st = poolStats(r.pool);
+    return `<div class="rg-lib-row"><div><b>${esc(r.name)}</b> <span class="muted small">${st.size} species · ${st.lines.length} lines${r.added.length ? ` · ${r.added.length} new Pokémon` : ''}</span>${r.lock ? ' <span class="tag">Locked</span>' : ''}${r.rivals === false ? ' <span class="tag">Your League only</span>' : ''}</div>
+      <div class="confirm-row"><label class="sr" for="rguse-${r.id}">Use ${esc(r.name)} in the new world</label><select id="rguse-${r.id}" class="rguse" data-k="${r.id}">${opts(setupCustom[r.id])}</select>
+        <button class="btn small" data-act="rgedit" data-k="${r.id}">Edit</button><button class="btn small" data-act="rgexport" data-k="${r.id}" aria-expanded="${rgExport === r.id}">Export</button><button class="btn small danger" data-act="rgdel" data-k="${r.id}">Delete</button></div>
+      ${rgExport === r.id ? `<div class="cf-export" style="flex-basis:100%"><p class="muted small">Copy the code or download the file, then use <b>Import a region</b> on another device or share it. Its own new Pokémon come with it.</p><textarea id="rg-exptext" class="box" rows="3" readonly spellcheck="false">${esc(regionCode(r))}</textarea>
+        <div class="confirm-row"><button class="btn small" data-act="rgcopy">Copy code</button>${canSaveFile() ? `<button class="btn small" data-act="rgfile" data-k="${r.id}">Download file</button>` : ''}<button class="btn small" data-act="rgexport" data-k="${r.id}">Close</button></div></div>` : ''}
+      ${rgDelArm === r.id ? `<div class="cf-confirm" style="flex-basis:100%"><b>Delete ${esc(r.name)}?</b> Worlds already running keep it. <div class="confirm-row"><button class="btn danger" data-act="rgdelyes" data-k="${r.id}">Yes, delete it</button><button class="btn" data-act="rgdelno">Keep it</button></div></div>` : ''}</div>`; };
+  const body = `<p class="muted small">Regions of your own, saved in this browser: a new region beside the nine, or a replacement for one of them (only its Pokémon, keeping its cities, ports and neighbours; or the whole region). Pick how each is used in the new world. A world keeps its regions for good.</p>
+    ${lib.length ? lib.map(row).join('') : '<p class="muted">No regions yet.</p>'}
+    ${Object.entries(reps).filter(([, n]) => n.length > 1).map(([i, n]) => `<p class="warn">${n.join(' and ')} both replace ${builtinRegionName(+i)}: only ${esc(n[n.length - 1])} is used.</p>`).join('')}
+    ${clash.length ? `<p class="warn">Left out of the new world, as their names are already taken (My Pokédex or another region): ${clash.map(esc).join(', ')}.</p>` : ''}
+    <div class="confirm-row"><button class="btn" data-act="rgnew">New region</button><label class="sr" for="rgcopyof">Copy a built-in region</label><select id="rgcopyof">${BUILTIN_REGIONS.map((_, i) => `<option value="${i}">${builtinRegionName(i)}</option>`).join('')}</select><button class="btn" data-act="rgcopyreg">Copy this region</button></div>
+    <div class="cf-export"><label class="fine" for="rg-imp">Import a region: paste a region code, or choose a file.</label><textarea id="rg-imp" class="box" rows="3" spellcheck="false">${esc(rgImpText)}</textarea>
+      <div class="confirm-row"><label class="btn small" for="rgfile">Choose a file</label><input id="rgfile" type="file" accept=".json,.txt,application/json,text/plain" class="sr"><button class="btn" data-act="rgimport">Import this region</button></div>
+      ${rgImpMsg ? `<p class="${/^Imported/.test(rgImpMsg) ? 'cf-msg' : 'warn'}">${esc(rgImpMsg)}</p>` : ''}</div>`;
+  return foldSec('regions', 'Custom regions', 'Your own regions, a 10th or a replacement', lib.length ? `${lib.length} region${lib.length === 1 ? '' : 's'} · ${used} in the new world` : 'No regions yet', body);
+}
+// ---------- the editor ----------
+function rgOpen(rec) { rgDraft = JSON.parse(JSON.stringify(rec)); rgPorts = rgDraft.towns.concat(rgDraft.extra).map(n => rgDraft.ports[n] || ''); rgErrs = []; rgMsg = ''; rgSp = null; rgSpWas = null; rgSpErrs = []; rgAddText = ''; rgLegText = ''; setupPage = 'region'; }
+// the draft as a region: ports back by name
+function rgRec() { const d = rgDraft, names = d.towns.concat(d.extra); return Object.assign({}, d, { ports: Object.fromEntries(names.map((n, i) => [n.trim(), rgPorts[i]]).filter(([n, k]) => n && k)) }); }
+function rgSet(path, v) { const ks = path.split('.'); let o = rgDraft; for (const k of ks.slice(0, -1)) { if (o[k] == null) o[k] = {}; o = o[k]; } o[ks[ks.length - 1]] = v; }
+const rgField = (label, path, val, max = REGION_NAME_MAX, ph = '') => `<label class="cf-field"><span class="eyebrow">${label}</span><input class="cf-in rg-f" data-f="${path}" maxlength="${max}" value="${esc(val || '')}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off"></label>`;
+function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false }; }
+function rgSpRead() {
+  const v = id => (($(id) || {}).value || '').trim(), ck = id => !!($(id) || {}).checked;
+  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter') });
+}
+// the new Pokémon of every other region in the library, and My Pokédex's, for name and evolution checks
+const rgOthers = () => dexLib.added.concat(regionLib.regions.filter(r => r.id !== rgDraft.id).flatMap(r => r.added));
+function rgSpSave() {
+  const e = rgSpRead(), lib = { edits: {}, added: rgOthers().concat(rgDraft.added.filter(x => x.name !== rgSpWas)) };
+  const errs = checkDexEntry(e, true, rgSpWas, Object.assign({}, lib, { added: lib.added.concat(rgSpWas ? [{ name: rgSpWas }] : []) }));
+  if (rgOthers().some(x => x.name.toLowerCase() === e.name.toLowerCase())) errs.push(`${e.name} is already a Pokémon in My Pokédex or another of your regions.`);
+  if (rgDraft.added.some(x => x.name !== rgSpWas && x.name.toLowerCase() === e.name.toLowerCase())) errs.push(`This region already has a Pokémon called ${e.name}.`);
+  if (errs.length) { rgSpErrs = [...new Set(errs)]; rgSp = Object.assign({}, e, { types: [e.types[0] || 'Normal', e.types[1] || ''] }); return; }
+  if (rgSpWas) { const i = rgDraft.added.findIndex(x => x.name === rgSpWas); rgDraft.added[i] = e; rgDraft.pool = rgDraft.pool.map(b => b === rgSpWas ? e.name : b); rgDraft.added.forEach(x => { if (x.from === rgSpWas) x.from = e.name; }); }
+  else rgDraft.added.push(e);
+  if (!e.from && !rgDraft.pool.includes(e.name)) rgDraft.pool.push(e.name);
+  rgMsg = `${rgSpWas ? 'Saved' : 'Added'} ${e.name}.`; rgSp = null; rgSpWas = null; rgSpErrs = [];
+}
+function rgSpDelete(n) {
+  const gone = new Set([n]); for (let more = true; more;) { more = false; for (const x of rgDraft.added) if (x.from && gone.has(x.from) && !gone.has(x.name)) { gone.add(x.name); more = true; } }
+  rgDraft.added = rgDraft.added.filter(x => !gone.has(x.name)); rgDraft.pool = rgDraft.pool.filter(b => !gone.has(b));
+  rgMsg = `Deleted ${[...gone].join(', ')}.`; if (rgSpWas && gone.has(rgSpWas)) { rgSp = null; rgSpWas = null; }
+}
+function rgSpForm() {
+  const d = rgSp, sel = (id, cur, opts) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const field = (label, html) => `<label class="cf-field"><span class="eyebrow">${label}</span>${html}</label>`;
+  const abs = dexAbilities(), abOpts = none => [['', none]].concat(abs.map(a => [a, a]));
+  const parents = Object.keys(DEX_BASE).filter(n => dexEditable(n) && dexParentOk(n)).concat(dexLib.on ? dexLib.added.filter(x => !x.legend).map(x => x.name) : [], rgDraft.added.map(x => x.name)).filter(n => n !== rgSpWas).sort();
+  return `<div class="cf-export" id="rgs-form"><div class="eyebrow">${rgSpWas ? 'Edit ' + esc(rgSpWas) : 'A new Pokémon of this region'}</div>
+    <div class="cf-grid">${field('Name', `<input id="rgs-name" class="cf-in" maxlength="${DEX_NAME_MAX}" value="${esc(d.name)}" autocomplete="off">`)}${field('Main type', sel('rgs-t1', d.types[0], TYPES.map(t => [t, t])))}${field('Second type', sel('rgs-t2', d.types[1] || '', [['', 'None']].concat(TYPES.map(t => [t, t]))))}</div>
+    <div class="cf-grid six">${d.stats.map((x, i) => field(DEX_STAT_LABEL[i], `<input id="rgs-st${i}" class="cf-in" type="number" min="1" max="255" step="1" inputmode="numeric" value="${Number.isFinite(x) ? x : ''}">`)).join('')}</div>
+    <div class="cf-grid">${field('Ability', sel('rgs-ab0', d.ab[0], abOpts('Choose…')))}${field('Second ability', sel('rgs-ab1', d.ab[1], abOpts('None')))}${field('Hidden ability', sel('rgs-ab2', d.ab[2], abOpts('None')))}</div>
+    <div class="cf-grid">${field('Evolves from', `<input id="rgs-from" class="cf-in" list="rgs-parents" value="${esc(d.from || '')}" placeholder="Nothing: found in the wild" autocomplete="off">`)}${field('At level', `<input id="rgs-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl || 30)}">`)}</div>
+    <datalist id="rgs-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="adv-list"><label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
+    <p class="muted small">It works as if added to My Pokédex, in every world that uses this region. A first-stage Pokémon joins the region's list; one that evolves from another joins that line.</p>
+    ${rgSpErrs.length ? `<ul class="warn cf-errs">${rgSpErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+    <div class="confirm-row"><button class="btn primary" data-act="rgspsave">${rgSpWas ? 'Save Pokémon' : 'Add Pokémon'}</button><button class="btn" data-act="rgspcancel">Cancel</button></div></div>`;
+}
+function viewRegionEditor() {
+  const d = rgDraft, rec = rgRec(), chk = regionChecks(rec), st = chk.st;
+  const portSel = i => `<select class="rg-port" data-i="${i}" aria-label="Port or railway">${[['', 'No port'], ['port', 'Port'], ['railway', 'Railway']].map(([v, l]) => `<option value="${v}"${rgPorts[i] === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  const place = (label, path, i) => `<div class="rg-place">${rgField(label, path, path.split('.').reduce((o, k) => o[k], d))}${i != null ? portSel(i) : ''}</div>`;
+  const inPool = new Set(d.pool), addable = ranchSpecies().filter(b => !inPool.has(b));
+  const tog = (act, k, on, label) => `<button class="seg${on ? ' on' : ''}" data-act="${act}" data-k="${esc(k)}" aria-pressed="${on}">${label}</button>`;
+  const spTag = b => `<span class="rg-sp">${esc(b)}${SP[b] ? ' ' + SP[b].types.map(t => `<span class="dot sm" title="${t}" style="--tc:${TYPE_COLOR[t]};--tc2:${TYPE_COLOR[t]}"></span>`).join('') : ''}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`;
+  return `<main class="wrap setup">
+    <section class="panel callout"><div class="eyebrow">Advanced options · Custom regions</div><h1>${d.id ? 'Edit ' + esc(libRegion(d.id) ? libRegion(d.id).name : d.name) : 'New region'}</h1>
+      <p class="muted small">A region always has 8 gym cities, 3 towns and 2 League seats. Saved in this browser; worlds already running keep their own copy.</p>
+      <div class="confirm-row"><button class="btn primary" data-act="rgsave">Save region</button><button class="btn" data-act="rgcancel">Cancel</button></div></section>
+    ${rgMsg ? `<p class="cf-msg">${esc(rgMsg)}</p>` : ''}
+    ${rgErrs.length ? `<ul class="warn cf-errs">${rgErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+    <section class="panel"><div class="ph"><h2>The region</h2><span class="muted">Name, rules and post names</span></div>
+      <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}</div>
+      <div class="adv-list">
+        <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
+        <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away. Off: they travel like any Pokémon.</span></span></button>
+      </div></section>
+    <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
+      <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
+      <div class="eyebrow">Towns with no gym</div><div class="rg-places">${d.extra.map((_, i) => place(`Town ${i + 1}`, `extra.${i}`, 8 + i)).join('')}</div>
+      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}</div></section>
+    <section class="panel"><div class="ph"><h2>Neighbours</h2><span class="muted">${d.nb.length} chosen · pick 2 or 3</span></div>
+      <p class="muted small">Migrations come from neighbours (and now and then from further off). Neighbours are two-way. With none chosen, a replacement keeps the replaced region's, and a new region takes the two built-in regions sharing most of its Pokémon.</p>
+      <div class="rg-chips">${BUILTIN_REGIONS.map((_, i) => tog('rgnb', builtinRegionName(i), d.nb.includes(builtinRegionName(i)), builtinRegionName(i))).join('')}</div></section>
+    <section class="panel"><div class="ph"><h2>Legendaries</h2><span class="muted">${d.legends == null ? 'As the replaced region' : d.legends.length + ' at home here'}</span></div>
+      <p class="muted small">The legendaries at home here turn up here more often, and are moved out of their built-in home in a world using this region (still one of each in the world).</p>
+      <div class="adv-list"><button class="adv-opt${d.legends == null ? ' on' : ''}" data-act="rglegkeep" role="switch" aria-checked="${d.legends == null}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep the replaced region's</b><span class="muted small">When it replaces a built-in region, use that region's legendaries. As a new region it has none.</span></span></button></div>
+      ${d.legends == null ? '' : `<div class="rg-pool">${d.legends.length ? d.legends.map(sp => `<span class="rg-sp">${esc(sp)}<button data-act="rglegrm" data-k="${esc(sp)}" aria-label="Remove ${esc(sp)}">×</button></span>`).join('') : '<span class="muted small">None.</span>'}</div>
+      <div class="rg-row"><label class="cf-field"><span class="eyebrow">Add a legendary</span><input id="rg-leg" class="cf-in" list="rg-legs" value="${esc(rgLegText)}" autocomplete="off"></label><button class="btn" data-act="rglegadd">Add</button></div>
+      <datalist id="rg-legs">${LEGEND_CHOICES().filter(x => !d.legends.includes(x)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>`}</section>
+    <section class="panel"><div class="ph"><h2>Pokémon found here</h2><span class="muted">${st.size} species (built-in regions about ${REGION_SIZE}) · ${st.lines.length} lines</span></div>
+      <div class="rg-row"><label class="cf-field"><span class="eyebrow">Copy the list of</span><select id="rg-copylist">${BUILTIN_REGIONS.map((_, i) => `<option value="${i}">${builtinRegionName(i)}</option>`).join('')}</select></label><button class="btn" data-act="rgcopylist" data-v="replace">Replace the list</button><button class="btn" data-act="rgcopylist" data-v="merge">Add to the list</button><button class="btn danger" data-act="rgclear">Clear the list</button></div>
+      <div class="eyebrow">Generate a list</div>
+      <p class="muted small">Pick types and generations (none picked: any), and how strong. Replaces the list with about ${REGION_SIZE} species; edit it after.</p>
+      <div class="rg-chips">${TYPES.map(t => tog('rggent', t, rgGen.types.includes(t), t)).join('')}</div>
+      <div class="rg-chips">${GEN_NAMES.map((g, i) => tog('rggeng', String(i), rgGen.gens.includes(i), g)).concat(tog('rggeng', 'other', rgGen.gens.includes('other'), 'Custom')).join('')}</div>
+      <div class="rg-chips">${[['gentle', 'Gentle: nothing past 540, nothing rare'], ['standard', `Standard: at most ${GEN_PSEUDO} pseudo-legendaries`], ['strong', 'Strong: strong lines likelier']].map(([k, l]) => tog('rggenp', k, rgGen.power === k, l)).join('')}</div>
+      <div class="confirm-row"><button class="btn" data-act="rggen">Generate</button></div>
+      <div class="rg-row"><label class="cf-field"><span class="eyebrow">Add a Pokémon line</span><input id="rg-add" class="cf-in" list="rg-adds" value="${esc(rgAddText)}" placeholder="First stage, e.g. Ekans" autocomplete="off"></label><button class="btn" data-act="rgadd">Add</button></div>
+      <datalist id="rg-adds">${addable.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="rg-pool" aria-label="The region's list">${st.lines.length ? st.lines.slice().sort().map(spTag).join('') : '<span class="muted small">The list is empty.</span>'}</div>
+      ${st.missing.length ? `<p class="muted small">Not in the game with the Pokédex in use: ${st.missing.map(b => `<span class="rg-sp">${esc(b)}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`).join(' ')}</p>` : ''}
+      <div class="eyebrow">Strong lines by type</div><p class="muted small">${TYPES.map(t => `<span class="${st.typeN[t] < 5 ? 'bad' : ''}">${t} ${st.typeN[t]}</span>`).join(' · ')}</p></section>
+    <section class="panel"><div class="ph"><h2>Its own new Pokémon</h2><span class="muted">${d.added.length} new</span></div>
+      ${d.added.length ? `<div class="cf-list">${d.added.map(e => `<div class="cf-row${rgSpWas === e.name ? ' on' : ''}"><div class="cf-info"><b>${esc(e.name)}</b> ${chips(e.types)}<div class="muted small">${dxStatLine(e.stats)} · total ${e.stats.reduce((a, x) => a + x, 0)} · ${e.from ? `evolves from ${esc(e.from)} at Lv ${e.lvl}` : 'found in the wild'}</div></div>
+        <div class="cf-acts"><button class="btn small" data-act="rgspedit" data-k="${esc(e.name)}">Edit</button><button class="btn small danger" data-act="rgspdel" data-k="${esc(e.name)}" aria-label="Delete ${esc(e.name)}">Delete</button></div></div>`).join('')}</div>` : '<p class="muted small">None. Pokémon of its own come with the region when it is shared.</p>'}
+      ${rgSp ? rgSpForm() : '<div class="confirm-row"><button class="btn" data-act="rgspnew">Add a new Pokémon</button></div>'}</section>
+    <section class="panel"><div class="ph"><h2>Checks</h2><span class="muted">Warnings don't stop you saving</span></div>
+      ${chk.errs.length ? `<ul class="warn cf-errs">${chk.errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+      ${chk.warns.length ? `<ul class="muted small">${chk.warns.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : chk.errs.length ? '' : '<p class="muted small">Nothing to flag.</p>'}
+      <div class="confirm-row"><button class="btn primary" data-act="rgsave">Save region</button><button class="btn" data-act="rgcancel">Cancel</button></div></section></main>`;
+}
+// the editor's and the library's buttons; true when the action was one of these
+function regionAction(a, el) {
+  const k = el.dataset.k;
+  switch (a) {
+    case 'rgnew': rgOpen(regionBlank()); return true;
+    case 'rgcopyreg': rgOpen(regionCopy(+(($('#rgcopyof') || {}).value || 0))); return true;
+    case 'rgedit': { const r = libRegion(k); if (r) rgOpen(r); return true; }
+    case 'rgexport': rgExport = rgExport === k ? null : k; return true;
+    case 'rgcopy': { const t = $('#rg-exptext'); if (t) { t.select(); try { navigator.clipboard.writeText(t.value).then(() => toast('Copied.'), () => toast('Select the text and copy it.')); } catch (e) { toast('Select the text and copy it.'); } } return false; }
+    case 'rgfile': { const r = libRegion(k); if (r) downloadText(regionFileName(r), regionFileText(r)); return false; }
+    case 'rgdel': rgDelArm = k; return true;
+    case 'rgdelno': rgDelArm = null; return true;
+    case 'rgdelyes': deleteRegion(k); delete setupCustom[k]; rgDelArm = null; if (rgExport === k) rgExport = null; return true;
+    case 'rgimport': { const r = regionRead(rgImpText);
+      if (r.err) { rgImpMsg = r.err; return true; }
+      const rec = addImportedRegion(r.rec), taken = r.dropped.filter(x => x.why === 'taken').map(x => x.name), broken = r.dropped.filter(x => x.why !== 'taken').map(x => x.name);
+      rgImpMsg = `Imported ${rec.name}.${taken.length ? ` Left out, as the name is already taken: ${taken.join(', ')}.` : ''}${broken.length ? ` Left out as broken: ${broken.join(', ')}.` : ''}`; rgImpText = ''; return true; }
+  }
+  if (!rgDraft) return false;
+  switch (a) {
+    case 'rgsave': { const errs = saveRegion(rgRec()); if (errs.length) { rgErrs = errs; return true; } const n = rgDraft.name.trim(); rgDraft = null; rgErrs = []; setupPage = 'advanced'; setupFold.regions = false; rgImpMsg = ''; toast(`Saved ${n}.`); return true; }
+    case 'rgcancel': rgDraft = null; rgErrs = []; setupPage = 'advanced'; return true;
+    case 'rgflag': rgDraft[k] = k === 'rivals' ? rgDraft.rivals === false : !rgDraft[k]; return true;
+    case 'rgnb': rgDraft.nb = rgDraft.nb.includes(k) ? rgDraft.nb.filter(x => x !== k) : rgDraft.nb.concat(k); return true;
+    case 'rglegkeep': rgDraft.legends = rgDraft.legends == null ? [] : null; return true;
+    case 'rglegrm': rgDraft.legends = rgDraft.legends.filter(x => x !== k); return true;
+    case 'rglegadd': { const v = (($('#rg-leg') || {}).value || '').trim(), n = LEGEND_CHOICES().find(x => x.toLowerCase() === v.toLowerCase());
+      if (!n) { rgLegText = v; rgMsg = v ? `${v} isn't a legendary with a home region.` : 'Type a legendary first.'; return true; }
+      if (!rgDraft.legends.includes(n)) rgDraft.legends.push(n); rgLegText = ''; rgMsg = ''; return true; }
+    case 'rgrm': rgDraft.pool = rgDraft.pool.filter(b => b !== k); return true;
+    case 'rgadd': { const v = (($('#rg-add') || {}).value || '').trim(), n = ranchSpecies().find(x => x.toLowerCase() === v.toLowerCase()) || (SP[v] && lineBaseOf(v));
+      if (!n || !ranchable(n)) { rgAddText = v; rgMsg = v ? `${v} isn't a Pokémon line that can be found in the wild (use its first stage).` : 'Type a Pokémon first.'; return true; }
+      if (!rgDraft.pool.includes(n)) rgDraft.pool.push(n); rgAddText = ''; rgMsg = `Added ${n}'s line.`; return true; }
+    case 'rgcopylist': { const i = +(($('#rg-copylist') || {}).value || 0), list = [...builtinLines().sets[i]];
+      rgDraft.pool = el.dataset.v === 'merge' ? [...new Set(rgDraft.pool.concat(list))] : list.concat(rgDraft.added.filter(x => !x.from).map(x => x.name)); rgMsg = `${el.dataset.v === 'merge' ? 'Added' : 'Copied'} ${builtinRegionName(i)}'s list.`; return true; }
+    case 'rgclear': rgDraft.pool = []; rgMsg = 'The list is empty.'; return true;
+    case 'rggent': rgGen.types = rgGen.types.includes(k) ? rgGen.types.filter(x => x !== k) : rgGen.types.concat(k); return true;
+    case 'rggeng': { const g = k === 'other' ? 'other' : +k; rgGen.gens = rgGen.gens.includes(g) ? rgGen.gens.filter(x => x !== g) : rgGen.gens.concat(g); return true; }
+    case 'rggenp': rgGen.power = k; return true;
+    case 'rggen': { const pool = generatePool(rgGen); if (!pool.length) { rgMsg = 'Nothing fits those choices.'; return true; } rgDraft.pool = [...new Set(pool.concat(rgDraft.added.filter(x => !x.from).map(x => x.name)))]; rgMsg = `Generated a list of ${pool.length} lines.`; return true; }
+    case 'rgspnew': rgSp = rgSpBlank(); rgSpWas = null; rgSpErrs = []; return true;
+    case 'rgspedit': { const e = rgDraft.added.find(x => x.name === k); if (!e) return true; rgSp = Object.assign(rgSpBlank(), JSON.parse(JSON.stringify(e)), { types: [e.types[0], e.types[1] || ''] }); rgSpWas = k; rgSpErrs = []; return true; }
+    case 'rgspcancel': rgSp = null; rgSpWas = null; rgSpErrs = []; return true;
+    case 'rgspsave': rgSpSave(); return true;
+    case 'rgspdel': rgSpDelete(k); return true;
+  }
+  return false;
+}
 function viewSetup() {
+  previewSetupRegions(); // (0.31.0)
+  if (setupLeagues > maxStartLeagues()) setupLeagues = maxStartLeagues();
+  if (setupPage === 'region' && rgDraft) return viewRegionEditor();
   if (setupPage === 'advanced') return viewAdvanced();
   if (setupPage === 'dex') return viewDexEditor();
   if (setupPage === 'custom') return viewCustom();
   if (setupPage === 'import') return viewImport();
   const offNames = FEATURES.flatMap(g => g.items).filter(i => setupOff[i[0]]).map(i => i[1]);
-  const advOn = Object.entries(setupAdv).filter(([, v]) => v).map(([k]) => ({ allFamous: 'All-famous league' }[k])).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []);
+  const advOn = Object.entries(setupAdv).filter(([, v]) => v).map(([k]) => ({ allFamous: 'All-famous league' }[k])).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []).concat(setupChoices().map(c => `${c.rec.name}: ${useLabel(setupCustom[c.rec.id]).toLowerCase()}`));
   const opt = (act, v, cur, label) => `<button class="seg${cur === v ? ' on' : ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${label}</button>`;
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
     <p>You run a Pokémon League and try to let nobody through. After you choose a region you place its first staff by hand: a Champion, four Elite Four members and eight Gym Leaders. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
@@ -796,7 +980,7 @@ function viewSetup() {
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
-      <span class="org-name">${r.name.replace(' League', '')}</span><span class="org-blurb">${r.towns.join(', ')}</span></button>`).join('')}</div></main>`;
+      <span class="org-name">${esc(r.name.replace(' League', ''))}</span><span class="org-blurb">${r.from ? `<b>${esc(r.from)}${r.pool && r.base == null && r.rep === i && r.from && r.name.replace(' League', '') !== r.from ? "'s Pokémon" : ''}</b>${r.solo ? ' · your League only' : ''} · ` : ''}${r.towns.map(esc).join(', ')}</span></button>`).join('')}</div></main>`;
 }
 
 // ---------- profiles ----------
