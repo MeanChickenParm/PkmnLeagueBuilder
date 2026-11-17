@@ -962,6 +962,7 @@ function takeGymTrainer(t, i, k, how) {
   t.role = 'gymtrainer'; t.lg = S.lg || 0; t.rest = null; t.runStart = null; t.badges = []; t.gymTries = 0; t.gymStage = 0; t.acting = false;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
+  t.team = t.team.filter(m => !m.stop); // (0.26.0) a senior member's stopgaps stay behind
   const keep = t.team.filter(m => mixed || onSpec(t, m.sp)).sort((a, b) => monPower(b) - monPower(a)).slice(0, Math.min(steerOf(t) === 'keep' ? KEEP_CORE : 2, size - 1));
   for (const m of t.team) if (!keep.includes(m)) farewell(t, m, 'left behind on becoming a gym trainer');
   const fresh = staffPicks(t, GYM_LV[i], size - keep.length, { lines: keep.map(m => LINE[m.sp]), team: keep, mixed });

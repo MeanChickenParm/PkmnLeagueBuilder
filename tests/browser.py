@@ -179,6 +179,11 @@ async def run(path):
                         const lb = document.querySelector('[data-act=ranchlock][data-id="' + e.uid + '"]'); if (!lb) log.push('FAIL no lock button'); else { lb.click(); if (!e.lock || e.res) log.push('FAIL locking'); }
                         const sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]'), v = inLeague(0, () => Math.round(entryValue(e) * SELL_BACK)), m0 = S.fin.money;
                         if (!sb) log.push('FAIL no sell button'); else { sb.click(); if (S.fin.money !== m0 + v || R().mons.includes(e)) log.push('FAIL selling back'); else log.push('sold back ' + e.sp); } } }
+                    // 0.26.0: sell a fielded one straight from the pool; its holder swaps it out at once
+                    { go('ranch'); const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at != null); });
+                      if (!e) log.push('nothing fielded from the ranch'); else { const t = T(e.at), n0 = t.team.length, sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]');
+                        if (!sb || !/swaps it out/.test(sb.closest('tr').textContent)) log.push('FAIL no Sell button or note on a fielded ranch Pokémon');
+                        else { sb.click(); if (t.team.length !== n0 || t.team.some(m => m.rid === e.uid) || R().mons.includes(e)) log.push('FAIL selling a fielded ranch Pokémon'); else log.push('sold a fielded ' + e.sp); } } }
                     go('cities'); const rb = document.querySelector('[data-act=build][data-w=seat][data-k=ranch]'), c0 = inLeague(0, () => ranchCap());
                     if (!rb) log.push('FAIL no Ranch to build'); else { rb.click(); if (inLeague(0, () => ranchCap()) <= c0) log.push('FAIL building the Ranch'); else log.push('built the Ranch'); }
                     S.fin.money = keep; go('ranch'); }

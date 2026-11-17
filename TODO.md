@@ -32,7 +32,8 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Stopgaps** are free weak stand-ins so a post always fields a full team; the design said nothing comes free. They are only used when nothing in the ranch fits.
 - **A demoted senior member (to gym trainer) counts as leaving the ranch:** they keep the ranch Pokémon they held.
 - **Other places that still hand out Pokémon outside the ranch:** a Gym Leader's temporary top-up for a seat challenge draws on the ranch but an acting Elite Four stand-in and acting leaders keep the old builder; legendary departures refill through `staffPicks` (so from the ranch); the `keep` steer no longer conjures signature Pokémon for senior staff (it only favours their lines).
-- **The AI doesn't use reserves or locks,** and lists only its cheapest spare beyond what its aim keeps.
+- **The AI doesn't use reserves or locks.** Since 0.26.0 it lists and sells back spares it won't keep (`ranchSpares`, `AI_IDLE`).
+- **Hunting by condition (the owner, Nov 17):** eventually targeted trips should be able to hunt a species in a particular condition for more money (for example a plain Ledyba for about 1,000, a Delta Ledyba for about 5,000; shiny and other conditions likewise). Not designed yet; fits catching trips and the long-term idea of rarer finds tied to money (item 34).
 - **Ranch Pokémon aren't counted in wealth** (the economy report counts cash and buildings); a ranch is a sink.
 - **Parts 2 and 3** (regional encounters, migration, ports, the railway, the safari; challenger storage, picking at hire, the Sanctuary rework) are designed (6.5) and not built.
 

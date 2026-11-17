@@ -24,6 +24,9 @@ const GRADE_PICK = 0.15, OWN_PICK = 0.3, RES_PICK = 3;   // what a grade, one of
 const RV_BASE = 1200, SELL_BACK = 1 / 3, SALE_SHARE = 0.85, SALE_WEEKS = 24;
 const SHOP_SIZE = 6, TRIP_MAX = 2, AREA_COST = 2500, RANCH_SCOUT_OFFICE = 4, STOCK_EXTRA = 3;
 const RANCH_AIM = { wall: 0.5, star: 0.35, money: 0.15 }, RANCH_KEEP = { wall: 6, star: 4, money: 2 };
+// (0.26.0) a rival sells back a spare it won't keep once it has sat unfielded this many weeks, listing up to AI_CLEAR a
+// month for other Leagues first
+const AI_IDLE = { wall: 16, star: 12, money: 8 }, AI_CLEAR = 3;
 
 // ---------- lines and values ----------
 const LINE_BASE = {}; for (const b of BASES) if (LINE[b] && LINE_BASE[LINE[b]] == null) LINE_BASE[LINE[b]] = b;
@@ -96,8 +99,9 @@ function ranchSync() {
   const byUid = new Set(R.mons.map(e => e.uid)), held = new Map();
   for (const id of seniorIds()) for (const m of T(id).team) if (m.rid != null) { if (byUid.has(m.rid) && !held.has(m.rid)) held.set(m.rid, id); else m.rid = null; }
   R.mons = R.mons.filter(e => {
-    if (held.has(e.uid)) { e.at = held.get(e.uid); return true; }
+    if (held.has(e.uid)) { e.at = held.get(e.uid); e.idle = null; return true; }
     if (e.at != null) { const p = T(e.at); if (p && (p.team || []).some(m => m.rfrom === e.uid)) { for (const m of p.team) if (m.rfrom === e.uid) m.rid = null; return false; } e.at = null; }
+    if (e.idle == null) e.idle = S.turn || 0; // (0.26.0) the turn it was last fielded (or came in)
     return true;
   });
 }
@@ -294,11 +298,25 @@ function listings(except) {
   for (let k = 0; k < nLeagues(); k++) { if (k === except) continue; const R = ranchOfLg(k); if (R) for (const e of R.mons) if (e.sale) out.push({ lg: k, e }); }
   return out;
 }
+// (0.26.0) a fielded ranch Pokémon is freed at once: its holder swaps it for the best fitting Pokémon left in the ranch
+// (never this one), or a stopgap; returns the holder, or null if nobody was fielding it
+function freeEntry(e) {
+  ranchSync(); if (e.at == null) return null;
+  const t = T(e.at), m = t && t.team.find(x => x.rid === e.uid); if (!m) { e.at = null; return null; }
+  const slot = eliteSlot(t), mixed = t.role === 'champion' || !t.specialty, rest = t.team.filter(x => x !== m);
+  const was = e.lock; e.lock = true;
+  const inn = staffPicks(t, slot.lvl, 1, { lines: rest.map(x => LINE[x.sp]), team: rest, mixed, stop: true, noOff: rest.some(x => x.offType) })[0];
+  e.lock = was;
+  t.team = inn ? rest.concat(stamp(inn, 'assigned')) : rest; relevelElite(t);
+  e.at = null; e.idle = S.turn;
+  if (playerLeague() && inn) news(`${dn(t)} gave up ${m.sp} and fields ${inn.sp}${inn.stop ? ' (a stopgap)' : ' from the ranch'} instead.`, 'move', t.id);
+  return t;
+}
 function listMon(id) {
   ranchSync();
   const e = ranchEntry(id); if (!e) return 'Not in the ranch.';
-  if (e.at != null) return 'Someone is fielding it.';
   if (nLeagues() < 2) return 'There is no other League to sell to.';
+  freeEntry(e);
   e.sale = { price: entryValue(e), at: S.turn }; e.res = null;
   return null;
 }
@@ -316,11 +334,11 @@ function buyListing(k, id) {
   ranchAdd(Object.assign({}, e, { at: null, res: null, lock: false, of: null, sale: null, from: 'league', got: S.turn }));
   return null;
 }
-// sell back (a third of its value) or let go for nothing; only Pokémon nobody is fielding
+// sell back (a third of its value) or let go for nothing; since 0.26.0 a fielded one too (its holder swaps it out first)
 function sellMon(id, release) {
   ranchSync();
   const e = ranchEntry(id); if (!e) return 'Not in the ranch.';
-  if (e.at != null) return 'Someone is fielding it.';
+  freeEntry(e); // (0.26.0) a fielded one is swapped out at once
   S.ranch.mons = S.ranch.mons.filter(x => x !== e);
   if (!release && booksOn()) book(Math.round(entryValue(e) * SELL_BACK), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} back`);
   return null;
@@ -330,6 +348,15 @@ function sellMon(id, release) {
 function lockMon(id, on) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; e.lock = !!on; if (on) e.res = null; return null; }
 function reserveMon(id, key) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; if (key != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(key)) return 'No such post.'; e.res = key || null; if (key) e.lock = false; return null; }
 const ranchUpkeep = () => ranchOn() ? S.ranch.mons.reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) : 0;
+// (0.26.0) a rival's spares it won't keep, cheapest first: everything unfielded (not reserved or locked) except the best
+// RANCH_KEEP of those some senior post could field on type at its level
+function ranchSpares(aim) {
+  const posts = seniorIds().map(T).map(t => ({ t, L: (eliteSlot(t) || {}).lvl, ty: t.role === 'champion' || !t.specialty ? [] : specTypes(t) })).filter(p => p.L);
+  const usable = e => posts.some(p => { const sp = ranchForm(e, p.L, p.t.specialty); return !p.ty.length || SP[sp].types.some(x => p.ty.includes(x)); });
+  const idle = S.ranch.mons.filter(e => e.at == null && !e.res && !e.lock).sort((a, b) => entryValue(b) - entryValue(a));
+  const keep = new Set(idle.filter(usable).slice(0, RANCH_KEEP[aim]));
+  return idle.filter(e => !keep.has(e)).reverse();
+}
 // once a week in every League with a ranch (from moneyWeek): who holds what, upkeep, trips back, the market, listings
 function ranchWeek() {
   if (!ranchOn()) return;
@@ -347,8 +374,16 @@ const stopPosts = () => seniorIds().map(T).filter(t => t.team.some(m => m.stop))
 // post (a stopgap first, else the weakest Pokémon on a team) from the market or another League's sales, or else a
 // trip. It spends at most RANCH_AIM of its spare money above the aim's reserve on one Pokémon.
 function aimRanch(aim) {
-  const f = S.fin, R = S.ranch; if (!R || !f || f.money < 0) return;
+  const f = S.fin, R = S.ranch; if (!R || !f) return;
   ranchSync();
+  // (0.26.0) clearing out, in the red too: spares it won't keep are sold back once idle AI_IDLE weeks, and listed for
+  // other Leagues before that (up to AI_CLEAR a month)
+  let listed = 0;
+  for (const e of ranchSpares(aim)) {
+    if (S.turn - (e.idle ?? S.turn) >= AI_IDLE[aim]) { e.sale = null; sellMon(e.uid); }
+    else if (!e.sale && nLeagues() > 1 && listed < AI_CLEAR) { listMon(e.uid); listed++; }
+  }
+  if (f.money < 0) return;
   const spare = f.money - AIMS[aim].reserve, budget = spare * RANCH_AIM[aim], lg = S.lg || 0;
   const free = () => R.mons.filter(e => e.at == null && !e.res && !e.lock && !e.sale).sort((a, b) => entryValue(a) - entryValue(b));
   if (ranchRoom() <= 2) {
@@ -356,7 +391,6 @@ function aimRanch(aim) {
     if (!ck.why && ck.cost <= spare * 0.6 && runningNet() >= ck.cost * UPKEEP) { build('seat', 'ranch', lg); return; }
     const f0 = free().find(e => e.g <= 2); if (f0) sellMon(f0.uid, true);
   }
-  const spareMons = free(); if (spareMons.length > RANCH_KEEP[aim] && nLeagues() > 1) listMon(spareMons[0].uid);
   if (budget <= 0) return;
   // the neediest post: a stopgap first, else its weakest Pokémon
   const posts = seniorIds().map(T).map(t => { const slot = eliteSlot(t), mixed = t.role === 'champion' || !t.specialty, ty = mixed ? [] : specTypes(t), th = TYPES.filter(a => ty.some(d => effOne(a, d) >= 2));
@@ -378,4 +412,4 @@ function aimRanch(aim) {
   if (AREA_COST <= budget && ranchRoom() > 3) startTrip('area');
 }
 
-if (typeof module !== 'undefined') module.exports = { ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, LEGEND_HOME, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, MAX_LEAGUES, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, LEAGUE_SETS, regionCities, townName, gymCity, SAVE_VERSION };
