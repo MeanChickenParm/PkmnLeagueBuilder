@@ -1981,25 +1981,13 @@ function birthdays() {
     trimH2h(t);
     const before = { ...t.r, ovr: ovr(t) };
     t.age++;
-    for (const k of RK) {
-      let d;
-      if (t.age <= 17) d = ri(0, 6) * (ovr(t) < t.pot ? 1 : 0.3);
-      else if (t.age <= 24) d = ri(-1, 4) * (ovr(t) < t.pot ? 1 : 0.4);
-      else if (t.age <= 34) d = ri(-1, 2);
-      else if (t.age <= 44) d = ri(-2, 1);
-      else if (t.age <= 52) d = ri(-3, 1);
-      else d = ri(-4, 1);
-      if (hasTrait(t, 'lateBloomer') && t.age >= 20 && t.age <= 32) d += ri(0, 1);
-      t.r[k] = clamp(Math.round(t.r[k] + d), 1, 99);
-    }
+    grow(t); // (0.24.0) one growth model for everyone
     if (t.role === 'challenger') {
       const sh = t.seasonHist[t.seasonHist.length - 1];
       if (sh && sh.badges === 8) t.r.nrv = clamp(t.r.nrv + ri(1, 3), 1, 99);
       if (sh && sh.stage != null && sh.stage >= 4) { t.r.nrv = clamp(t.r.nrv + 2, 1, 99); t.r.str = clamp(t.r.str + 1, 1, 99); }
     }
-    if (STAFF_ROLES.includes(t.role)) hallGain(t);
-    t.pot = Math.max(t.pot, ovr(t));
-    if (t.age > (hasTrait(t, 'lateBloomer') ? 32 : 26)) t.pot = ovr(t);
+    t.pot = growPot(t);
     prog[t.id] = { before, after: { ...t.r, ovr: ovr(t) } };
     // --- retiring: with age (50+ and past their career length), after a long dry spell, or for poor ratings
     if (t.role === 'challenger') {
@@ -2018,6 +2006,62 @@ function birthdays() {
       inLeague(homeLeague(t), () => { if (t.stepDown != null) staffRetires(t); else if (!t.acting && rand() < stepDownChance(t)) announceStepDown(t); else if (!t.acting) driftAmbition(t); });
     }
   }
+}
+// ================= GROWTH (0.24.0, design doc 6.3) =================
+// One model for every trainer, staff and challengers alike, replacing the source's potential ceiling. A trainer grows
+// until their peak (GROW_PEAK, their late 20s), holds, and declines slowly from GROW_DECLINE (their mid 30s), faster
+// with age. Growth counts from the start of a career, not age: a late starter grows for GROW_LATE years from the
+// start, and declines GROW_LATE_DECLINE years after it, no later than GROW_DECLINE_MAX. Each birthday every rating moves
+// by the stage's step × the trainer's talent (a stable draw, GROW_TALENT) × their coach's Training (a gym trainer's
+// leader, a Gym Leader's or Elite Four member's Champion, else their own) × the training hall at their post (+GROW_HALL a
+// level; it also slows the decline), less as a rating nears the top. A Late Bloomer peaks and declines
+// GROW_BLOOM years later. All numbers provisional.
+const GROW_PEAK = 28, GROW_DECLINE = 35, GROW_LATE = 4, GROW_LATE_DECLINE = 6, GROW_DECLINE_MAX = 40, GROW_BLOOM = 3;
+const GROW_STEP = [[17, 3.0], [22, 2.0], [99, 1.2]]; // [up to age, points a year] while growing
+const GROW_DROP = [[44, 0.7], [52, 1.2], [99, 1.8]]; // [up to age, points a year] while declining
+const GROW_TALENT = [0.6, 1.4], GROW_HALL = 0.12, GROW_HALL_SLOW = 0.1;
+// the age a career started (set when a trainer is made; older trainers get it from their years)
+const startAge = t => (t.start != null ? t.start : (t.start = t.age - (t.seasons || 0)));
+// a late starter is one whose career began after their natural peak was near
+function growAges(t) {
+  const s = startAge(t), b = hasTrait(t, 'lateBloomer') ? GROW_BLOOM : 0;
+  const decline = Math.max(GROW_DECLINE, Math.min(s + GROW_LATE_DECLINE, GROW_DECLINE_MAX)) + b;
+  const peak = Math.min(decline, Math.max(GROW_PEAK, s + GROW_LATE)) + b;
+  return { peak, decline };
+}
+const talent = t => GROW_TALENT[0] + (((t.id * 40503) >>> 0) % 101) / 100 * (GROW_TALENT[1] - GROW_TALENT[0]);
+const stepAt = (tbl, age) => tbl.find(([a]) => age <= a)[1];
+// whose Training speeds t's growth
+function coachOf(t) {
+  if (!STAFF_ROLES.includes(t.role)) return t;
+  return inLeague(homeLeague(t), () => {
+    if (t.role === 'gymtrainer') { const g = S.gyms.find(x => (x.trainers || []).includes(t.id)); return (g && T(g.leader)) || t; }
+    if (t.role === 'champion') return t;
+    return T(S.champion) || t;
+  });
+}
+const coachMul = t => 0.7 + 0.6 * clamp((coachOf(t).r.trn - 20) / 60, 0, 1); // Training 50 = ×1
+// the training hall at a member of staff's post (0 while the League is in the red)
+const hallAt = t => STAFF_ROLES.includes(t.role) ? inLeague(homeLeague(t), () => lapsed() ? 0 : hallLv(t)) : 0;
+// the birthday's change to every rating (t.age is already the new age)
+function grow(t) {
+  const { peak, decline } = growAges(t), hall = hallAt(t);
+  if (t.age <= peak) {
+    const step = stepAt(GROW_STEP, t.age) * talent(t) * coachMul(t) * (1 + GROW_HALL * hall);
+    for (const k of RK) { const room = clamp((96 - t.r[k]) / 40, 0.15, 1); t.r[k] = clamp(Math.round(t.r[k] + step * room + (rand() - 0.5) * 2), 1, 99); }
+  } else if (t.age <= decline) {
+    for (const k of RK) t.r[k] = clamp(t.r[k] + ri(-1, 1), 1, 99);
+  } else {
+    const drop = stepAt(GROW_DROP, t.age) * Math.max(0.3, 1 - GROW_HALL_SLOW * hall);
+    for (const k of RK) t.r[k] = clamp(Math.round(t.r[k] - drop + (rand() - 0.5) * 2), 1, 99);
+  }
+}
+// a trainer's potential: their OVR now plus the growth still ahead at their own pace (coach and hall left out)
+function growPot(t) {
+  const { peak } = growAges(t);
+  let o = ovr(t);
+  for (let a = t.age + 1; a <= peak; a++) o += stepAt(GROW_STEP, a) * talent(t) * clamp((96 - o) / 40, 0.15, 1);
+  return clamp(Math.round(o), ovr(t), 99);
 }
 // ---------- stepping down (0.6.0) ----------
 // A member of staff only thinks of stepping down once they are past their career length and have held posts for
@@ -2788,6 +2832,7 @@ function staffQuits(t) {
 // off on another run as a challenger, sharper for it, and guaranteed COMEBACK_GUARD years on the circuit
 function comeback(t, was) {
   for (const k of RK) t.r[k] = clamp(t.r[k] + ri(3, 6), 1, 99);
+  t.pot = Math.max(t.pot, ovr(t));
   t.noRetireUntil = (S.season || 0) + 1 + COMEBACK_GUARD;
   t.comebacks = (t.comebacks || []).concat([{ season: S.season, post: was, seasons: t.wallStreak || 0, lg: S.lg || 0 }]);
   t.wallStreak = 0; t.wish = null; t.quit = null; t.letGoAt = S.turn;
@@ -2983,7 +3028,7 @@ function leagueNewYear(changes) {
     let leave = null, stepDown = false;
     if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
     if (!leave) {
-      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
+      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); t.pot = Math.max(t.pot, ovr(t)); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
       else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor year and the League will replace them' : ''}.`); }
       return;
     }
@@ -3117,7 +3162,7 @@ function godEdit(id, field, v) {
   const t = T(id); if (!t) return 'No such trainer.';
   const num = (lo, hi) => { const n = Math.round(+v); return Number.isFinite(n) ? clamp(n, lo, hi) : null; };
   if (field === 'name') { const s = String(v || '').replace(/[<>&"]/g, '').trim().slice(0, 24); if (!s) return 'A name is needed.'; t.name = s; return null; }
-  if (field === 'age') { const n = num(10, 70); if (n == null) return 'Not a number.'; t.age = n; return null; }
+  if (field === 'age') { const n = num(10, 70); if (n == null) return 'Not a number.'; t.age = n; if (startAge(t) > n) t.start = n; return null; }
   if (field === 'pot') { const n = num(1, 99); if (n == null) return 'Not a number.'; t.pot = Math.max(n, ovr(t)); return null; }
   if (RK.includes(field)) { const n = num(1, 99); if (n == null) return 'Not a number.'; t.r[field] = n; if (t.pot < ovr(t)) t.pot = ovr(t); return null; }
   return 'Unknown field.';

@@ -365,5 +365,10 @@ g.eachLeague(i => { const blocked = g.challengers().filter(t => t && !g.willSign
 console.log('prestige gating', 'blocked on rival circuits', PG.blocked || 0, 'blocked offers tried by hand', PGH.blocked);
 if (PG.famous) { console.log('FAIL a famous trainer on a founding staff'); process.exitCode = 1; }
 if (PG.start.some(x => x > 64)) { console.log('FAIL a founding staff far above the founding pool'); process.exitCode = 1; }
+// (0.24.0) growth: every trainer knows when their career began, potential never below OVR, and OVR by age band
+{ let bad = 0; const band = {}; for (const t of Object.values(S().trainers)) { if (t.start == null || t.start > t.age || t.pot < g.ovr(t)) bad++;
+    if (t.role === 'retired') continue; const k = t.age <= 20 ? '≤20' : t.age <= 28 ? '21-28' : t.age <= 35 ? '29-35' : t.age <= 45 ? '36-45' : '46+'; (band[k] = band[k] || []).push(g.ovr(t)); }
+  if (bad) { console.log('FAIL', bad, 'trainers with no career start or potential below OVR'); process.exitCode = 1; }
+  console.log('growth', 'OVR by age', Object.entries(band).map(([k, v]) => `${k} ${Math.round(v.reduce((a, b) => a + b, 0) / v.length)} (${v.length})`).join(', ')); }
 console.log('books', g.eachLeague(i => `L${i} ${S().fin ? (S().fin.aim || 'player') + ' ' + g.money(S().fin.money) + ' wages ' + g.wageBill() + '/wk' : 'none'}`).join(' | '));
 process.exit(fail.length ? 1 : 0);

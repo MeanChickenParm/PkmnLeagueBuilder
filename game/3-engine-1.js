@@ -214,7 +214,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 12; // 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 13; // 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -591,7 +591,8 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     S.famousUsed.push(t.name);
   }
   t.trait = (t.famous && (f && f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[famBase(t)])) || rollTrait();
-  t.pot = clamp(ovr(t) + Math.max(0, Math.round((22 - t.age) * ri(1, 4) * 0.9)) + ri(-4, 6), ovr(t), 99);
+  t.start = t.age - seasons; // (0.24.0) the age the career began
+  t.pot = growPot(t);
   S.trainers[id] = t;
   return t;
 }
