@@ -43,6 +43,7 @@ const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
+const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
@@ -128,14 +129,14 @@ function check(tag) {
       const act = !!gym.acting, gts = (gym.trainers || []).filter(x => x != null);
       if (act !== !!L.acting) bad('gym ' + j + ' acting flags disagree');
       if (act && !(s.vacancies || []).some(v => v.post === 'leader' && v.slot === j) && i === g.ME()) bad('gym ' + j + ' acting with no vacancy');
-      if (L.team.length !== g.GYM_SIZE[j] - (act ? 1 : 0)) bad('gym ' + j + ' leader fields ' + L.team.length);
+      if (L.team.length !== g.LEADER_HOLD - (act ? 1 : 0)) bad('gym ' + j + ' leader fields ' + L.team.length);
       for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
       if (gts.length !== g.GYM_TRAINERS - (act ? 1 : 0)) bad('gym ' + j + ' has ' + gts.length + ' gym trainers' + (act ? ' (acting)' : ''));
       for (const id of gts) { const t = g.T(id);
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
         if (!act && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
         for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
-        if (t.team.length !== g.GYM_SIZE[j] - 1) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired);
+        if (t.team.length !== g.GT_HOLD) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired);
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
     if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
@@ -182,12 +183,23 @@ function check(tag) {
     if (i !== g.ME() && (z.gyms.some(x => x.acting) || z.e4.some(id => g.T(id) && g.T(id).acting))) bad('a vacancy in a League not staffed by hand');
     // challengers: tries, gym trainers beaten, and Pokémon standing at the level of their next battle
     for (const id of z.challengers) { const t = g.T(id); if (!t || t.role !== 'challenger') continue;
-      if ((t.gymTries || 0) > g.GYM_TRIES || (t.gymStage || 0) > g.GYM_TRAINERS) bad('tries or stage out of range for ' + t.name);
+      // (0.32.0) progress gym by gym: tries and gym trainers beaten per gym, none at a gym already beaten, the gym
+      // they are heading for one they haven't beaten, and badges a set of distinct gyms
+      if (t.rest == null) {
+        if (typeof t.gymTries !== 'object' || typeof t.gymStage !== 'object') bad('progress not kept gym by gym for ' + t.name);
+        for (const [k, n] of Object.entries(t.gymTries || {})) if (n > g.GYM_TRIES || n < 0 || !(+k >= 0 && +k < 8)) bad('tries out of range for ' + t.name);
+        for (const [k, n] of Object.entries(t.gymStage || {})) if (n > g.GYM_TRAINERS || t.badges.includes(+k)) bad('stage out of range for ' + t.name);
+        if (new Set(t.badges).size !== t.badges.length || t.badges.some(b => !(b >= 0 && b < 8))) bad('badges repeated or out of range for ' + t.name);
+        if (t.badges.length < 8 && t.gymAt != null && t.badges.includes(t.gymAt)) bad('heading for a gym already beaten: ' + t.name);
+        if (t.badges.length >= 8 && t.gymAt != null) bad('heading for a gym with eight badges: ' + t.name);
+        if (t.badges.length < 8 && t.gymAt == null) anyOrder.noAim++;
+        anyOrder.out++; if (t.badges.length && t.badges.some((b, k) => b !== k)) anyOrder.outOfOrder++;
+      }
       // the continuous world: a challenger is either resting (with a date to set out again) or out on a run
       if (t.out != null) bad('the season out flag is back for ' + t.name);
       if (t.rest == null && t.runStart == null) bad('neither resting nor on a run: ' + t.name);
       if (t.rest != null && !(t.rest >= s.turn - 1 && t.rest <= s.turn + 14)) bad('rest date out of range for ' + t.name + ': ' + (t.rest - s.turn));
-      if (t.rest == null && (t.gymTries || 0) >= g.GYM_TRIES) bad('still on a run after three losses: ' + t.name);
+      if (t.rest == null && Object.values(t.gymTries || {}).some(n => n >= g.GYM_TRIES)) bad('still on a run after three losses: ' + t.name);
       if (t.rest == null && s.turn - t.runStart > 3 * g.YEAR_WEEKS) bad('a run of over three years: ' + t.name);
       if (t.rest == null && t.weekLog.length && t.weekLog[t.weekLog.length - 1].wk === s.week && t.team.some(m => m.lvl !== g.challengerLevel(t) && !(m.met && m.met.season === s.season && m.met.week >= s.week))) bad('team not at the set level for ' + t.name); }
     if (z.league && (z.league.season !== s.season || z.league.dethroned || z.league.e4Shot)) bad('the year record is wrong');
@@ -435,6 +447,12 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));
+{ // (0.32.0) gyms in any order: how often a challenger's badges came out of number order, and gyms held by stage
+  const sb = [[0, 0], [0, 0], [0, 0]], perGym = Array(8).fill(0);
+  g.eachLeague(() => { for (const h of S().history) for (const [k, gy] of (h.gyms || []).entries()) { if (!gy) continue; perGym[k] += (gy.wl || 0) + (gy.wt || 0) + (gy.l || 0); for (let b = 0; b < 3; b++) { const x = (gy.sb || [])[b]; if (x) { sb[b][0] += x[0]; sb[b][1] += x[1]; } } } });
+  if (anyOrder.noAim) fail.push('challengers on a run with no gym chosen: ' + anyOrder.noAim);
+  console.log('any order', 'out of number order', (100 * anyOrder.outOfOrder / Math.max(1, anyOrder.out)).toFixed(0) + '%', 'held early/mid/late', sb.map(x => x[0] ? Math.round(100 * x[1] / x[0]) + '% of ' + x[0] : '—').join(' · '), 'tries by gym', perGym.join('/'));
+}
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));

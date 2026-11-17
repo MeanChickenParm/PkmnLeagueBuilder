@@ -1,5 +1,15 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 32, ver: '0.32.0', date: 'November 17, 2026', time: '5:35 PM ET', title: 'Gyms in any order', items: [
+    "Challengers can now take the eight gyms in any order. Every gym scales to the challenger in front of it: it fights at the level and team size for the badges they already hold (level 16 with three Pokémon at none, up to level 77 with six at seven badges), whichever gym it is. Every gym now sees beginners and challengers close to the Elite Four alike, so the later gyms face far more battles than before.",
+    "Gym Leaders hold up to six Pokémon and gym trainers up to five. For each battle they field the number that stage needs (gym trainers one fewer than the leader), in the form each Pokémon would have at that level, picked by their Strategy against the challenger. Deeper teams draw more on the ranch.",
+    "Challengers choose their route: after every badge and every loss they pick the gym their team matches best, putting off gyms that beat them before and gyms where they've used tries. Sharp trainers read the gyms well; poor ones pick close to randomly.",
+    "After a loss a challenger may go to another gym and come back later. Tries used stay used and gym trainers beaten stay beaten, but by then the gym fields more Pokémon at a higher level. A third loss at any gym still ends the run.",
+    "Gym numbers are now a pecking order you set: later gyms still pay more, a Gym Leader who wants promotion still wants a later gym, and the leader of gym 8 is still the usual step to the Elite Four.",
+    "The year report shows each gym's share of tries held by the challenger's stage (early 0–2 badges, mid 3–5, late 6–7). The progress board counts who is heading to each gym and adds a row of everyone out on a run by badges held; the circuit page shows where each challenger is heading and at what level.",
+    "A challenger's profile shows the route of their current run and their next gym, Hall of Fame entries show the route the winner took, and runs at the Elite Four carry their route.",
+    "Old saves can't be loaded: start a new world.",
+  ] },
   { id: 31, ver: '0.31.0', date: 'November 17, 2026', time: '3:45 PM ET', title: 'Custom regions: the region editor and sharing', items: [
     "Advanced options has a new section, Custom regions, beside My Pokédex. Make a region of your own from nothing, as a copy of a built-in region, or with a generated list, then edit it: its name, its eight gym cities, three towns and two League seats, which places are ports or railways, two or three neighbouring regions, the legendaries at home there, and other names for its Gym Leaders, gym trainers, Elite Four and Champion (as Alola has Kahunas and Trial Captains). Its staff carry those titles everywhere their name is shown.",
     "A Champion's title no longer starts with \"Defending\": the Kanto League's Champion now shows as Kanto Champion and their name.",

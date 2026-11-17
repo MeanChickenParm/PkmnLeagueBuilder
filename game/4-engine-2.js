@@ -334,7 +334,7 @@ function aiActionBase(t) {
   const b = t.badges.length, n = t.team.length;
   if (b >= 8) { if (n < 6 && (t.ready || 0) < READY_WEEKS) { t.ready = (t.ready || 0) + 1; return 'explore'; } return 'league'; }
   // (0.21.0) between tries at a gym that beat them, a learner sometimes looks for a counter before going back in
-  if ((t.gymTries || 0) > 0 && gmemNext(t) && rand() < GMEM_EXPLORE * gmemLearn(t)) return 'explore';
+  if (t.gymAt != null && triesAt(t, t.gymAt) > 0 && gmemNext(t) && rand() < GMEM_EXPLORE * gmemLearn(t)) return 'explore';
   if (n < Math.min(6, GYM_SIZE[b]) && rand() < 0.85) return 'explore';
   if (n < 6 && rand() < 0.25) return 'explore';
   return rand() < 0.1 ? 'train' : 'challenge';
@@ -505,7 +505,7 @@ const legendChaos = () => (S.legend && S.legend.sp === 'Eternatus' && S.phase ==
 function recordGreat(t, m, how, gi) {
   (S.greatCaught = S.greatCaught || {})[m.sp] = { id: t.id, season: S.season, how };
   // (0.20.0) the city where it joined becomes a legendary site: the encounter's or roamer's town, else the challenger's next gym
-  if (inLg(t)) noteSite(gi != null && gi >= 0 ? gi : t.role === 'challenger' && t.badges.length < 8 ? t.badges.length : ri(0, S.gyms.length - 1), m.sp);
+  if (inLg(t)) noteSite(gi != null && gi >= 0 ? gi : t.role === 'challenger' && t.badges.length < 8 && t.gymAt != null ? t.gymAt : ri(0, S.gyms.length - 1), m.sp);
   (t.greatLegends = t.greatLegends || []).push({ sp: m.sp, season: S.season, how, lg: S.lg || 0 });
   noteLegends(t);
 }
@@ -808,7 +808,7 @@ const ROAM_STORY = {
   Fezandipiti: 'A dazzling bird swept over {town}, leaving a sweet, poisonous scent. Fezandipiti, one of the Loyal Three, is roaming the region.',
 };
 // the town a challenger is working toward (their next gym); a trainer with all eight badges goes anywhere
-const nearTown = t => (t.badges.length < 8 ? t.badges.length : null);
+const nearTown = t => (t.badges.length < 8 ? (t.gymAt != null ? t.gymAt : null) : null);
 // the odds a challenger exploring this week finds the roamer: full near its town, half one town away, a third with all
 // eight badges (they're anywhere on the road), none further off
 function roamChance(t) {
@@ -1083,11 +1083,12 @@ function noteChange(text) { (S.yearChanges = S.yearChanges || []).push(nLeagues(
 // a challenger sets out on a run: no badges, fresh tries, and their best START_TEAM Pokémon
 function setOut(t) {
   autoEquip(t);
-  t.badges = []; t.badgeWeek = null; t.gymStage = 0; t.gymTries = 0; t.rest = null; t.ready = 0; t.mega = null;
+  t.badges = []; t.badgeWeek = null; t.gymStage = {}; t.gymTries = {}; t.gymLine = {}; t.gymAt = null; t.rest = null; t.ready = 0; t.mega = null;
   t.runStart = S.turn; t.runs = (t.runs || 0) + 1;
   for (const m of t.team) m.form = (m.form || 0) * 0.3;
   if (t.team.length > START_TEAM) applyRegistration(t, bestThree(t));
   setTeamLevel(t, GYM_LV[0]);
+  t.gymAt = pickGym(t); // (0.32.0) the first gym of their route
   yearLeague().runs++; yearOf(t).runs++; entryFee();
 }
 // a run is over, on a third loss at one gym (stage is null) or after the Elite Four and Champion. The challenger
@@ -1192,7 +1193,30 @@ function doAction(t, act) {
 // who stands in gym g's line, in order; a challenger's gym trainers beaten only count while this stays the same
 const gymLineKey = g => [...(S.gyms[g].trainers || []), S.gyms[g].leader].join(',');
 // how many gym trainers a challenger has beaten at their next gym, as things stand
-const gymStageNow = t => t.gymStage && t.gymLine === gymLineKey(t.badges.length) ? t.gymStage : 0;
+// (0.32.0) a challenger's progress is kept gym by gym: tries used (t.gymTries[g]), gym trainers beaten (t.gymStage[g],
+// counted only while t.gymLine[g] is still the gym's line) and the gym they are heading for now (t.gymAt)
+const triesAt = (t, g) => (t.gymTries && t.gymTries[g]) || 0;
+const stageAtGym = (t, g) => (t.gymStage && t.gymStage[g] && t.gymLine && t.gymLine[g] === gymLineKey(g) ? t.gymStage[g] : 0);
+const gymStageNow = t => (t.gymAt != null ? stageAtGym(t, t.gymAt) : 0);
+// ---- the route (0.32.0) ----
+// With gyms in any order a challenger picks their next gym from those they haven't beaten: the one their team matches
+// best (its Pokémon against the types of the gym's line), putting off gyms that beat them before (gym memory) and gyms
+// where they have used tries. A sharp trainer (Strategy) reads it well; a poor one picks close to randomly. They pick
+// again after every badge and every loss (they may well go straight back). All numbers provisional.
+const ROUTE_NOISE = 1.6, ROUTE_MEM = 0.5, ROUTE_TRY = 0.2;
+const lineTypesOf = g => [...new Set([...(S.gyms[g].trainers || []), S.gyms[g].leader].map(T).filter(Boolean).flatMap(foeTypes))];
+function gymMatch(t, g) {
+  const ty = lineTypesOf(g); if (!ty.length || !t.team.length) return 0;
+  return t.team.reduce((a, m) => a + counterScore(monTypes(m), ty), 0) / t.team.length;
+}
+function pickGym(t) {
+  const open = S.gyms.map((_, g) => g).filter(g => !t.badges.includes(g));
+  if (open.length === 1) return open[0];
+  const noise = (100 - t.r.str) / 100 * ROUTE_NOISE, learn = gmemLearn(t);
+  const sc = g => gymMatch(t, g) - (gmemAt(t, g) ? ROUTE_MEM * learn : 0) - ROUTE_TRY * triesAt(t, g) + (rand() - 0.5) * 2 * noise;
+  return open.map(g => [g, sc(g)]).sort((a, b) => b[1] - a[1])[0][0];
+}
+function nextGym(t) { if (t.gymAt == null || t.badges.includes(t.gymAt)) t.gymAt = pickGym(t); return t.gymAt; }
 const GYM_WATCH = 3; // badges conceded kept per gym for watching
 // (0.21.0) the progress board's recent lists per gym: gym.recent = { thru: [[id, turn, try, [core]]], wall: [[id, turn,
 // lostTo]] }, the last BOARD_KEEP of each (names, tries and results only, no battles); gym.out counts runs walled there
@@ -1243,7 +1267,7 @@ function counterScore(types, mem) {
   return v / mem.length;
 }
 // the memory at a challenger's next gym (their League), if any
-const gmemNext = t => t.role === 'challenger' && t.badges && t.badges.length < 8 ? gmemAt(t, t.badges.length) : null;
+const gmemNext = t => t.role === 'challenger' && t.badges && t.badges.length < 8 && t.gymAt != null ? gmemAt(t, t.gymAt) : null;
 // a trainer who retired or took a post forgets: the store is pruned at New Year (one away on another League's
 // circuit keeps theirs for when they come back)
 function gmemPrune() {
@@ -1254,39 +1278,52 @@ function gmemPrune() {
 // gym's set level. A trainer already beaten stays beaten. A loss to anyone costs one of the run's three tries
 // at this gym; the third loss ends the run.
 function gymTry(t, entry) {
-  const g = t.badges.length, gym = S.gyms[g], lvl = GYM_LV[g];
+  const b = t.badges.length, g = nextGym(t), gym = S.gyms[g], lvl = GYM_LV[b], size = GYM_SIZE[b];
   const line = (gym.trainers || []).map(T).filter(Boolean).concat([T(gym.leader)]);
   // a challenger part-way through a gym whose staff changed keeps their tries but must beat its line from the first
   // trainer again (0.7.0)
   const key = gymLineKey(g);
-  if (t.gymStage && t.gymLine !== key) t.gymStage = 0;
+  if (!t.gymTries || typeof t.gymTries !== 'object') t.gymTries = {};
+  if (!t.gymStage || typeof t.gymStage !== 'object') t.gymStage = {};
+  if (!t.gymLine || typeof t.gymLine !== 'object') t.gymLine = {};
+  if (t.gymStage[g] && t.gymLine[g] !== key) t.gymStage[g] = 0;
   setTeamLevel(t, lvl);
-  entry.gym = g; entry.won = true; entry.tryNo = (t.gymTries || 0) + 1;
+  entry.gym = g; entry.b = b; entry.won = true; entry.tryNo = triesAt(t, g) + 1;
   const mem = gmemAt(t, g); // (0.21.0) what beat them here before
+  const yg = yearGym(g), band = stageBand(b);
+  yg.sb = yg.sb || [[0, 0], [0, 0], [0, 0]]; yg.sb[band][0]++; // (0.32.0) tries and holds by the challenger's stage
   let res = null;
-  for (let k = Math.min(t.gymStage || 0, line.length - 1); k < line.length; k++) {
+  for (let k = Math.min(t.gymStage[g] || 0, line.length - 1); k < line.length; k++) {
     const foe = line[k], isLeader = k === line.length - 1;
     const autoItems = itemsOn();
     if (autoItems) autoEquip(t, foe); // items picked for this battle
-    res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · Badge ${g + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g), mem);
+    // (0.32.0) the trainer in front of them fields the number this stage needs (a gym trainer one fewer than the
+    // leader), at this stage's level
+    const vs = t.team.filter(m => obeys(t, m, lvl)), restore = staffField(foe, lvl, Math.max(1, isLeader ? size : size - 1), vs.length ? vs : t.team);
+    try {
+      res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · badge ${b + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g), mem);
+    } finally { restore(); }
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
     if (res.winner !== 0) {
       entry.won = false;
       t.career.gymL++; gym.w++; gym.streak = 0;
       if (isLeader) gym.lw = (gym.lw || 0) + 1; else foe.career.gymW = (foe.career.gymW || 0) + 1;
-      { const yg = yearGym(g); addOnce(isLeader ? yg.lead : yg.gt, foe.id); yg.by[foe.id] = (yg.by[foe.id] || 0) + 1; if (isLeader) yg.wl++; else yg.wt++; }
-      t.gymTries = (t.gymTries || 0) + 1;
+      addOnce(isLeader ? yg.lead : yg.gt, foe.id); yg.by[foe.id] = (yg.by[foe.id] || 0) + 1; if (isLeader) yg.wl++; else yg.wt++;
+      yg.sb[band][1]++;
+      t.gymTries[g] = triesAt(t, g) + 1;
       gmemNote(t, g, foe);
-      if (t.gymTries >= GYM_TRIES) { gym.out = (gym.out || 0) + 1; boardNote(gym, 'wall', [t.id, S.turn, foe.id]); news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${g} badge${g === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
+      t.gymAt = null; // (0.32.0) they pick their next gym again (it may be this one)
+      if (t.gymTries[g] < GYM_TRIES) t.gymAt = pickGym(t);
+      else { gym.out = (gym.out || 0) + 1; boardNote(gym, 'wall', [t.id, S.turn, foe.id]); news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${b} badge${b === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
     }
-    if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage = k + 1; t.gymLine = key; }
+    if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage[g] = k + 1; t.gymLine[g] = key; }
   }
-  boardNote(gym, 'thru', [t.id, S.turn, entry.tryNo, res ? res.sides[0].team.map(m => m.sp).slice(0, 3) : []]);
+  boardNote(gym, 'thru', [t.id, S.turn, entry.tryNo, res ? res.sides[0].team.map(m => m.sp).slice(0, 3) : [], b]);
   if (res) { gym.beat = gym.beat || {}; for (const m of res.sides[0].team) for (const ty of m.types || []) gym.beat[ty] = (gym.beat[ty] || 0) + 1; }
   t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
-  t.gymStage = 0; t.gymTries = 0; t.gymLine = null;
+  delete t.gymStage[g]; delete t.gymLine[g]; t.gymAt = t.badges.length < 8 ? pickGym(t) : null;
   // the player's League keeps the last few badges each gym conceded, to watch (0.7.0)
   if ((S.lg || 0) === ME() && res) { res.when = { season: S.season, week: S.week }; (gym.watch = gym.watch || []).push(res); if (gym.watch.length > GYM_WATCH) gym.watch.shift(); }
   yearOf(t).pts++; noteDepth(t, t.badges.length);
@@ -1295,7 +1332,7 @@ function gymTry(t, entry) {
     t.badgeWeek = S.turn - t.runStart + 1; t.ready = 0; earnMega(t);
     news(`${dn(t)} completed the badge circuit in ${t.badgeWeek} weeks and will take on the Elite Four.`, 'circuit', t.id);
   }
-  gymItemOffer(t, g, T(gym.leader));
+  gymItemOffer(t, b, T(gym.leader));
 }
 // One run at the Elite Four and the Champion, as soon as a challenger with eight badges is ready. Every battle is at
 // a set level for both sides, six against (up to) six, healed between battles; a loss to anyone ends it. The Champion
@@ -1311,7 +1348,7 @@ function hofEnter(q, champ, r) {
     const i = pool.findIndex(m => m.sp === b.sp); const m = i >= 0 ? pool.splice(i, 1)[0] : null;
     team.push({ sp: b.sp, lv: b.L, moves: m && m.moves ? m.moves.slice() : [], item: m ? heldItem(m) || null : null, ab: b.ab || null, shiny: !!b.shiny });
   }
-  const e = { uid: uid(), id: q.id, season: S.season, week: S.week, lg: S.lg || 0, champ: champ.id, spon: q.spon ? q.spon.lg : null, team };
+  const e = { uid: uid(), id: q.id, season: S.season, week: S.week, lg: S.lg || 0, champ: champ.id, spon: q.spon ? q.spon.lg : null, team, route: (q.badges || []).map(townName) };
   (S.hof = S.hof || []).push(e); r.hof = e.uid;
   q.hof = true; q.hofN = (q.hofN || 0) + 1;
   return e;
@@ -1322,7 +1359,7 @@ function leagueRun(q, entry) {
   for (const id of [...S.e4, S.champion]) { const s = T(id); if (s) eliteMega(s); }
   if (hasMega(q) && !megaHolder(q)) assignMegaStone(q);
   q.career.leagueApps++; y.pts += 3;
-  const e = { id: q.id, stage: 0, lostTo: null, week: S.week };
+  const e = { id: q.id, stage: 0, lostTo: null, week: S.week, route: (q.badges || []).map(townName) };
   let ok = true;
   for (let i = 0; i < 4; i++) {
     const foe = T(S.e4[i]);
@@ -2762,7 +2799,7 @@ function fillGym(i, changes) {
     // sometimes the outsider is a famous trainer of the right type
     const q = capQ(52 + i * 2); // (0.23.0) no stronger than the League's prestige can attract
     const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
-    nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(q), GYM_LV[i]) : newTrainer({ age: ri(26, 44), quality: staffQ(q), role: 'leader' });
+    nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(q), GYM_LV[GYM_TOP]) : newTrainer({ age: ri(26, 44), quality: staffQ(q), role: 'leader' });
     changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
     installElite(nl, 'leader', i);
   }
@@ -2959,244 +2996,3 @@ function promoteForVacancy(v) {
   });
 }
 
-// ================= NEW YEAR =================
-// The year is the unit the wall is scored on: a perfect year is one with no title conceded, and the streak counts
-// perfect years. At New Year each League's wall report goes into its history, the awards are given, the meta
-// report and the ban vote are settled, and the World Championship is held. Nothing else stops.
-function newYear() {
-  const changes = S.yearChanges || []; S.yearChanges = [];
-  eachLeague(i => {
-    const ch = [];
-    leagueNewYear(ch);
-    changes.push(...(nLeagues() > 1 ? ch.map(x => `${lgShort(i)}: ${x}`) : ch));
-  });
-  sponsorNewYear(); // (0.17.0) each League's contenders that year, into its history entry
-  checkGrandSlams();
-  slamReturns(changes);
-  legendDepartures();
-  S.worlds = null;
-  if (nLeagues() > 1) worldChampionship();
-  S.changes = changes; S.progress = S.yearProgress || {}; S.yearProgress = {};
-  settleBanVote();
-  for (const t of Object.values(S.trainers)) if (t.role !== 'retired' && t.role !== 'prospect') { t.seasons = (t.seasons || 0) + 1; t.weekLog = []; }
-  cityNewYear(); // (0.15.0) city standing from the year's gym records, fading, and who controls each city
-  prestigeNewYear(); // (0.17.0) each League's prestige
-  S.season++; S.week = 0; S.dexSeason = {};
-  eachLeague(() => {
-    S.lastLeague = S.league; S.league = null;
-    if (S.lastLeague) S.lastLeague.logs = S.lastLeague.logs.slice(-TITLE_LOGS);
-    enforceBans();
-    S.gyms.forEach(g => { g.w = 0; g.l = 0; g.out = 0; g.beat = {}; });
-    gmemPrune();
-    S.stats = { ko: {}, use: {} };
-    for (const id of staffIds()) { const t = T(id); t.badges = []; relevelElite(t); }
-  });
-  foldNewYear(); // (0.18.0) a League in the red too long folds
-  worldGrowth();
-  const circ = eachLeague(() => S.challengers.length);
-  news(`Year ${S.season} begins: ${nLeagues() > 1 ? circ.map((n, i) => `${n} challengers in the ${leagueName(i)}`).join(', ') : circ[0] + ' challengers on the circuit'}.`, 'league');
-  stopFor('newyear', `Year ${S.season - 1} is over.`);
-}
-// the year report's detail (0.8.0), kept in the year's history entry: each gym (its leader at year's end, everyone
-// who led it or was a gym trainer there, tries turned back by gym trainers and by the leader, badges conceded),
-// each Elite Four seat and the Champion's (everyone who held it, runs faced and stopped), every run at the Elite Four
-// ([id, week, stage]) and the year's ten furthest challengers ([id, how far, runs])
-function yearDetail(L) {
-  noteHolders();
-  const gyms = S.gyms.map((gym, g) => { const y = yearGym(g), t = T(gym.leader);
-    return { leader: gym.leader, type: t ? typeLabel(t) : '', acting: !!gym.acting, lead: y.lead.slice(), gt: y.gt.slice(), by: { ...y.by }, wl: y.wl, wt: y.wt, l: gym.l }; });
-  const seats = [...S.e4, S.champion].map((id, k) => { const t = T(id);
-    return { id, type: t ? typeLabel(t) : '', acting: !!(t && t.acting), held: (L.seats[k] || []).slice(), faced: L.entries.filter(e => e.stage >= k).length, stopped: L.entries.filter(e => e.stage === k).length }; });
-  // (0.11.0) anyone who ran this year, staff included: a title winner hired mid-year stays in the top ten
-  const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
-  const top = [...ran].map(T).filter(t => t && t.yr && t.yr.season === S.season && (t.yr.runs || yearDepth(t)))
-    .map(t => [t.id, yearDepth(t), t.yr.runs || 0, ovr(t)]).sort((a, b) => b[1] - a[1] || b[3] - a[3]).slice(0, 10).map(x => x.slice(0, 3));
-  return { gyms, seats, runsE4: L.entries.map(e => [e.id, e.week, e.stage]), top };
-}
-// one League's New Year: the wall report, the awards, the gyms' year and the meta
-function leagueNewYear(changes) {
-  const L = yearLeague();
-  const deepest = L.entries.filter(e => e.stage < 5).sort((a, b) => b.stage - a.stage)[0];
-  const meta = metaMons();
-  if (booksOn()) S.banBallot = null; else buildBanBallot(); // (0.15.0) a League with books bans for money, by its aim
-  // the year's wall report: titles and badges conceded, how far the best challenger got (0 to 8 badges, 9 to 12
-  // for each Elite Four member beaten, 13 for beating the Champion), runs that ended on three losses
-  const best = T(L.bestId);
-  L.report = { badges: S.gyms.reduce((a, g) => a + g.l, 0), titles: L.conceded.length, best: L.best, bestId: L.bestId, out: L.out, runs: L.runs, field: S.challengers.length };
-  moneyNewYear(L.report.titles);
-  news(L.report.titles ? `Year ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Year ${S.season} wall report: a perfect year! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
-  S.history.push({
-    season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
-    titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
-    runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L),
-  });
-  // every challenger's year: the best they did in any run of it
-  const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
-  for (const id of ran) {
-    const t = T(id); if (!t || t.role === 'retired') continue;
-    const y = yearOf(t);
-    t.seasonHist.push({ season: S.season, lg: S.lg || 0, badges: Math.max(y.b, t.role === 'challenger' && t.rest == null ? t.badges.length : 0), stage: y.st, ovr: ovr(t), pts: y.pts, runs: y.runs });
-  }
-  if (!ran.has(S.champion)) T(S.champion).seasonHist.push({ season: S.season, lg: S.lg || 0, role: 'champion', ovr: ovr(T(S.champion)), pts: 0 });
-  // the year's awards
-  { const aw = seasonAwards(L); S.history[S.history.length - 1].awards = aw;
-    if (aw.length) news(`Year ${S.season} awards: ${aw.map(a => `${AWARDS[a.k].name}, ${a.sp ? a.name + "'s " + a.sp : a.name}`).join('; ')}.`, 'title');
-    legendOffseason(L, aw); }
-
-  // --- the gyms' year
-  const holdOf = g => { const p = g.w + g.l; return p ? g.w / p : 1; }, holdRank = S.gyms.map(holdOf).sort((a, b) => b - a);
-  S.gyms.forEach((g, i) => {
-    const t = T(g.leader); const played = g.w + g.l; const hold = played ? g.w / played : 1;
-    g.hist.push({ season: S.season, w: g.w, l: g.l, leader: t.id });
-    // a poor year = the gym held fewer than 30% of 12+ tries. (Three in a row cost a leader the gym in the source;
-    // switched off with AUTO_STAFF_MOVES.)
-    const poor = played >= 12 && hold < 0.3;
-    if (g.poorFor !== t.id) { g.poorFor = t.id; g.poor = 0; }
-    g.poor = poor ? (g.poor || 0) + 1 : 0;
-    // an exceptional year: one of the three best-holding gyms (10+ tries). (0.10.0) After COMEBACK_STREAK of them in a
-    // row a leader's ambition may turn to another run as a challenger (driftAmbition, on their birthday)
-    const wall = played >= 10 && holdRank.indexOf(hold) <= 2;
-    t.wallStreak = wall ? (t.wallStreak || 0) + 1 : 0;
-    let leave = null, stepDown = false;
-    if (AUTO_STAFF_MOVES && g.poor >= 3) { leave = `after three straight poor years at ${townName(i)} Gym (${g.w} of ${played} held this year)`; stepDown = true; }
-    if (!leave) {
-      if (played >= 10 && hold >= 0.7) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(0, 2), 1, 99); t.pot = Math.max(t.pot, ovr(t)); changes.push(`${townName(i)} Gym (${dn(t)}) earned a reputation as a wall: ${g.w}–${g.l} this year.`); }
-      else if (AUTO_STAFF_MOVES && poor) { for (const k of RK) t.r[k] = clamp(t.r[k] + ri(1, 4), 1, 99); changes.push(`${dn(t)} rebuilt ${townName(i)} Gym's training program after going ${g.w}–${g.l}${g.poor === 2 ? '. One more poor year and the League will replace them' : ''}.`); }
-      return;
-    }
-    if (stepDown && !retiresOnLosingPost(t)) { g.leader = null; returnToCircuit(t, `stepped down as ${townName(i)} Gym Leader ${leave}`); }
-    else retire(t, leave);
-    fillGym(i, changes);
-  });
-  // every gym is brought back to two trainers of its leader's type
-  S.gyms.forEach((g, i) => staffGym(i));
-
-  // --- poor years (0.9.0): each gym's run of poor years and the Elite Four's worst record go into the year's report;
-  // a League nobody staffs by hand replaces poor staff, the player only sees the warning. Gym trainer outsiders
-  // nobody picked join the circuit.
-  { const h = S.history[S.history.length - 1];
-    S.gyms.forEach((g, i) => { if (h.gyms && h.gyms[i]) h.gyms[i].poor = g.poorFor === g.leader ? g.poor || 0 : 0; });
-    replacePoorStaff(changes, noteE4Records(h));
-    S.gyms.forEach((g, i) => flushGymOutsiders(i)); }
-  // --- seat challenges (0.11.0): at most one for the Champion's seat and one for an Elite Four seat
-  seatChallenges(changes);
-
-  // --- the meta report. Staff no longer swap in off-type counters for the year's top Pokémon: how a League
-  // answers the meta is to be redesigned (design doc, open items), and until then a gym stays on its type.
-  if (meta.length) {
-    S.metaMons = meta; S.meta = null;
-    changes.push(`Year ${S.season}'s top performers on the circuit: ${meta.join(', ')}.`);
-    news(`Meta report: ${meta.join(', ')} knocked out the most opponents per battle on the circuit.`, 'meta');
-  }
-}
-
-
-// ================= WORLD STRUCTURE =================
-// New Leagues open as the years go by. (0.15.0, stage 4) the next League opens in the player's region while it has
-// fewer than REGION_CAP, then in a region with none; (0.17.0, stage 5) then in any region with room, and openings are
-// driven by founders (below). (0.29.0) No cap on the world (it was 6, MAX_LEAGUES); only REGION_CAP a region.
-const REGION_CAP = 2, LEAGUE_MIN_GAP = 8;
-const regionsUsed = () => eachLeague(() => S.region);
-const regionOrder = () => S.regionOrder || LEAGUE_SETS.map((_, i) => i);
-const regionCount = r => regionsUsed().filter(x => x === r).length;
-// regions a new League could open in (the player leaving picks from these)
-const regionsWithRoom = () => regionOrder().filter(r => regionCount(r) < REGION_CAP);
-// (0.31.0) a custom region its creator closed to rival Leagues (solo) only ever holds the player's League
-const rivalOk = r => !(LEAGUE_SETS[r] && LEAGUE_SETS[r].solo);
-function nextRegion() {
-  const home = regionsUsed()[ME()];
-  if (rivalOk(home) && regionCount(home) < REGION_CAP) return home;
-  const r = regionOrder().find(x => rivalOk(x) && !regionCount(x));
-  if (r != null) return r;
-  const r2 = regionOrder().find(x => rivalOk(x) && regionCount(x) < REGION_CAP);
-  return r2 == null ? null : r2;
-}
-const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');
-const nextRegionName = () => { const r = nextRegion(); return r == null ? null : regionsUsed().includes(r) ? `new ${regionWord(r)} League` : LEAGUE_SETS[r].name; };
-// (0.17.0, stage 5) prestige: one scale for trainers and Leagues. A trainer's comes from their career (titles, the
-// Hall of Fame, badges, years, World titles: the founder score of 0.15.0). A League's is earned each New Year from its
-// record (a perfect year, letting through fewer than the world's average, a World Championship, cities controlled, its
-// rank by wealth) and fades PRESTIGE_FADE a year. Founding a League (a retiree, or the player leaving) needs
-// PRESTIGE_BAR. All provisional.
-const PRESTIGE_BAR = 60, PRESTIGE_FADE = 0.1, PRESTIGE_PERFECT = 10, PRESTIGE_LET = 2, PRESTIGE_LET_MAX = 10, PRESTIGE_WORLD = 10, PRESTIGE_CITY = 1, PRESTIGE_RANK = [6, 4, 2, 1];
-function trainerPrestige(t) {
-  if (!t || !t.career) return 0;
-  return Math.round(((t.titleSeasons || []).length || t.career.titles || 0) * 10 + (t.hofN || 0) * 5 + (t.career.badges || 0) / 10 + (t.seasons || 0) / 2 + (t.career.worlds || 0) * 8);
-}
-const leaguePrestige = i => inLeague(i == null ? (S.lg || 0) : i, () => Math.round(S.prest || 0));
-// each New Year, after the World Championship and the cities' year: what each League earned, then the fade
-function prestigeNewYear() {
-  const hs = eachLeague(() => S.history[S.history.length - 1] || null);
-  const lets = hs.map(h => h ? h.titles || 0 : 0), avg = lets.reduce((a, b) => a + b, 0) / Math.max(1, lets.length);
-  const wealth = eachLeague(() => S.fin ? S.fin.money + estateCost() : 0);
-  const order = wealth.map((w, i) => ({ w, i })).sort((a, b) => b.w - a.w).map(x => x.i);
-  const gm = gymMap(), wl = S.worlds && S.worlds.winner != null ? lgOf(T(S.worlds.winner)) : null;
-  eachLeague(i => {
-    const h = hs[i]; if (!h) return;
-    const cities = S.gyms.filter(g => { const c = S.cities[g.city]; return c && cityCtrl(c, gm[g.city] || [i]) === i; }).length;
-    const rank = nLeagues() > 1 ? PRESTIGE_RANK[order.indexOf(i)] || 0 : 0;
-    const gain = (h.titles === 0 ? PRESTIGE_PERFECT : 0) + (nLeagues() > 1 ? Math.min(PRESTIGE_LET_MAX, Math.max(0, avg - lets[i]) * PRESTIGE_LET) : 0)
-      + (wl === i ? PRESTIGE_WORLD : 0) + cities * PRESTIGE_CITY + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0);
-    S.prest = Math.round(((S.prest || 0) * (1 - PRESTIGE_FADE) + gain) * 10) / 10;
-    h.prest = S.prest; h.prestGain = Math.round(gain * 10) / 10;
-  });
-}
-// (0.15.0) a distinguished recent retiree founds a new League as a final act: usually its patron in name; rarely, a
-// top performer still fit enough takes its Champion's seat, protected for FOUNDER_CHAMP_YEARS
-const FOUNDER_RETIRED = 5, FOUNDER_CHAMP_CHANCE = 0.15, FOUNDER_CHAMP_YEARS = 10, FOUNDER_CHAMP_OVR = 70, FOUNDER_ODDS = 0.3;
-function pickFounder() {
-  return Object.values(S.trainers).filter(t => t.role === 'retired' && !t.founded && S.season - (t.retiredSeason || 0) <= FOUNDER_RETIRED && t.career)
-    .sort((a, b) => trainerPrestige(b) - trainerPrestige(a))[0] || null;
-}
-const founderChamp = t => !!t && t.founderUntil != null && S.season < t.founderUntil;
-// open a new League: gyms, Elite Four, a Champion and (when the newcomers arrive) a circuit of challengers. `f` is its
-// founder (picked if not given), `r` its region (the next region if not given)
-function openNewLeague(f, r) {
-  if (r == null) r = nextRegion(); if (r == null || regionCount(r) >= REGION_CAP) return null;
-  if (f === undefined) f = pickFounder();
-  const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r);
-  const champ = f && ((f.titleSeasons || []).length || f.career.titles) && f.retAge <= 55 && ovr(f) >= FOUNDER_CHAMP_OVR && rand() < FOUNDER_CHAMP_CHANCE ? f : null;
-  const lgName = second ? `${regionWord(r)} ${f ? f.name.split(' ').pop() : 'New'} League` : reg.name;
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: second ? reg.seat2 : reg.seat, founder: f ? f.id : null });
-  if (S.cfg) S.cfg.leagues = nLeagues();
-  if (champ) unretire(champ);
-  inLeague(i, () => foundLeague({ champ }));
-  if (f) {
-    f.founded = { lg: i, season: S.season, champ: !!champ };
-    const text = champ ? `${dn(f)} came out of retirement to found the ${lgName}, and takes its Champion's seat for ${FOUNDER_CHAMP_YEARS} years.` : `${dn(f)} founded the ${lgName} in retirement, a final act of a long career.`;
-    news(text, 'league', f.id);
-  }
-  S.leagueOpened = { i, season: S.season }; S.lastOpen = S.season;
-  // its founding field: a class of newcomers of its own, setting out over the first weeks
-  for (const id of makeNewcomers(CIRCUIT_SIZE)) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
-  inLeague(i, () => news(`The ${lgName} opens in Year ${S.season}, with its own gyms, Elite Four and Champion.`, 'league'));
-  return i;
-}
-// (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years have passed since the last
-// opening and there is room, the most prestigious recent retiree over PRESTIGE_BAR may found a League, likelier the
-// higher their prestige (FOUNDER_ODDS at the bar, rising to 0.9). No founder, no League.
-// (0.18.0) a founder's bar rises with the Leagues already open: FOUNDER_BAR_BASE for the second League, FOUNDER_BAR_STEP
-// more for each after (30, 40, 50, 60, 70). The player leaving still needs PRESTIGE_BAR.
-const FOUNDER_BAR_BASE = 30, FOUNDER_BAR_STEP = 10;
-const founderBar = () => FOUNDER_BAR_BASE + FOUNDER_BAR_STEP * Math.max(0, nLeagues() - 1);
-function worldGrowth() {
-  if (!S.cfg || !S.cfg.growth || nextRegion() == null) return;
-  if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
-  const f = pickFounder(), p = trainerPrestige(f), bar = founderBar();
-  if (!f || p < bar) return;
-  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f);
-}
-// ---------- god mode: open a League by hand, and edit any trainer ----------
-const godOn = () => !!(S && S.cfg && S.cfg.god);
-function godOpenLeague() { if (!godOn()) return 'God mode is off.'; if (nextRegion() == null) return 'The world is full.'; return openNewLeague() == null ? 'Could not open a League.' : null; }
-function godEdit(id, field, v) {
-  if (!godOn()) return 'God mode is off.';
-  const t = T(id); if (!t) return 'No such trainer.';
-  const num = (lo, hi) => { const n = Math.round(+v); return Number.isFinite(n) ? clamp(n, lo, hi) : null; };
-  if (field === 'name') { const s = String(v || '').replace(/[<>&"]/g, '').trim().slice(0, 24); if (!s) return 'A name is needed.'; t.name = s; return null; }
-  if (field === 'age') { const n = num(10, 70); if (n == null) return 'Not a number.'; t.age = n; if (startAge(t) > n) t.start = n; return null; }
-  if (field === 'pot') { const n = num(1, 99); if (n == null) return 'Not a number.'; t.pot = Math.max(n, ovr(t)); return null; }
-  if (RK.includes(field)) { const n = num(1, 99); if (n == null) return 'Not a number.'; t.r[field] = n; if (t.pot < ovr(t)) t.pot = ovr(t); return null; }
-  return 'Unknown field.';
-}

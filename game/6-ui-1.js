@@ -220,8 +220,11 @@ function roleHere(t) {
 function badgeRow(t, big) { return inLeague(lgOf(t), () => badgeRowHere(t, big)); }
 function badgeRowHere(t, big) {
   let h = `<div class="badges${big ? ' big' : ''}" aria-label="${t.badges.length} of 8 badges">`;
-  for (let i = 0; i < 8; i++) { const has = t.badges.includes(i); h += `<span class="bdg${has ? ' on' : ''}" title="${townName(i)} Badge${has ? '' : ' (not earned)'}">${big ? townName(i)[0] : ''}</span>`; }
-  return h + '</div>';
+  for (let i = 0; i < 8; i++) { const has = t.badges.includes(i); h += `<span class="bdg${has ? ' on' : ''}" title="${townName(i)} Badge${has ? ` (badge ${t.badges.indexOf(i) + 1} of the run)` : ' (not earned)'}">${big ? townName(i)[0] : ''}</span>`; }
+  h += '</div>';
+  // (0.32.0) the order they took the gyms this run, and where they're heading
+  if (big && t.rest == null && (t.badges.length || t.gymAt != null)) h += `<div class="small muted">Route this run: ${t.badges.map(townName).join(' → ') || 'no badges yet'}${t.badges.length < 8 && t.gymAt != null ? ` · next: ${townName(t.gymAt)}` : t.badges.length >= 8 ? ' · the Elite Four next' : ''}</div>`;
+  return h;
 }
 function stageText(st) {
   if (st == null) return 'No run at the Elite Four';

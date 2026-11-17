@@ -3,7 +3,7 @@
 # Usage: tests/lint.sh   (expected: only indexedDB, sessionStorage and a few unused locals)
 D="$(cd "$(dirname "$0")/.." && pwd)"; W="$(mktemp -d)"
 cp "$D/tests/eslint.config.js" "$W/"
-{ echo "(function(){"; cat "$D/game/2-pokemon-data.js"; for f in 3-engine-1 4-engine-2 5-engine-3 5-engine-4 6-ui-1 7-ui-2 8-ui-3; do echo "/*FILE $f.js*/"; cat "$D/game/$f.js"; echo; done; echo "})();"; } > "$W/all.js"
+{ echo "(function(){"; cat "$D/game/2-pokemon-data.js"; for f in 3-engine-1 4-engine-2 4b-engine-2b 5-engine-3 5-engine-4 6-ui-1 7-ui-2 8-ui-3; do echo "/*FILE $f.js*/"; cat "$D/game/$f.js"; echo; done; echo "})();"; } > "$W/all.js"
 cd "$W" && eslint --no-warn-ignored -f json all.js 2>/dev/null | node -e '
 const r=JSON.parse(require("fs").readFileSync(0,"utf8"))[0]; const src=require("fs").readFileSync("all.js","utf8").split("\n");
 const marks=[]; src.forEach((l,i)=>{const m=l.match(/^\/\*FILE (.*)\*\/$/); if(m) marks.push([i+1,m[1]]);});
