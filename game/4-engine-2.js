@@ -2099,8 +2099,8 @@ function stepDownChance(t) {
 }
 // a post in words, for news and the picker
 function postName(t) {
-  if (t.role === 'champion') return `Champion of the ${S.lgName}`;
-  if (t.role === 'e4') return `Elite Four seat #${S.e4.indexOf(t.id) + 1}`;
+  if (t.role === 'champion') return `${postWord('champion')} of the ${S.lgName}`;
+  if (t.role === 'e4') return `${postWord('e4')} seat #${S.e4.indexOf(t.id) + 1}`;
   // (0.28.0) Alola's gyms are its island challenge: a Kahuna's grand trial with Trial Captains before it. (0.30.0) Any
   // region can rename the posts (its `posts`)
   const posts = (LEAGUE_SETS[S.region] || {}).posts || {};

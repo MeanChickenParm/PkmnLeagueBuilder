@@ -387,14 +387,21 @@ function assignClass(t, age, allowDual) {
 }
 // "Sinnoh " for the League a sitting Elite Four member or Champion serves (empty if it can't be told yet)
 function dnLeague(t) { try { const n = S && (nLeagues() > 1 ? leagueName(lgOf(t)) : S.lgName); return n ? n.replace(/ League$/, '') + ' ' : ''; } catch (e) { return ''; } }
+// (0.31.0) a post's name in League lg's region: its own (a custom region's, or Alola's Kahuna) or the usual one.
+// key: 'leader' | 'gymtrainer' | 'e4' | 'champion'
+const POST_WORDS = { leader: 'Gym Leader', gymtrainer: 'Gym trainer', e4: 'Elite Four', champion: 'Champion' };
+function postWord(key, lg) {
+  try { const r = lg == null || lg === (S.lg || 0) ? S.region : S.leagues[lg] && S.leagues[lg].region; const p = LEAGUE_SETS[r] && LEAGUE_SETS[r].posts; return (p && p[key]) || POST_WORDS[key]; } catch (e) { return POST_WORDS[key]; }
+}
 // Display name the way the games print it: class + name, or the elite title
 function dn(t) {
   if (!t) return '—';
-  if (t.role === 'leader') return `${dnLeague(t)}Gym Leader ${t.name}`;
+  if (t.role === 'leader') return `${dnLeague(t)}${postWord('leader', lgOf(t))} ${t.name}`;
   // v169/v170: sitting Gym Leaders, Elite Four and Champion name their League, so they can't be mistaken for a famous trainer's
-  // title (Kalos Champion Diantha) or for another League's (Defending Sinnoh Champion Wally, Kanto Elite Four Bruno)
-  if (t.role === 'e4') return `${dnLeague(t)}Elite Four ${t.name}`;
-  if (t.role === 'champion') return `Defending ${dnLeague(t)}Champion ${t.name}`;
+  // title (Kalos Champion Diantha) or for another League's (Sinnoh Champion Wally, Kanto Elite Four Bruno). (0.31.0, the owner)
+  // no "Defending" before a Champion's title; a region's own post names are used
+  if (t.role === 'e4') return `${dnLeague(t)}${postWord('e4', lgOf(t))} ${t.name}`;
+  if (t.role === 'champion') return `${dnLeague(t)}${postWord('champion', lgOf(t))} ${t.name}`;
   // a famous Elite Four member or Champion who's competing as a challenger doesn't carry the title
   if (t.famous && /^(Elite Four|Champion)$/.test(t.cls)) return 'Ace Trainer ' + t.name;
   return t.cls + ' ' + t.name;

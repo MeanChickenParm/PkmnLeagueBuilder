@@ -876,8 +876,9 @@ function regionNorm(raw, o = {}) {
   const names = new Set(rec.towns.concat(rec.extra));
   rec.ports = Object.fromEntries(Object.entries(raw.ports && typeof raw.ports === 'object' ? raw.ports : {}).filter(([k, v]) => names.has(k) && (v === 'port' || v === 'railway')));
   rec.legends = raw.legends == null ? null : [...new Set((Array.isArray(raw.legends) ? raw.legends : []).filter(x => LEGEND_CHOICES().includes(x)))];
-  const posts = raw.posts && typeof raw.posts === 'object' ? { leader: str(raw.posts.leader, POST_NAME_MAX), gymtrainer: str(raw.posts.gymtrainer, POST_NAME_MAX) } : null;
-  rec.posts = posts && (posts.leader || posts.gymtrainer) ? posts : null;
+  // (0.31.0) any of the four posts can have a name of the region's own (blank: the usual one)
+  const posts = raw.posts && typeof raw.posts === 'object' ? Object.fromEntries(['leader', 'gymtrainer', 'e4', 'champion'].map(k => [k, str(raw.posts[k], POST_NAME_MAX)]).filter(([, v]) => v)) : null;
+  rec.posts = posts && Object.keys(posts).length ? posts : null;
   rec.lock = !!raw.lock; rec.rivals = raw.rivals !== false;
   // its own Pokémon: My Pokédex entries (a legendary encounter too, over DEX_LEGEND_BST), checked with every other new
   // Pokémon in view
