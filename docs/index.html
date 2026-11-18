@@ -8661,7 +8661,7 @@ function retireOrReturn(t, why) {
 // League each challenge waits for a yes or no (S.chalPending, CHAL_ANSWER weeks, then it goes ahead); a refusal makes
 // a member of staff restless too. The year's challenges go into its history entry (h.chal); the battles are kept in
 // S.seatLogs (SEAT_LOGS a League). All numbers provisional.
-const SEAT_LOGS = 6, CHAL_WAIT = 2, CHAL_ANSWER = 4, CHAL_OLD = 50, CHAL_SEAT_YEARS = 2;
+const SEAT_LOGS = 6, CHAL_WAIT = 2, CHAL_ANSWER = 4, CHAL_OLD = 50, CHAL_SEAT_YEARS = 1; // (0.34.0) one year in the seat, was 2
 const seatYears = t => { const p = (t.posts || []).find(x => x.to == null); return p ? S.season - p.from + 1 : 0; };
 const canChallenge = t => !!t && !t.acting && t.stepDown == null && (t.chalAt == null || S.season - t.chalAt >= CHAL_WAIT);
 const wantsUp = t => !!(t.wish && t.wish.k === 'up');
@@ -8691,6 +8691,7 @@ function seatChallenger(skip, not) {
 function chalText(x) {
   const c = T(x.cand), i = T(x.inc);
   if (x.from === 'claim') return `${dn(c)}, who beat Champion ${i.name} for the title this year, claims the Champion's seat.`;
+  if (x.called) return `You called ${dn(c)} (${callFrom(x)}) to challenge Champion ${i.name} for the Champion's seat.`;
   if (x.k === 'champ') return `${dn(c)} (Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}) challenges Champion ${i.name} for the Champion's seat.`;
   return `${dn(c)} (${x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'}) challenges ${dn(i)} for Elite Four seat #${x.slot + 1}.`;
 }
@@ -8700,7 +8701,12 @@ function chalValid(x) {
   if (!c || !i || i.acting || c.acting) return false;
   if (x.from === 'claim') return S.champion === x.inc && claimFree(c);
   if (x.from === 'rival') return S.champion === x.inc && x.lg < nLeagues() && inLeague(x.lg, () => S.e4[x.slot] === x.cand);
-  if (x.k === 'champ') return S.champion === x.inc && S.e4[x.slot] === x.cand;
+  if (x.k === 'champ') {
+    if (S.champion !== x.inc) return false;
+    if (x.from === 'leader') return S.gyms[x.gym].leader === x.cand && !S.gyms[x.gym].acting; // (0.34.0) called
+    if (x.from === 'circuit') return claimFree(c); // (0.34.0) a called title winner
+    return S.e4[x.slot] === x.cand;
+  }
   if (S.e4[x.slot] !== x.inc) return false;
   if (x.from === 'leader') return S.gyms[x.gym].leader === x.cand && !S.gyms[x.gym].acting;
   return c.role === 'challenger' && S.challengers.includes(c.id) && !c.hired && !c.hireDue;
@@ -8708,11 +8714,14 @@ function chalValid(x) {
 // at New Year (leagueNewYear, after the year's history entry): find this year's challenges; rival Leagues fight them at once
 function seatChallenges(changes) {
   if (fixedStaff() || S.founding) return;
-  const out = [], cl = claimant(), c = cl ? null : champChallenger();
+  // (0.34.0) in the player's League the Champion's seat is challenged only when the player calls a challenge
+  // (callChallenge) or allows a title claim; a rival League's manager calls its New Year challenge by aim (CALL_AI)
+  const mine = playerLeague(), callAi = !mine && rand() < (CALL_AI[S.fin && S.fin.aim] || 0.6);
+  const out = [], cl = claimant(), c = cl || !callAi ? null : champChallenger();
   // (0.22.0) a title claim takes the year's one challenge for the Champion's seat
   if (cl) out.push({ k: 'champ', cand: cl.id, inc: S.champion, slot: null, from: 'claim', gym: null });
   else if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
-  else { const r = rivalChampChallenger(); if (r) out.push(r); }
+  else if (callAi) { const r = rivalChampChallenger(); if (r) out.push(r); }
   const s = seatChallenger(c ? S.e4.indexOf(c.id) : null, cl ? cl.id : null);
   if (s) out.push(s);
   for (const x of out) { x.season = S.season; T(x.cand).chalAt = S.season; }
@@ -8738,7 +8747,7 @@ function seatChallenges(changes) {
 // Champion who loses a claim battle leaves the post: retired if their career is long enough, else back on the circuit
 // of another League (with one League, this one). Rival Leagues allow a claim by aim (CLAIM_AI_YES) and turn it down
 // otherwise. The multi-year sim turns every claim down. All numbers provisional.
-const CLAIM_WANT = 0.3, CLAIM_GRACE = 2, CLAIM_ANSWER = 8, CLAIM_EDGE = 1.05, CLAIM_PRESTIGE = 2, CLAIM_ACCEPT = 0.35;
+const CLAIM_WANT = 0.5, CLAIM_GRACE = 1, CLAIM_ANSWER = 8, CLAIM_EDGE = 1.05, CLAIM_PRESTIGE = 2, CLAIM_ACCEPT = 0.35;
 const CLAIM_AI_YES = { wall: 0.35, star: 0.7, money: 0.5 };
 const champGrace = () => { const c = T(S.champion); return !c || seatYears(c) < CLAIM_GRACE; };
 const claimOn = t => !!t && t.claimOn != null && S.turn <= t.claimOn;
@@ -8804,8 +8813,9 @@ function chalRestless(t) {
   if (S.turn >= ambDue(t)) { if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE); }
 }
 function chalRecord(x, extra) {
-  const h = S.history.find(e => e.season === x.season), rec = { k: x.k, slot: x.slot, cand: x.cand, inc: x.inc, from: x.from, gym: x.gym, ...extra };
+  const h = S.history.find(e => e.season === x.season), rec = { k: x.k, slot: x.slot, cand: x.cand, inc: x.inc, from: x.from, gym: x.gym, called: x.called || undefined, ...extra };
   if (h) (h.chal = h.chal || []).push(rec);
+  else if (x.season === S.season) (yearLeague().chal = yearLeague().chal || []).push(rec); // (0.34.0) a called challenge mid-year: into the year's entry at New Year
   return rec;
 }
 // fight one challenge; returns what happened, in words
@@ -8830,13 +8840,13 @@ function runChallenge(x) {
   chalRecord(x, { won, at: S.turn });
   let text;
   if (won) {
-    if (claim) {
+    if (claim || (champ && x.from === 'circuit')) {
       S.champion = null; inc.role = 'exchamp'; inc.letGoAt = S.turn; inc.deposedBy = cand.id; // (as when a Champion retires)
       retireOrReturn(inc, `lost the Champion's seat to ${cand.name}`); const fate = inc.role === 'retired' ? 'retired' : 'returned';
       let away = null;
       if (fate === 'returned' && nLeagues() > 1) { away = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()))); if (away != null) shiftLeague(inc, away); }
       installElite(cand, 'champion');
-      text = `${cand.name} won the claim battle against ${inc.name} and is the new Champion of the ${S.lgName}. ${inc.name} ${fate === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit'}.`;
+      text = `${cand.name} won the ${claim ? 'claim battle' : 'seat challenge'} against ${inc.name} and is the new Champion of the ${S.lgName}. ${inc.name} ${fate === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit'}.`;
     } else if (x.from === 'rival') {
       // (0.15.0) across Leagues the two trade places, with no fees either way
       const home = S.lg || 0, quiet = L => { if (S.fin) S.fin.quiet = L; };
@@ -8845,6 +8855,11 @@ function runChallenge(x) {
       inLeague(x.lg, () => { quiet(true); installElite(inc, 'e4', x.slot); quiet(false); });
       useLeague(home);
       text = `${cand.name} of the ${leagueName(x.lg)} beat Champion ${inc.name} in a seat challenge and is the new Champion of the ${S.lgName}. ${inc.name} takes ${cand.name}'s Elite Four seat (#${x.slot + 1}) in the ${leagueName(x.lg)}.`;
+    } else if (champ && x.from === 'leader') {
+      // (0.34.0) a called Gym Leader takes the seat; the beaten Champion takes over their gym
+      S.gyms[x.gym].leader = null; S.champion = null;
+      installElite(cand, 'champion'); installElite(inc, 'leader', x.gym); staffGym(x.gym);
+      text = `${cand.name} beat Champion ${inc.name} in a seat challenge and is the new Champion of the ${S.lgName}. ${inc.name} takes over ${townName(x.gym)} Gym (${typeLabel(inc)}).`;
     } else if (champ) {
       S.e4[x.slot] = null; S.champion = null; inc.e4Poor = 0;
       installElite(cand, 'champion'); installElite(inc, 'e4', x.slot);
@@ -8876,7 +8891,11 @@ function answerChallenge(i, yes) {
     let msg;
     if (yes) msg = runChallenge(x);
     else if (x.from === 'claim') msg = claimRefused(x, 'refused');
-    else {
+    else if (x.called) { // (0.34.0) calling off your own challenge: nobody turns restless, and the call stays used
+      chalRecord(x, { refused: true, calledOff: true }); const c = T(x.cand); if (c) c.chalAt = null;
+      msg = `You called off ${c ? c.name : 'the'}'s challenge for the Champion's seat.`;
+      news(msg, 'move', x.cand);
+    } else {
       chalRecord(x, { refused: true }); const c = T(x.cand); chalRestless(c);
       msg = `You refused ${c.name}'s challenge for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`}${x.from !== 'circuit' && wantsUp(c) ? `; ${c.name} is restless` : ''}.`;
       news(msg, 'move', c.id);
@@ -8902,6 +8921,70 @@ function challengeWeek() {
 // the multi-year sim: nobody is there to answer, so every waiting challenge goes ahead, except title claims, which
 // are turned down (no roster move without the player)
 function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); }
+
+// ---- called challenges (0.34.0) ----
+// The manager of a League decides when its Champion's seat is fought for: up to CALL_MAX times a calendar year, the
+// player can call a challenge against their own Champion and name the challenger: one of their Elite Four members or
+// Gym Leaders, or a title winner of this year or last still on the circuit. It is fought CALL_WEEKS later (or sooner,
+// if the player says so), one battle at the Champion's level, as any seat challenge; the player can call it off. The
+// challenger still waits CHAL_WAIT years before challenging again. A Champion called against is put out by it: each
+// call in a year makes it likelier (CALL_UNHAPPY a call) that they come to want to leave (a bigger League's seat, or
+// to step down), restless at once. A founder Champion can't be called against inside their window. Rival Leagues'
+// managers call their New Year challenge by aim (CALL_AI). All numbers provisional.
+const CALL_MAX = 3, CALL_WEEKS = 4, CALL_UNHAPPY = 0.2;
+const CALL_AI = { wall: 0.5, star: 0.9, money: 0.6 };
+const callsUsed = () => S.calls && S.calls.season === S.season ? S.calls.n : 0;
+const callFrom = x => x.from === 'e4' ? `Elite Four #${x.slot + 1}` : x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'a title winner';
+const titledLately = t => (t.titleSeasons || []).some(y => y >= S.season - 1);
+// why no challenge can be called right now in the player's League, or null
+function callBlock() {
+  return inLeague(ME(), () => {
+    const ch = T(S.champion);
+    if (!handOn() || !ch) return 'Your League has no Champion.';
+    if (S.founding) return 'Your League is still being founded.';
+    if (founderChamp(ch)) return `${ch.name} is the League's founding Champion and can't be challenged until year ${ch.founderUntil}.`;
+    if ((S.chalPending || []).some(x => x.k === 'champ')) return "A challenge for the Champion's seat is already waiting.";
+    if (callsUsed() >= CALL_MAX) return `You have called ${CALL_MAX} challenges this year.`;
+    return null;
+  });
+}
+// who the player can call: { t, from, slot, gym, block }
+function callCands() {
+  return inLeague(ME(), () => {
+    const out = [], why = t => !canChallenge(t) ? (t.acting ? 'acting' : t.stepDown != null ? 'stepping down' : 'challenged within two years') : null;
+    S.e4.forEach((id, k) => { const t = T(id); if (t) out.push({ t, from: 'e4', slot: k, gym: null, block: why(t) }); });
+    S.gyms.forEach((g, i) => { const t = T(g.leader); if (t) out.push({ t, from: 'leader', slot: null, gym: i, block: g.acting ? 'acting' : why(t) }); });
+    for (const id of S.challengers) { const t = T(id); if (t && claimFree(t) && titledLately(t)) out.push({ t, from: 'circuit', slot: null, gym: null, block: why(t) }); }
+    return out;
+  });
+}
+// call a challenge against the player's Champion (id: the challenger); returns an error or null
+function callChallenge(id) {
+  const b = callBlock(); if (b) return b;
+  const c = callCands().find(x => x.t.id === id);
+  if (!c) return 'They can\'t be called to challenge the Champion.';
+  if (c.block) return `${c.t.name} can't challenge now (${c.block}).`;
+  return inLeague(ME(), () => {
+    const ch = T(S.champion);
+    const x = { k: 'champ', cand: id, inc: ch.id, slot: c.slot, from: c.from, gym: c.gym, called: true, season: S.season, due: S.turn + CALL_WEEKS };
+    (S.chalPending = S.chalPending || []).push(x); c.t.chalAt = S.season;
+    S.calls = { season: S.season, n: callsUsed() + 1 };
+    const msg = `${chalText(x)} It is fought on ${turnDate(x.due)}.`;
+    news(msg, 'move', id); noteChange(msg);
+    champCalledOn(ch);
+    return null;
+  });
+}
+// a Champion called against: the more calls this year, the likelier they come to want to leave, restless at once
+function champCalledOn(ch) {
+  if (!ch || founderChamp(ch) || ch.quit || ch.stepDown != null) return;
+  ch.called = ch.called && ch.called.season === S.season ? { season: S.season, n: ch.called.n + 1 } : { season: S.season, n: 1 };
+  if (ch.wish && ch.wish.k !== 'stay' && ch.wish.k !== 'run') return; // already wants out
+  if (rand() >= CALL_UNHAPPY * ch.called.n) return;
+  ch.wish = { k: nLeagues() > 1 && rand() < 0.5 ? 'up' : 'step', since: S.turn - AMB_RESTLESS_YEARS * YEAR_WEEKS };
+  const msg = `Champion ${ch.name} is unhappy at being challenged and ${ch.wish.k === 'up' ? "has started looking at bigger Leagues' seats" : 'is thinking of stepping down'}.`;
+  news(msg, 'move', ch.id); noteChange(msg);
+}
 
 
 // The meta: the five species that performed best this season on the circuit. Only challengers' Pokémon count (Gym
@@ -9859,15 +9942,27 @@ function fillGym(i, changes) {
 // clock until seat challenges exist), stay put, or another run as a challenger. It is set when they take a post, from
 // age, ratings, post and record, and can change on a birthday. Promotion waits AMB_WAIT_YEARS in the post; ignored,
 // a senior member announces they are leaving (QUIT_NOTICE weeks) and leaves with a grudge, and a gym trainer just
-// goes. Another run comes as a request: let them go, or they leave anyway RUN_HOLD weeks after asking. The Champion
-// always stays put. Staff refuse a step down (unless their record is poor) and, when they want to stay put or want
+// goes. Another run comes as a request: let them go, or they leave anyway RUN_HOLD weeks after asking. (0.34.0) The
+// Champion has ambitions too: stay put (the commonest), a bigger League's seat (promotion with its clock, only with
+// another League in the world), another run, or to step down (its own clock: then notice, and they retire or take an
+// Elite Four seat). A founder Champion stays put through their window. Staff refuse a step down (unless their record is poor) and, when they want to stay put or want
 // another run, a sideways move or a swap. All numbers are provisional.
 const AMB_WAIT_YEARS = 3, AMB_RESTLESS_YEARS = 2, QUIT_NOTICE = 12, RUN_HOLD = YEAR_WEEKS, COMEBACK_STREAK = 5;
 const AMB_DRIFT = 0.12, GRUDGE_AWAY = 0.5, BACKOUT_CHANCE = 0.5, PROMOTE_EDGE = 5;
 // how senior a post is: every gym trainer's place is the same; later gyms and higher seats are bigger posts
 const rankOf = (post, slot) => post === 'gymtrainer' ? 0 : post === 'leader' ? 10 + slot : post === 'e4' ? 20 + slot : 30;
+const CHAMP_DRIFT = 0.25, CHAMP_STEP_AGE = 40;
 function pickAmbition(t, role, slot) {
-  if (role === 'champion') return 'stay';
+  if (role === 'champion') { // (0.34.0)
+    if (founderChamp(t)) return 'stay';
+    const o = ovr(t), yrs = seatYears(t);
+    const stay = 2 + (t.age >= 40 ? 1 : 0);
+    const up = nLeagues() > 1 ? Math.max(0, 0.4 + (o - 65) / 20 + (t.age < 32 ? 0.3 : 0)) : 0;
+    const run = t.age < 32 && o >= 62 ? 0.35 : 0;
+    const step = 0.3 + (t.age >= CHAMP_STEP_AGE ? 0.5 : 0) + Math.max(0, yrs - 3) * 0.1;
+    const r = rand() * (stay + up + run + step);
+    return r < stay ? 'stay' : r < stay + up ? 'up' : r < stay + up + run ? 'run' : 'step';
+  }
   const o = ovr(t), titled = !!(t.career && t.career.titles);
   let up = Math.max(0.15, 1 + (o - 60) / 15 + (t.age < 30 ? 0.5 : 0) - (t.age >= 45 ? 0.8 : 0));
   if (role === 'e4' && slot === 3) up *= 0.7;
@@ -9885,26 +9980,35 @@ function setAmbition(t, role) {
 // on a birthday: a Gym Leader with COMEBACK_STREAK outstanding years in a row may want another run; promotion fades
 // with age; now and then the ambition simply changes
 function driftAmbition(t) {
-  if (!t.wish || t.quit || t.role === 'champion' || t.stepDown != null) return;
+  if (!t.wish || t.quit || t.stepDown != null) return;
   const a = t.wish;
   if (a.k === 'run') return;
+  if (t.role === 'champion') { // (0.34.0) a Champion's ambition is picked afresh more often; one who wants out stays wanting out
+    if (a.k === 'stay' && rand() < CHAMP_DRIFT) { const k = pickAmbition(t, 'champion', 0); if (k !== 'stay') t.wish = { k, since: S.turn }; }
+    return;
+  }
   if (t.role === 'leader' && (t.wallStreak || 0) >= COMEBACK_STREAK && t.age < 50 && rand() < 1 / 3) { t.wish = { k: 'run', since: S.turn, streak: t.wallStreak }; return; }
   if (a.k === 'up' && t.age >= 45 && rand() < 0.25) { t.wish = { k: 'stay', since: S.turn }; return; }
   if (rand() < AMB_DRIFT) { const p = postOf(t), k = pickAmbition(t, t.role, p ? p.slot : 0); if (k !== a.k) t.wish = { k, since: S.turn }; }
 }
 // does this ambition have a clock? (every promotion but the Champion's; since 0.11.0 seat #4 too, as seat challenges exist)
-function ambClock(t) { const p = postOf(t); return !!(t.wish && t.wish.k === 'up' && p && p.post !== 'champion'); }
+// (0.34.0) the Champion's: a bigger League's seat (with another League in the world) and stepping down
+function ambClock(t) {
+  const p = postOf(t); if (!t.wish || !p) return false;
+  if (p.post === 'champion') return !founderChamp(t) && ((t.wish.k === 'up' && nLeagues() > 1) || t.wish.k === 'step');
+  return t.wish.k === 'up';
+}
 // the turn promotion runs out (null when there is no clock)
 const ambDue = t => ambClock(t) ? t.wish.since + AMB_WAIT_YEARS * YEAR_WEEKS : null;
 const restless = t => ambClock(t) && S.turn - t.wish.since >= AMB_RESTLESS_YEARS * YEAR_WEEKS;
-const ambWho = t => t.role === 'gymtrainer' ? 'a gym of their own' : t.role === 'e4' && postOf(t) && postOf(t).slot === S.e4.length - 1 ? "the Champion's seat" : t.role === 'e4' ? "a higher seat or the Champion's" : t.role === 'leader' && postOf(t) && postOf(t).slot === S.gyms.length - 1 ? 'a seat on the Elite Four' : 'a bigger post';
+const ambWho = t => t.role === 'champion' ? "a bigger League's seat" : t.role === 'gymtrainer' ? 'a gym of their own' : t.role === 'e4' && postOf(t) && postOf(t).slot === S.e4.length - 1 ? "the Champion's seat" : t.role === 'e4' ? "a higher seat or the Champion's" : t.role === 'leader' && postOf(t) && postOf(t).slot === S.gyms.length - 1 ? 'a seat on the Elite Four' : 'a bigger post';
 // once a week, in each League: requests for another run, promotion running out, and notices running out
 function ambitionWeek() {
   if (fixedStaff()) return;
   const mine = playerLeague();
   for (const id of staffIds()) {
     const t = T(id);
-    if (!t || t.acting || t.stepDown != null || t.role === 'champion' || !postOf(t)) continue;
+    if (!t || t.acting || t.stepDown != null || !postOf(t) || (t.role === 'champion' && founderChamp(t))) continue;
     if (!t.wish) setAmbition(t, t.role);
     const a = t.wish;
     if (t.quit) { if (S.turn >= t.quit.at) staffQuits(t); continue; }
@@ -9925,6 +10029,8 @@ function ambitionWeek() {
 function announceQuit(t, at) {
   t.quit = { at, k: t.wish ? t.wish.k : 'up' };
   const msg = t.quit.k === 'run' ? `${dn(t)} (${postName(t)}) will leave for another run as a challenger on ${turnDate(at)}, unless you let them go sooner.`
+    : t.quit.k === 'step' ? `Champion ${t.name} will step down on ${turnDate(at)}. ${champHeir()} would move up, unless you call a challenge for the seat first.`
+    : t.role === 'champion' ? `Champion ${t.name} wants a bigger League's seat and will leave on ${turnDate(at)}, unless you give them a raise.`
     : `${dn(t)} (${postName(t)}) has waited ${AMB_WAIT_YEARS} years for ${ambWho(t)} and will leave on ${turnDate(at)} unless promoted.`;
   news(msg, 'move', t.id); noteChange(msg);
   if (playerLeague()) stopFor('ambition', msg);
@@ -9932,7 +10038,8 @@ function announceQuit(t, at) {
 // a member of staff leaves over their ambition: in the player's League the post opens with an acting holder (a gym
 // trainer's place is refilled at once); elsewhere it is filled at once
 function staffQuits(t) {
-  const p = postOf(t); if (!p || p.post === 'champion') return;
+  const p = postOf(t); if (!p) return;
+  if (p.post === 'champion') return champQuits(t);
   const k = t.quit ? t.quit.k : t.wish ? t.wish.k : 'up', was = postName(t), mine = playerLeague();
   t.quit = null;
   if (mine) vacate(t);
@@ -9963,6 +10070,37 @@ function leaveUnhappy(t, was) {
   if (retiresOnLosingPost(t)) { retire(t, `after leaving ${was}`); return 'retired'; }
   returnToCircuit(t, `left ${was} unhappy`); t.grudge = S.season; t.grudgeLg = S.lg || 0;
   return grudgeAway(t);
+}
+// (0.34.0) the Champion leaves over their ambition. The seat is never empty: the strongest Elite Four member moves up
+// at once (as when a Champion retires), and their seat waits for the player with a stand-in (rivals fill it). A
+// Champion stepping down retires if they are CHAMP_STEP_AGE or older (or past the career rule), else takes that Elite
+// Four seat themselves; one who wants a bigger League's seat goes to the circuit of the most prestigious other League;
+// one who wants another run goes on it.
+function champHeirSeat() { return S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0]; }
+function champHeir() { const k = champHeirSeat(); return k != null ? `${T(S.e4[k]).name} (Elite Four #${k + 1})` : 'An Elite Four member'; }
+function champQuits(t) {
+  const k = t.quit ? t.quit.k : t.wish ? t.wish.k : 'step', was = postName(t), mine = playerLeague();
+  t.quit = null;
+  const seat = champHeirSeat(), at = seat != null ? seat : 0, m = T(S.e4[at]);
+  const stays = k === 'step' && t.age < CHAMP_STEP_AGE && !retiresOnLosingPost(t);
+  closePost(t); S.champion = null; t.role = 'exchamp';
+  S.e4[at] = null; m.acting = false; installElite(m, 'champion');
+  let fate, fill = '';
+  if (stays) { installElite(t, 'e4', at); fate = `takes ${m.name}'s Elite Four seat (#${at + 1})`; }
+  else {
+    if (mine) { const a = actingE4(at); openVacancy('e4', at); fill = ` ${a.name} stands in at seat #${at + 1} until you choose a new member.`; }
+    else { const nt = rivalE4(at); fill = ` ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${at + 1}.`; }
+    if (k === 'run') { comeback(t, was); fate = 'is off on another run as a challenger'; }
+    else if (k === 'up') {
+      t.wish = null; t.letGoAt = S.turn; returnToCircuit(t, `left ${was} for a bigger League`);
+      const me = S.lg || 0, to = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== me && !(S.founding && i === ME())).sort((a, b) => prestOf(b) - prestOf(a))[0];
+      if (to != null) { shiftLeague(t, to); fate = `heads for the ${leagueName(to)}'s circuit, after its seat`; } else fate = 'returns to the badge circuit';
+    } else { t.wish = null; retire(t, `after stepping down as Champion of the ${S.lgName}`); fate = t.role === 'retired' ? 'retired' : 'returns to the badge circuit'; }
+  }
+  const text = `Champion ${t.name} ${k === 'step' ? 'stepped down' : 'left the seat'} and ${fate}. ${dn(m)} moves up from the Elite Four to become Champion.${fill}`;
+  news(text, 'title', m.id); noteChange(text);
+  if (mine) stopFor('vacancy', text);
+  return text;
 }
 function grudgeAway(t) {
   if (nLeagues() < 2 || rand() >= GRUDGE_AWAY) return 'grudge';
@@ -10113,7 +10251,7 @@ function leagueNewYear(changes) {
     season: S.season, name: S.lgName, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L),
+    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}),
   });
   // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
@@ -13805,7 +13943,7 @@ function regionClashes(choices) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -15301,6 +15439,7 @@ function wishTag(t) {
   if (t.quit) return ` <span class="tag notice small" title="${t.quit.k === 'run' ? 'Leaving for another run as a challenger' : 'Tired of waiting for promotion: promote them before then and they stay'}">Leaving ${turnDate(t.quit.at)}</span>`;
   if (w.k === 'stay') return ' <span class="tag small" title="Content where they are: refuses a sideways move or a swap">Stay put</span>';
   if (w.k === 'run') return ` <span class="tag notice small" title="Let them go on their run, or they leave a year after asking">${w.asked != null ? 'Asks for another run' : 'Wants another run'}</span>`;
+  if (w.k === 'step') { const due = ambDue(t); return ` <span class="tag small${restless(t) ? ' notice' : ''}" title="${due != null ? `Gives notice to step down on ${turnDate(due)}; the strongest Elite Four member would move up` : 'Wants to step down'}">Wants to step down</span>`; }
   const due = ambDue(t), rest = restless(t);
   return ` <span class="tag small${rest ? ' notice' : ''}" title="${due != null ? `Leaves if not promoted by ${turnDate(due)}` : 'Waits until the seat can be challenged for'}">${rest ? 'Restless: wants ' : 'Wants '}${ambWho(t)}</span>`;
 }
@@ -15338,14 +15477,24 @@ function staffNotices() {
       <p class="muted small">Until you choose, the acting holder fights in the post. ${vac.some(v => v.post === 'leader') ? 'A gym with an acting leader runs one gym trainer short. ' : ''}</p>` : ''}
     ${chalNotice()}
     ${going.length ? `<div class="eyebrow">Stepping down</div><ul class="mini">${going.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">leaves ${turnDate(t.stepDown)}</span></li>`).join('')}</ul>` : ''}
-    ${leaving.length ? `<div class="eyebrow">Leaving</div><ul class="mini">${leaving.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">${t.quit.k === 'run' ? 'for another run' : `unless promoted to ${ambWho(t)}`}, ${turnDate(t.quit.at)}</span></li>`).join('')}</ul>` : ''}
+    ${leaving.length ? `<div class="eyebrow">Leaving</div><ul class="mini">${leaving.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">${t.quit.k === 'run' ? 'for another run' : t.quit.k === 'step' ? 'stepping down' : t.role === 'champion' ? 'for a bigger League, unless given a raise' : `unless promoted to ${ambWho(t)}`}, ${turnDate(t.quit.at)}</span></li>`).join('')}</ul>` : ''}
     ${asking.length ? `<div class="eyebrow">Asking for another run</div><ul class="mini">${asking.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">leaves anyway ${turnDate(t.wish.asked + RUN_HOLD)}</span></li>`).join('')}</ul>` : ''}</section>`;
+}
+// (0.34.0) calling a challenge against your own Champion
+let callOpen = false;
+function callPanel() {
+  const block = callBlock(), left = CALL_MAX - callsUsed();
+  const head = `<section class="panel"><div class="ph"><h3>Call a challenge</h3><span class="muted">${left} of ${CALL_MAX} left this year</span></div>`;
+  if (block) return `${head}<p class="muted">${esc(block)}</p></section>`;
+  if (!callOpen) return `${head}<p>Name a challenger for the Champion's seat: an Elite Four member, a Gym Leader, or a title winner of this year or last still on your circuit. It is one battle at the Champion's level, ${CALL_WEEKS} weeks after you call it; you can fight it sooner or call it off. The winner takes the seat. A Champion called against may come to want to leave.</p><button class="btn small primary" data-act="callopen">Choose a challenger</button></section>`;
+  const rows = callCands().map(c => `<tr><td>${tname(c.t.id)}${wishTag(c.t)}</td><td class="small">${c.from === 'e4' ? `Elite Four #${c.slot + 1}` : c.from === 'leader' ? `${townName(c.gym)} Gym Leader` : 'title winner'}</td><td>${specChips(c.t)}</td><td>${ovrPill(c.t)}</td><td>${c.block ? `<span class="muted small">${esc(c.block)}</span>` : `<button class="btn small primary" data-act="callchal" data-id="${c.t.id}">Call</button>`}</td></tr>`).join('');
+  return `${head}<div class="scroll"><table class="tbl"><thead><tr><th>Challenger</th><th>Now</th><th>Type</th><th>OVR</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><button class="btn small ghost" data-act="callopen">Close</button></section>`;
 }
 // (0.11.0) seat challenges waiting for the player's yes or no
 function chalNotice() {
   const chal = S.chalPending || []; if (!chal.length) return '';
   const claims = chal.map((x, i) => [x, i]).filter(([x]) => x.from === 'claim');
-  return `<div class="eyebrow">Seat challenge${chal.length === 1 ? '' : 's'} waiting for you</div><ul class="mini">${chal.map((x, i) => x.from === 'claim' ? `<li><span>${tname(x.cand)} <span class="small">(won your title this year)</span> claims ${tname(x.inc)}'s Champion's seat <span class="small muted">· lapses ${turnDate(x.due)} if you don't answer</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Allow the battle</button> <button class="btn small" data-act="chalno" data-v="${i}">Turn it down</button></span></li>` : `<li><span>${tname(x.cand)} <span class="small">(${x.k === 'champ' ? `Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}` : x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'})</span> challenges ${tname(x.inc)} for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`} <span class="small muted">· goes ahead ${turnDate(x.due)} unless you refuse</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Approve</button> <button class="btn small" data-act="chalno" data-v="${i}">Refuse</button></span></li>`).join('')}</ul>
+  return `<div class="eyebrow">Seat challenge${chal.length === 1 ? '' : 's'} waiting for you</div><ul class="mini">${chal.map((x, i) => x.called ? `<li><span>You called ${tname(x.cand)} <span class="small">(${callFrom(x)})</span> to challenge ${tname(x.inc)} for the Champion's seat <span class="small muted">· fought ${turnDate(x.due)}</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Fight it now</button> <button class="btn small" data-act="chalno" data-v="${i}">Call it off</button></span></li>` : x.from === 'claim' ? `<li><span>${tname(x.cand)} <span class="small">(won your title this year)</span> claims ${tname(x.inc)}'s Champion's seat <span class="small muted">· lapses ${turnDate(x.due)} if you don't answer</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Allow the battle</button> <button class="btn small" data-act="chalno" data-v="${i}">Turn it down</button></span></li>` : `<li><span>${tname(x.cand)} <span class="small">(${x.k === 'champ' ? `Elite Four #${x.slot + 1}${x.from === 'rival' ? ` of the ${leagueName(x.lg)}` : ''}` : x.from === 'leader' ? `${townName(x.gym)} Gym Leader` : 'after a run to the Elite Four'})</span> challenges ${tname(x.inc)} for ${x.k === 'champ' ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`} <span class="small muted">· goes ahead ${turnDate(x.due)} unless you refuse</span></span><span><button class="btn small primary" data-act="chalyes" data-v="${i}">Approve</button> <button class="btn small" data-act="chalno" data-v="${i}">Refuse</button></span></li>`).join('')}</ul>
     <p class="muted small">One battle at the seat's level, the challenger with a team built for the seat. A beaten Champion takes the winner's Elite Four seat; a beaten Elite Four member takes the winning Gym Leader's gym, or returns to the circuit if a challenger beat them. Refusing, or losing, makes a member of staff restless (their promotion clock moves a year on).</p>
     ${claims.length ? `<p class="muted small">A title claim never goes ahead without you. Allowed, it is one battle at the Champion's level, your Champion with their full team and the seat's edge; a beaten Champion leaves the post. Turned down or left unanswered, your League loses ${CLAIM_PRESTIGE} prestige and the claimant leaves unhappy, perhaps to come back as another League's contender. Or offer them a post from the hiring pages while the claim stands: a claimant is glad to take one, and the claim ends there.</p>` : ''}`;
 }
@@ -15398,9 +15547,10 @@ function viewStaff() {
         return `<tr class="sub"><td class="small">&nbsp;&nbsp;Gym trainer · up to ${GT_HOLD} Pokémon</td><td>${tname(t.id)} ${staffTags(t)}${wishTag(t)}${coming}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td><button class="btn small" data-act="gtpick" data-g="${i}" data-k="${k}">Replace</button> ${staffAsk === t.id ? `<button class="btn small primary" data-act="staffgo" data-id="${t.id}">Let ${esc(t.name)} go</button> <button class="btn small ghost" data-act="staffask">Cancel</button>` : `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>`}</td></tr>`; }).join('');
   }).join('');
   return `${staffNotices()}<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Your staff</h2>
-    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes only when they step down or lose a seat challenge. <b>Seat challenges:</b> at New Year an Elite Four member who wants promotion may challenge the Champion, and a Gym Leader who wants it (or a challenger after a run to the Elite Four) an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last); then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves unless promoted, and a gym trainer just goes. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
+    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes when they step down or leave, or lose a seat challenge. <b>Calling a challenge:</b> you decide when your Champion's seat is fought for: up to ${CALL_MAX} times a year, name an Elite Four member, a Gym Leader or a recent title winner to challenge the Champion, ${CALL_WEEKS} weeks later. A Champion called against may come to want to leave. <b>Seat challenges:</b> at New Year a Gym Leader who wants promotion (or a challenger after a run to the Elite Four) may challenge an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger; the Champion may also want a bigger League's seat, or to step down. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last); then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves unless promoted, and a gym trainer just goes. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
   ${steersPanel()}
-  <section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">The seat changes when the Champion steps down or loses a seat challenge</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>Champion</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
+  <section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>Champion</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
+  ${callPanel()}
   <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `Elite Four #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">A gym's type is its leader's class; gym trainers share a type with the leader</span></div><div class="scroll"><table class="tbl">${head}<tbody>${gymRows}</tbody></table></div></section>`;
 }
@@ -16274,7 +16424,7 @@ function viewRecap() {
   // (0.11.0) the year's seat challenges, held at its New Year, with the battle to watch while it is still kept
   const chalPend = latest ? (S.chalPending || []).filter(x => x.season === h.season) : [];
   const chalRows = (h.chal || []).map(c => { const li = (S.seatLogs || []).findIndex(r => r.at === c.at && r.cand === c.cand);
-    return `<tr><td>${c.k === 'champ' ? 'Champion' : `Elite Four #${c.slot + 1}`}</td><td>${tname(c.cand)}<div class="muted small">${c.from === 'claim' ? 'title claim' : c.k === 'champ' ? `Elite Four #${c.slot + 1}` : c.from === 'leader' ? `${townName(c.gym)} Gym Leader` : 'after a run to the Elite Four'}</div></td><td>${tname(c.inc)}</td><td>${c.offered ? '<span class="tag">took a post instead</span>' : c.lapsed ? '<span class="muted">lapsed</span>' : c.unanswered ? '<span class="tag">lapsed unanswered</span>' : c.refused ? `<span class="tag">${c.from === 'claim' ? 'turned down' : 'refused by you'}</span>` : c.won ? '<span class="tag notice">challenger won</span>' : '<span class="tag gold">defended</span>'}</td><td>${li >= 0 ? `<button class="btn small" data-act="watchseat" data-i="${li}">Watch</button>` : ''}</td></tr>`; }).join('')
+    return `<tr><td>${c.k === 'champ' ? 'Champion' : `Elite Four #${c.slot + 1}`}</td><td>${tname(c.cand)}<div class="muted small">${c.from === 'claim' ? 'title claim' : c.called ? `called by you · ${callFrom(c)}` : c.k === 'champ' ? `Elite Four #${c.slot + 1}` : c.from === 'leader' ? `${townName(c.gym)} Gym Leader` : 'after a run to the Elite Four'}</div></td><td>${tname(c.inc)}</td><td>${c.offered ? '<span class="tag">took a post instead</span>' : c.lapsed ? '<span class="muted">lapsed</span>' : c.unanswered ? '<span class="tag">lapsed unanswered</span>' : c.calledOff ? '<span class="muted">called off</span>' : c.refused ? `<span class="tag">${c.from === 'claim' ? 'turned down' : 'refused by you'}</span>` : c.won ? '<span class="tag notice">challenger won</span>' : '<span class="tag gold">defended</span>'}</td><td>${li >= 0 ? `<button class="btn small" data-act="watchseat" data-i="${li}">Watch</button>` : ''}</td></tr>`; }).join('')
     + chalPend.map(x => `<tr><td>${x.k === 'champ' ? 'Champion' : `Elite Four #${x.slot + 1}`}</td><td>${tname(x.cand)}</td><td>${tname(x.inc)}</td><td><span class="tag notice">waiting for you</span></td><td></td></tr>`).join('');
   const stageCells = s => [0, 1, 2, 3, 4].map(k => `<td class="st ${s > k ? 'w' : s === k ? 'l' : ''}">${s > k ? 'W' : s === k ? 'L' : ''}</td>`).join('');
   const nav = `<div class="segs setup-segs">${i > 0 ? `<button class="seg" data-act="repyear" data-v="${all[i - 1].season}">‹ Year ${all[i - 1].season}</button>` : ''}<button class="seg on" aria-pressed="true">Year ${h.season}</button>${!latest ? `<button class="seg" data-act="repyear" data-v="${all[i + 1].season}">Year ${all[i + 1].season} ›</button><button class="seg" data-act="repyear" data-v="latest">Latest</button>` : ''}</div>`;
@@ -16295,7 +16445,7 @@ function viewRecap() {
     <section class="panel"><div class="ph"><h3>The Elite Four and the Champion</h3><span class="muted">One run: a loss anywhere ends it</span></div>
       <div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Held by</th><th>Type</th><th>Runs faced</th><th>Stopped</th><th>Got past</th></tr></thead><tbody>${seatRows}</tbody></table></div></section>
     ${latest && chalPend.length && (S.lg || 0) === ME() ? `<section class="panel callout warnbox">${chalNotice()}</section>` : ''}
-    <section class="panel"><div class="ph"><h3>Seat challenges</h3><span class="muted">Held at New Year: at most one for the Champion's seat and one for an Elite Four seat</span></div>
+    <section class="panel"><div class="ph"><h3>Seat challenges</h3><span class="muted">At New Year: at most one for an Elite Four seat (and a title claim); in your League the Champion's seat is challenged when you call it</span></div>
       ${chalRows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Challenger</th><th>Holder</th><th>Result</th><th></th></tr></thead><tbody>${chalRows}</tbody></table></div>` : '<p class="muted">No seat challenges.</p>'}</section>
   <div class="grid-office"><div class="col">
     <section class="panel"><div class="ph"><h3>Runs at the Elite Four</h3></div>${(h.runsE4 || []).length ? `<div class="scroll"><table class="tbl"><thead><tr><th>When</th><th>Trainer</th><th>E4 #1</th><th>#2</th><th>#3</th><th>#4</th><th>Final</th></tr></thead><tbody>
@@ -16550,8 +16700,10 @@ const GLOSS_TERMS = {
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
     ['Steers', 'A standing instruction for how a post\'s team is built: Balanced, Counter the trend, Counter the year\'s meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. Set on Your staff for each Gym Leader\'s gym (its gym trainers follow it), each Elite Four seat and the Champion, plus a League line for posts with none. It belongs to the post, so a new holder follows it. Everyone follows a steer, as closely as their Strategy allows; it trades some raw strength for what it asks. A team moves one Pokémon closer each month, and someone new to a post builds to it at once. A countering trainer may field one Pokémon off their type. Rival Leagues steer themselves: posts that can answer the meta on their type counter it.'],
     ['The meta', 'The circuit\'s top performers, read at the start of every month: the trend (the last 12 weeks) and the year (last year plus this year so far). Only challengers\' Pokémon count. The Meta page shows both, the types that answer them and which of your posts can answer them on their own type. The sim stops when the trend shifts. Newcomers still lean toward types that counter the year\'s top performers.'],
-    ['Seat challenges', 'At New Year a League holds at most one challenge for the Champion\'s seat and one for an Elite Four seat. An Elite Four member who wants promotion, has held the seat in two calendar years and didn\'t have the worst record of the four can challenge the Champion. A Gym Leader who wants promotion and whose gym was one of the three best-holding of the year, or a challenger who reached the Elite Four this year when the seat\'s holder is 50 or older, can challenge the weakest Elite Four seat. It is one battle at the seat\'s level, the challenger with a team built for the seat. A beaten Champion takes the winner\'s Elite Four seat; a beaten Elite Four member takes the winning Gym Leader\'s gym, or returns to the circuit if a challenger beat them. In your League you approve or refuse each challenge within four weeks (unanswered, it goes ahead). A member of staff whose challenge is refused or lost turns restless, and anyone who challenged waits two years to try again. Rival Leagues hold their challenges at once. A new Champion can\'t be challenged for the seat in their first two calendar years.'],
-    ['Title claims', 'Beating the Champion wins the title, not the seat. At New Year the strongest of the year\'s title winners who wants a seat (most would rather keep travelling) can claim the Champion\'s seat instead of the year\'s other challenge for it. In your League nothing changes without you: allow the claim battle (one battle at the Champion\'s level, your Champion with their full team and a little more than the seat\'s usual edge; a Champion who loses leaves the post, for another League\'s circuit or retirement), turn it down, or offer the claimant a post through the hiring pages, which they are glad to take. Turned down, or unanswered for eight weeks, the claim costs your League 2 prestige and the claimant leaves unhappy, often for another League that may sign them as a contender against you. Rival Leagues allow or turn down claims by their aim. The multi-year sim turns every claim down.'],
+    ['Seat challenges', 'At New Year a League holds at most one challenge for an Elite Four seat, and a rival League\'s manager may call one for its Champion\'s seat (an Elite Four member who wants promotion, has held the seat a year and didn\'t have the worst record of the four). In your League the Champion\'s seat is challenged only when you call a challenge (see Calling a challenge) or allow a title claim. A Gym Leader who wants promotion and whose gym was one of the three best-holding of the year, or a challenger who reached the Elite Four this year when the seat\'s holder is 50 or older, can challenge the weakest Elite Four seat. It is one battle at the seat\'s level, the challenger with a team built for the seat. A beaten Champion takes the winner\'s Elite Four seat; a beaten Elite Four member takes the winning Gym Leader\'s gym, or returns to the circuit if a challenger beat them. In your League you approve or refuse each challenge within four weeks (unanswered, it goes ahead). A member of staff whose challenge is refused or lost turns restless, and anyone who challenged waits two years to try again. Rival Leagues hold their challenges at once. A new Champion can\'t be challenged for the seat by a claim or another League in their first calendar year.'],
+    ['Calling a challenge', 'You decide when your Champion\'s seat is fought for. Up to three times a calendar year, on Your staff, call a challenge and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit (not anyone who challenged in the last two years). It is one battle at the Champion\'s level, four weeks later; you can fight it sooner or call it off. If the challenger wins they take the seat: a beaten Champion takes the winner\'s Elite Four seat or gym, or, beaten by a title winner, leaves the post. A Champion called against is put out by it, more so with each call in a year, and may come to want a bigger League\'s seat or to step down. Rival Leagues call theirs by their aim.'],
+    ['Champion ambitions', 'The Champion has an ambition like the rest of the staff: most stay put, but one may want a bigger League\'s seat (with another League in the world; three years, then twelve weeks\' notice, and a raise holds them a year), another run as a challenger, or to step down after a run in the seat (three years, then notice: they retire at 40 or older, else take an Elite Four seat). When a Champion leaves, the strongest Elite Four member moves up at once and their seat waits for you. A League\'s founding Champion stays put through their window.'],
+    ['Title claims', 'Beating the Champion wins the title, not the seat. At New Year the strongest of the year\'s title winners who wants a seat (about half of them) can claim the Champion\'s seat. In your League nothing changes without you: allow the claim battle (one battle at the Champion\'s level, your Champion with their full team and a little more than the seat\'s usual edge; a Champion who loses leaves the post, for another League\'s circuit or retirement), turn it down, or offer the claimant a post through the hiring pages, which they are glad to take. Turned down, or unanswered for eight weeks, the claim costs your League 2 prestige and the claimant leaves unhappy, often for another League that may sign them as a contender against you. Rival Leagues allow or turn down claims by their aim. The multi-year sim turns every claim down.'],
     ['Refusing a move', 'Staff take any move up. They refuse a step down (Elite Four to a gym, a gym to a gym trainer\'s place) unless their record is poor, and anyone who wants to stay put or wants another run refuses a sideways move or a swap. Letting someone go always works. Retirees and outsiders always accept.'],
     ['Your staff', 'On the Your staff page you can let any Gym Leader, Elite Four member or gym trainer go, swap two Gym Leaders or two Elite Four members, and pick gym trainers yourself, at any time. A Gym Leader\'s or Elite Four seat that someone leaves waits for you with an acting holder. Picking someone who already holds a post moves them, and their old post opens next. The Champion changes only by stepping down.'],
     ['Hiring', `Anyone you can hire right now: challengers on your circuit, your own staff, trainers who retired in the last ${RETIREE_YEARS} years (under ${RETIREE_MAX_AGE} and still OVR ${RETIREE_MIN_OVR}+), and outsiders the game finds for the post. A challenger gets an offer and can turn it down; then they aren't asked again for half a year. One out on a run who accepts finishes the run first, for up to ${HIRE_NOTICE} weeks, and the post's holder stays until they arrive. Everyone else takes the post at once. Outsiders nobody picks set out as challengers. Rival Leagues hire from their own circuits, recent retirees and outsiders.`],
@@ -16651,6 +16803,15 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 34, ver: '0.34.0', date: 'November 17, 2026', time: '8:45 PM ET', title: 'Calling challenges and Champion ambitions', items: [
+    "You now decide when your Champion's seat is fought for. On Your staff, Call a challenge up to three times a year and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit. It is one battle at the Champion's level four weeks later, and you can fight it sooner or call it off. The winner takes the seat.",
+    "The New Year challenge for your Champion's seat is gone: your own Elite Four members, and other Leagues' Elite Four, no longer challenge your Champion on their own. Title claims still come, and still wait for your answer. Gym Leaders' New Year challenges for an Elite Four seat are unchanged.",
+    "A Champion called against is put out by it, more so with each call in a year, and may start wanting to leave.",
+    "Champions have ambitions like the rest of your staff. Most stay put, but a Champion may want a bigger League's seat (they give notice after three years; a raise holds them a year), another run as a challenger, or to step down (they give notice after three years, then retire at 40 or older, or else take an Elite Four seat). When a Champion leaves, your strongest Elite Four member moves up and their seat waits for you. A League's founding Champion stays put through their window.",
+    "Rival Leagues' managers call their New Year challenge for the Champion's seat by their aim.",
+    "Easier to reach the seat: a new Champion is safe from claims and other Leagues for one year (was two), an Elite Four member needs one year in the seat before challenging (was two), and about half of title winners now claim the seat (was about three in ten).",
+    "The year report marks the challenges you called and the ones you called off; glossary entries for Calling a challenge and Champion ambitions.",
+  ] },
   { id: 33, ver: '0.33.0', date: 'November 17, 2026', time: '7:05 PM ET', title: 'League names', items: [
     "Leagues are now named for their seats. A region's first League is named for the region (the Kanto League) and its second for its own seat (the Victory Road League, the Dragon's Den League, the Sky Pillar League…), for your League, the starting rivals, Leagues founded later and a League refounded after a fold alike. No more Leagues named after their founder's surname, and no more Founders League.",
     "Name your League on the setup screen, and each starting rival under Advanced options → Where rival Leagues start. Leave a name blank and it takes its seat's default.",
@@ -17367,6 +17528,8 @@ document.addEventListener('click', ev => {
     case 'watchhof': { const e = (S.hof || []).find(x => x.uid === +el.dataset.u), w = e && hofLog(e); const r = w && inLeague(w[0], () => (w[1] === 'last' ? S.lastLeague : S.league).logs[w[2]]); if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
+    case 'callopen': callOpen = !callOpen; render(); break;
+    case 'callchal': { const err = callChallenge(+el.dataset.id); if (!err) callOpen = false; save(); render(); toast(err || 'Challenge called.'); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;

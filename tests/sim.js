@@ -36,6 +36,7 @@ let renames = 0;
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
+const call = { made: 0, fought: 0, won: 0, off: 0, blocked: 0, champLeft: 0, champStep: 0, champUp: 0, champRun: 0, champWish: {} };
 const chal = { n: 0, claims: 0, claimWon: 0, claimNo: 0, claimPost: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
@@ -168,8 +169,11 @@ function check(tag) {
     // ambitions (0.10.0): every member of staff in a post has one; the Champion stays put; promotion runs out on
     // time (a notice, or a gym trainer gone); notices and requests for another run are within their limits
     for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])].filter(x => x != null)) { const t = g.T(id); if (!t || t.acting) continue;
-      if (!t.wish || !['up', 'stay', 'run'].includes(t.wish.k)) { bad('no ambition: ' + t.name + ' ' + t.role); continue; }
-      if (t.role === 'champion' && t.wish.k !== 'stay') bad('a Champion wants ' + t.wish.k);
+      if (!t.wish || !['up', 'stay', 'run', 'step'].includes(t.wish.k)) { bad('no ambition: ' + t.name + ' ' + t.role); continue; }
+      // (0.34.0) the Champion has ambitions too; only a Champion wants to step down, and a founder Champion stays put
+      if (t.wish.k === 'step' && t.role !== 'champion') bad('a non-Champion wants to step down: ' + t.name);
+      if (t.role === 'champion' && t.founderUntil != null && s.season < t.founderUntil && t.wish.k !== 'stay') bad('a founder Champion wants ' + t.wish.k);
+      if (t.role === 'champion') call.champWish[t.wish.k] = (call.champWish[t.wish.k] || 0) + 1;
       if (t.quit && (t.quit.at < s.turn || t.quit.at - s.turn > g.RUN_HOLD)) bad('a notice out of range: ' + t.name);
       if (t.quit && t.stepDown != null) bad('leaving and stepping down at once: ' + t.name);
       if (t.quit) amb.quit.add(t.id);
@@ -179,7 +183,9 @@ function check(tag) {
     // answer window and naming people still on the books; kept challenge battles stay capped
     if ((z.seatLogs || []).length > g.SEAT_LOGS) bad('too many kept seat challenges');
     if (i === g.ME()) for (const x of s.chalPending || []) { if (!HAND) bad('a challenge waits in a League nobody staffs by hand');
-      if (x.due < s.turn || x.due - s.turn > (x.from === 'claim' ? g.CLAIM_ANSWER : g.CHAL_ANSWER)) bad('a challenge waits out of range');
+      if (x.due < s.turn || x.due - s.turn > (x.from === 'claim' ? g.CLAIM_ANSWER : x.called ? g.CALL_WEEKS : g.CHAL_ANSWER)) bad('a challenge waits out of range');
+      // (0.34.0) in the player's League the Champion's seat waits only on a call or a claim
+      if (x.k === 'champ' && !x.called && x.from !== 'claim') bad('an uncalled challenge for the player\'s Champion');
       if (x.from === 'claim' && (x.k !== 'champ' || !g.claimOn(g.T(x.cand)))) bad('a malformed title claim');
       if (!g.T(x.cand) || !g.T(x.inc) || !['champ', 'e4'].includes(x.k)) bad('a malformed challenge'); }
     if (i !== g.ME() && (z.gyms.some(x => x.acting) || z.e4.some(id => g.T(id) && g.T(id).acting))) bad('a vacancy in a League not staffed by hand');
@@ -395,7 +401,15 @@ for (let i = 0; i < N; i++) {
     if (HAND && Math.random() < 0.06) g.inLeague(g.ME(), () => { const keys = ['line', 'champion', 'e4:0', 'e4:3', 'gym:0', 'gym:4', 'gym:7']; if (!g.setSteer(rnd(keys), Math.random() < 0.2 ? null : rnd(g.STEER_KEYS))) fail.push('setSteer failed'); steersSet++; });
     // seat challenges (0.11.0): approve some, refuse some, leave the rest to go ahead on their own
     if (HAND && (S().chalPending || []).length && Math.random() < 0.3) { const r = Math.random();
-      if (r < 0.6) { if (!g.answerChallenge(0, true)) fail.push('answerChallenge yes failed'); } else if (!g.answerChallenge(0, false)) fail.push('answerChallenge no failed'); }
+      const x0 = S().chalPending[0];
+      if (r < 0.6) { if (!g.answerChallenge(0, true)) fail.push('answerChallenge yes failed'); else if (x0.called) call.fought++; } else { if (!g.answerChallenge(0, false)) fail.push('answerChallenge no failed'); else if (x0.called) call.off++; } }
+    // (0.34.0) call a challenge against the player's Champion now and then, and check the limits hold
+    if (HAND && !S().founding && Math.random() < 0.02) { const b = g.callBlock(), cs = g.callCands(), ok = cs.filter(c => !c.block), no = cs.find(c => c.block);
+      if (no && !g.callChallenge(no.t.id)) fail.push('a blocked call went ahead');
+      if (b) { call.blocked++; if (ok.length && !g.callChallenge(ok[0].t.id)) fail.push('a call went ahead past the block: ' + b); }
+      else if (ok.length) { const used = g.callsUsed(), c = ok[Math.floor(Math.random() * ok.length)], err = g.callChallenge(c.t.id);
+        if (err) fail.push('callChallenge refused: ' + err); else { call.made++; if (g.callsUsed() !== used + 1) fail.push('a call was not counted');
+          const x = S().chalPending[S().chalPending.length - 1]; if (!x.called || x.cand !== c.t.id || x.due !== S().turn + g.CALL_WEEKS) fail.push('a malformed called challenge'); } } }
     const hiredBefore = new Set(Object.values(S().trainers).filter(t => t.hired).map(t => t.id));
     if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], all = g.inLeague(g.ME(), () => g.vacancyCands(v)), c = all.filter(x => !x.refuse), no = all.find(x => x.refuse);
       if (no) { amb.refusedMove++; if (g.fillVacancy(v, no.t.id)) fail.push('a refused vacancy move went ahead'); }
@@ -434,7 +448,10 @@ for (let i = 0; i < N; i++) {
     if (x.seats.reduce((a, st) => a + st.stopped, 0) + x.titles !== x.qualifiers) fail.push(tag + 'seats stopped plus titles differ from runs');
     x.seats.forEach((st, k) => { if (!st.held.includes(st.id)) fail.push(tag + 'seat ' + k + ' holder not among its holders'); });
     { const ch = x.chal || [];
-      if (ch.filter(c => c.k === 'champ').length > 1 || ch.filter(c => c.k === 'e4').length > 1) fail.push(tag + 'more than one challenge of a kind');
+      if (ch.filter(c => c.k === 'champ' && !c.called).length > 1 || ch.filter(c => c.k === 'e4').length > 1) fail.push(tag + 'more than one challenge of a kind');
+      if (ch.filter(c => c.called).length > g.CALL_MAX) fail.push(tag + 'more called challenges than allowed');
+      if (!(S().myLeagues || [{ lg: 0 }]).some(m => m.lg === li) && ch.some(c => c.called)) fail.push(tag + 'a called challenge in a rival League');
+      if (HAND && li === g.ME() && x.season > 1 && ch.some(c => c.k === 'champ' && !c.called && c.from !== 'claim')) fail.push(tag + 'an uncalled challenge for the player\'s Champion');
       if (!(S().myLeagues || [{ lg: 0 }]).some(m => m.lg === li) && ch.some(c => c.refused && c.from !== 'claim')) fail.push(tag + 'a rival League refused a challenge');
       if (ch.some(c => c.from === 'claim' && c.k !== 'champ')) fail.push(tag + 'a title claim not for the Champion');
       }
@@ -443,6 +460,8 @@ for (let i = 0; i < N; i++) {
 }
 // a reloaded save keeps running
 { const copy = JSON.parse(JSON.stringify(S())); g.S = copy; g.applyDex(copy.cfg && copy.cfg.dex); g.applyCfg(); g.simYear(); check('reload'); if (g.simWeeks(60, true) == null) fail.push('60 weeks without a stop for New Year'); check('stops'); }
+g.eachLeague(() => { for (const n of S().news) { const m = /^Champion .* (stepped down|left the seat) and (is off on another run|heads for|returns|retired|takes)/.exec(n.text); if (m) { call.champLeft++; if (m[1] === 'stepped down') call.champStep++; else if (m[2] === 'is off on another run') call.champRun++; else call.champUp++; } }
+  for (const x of S().history) for (const c of x.chal || []) if (c.called && c.won) call.won++; });
 g.eachLeague(() => { for (const x of S().history) for (const c of x.chal || []) { chal.n++; if (c.won) chal.won++; if (c.refused) chal.refused++; if (c.lapsed) chal.lapsed++; if (c.k === 'champ') chal.champ++; if (c.from === 'leader') chal.leader++; if (c.from === 'circuit') chal.circuit++; if (c.from === 'claim') { chal.claims++; if (c.won) chal.claimWon++; if (c.refused) chal.claimNo++; if (c.offered) chal.claimPost++; } } });
 const h = S().history;
 console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') : 'ok', 'leagues', g.nLeagues(), 'year', S().season, 'trainers', Object.keys(S().trainers).length, 'cities', Object.keys(S().cities).length,
@@ -450,7 +469,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'runs/year', (h.reduce((a, x) => a + x.runs, 0) / Math.max(1, h.length)).toFixed(0), 'field avg', (fieldSum / Math.max(1, fieldN)).toFixed(1), 'max', fieldMax, 'stops', JSON.stringify(stops), 'god edits', gods, 'vacancies', hands, 'open', (S().vacancies || []).length, 'moves', JSON.stringify(moves), 'offers', JSON.stringify(offers), 'back from retirement', Object.values(S().trainers).filter(t => t.unretired).length, 'replaced', Object.values(S().trainers).filter(t => t.letGoAt != null).length,
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
-  'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
+  'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'calls', JSON.stringify(call), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none', 'renames', renames, 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));

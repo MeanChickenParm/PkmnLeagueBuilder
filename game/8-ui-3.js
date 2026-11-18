@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 34, ver: '0.34.0', date: 'November 17, 2026', time: '8:45 PM ET', title: 'Calling challenges and Champion ambitions', items: [
+    "You now decide when your Champion's seat is fought for. On Your staff, Call a challenge up to three times a year and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit. It is one battle at the Champion's level four weeks later, and you can fight it sooner or call it off. The winner takes the seat.",
+    "The New Year challenge for your Champion's seat is gone: your own Elite Four members, and other Leagues' Elite Four, no longer challenge your Champion on their own. Title claims still come, and still wait for your answer. Gym Leaders' New Year challenges for an Elite Four seat are unchanged.",
+    "A Champion called against is put out by it, more so with each call in a year, and may start wanting to leave.",
+    "Champions have ambitions like the rest of your staff. Most stay put, but a Champion may want a bigger League's seat (they give notice after three years; a raise holds them a year), another run as a challenger, or to step down (they give notice after three years, then retire at 40 or older, or else take an Elite Four seat). When a Champion leaves, your strongest Elite Four member moves up and their seat waits for you. A League's founding Champion stays put through their window.",
+    "Rival Leagues' managers call their New Year challenge for the Champion's seat by their aim.",
+    "Easier to reach the seat: a new Champion is safe from claims and other Leagues for one year (was two), an Elite Four member needs one year in the seat before challenging (was two), and about half of title winners now claim the seat (was about three in ten).",
+    "The year report marks the challenges you called and the ones you called off; glossary entries for Calling a challenge and Champion ambitions.",
+  ] },
   { id: 33, ver: '0.33.0', date: 'November 17, 2026', time: '7:05 PM ET', title: 'League names', items: [
     "Leagues are now named for their seats. A region's first League is named for the region (the Kanto League) and its second for its own seat (the Victory Road League, the Dragon's Den League, the Sky Pillar League…), for your League, the starting rivals, Leagues founded later and a League refounded after a fold alike. No more Leagues named after their founder's surname, and no more Founders League.",
     "Name your League on the setup screen, and each starting rival under Advanced options → Where rival Leagues start. Leave a name blank and it takes its seat's default.",
@@ -716,6 +725,8 @@ document.addEventListener('click', ev => {
     case 'watchhof': { const e = (S.hof || []).find(x => x.uid === +el.dataset.u), w = e && hofLog(e); const r = w && inLeague(w[0], () => (w[1] === 'last' ? S.lastLeague : S.league).logs[w[2]]); if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
+    case 'callopen': callOpen = !callOpen; render(); break;
+    case 'callchal': { const err = callChallenge(+el.dataset.id); if (!err) callOpen = false; save(); render(); toast(err || 'Challenge called.'); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'bskip': clearInterval(player); modal.skip && modal.skip(); break;

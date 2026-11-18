@@ -302,6 +302,26 @@ async def run(path):
                     if ((S.chalPending || []).length || !r2 || !r2.refused || S.champion !== inc || T(b.id).grudge == null || (p0 >= 2 && (S.prest || 0) > p0 - 2 + 0.01)) log.push('FAIL turning down a claim');
                     repYear = h.season; go('recap'); if (!/title claim/.test(document.querySelector('#main').textContent) || !/turned down/.test(document.querySelector('#main').textContent)) log.push('FAIL claims not in the year report');
                     log.push('title claim: ' + (rec && rec.won ? 'claimant won' : 'defended') + ', one turned down'); repYear = null; go('circuit'); } }
+                // 0.34.0: call a challenge against your Champion from Your staff, fight it at once and find it in the
+                // year report; call another and call it off
+                if (S.season === 3 && seen.claim && !seen.call) { seen.call = 1; viewLg = 0; clearVac(); S.chalPending = []; S.calls = null; const txt = () => document.querySelector('#main').textContent;
+                  const h0 = S.history.length;
+                  go('staff'); if (!/Call a challenge/.test(txt())) log.push('FAIL no Call a challenge panel');
+                  click('[data-act=callopen]'); const btns = [...document.querySelectorAll('[data-act=callchal]')];
+                  if (btns.length < 2) log.push('FAIL fewer than two challengers to call');
+                  else { const id = +btns[0].dataset.id, champ0 = S.champion; btns[0].click();
+                    const x = (S.chalPending || [])[0];
+                    if (!x || !x.called || x.cand !== id || x.k !== 'champ') log.push('FAIL calling a challenge');
+                    else { go('staff'); if (!/You called/.test(txt()) || !/Fight it now/.test(txt())) log.push('FAIL a called challenge is not in the staff notices');
+                      click('[data-act=chalyes][data-v="0"]'); const rec = (S.league && S.league.chal || []).find(c => c.cand === id && c.called);
+                      if ((S.chalPending || []).length || !rec || rec.won == null) log.push('FAIL a called challenge was not fought');
+                      else if (rec.won ? S.champion !== id : S.champion !== champ0) log.push('FAIL the called challenge moved the wrong people');
+                      go('staff'); click('[data-act=callopen]'); const b2 = [...document.querySelectorAll('[data-act=callchal]')].find(b => +b.dataset.id !== id && +b.dataset.id !== S.champion);
+                      if (!b2) log.push('FAIL no second challenger to call'); else { b2.click(); go('staff'); click('[data-act=chalno][data-v="0"]');
+                        if ((S.chalPending || []).length || !(S.league.chal || []).some(c => c.calledOff)) log.push('FAIL calling off a challenge');
+                        if (S.calls.n !== 2) log.push('FAIL calls not counted'); }
+                      log.push('called a challenge: ' + (rec && rec.won ? 'challenger won' : 'defended') + ', one called off'); } }
+                  go('circuit'); }
                 if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
                 if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];
                   if (!old) log.push('FAIL no year links on the History page'); else { const yv = old.dataset.v; old.click(); const tx = document.querySelector('#main').textContent;
