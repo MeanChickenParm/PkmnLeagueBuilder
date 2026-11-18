@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 36, ver: '0.36.0', date: 'November 17, 2026', time: '11:59 PM ET', title: 'Alphas, Deltas, shinies and Radiants in the ranch', items: [
+    "Your ranch can hold alphas, Deltas, shinies and Radiants now, and keeps them whole: a Delta keeps its unusual type and ability, a Radiant its ability, a shiny its perfect IVs. Staff field them as they are, and a Delta counts by its own types when a gym picks on type.",
+    "They turn up now and then on catching trips, charters and the market, at the same odds challengers get in the wild (Scouting nudges alphas). Staff who drop one, and new hires who don't field theirs, put them in the ranch like any other.",
+    "Hunts: pick a condition on the Ranch page to send a trip after a line in that condition. It costs that condition's multiple of a plain trip (alpha ×2, Delta ×5, shiny ×8, Radiant ×10), takes a little longer, and has lower odds.",
+    "Outbreak trips: while a mass outbreak is on in your region (that week or the next), send a trip to it for two or three of the swarming Pokémon at outbreak odds.",
+    "Every region has its own Delta lines, some of them found nowhere else in that region. Deltas of those lines are likelier there and can be hunted there even when the plain Pokémon can't. The Ranch page lists yours.",
+    "A condition multiplies a Pokémon's value (and so its price at the market, in League sales and when sold back). Shinies and Radiants your Elite Four and Champion field draw a crowd: showcase income every week and a little prestige at New Year (alphas and Deltas less).",
+    "Rival Leagues play by the same rules: wall-builders and star-makers sometimes hunt alphas and Deltas for their posts and keep them, and money-makers sell theirs to other Leagues.",
+  ] },
   { id: 35, ver: '0.35.0', date: 'November 17, 2026', time: '10:55 PM ET', title: 'A tidier page menu', items: [
     "The page menu is split by what you're doing. Manage: Gyms & Elite, Your staff, Ranch, Money, Cities and Contenders. Circuit: the badge circuit, all trainers and the meta. World: the League table, news and history. Records: the year report, records, the Hall of Fame and Pokémon.",
     "The progress board opens from the Board button in the header (it's no longer in the menu as well), and God mode, when it's on, is in the ⋯ menu.",
@@ -663,7 +672,8 @@ document.addEventListener('click', ev => {
     case 'foundclear': foundPlace(el.dataset.k, +el.dataset.v, null); foundSel = { post: el.dataset.k, slot: +el.dataset.v }; save(); render(); break;
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
-    case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'ranchob': { const w = inLeague(ME(), () => startTrip('outbreak')); save(); render(); toast(w || 'The trip has set out for the outbreak.'); break; }
+    case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b, el.dataset.c || undefined)); save(); render(); toast(w || 'The trip has set out.'); break; }
     case 'ranchcharter': { const w = inLeague(ME(), () => startTrip('charter', +el.dataset.v)); save(); render(); toast(w || 'The charter is on its way.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
@@ -793,6 +803,7 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchspsel')) { ranchSp = e.target.value; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('ranchcondsel')) { ranchCond = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('charterreg')) { charterReg = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
