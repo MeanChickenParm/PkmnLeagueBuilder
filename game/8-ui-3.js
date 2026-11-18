@@ -1,5 +1,9 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 35, ver: '0.35.0', date: 'November 17, 2026', time: '10:55 PM ET', title: 'A tidier page menu', items: [
+    "The page menu is split by what you're doing. Manage: Gyms & Elite, Your staff, Ranch, Money, Cities and Contenders. Circuit: the badge circuit, all trainers and the meta. World: the League table, news and history. Records: the year report, records, the Hall of Fame and Pokémon.",
+    "The progress board opens from the Board button in the header (it's no longer in the menu as well), and God mode, when it's on, is in the ⋯ menu.",
+  ] },
   { id: 34, ver: '0.34.0', date: 'November 17, 2026', time: '8:45 PM ET', title: 'Calling challenges and Champion ambitions', items: [
     "You now decide when your Champion's seat is fought for. On Your staff, Call a challenge up to three times a year and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit. It is one battle at the Champion's level four weeks later, and you can fight it sooner or call it off. The winner takes the seat.",
     "The New Year challenge for your Champion's seat is gone: your own Elite Four members, and other Leagues' Elite Four, no longer challenge your Champion on their own. Title claims still come, and still wait for your answer. Gym Leaders' New Year challenges for an Elite Four seat are unchanged.",
@@ -340,7 +344,7 @@ function updatesBody() {
 function menuBody() {
   const m = modal;
   return `<div class="mh"><h2>World file</h2><button class="btn icon" data-act="close" aria-label="Close">×</button></div>
-  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple years…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button><button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
+  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple years…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button>${godOn() ? '<button class="btn" data-act="nav" data-v="god">God mode</button>' : ''}<button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
   <p class="muted">Progress saves automatically in this browser after every week. Copy the save to back it up or move it to another device.</p>
   <div class="confirm-row"><button class="btn" data-act="export">Copy save to clipboard</button>${canSaveFile() ? '<button class="btn" data-act="savefile">Download save file</button>' : ''}<button class="btn" data-act="importshow">Load a save</button></div>
   ${m.copying ? '<p class="fine">Preparing the save…</p>' : m.copied ? '<p class="fine">Save copied to the clipboard. Paste it into Load a save to bring this world back.</p>' : ''}

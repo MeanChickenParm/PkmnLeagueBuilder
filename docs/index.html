@@ -14254,29 +14254,33 @@ function header() {
     <div class="top-act">${btn}<button class="btn ghost" data-act="nav" data-v="board" title="The progress board: how far everyone has got">Board</button><button class="btn ghost" data-act="simmany">Sim years</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
   </div></header>`;
 }
-// the page menu: three groups, each a dropdown (League / Trainers / Stats), plus the Glossary
+// the page menu (0.35.0): four groups by what you're doing — Manage (run your League), Circuit (watch the
+// challengers), World (the other Leagues and what happened), Records — plus the Glossary and Updates.
+// The progress board is the header's Board button; God mode is in the ⋯ menu.
 let navOpen = null;
 function navGroups() {
-  const league = [['circuit', 'Badge circuit'], ['board', 'Progress board'], ['gyms', 'Gyms & Elite']];
-  if (handOn()) league.push(['staff', 'Your staff']);
-  if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities'], ['ranch', 'Ranch']);
-  if (handOn() && nLeagues() > 1) league.push(['contenders', 'Contenders']);
-  if (nLeagues() > 1) league.push(['table', 'League table']);
-  if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
-  league.push(['meta', 'Meta']);
-  league.push(['news', 'News'], ['history', 'History']);
-  if (godOn()) league.push(['god', 'God mode']);
+  const manage = [['gyms', 'Gyms & Elite']];
+  if (handOn()) manage.push(['staff', 'Your staff']);
+  if (playerFin()) manage.push(['ranch', 'Ranch'], ['money', 'Money'], ['cities', 'Cities']);
+  if (handOn() && nLeagues() > 1) manage.push(['contenders', 'Contenders']);
+  const world = [];
+  if (nLeagues() > 1) world.push(['table', 'League table']);
+  world.push(['news', 'News'], ['history', 'History']);
+  const records = [];
+  if (S.history.some(x => x.titles != null)) records.push(['recap', 'Year report']);
+  records.push(['records', 'Records'], ['hof', 'Hall of Fame'], ['dex', 'Pokémon']);
   return [
-    { k: 'league', label: 'League', items: league },
-    { k: 'trainers', label: 'Trainers', items: [['trainers', 'All trainers']] },
-    { k: 'stats', label: 'Stats', items: [['records', 'Records'], ['dex', 'Pokémon'], ['hof', 'Hall of Fame']] },
+    { k: 'manage', label: 'Manage', items: manage },
+    { k: 'circuit', label: 'Circuit', items: [['circuit', 'Badge circuit'], ['trainers', 'All trainers'], ['meta', 'Meta']] },
+    { k: 'world', label: 'World', items: world },
+    { k: 'records', label: 'Records', items: records },
   ];
 }
 function nav() {
   const groups = navGroups();
   const grp = g => {
     const here = g.items.some(x => x && x[0] === view), open = navOpen === g.k;
-    const cur = here && g.k !== 'trainers' ? g.items.find(x => x && x[0] === view)[1] : null;
+    const cur = here ? g.items.find(x => x && x[0] === view)[1] : null;
     return `<div class="navgrp${open ? ' open' : ''}"><button class="tab navbtn${here ? ' on' : ''}" data-act="navgrp" data-k="${g.k}" aria-haspopup="true" aria-expanded="${open}">${g.label}${cur && cur !== g.label ? `<span class="navcur"> · ${cur}</span>` : ''}<span class="navchev" aria-hidden="true">▾</span></button>
       <div class="navmenu" role="menu">${g.items.map(x => x ? `<button class="navitem${view === x[0] ? ' on' : ''}" role="menuitem" data-act="nav" data-v="${x[0]}">${x[1]}</button>` : '<div class="navsep" role="separator"></div>').join('')}</div></div>`;
   };
@@ -16709,7 +16713,7 @@ const GLOSS_TERMS = {
     ['Hiring', `Anyone you can hire right now: challengers on your circuit, your own staff, trainers who retired in the last ${RETIREE_YEARS} years (under ${RETIREE_MAX_AGE} and still OVR ${RETIREE_MIN_OVR}+), and outsiders the game finds for the post. A challenger gets an offer and can turn it down; then they aren't asked again for half a year. One out on a run who accepts finishes the run first, for up to ${HIRE_NOTICE} weeks, and the post's holder stays until they arrive. Everyone else takes the post at once. Outsiders nobody picks set out as challengers. Rival Leagues hire from their own circuits, recent retirees and outsiders.`],
     ['Impressed', `A challenger on your circuit who reached the Elite Four, or won ${IMPRESS_BADGES} or more badges in a run, this year or last. Worth an offer, though a challenger doing well wants the title and is much likelier to turn a post down.`],
     ['Poor years', `A Gym Leader's year is poor when the gym held under 30% of 12 or more tries; an Elite Four member's warning counts the years in a row they stopped the smallest share of the runs that reached them. Rival Leagues replace a Gym Leader after ${POOR_YEARS} poor years in a row, and an Elite Four member after ${POOR_YEARS} years with the worst record if someone clearly better is free. In your League you only see the warning.`],
-    ['Year report', 'Opens at New Year from the League menu, for the year just ended, and any earlier year can be opened from it or from the year\'s number in the History page\'s wall report. It leads with the trainers let through, then perfect years and the streak, how far the best challenger got and the badges conceded, each against last year, your best year (fewest let through, then fewest badges) and your average. Below: each gym (its leader at year\'s end and anyone else who led it, its gym trainers, tries turned back by the gym trainers and by the leader, badges conceded), each Elite Four seat and the Champion\'s, the year\'s ten furthest challengers and every run at the Elite Four.'],
+    ['Year report', 'Opens at New Year from the Records menu, for the year just ended, and any earlier year can be opened from it or from the year\'s number in the History page\'s wall report. It leads with the trainers let through, then perfect years and the streak, how far the best challenger got and the badges conceded, each against last year, your best year (fewest let through, then fewest badges) and your average. Below: each gym (its leader at year\'s end and anyone else who led it, its gym trainers, tries turned back by the gym trainers and by the leader, badges conceded), each Elite Four seat and the Champion\'s, the year\'s ten furthest challengers and every run at the Elite Four.'],
     ['Badges conceded lately', 'Each of your gyms keeps its last three badges conceded: the battles its leader lost. Watch them from the gym\'s card on the Gyms page.'],
     ['Acting', 'When a Gym Leader or Elite Four member leaves your League, the post waits for you. Meanwhile the gym\'s stronger gym trainer stands in as acting leader (the gym runs one gym trainer short), or a stand-in holds the Elite Four seat. The Champion\'s seat is never empty: the strongest Elite Four member moves up.'],
     ['Tries', `A challenger gets ${GYM_TRIES} tries at each gym on a run. A loss to a gym trainer or the leader costs one. A third loss at the same gym ends the run: they rest, then start again with no badges. After a loss they may go to another gym and come back later: tries used stay used and gym trainers beaten stay beaten, but by then they hold more badges, so the gym fields more Pokémon at a higher level.`],
@@ -16719,7 +16723,7 @@ const GLOSS_TERMS = {
     ['Champion', 'A challenger who beats the Champion wins a title, and the League has conceded one. The Champion keeps the seat and only leaves by retiring; for now the strongest Elite Four member then moves up.'],
     ['World Championship', 'With several Leagues, their Champions meet after the season.'],
     ['Triple Crown', 'Champion of three different Leagues across a career. A trainer with titles in 2+ Leagues gets 3 extra years before age can retire them.'],
-    ['Progress board', 'A page of its own (League menu, or Board in the header) showing how far everyone has got against a League: one row per gym, Elite Four seat and the Champion, with the challengers there now, how many it let through and walled this year, and the share of tries it held. Open a row for who is there and on which try, who got through lately with the core of their team, who was walled and by whom, and the types beating it. The threats strip lists challengers with six badges or more, contenders and anyone who impressed. The League switcher shows any League\'s board.'],
+    ['Progress board', 'A page of its own (Board in the header) showing how far everyone has got against a League: one row per gym, Elite Four seat and the Champion, with the challengers there now, how many it let through and walled this year, and the share of tries it held. Open a row for who is there and on which try, who got through lately with the core of their team, who was walled and by whom, and the types beating it. The threats strip lists challengers with six badges or more, contenders and anyone who impressed. The League switcher shows any League\'s board.'],
     ['Gym memory', `A challenger who loses at a gym remembers the types of the trainer who beat them there. On later tries they pick their squad against those types, and between tries they lean their catches toward counters (and sometimes go looking for one). Strategy sets how well they learn. The memory is kept across runs at that League, never carried to another, and wiped when the gym changes: a new leader or gym trainer, or about ${Math.round(GMEM_CHANGE * 100)}% of its line's Pokémon replaced since (steers, a leader adapting, bans). A gym that never changes wears down; one that keeps changing holds.`],
     ['Hall of Fame', 'Every title win, entered the moment the Champion is beaten, with the team that won it, the year, the League, the Champion beaten and a contender tag. A trainer who wins again gets another entry. Anyone with an entry is a Hall of Famer, and each entry adds to their prestige.'],
     ['Hall of Shame', "Records nobody wants: worst win rates, longest losing streaks and the like."],
@@ -16803,6 +16807,10 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 35, ver: '0.35.0', date: 'November 17, 2026', time: '10:55 PM ET', title: 'A tidier page menu', items: [
+    "The page menu is split by what you're doing. Manage: Gyms & Elite, Your staff, Ranch, Money, Cities and Contenders. Circuit: the badge circuit, all trainers and the meta. World: the League table, news and history. Records: the year report, records, the Hall of Fame and Pokémon.",
+    "The progress board opens from the Board button in the header (it's no longer in the menu as well), and God mode, when it's on, is in the ⋯ menu.",
+  ] },
   { id: 34, ver: '0.34.0', date: 'November 17, 2026', time: '8:45 PM ET', title: 'Calling challenges and Champion ambitions', items: [
     "You now decide when your Champion's seat is fought for. On Your staff, Call a challenge up to three times a year and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit. It is one battle at the Champion's level four weeks later, and you can fight it sooner or call it off. The winner takes the seat.",
     "The New Year challenge for your Champion's seat is gone: your own Elite Four members, and other Leagues' Elite Four, no longer challenge your Champion on their own. Title claims still come, and still wait for your answer. Gym Leaders' New Year challenges for an Elite Four seat are unchanged.",
@@ -17143,7 +17151,7 @@ function updatesBody() {
 function menuBody() {
   const m = modal;
   return `<div class="mh"><h2>World file</h2><button class="btn icon" data-act="close" aria-label="Close">×</button></div>
-  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple years…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button><button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
+  <div class="confirm-row"><button class="btn" data-act="simmany">Sim multiple years…</button><button class="btn" data-act="glossary">Glossary</button><button class="btn" data-act="images">Images</button>${godOn() ? '<button class="btn" data-act="nav" data-v="god">God mode</button>' : ''}<button class="btn" data-act="updates">Updates${updatesNew() ? ' <span class="newdot" aria-label="new"></span>' : ''}</button></div>
   <p class="muted">Progress saves automatically in this browser after every week. Copy the save to back it up or move it to another device.</p>
   <div class="confirm-row"><button class="btn" data-act="export">Copy save to clipboard</button>${canSaveFile() ? '<button class="btn" data-act="savefile">Download save file</button>' : ''}<button class="btn" data-act="importshow">Load a save</button></div>
   ${m.copying ? '<p class="fine">Preparing the save…</p>' : m.copied ? '<p class="fine">Save copied to the clipboard. Paste it into Load a save to bring this world back.</p>' : ''}
