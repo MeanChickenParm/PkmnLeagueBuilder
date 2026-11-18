@@ -232,3 +232,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The field alarm with gyms in any order.** In 0.33.0's chat one run of `sim.js 3 1 12 1` (growth and god mode on, seven Leagues by year 14) failed on a field of 164 to 173 against the 160 alarm; a rerun of the same build, and 0.32.0 at the same time, passed (the sims aren't seeded). Gyms in any order (0.32.0) let far more through, so fields run larger; retune the wall or move the alarm when wall targets are set.
 - **Pool swaps keep the built-in names.** A custom region used as a pool swap keeps the built-in region's League names (as it keeps its region name); only an added region or a whole replacement uses the region's own seat names.
 - **Naming a League you found mid-game:** leaving your League and the fresh start after a fold take the seat's default name (no name field on the leave panel or the founding screen); rename it from the League table afterwards. A name field there would be small.
+
+## Left over from calling challenges (0.34.0)
+- **All the numbers are provisional** (design doc 6.11): `CALL_MAX` 3, `CALL_WEEKS` 4, `CALL_UNHAPPY` 0.2, `CALL_AI` by aim, the Champion's ambition weights, `CHAMP_DRIFT` 0.25, `CHAMP_STEP_AGE` 40, and the loosened gates (`CHAL_SEAT_YEARS` 1, `CLAIM_GRACE` 1, `CLAIM_WANT` 0.5).
+- **Rival Champions rarely last the three-year clock:** in a three-League probe (15 years) rival Champions changed often through their own New Year challenges, so no Champion left over an ambition. Your Champion only changes through your calls and claims you allow, so its clocks run.
+- **A Champion who wants a bigger League's seat** goes to that League's circuit and must win its seat through a claim; a direct move between Leagues (trading Champions, or another League signing them) is not built.
+- **Your own Elite Four members can still challenge rival Champions** (`rivalChampChallenger` in their League) and trade places on a win, without your say. Whether that should need your approval too is open.
+- **The field alarm (160, 200 after a fold)** fails now and then in the hand-placed sim, on 0.33.0 too (fields of 201 to 206 after the forced folds). Since 0.32.0 gyms in any order let more through and fields run larger; settle with the wall targets.
+
