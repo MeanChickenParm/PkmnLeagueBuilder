@@ -1629,6 +1629,7 @@ function moneyWeek() {
     const w = wageBill(); if (w) book(-w, 'salaries');
     if (!lap) { const a = attractionIncome(); if (a) book(a, 'attractions'); const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
     const ci = cityIncome(); if (ci) book(ci, 'cities');
+    const sh = S.ranch ? showcase().income : 0; if (sh) book(sh, 'showcase'); // (0.36.0) conditioned Pokémon at the seat draw a crowd
     expirePaidBans();
     ranchWeek(); // (0.25.0) upkeep, trips, the market
     redWeek();

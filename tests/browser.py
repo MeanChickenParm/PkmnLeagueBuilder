@@ -235,6 +235,18 @@ async def run(path):
                     { const b = document.querySelector('[data-act=rancharea]'), t0 = R().trips.length, m0 = S.fin.money; if (!b) log.push('FAIL no area trip button'); else if (!b.disabled) { b.click(); if (R().trips.length !== t0 + 1 || S.fin.money !== m0 - 2500) log.push('FAIL the area trip'); } }
                     { const sel = document.querySelector('select.ranchtypesel'); if (!sel) log.push('FAIL no type picker'); else { sel.value = 'Water'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
                       const b = document.querySelector('[data-act=ranchtrip]'), t0 = R().trips.length; if (!b) log.push('FAIL no targeted trip button'); else if (!b.disabled) { const sp = b.dataset.b; b.click(); if (R().trips.length !== t0 + 1 || !R().trips.some(x => x.b === sp)) log.push('FAIL the targeted trip'); else log.push('sent a trip for ' + sp); } }
+                    // 0.36.0: hunt an alpha from the condition picker (cost the plan's), a trip to an injected outbreak, and a
+                    // Delta entry shown with its tag and its own type
+                    { inLeague(0, () => { S.ranch.trips = []; });
+                      const sel = document.querySelector('select.ranchcondsel'); if (!sel) log.push('FAIL no condition picker'); else { sel.value = 'alpha'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+                      const b = document.querySelector('[data-act=ranchtrip]'), m0 = S.fin.money;
+                      if (!b || !/Hunt an? alpha/.test(b.textContent)) log.push('FAIL no hunt button'); else if (!b.disabled) { const sp = b.dataset.b, p = inLeague(0, () => huntPlan(sp, 'alpha')); b.click(); const tr = R().trips.find(x => x.cond === 'alpha'); if (!tr || S.fin.money !== m0 - p.cost) log.push('FAIL the hunt'); else log.push('hunted an alpha ' + sp + ' for ' + p.cost); }
+                      const sel2 = document.querySelector('select.ranchcondsel'); if (sel2) { sel2.value = ''; sel2.dispatchEvent(new Event('change', { bubbles: true })); }
+                      inLeague(0, () => { const b0 = ranchSpecies().find(x => !SP[x].rare); S.outbreak = { sp: b0, town: townName(0), turn: S.turn, season: S.season, week: S.week, caught: 0, alpha: 0, shiny: 0 }; }); render();
+                      const ob = document.querySelector('[data-act=ranchob]'), t0 = R().trips.length; if (!ob) log.push('FAIL no outbreak trip button'); else if (!ob.disabled) { ob.click(); if (R().trips.length !== t0 + 1 || !R().trips.some(x => x.k === 'outbreak')) log.push('FAIL the outbreak trip'); else if (document.querySelector('[data-act=ranchob]')) log.push('FAIL a second outbreak trip offered'); }
+                      inLeague(0, () => { S.outbreak = null; S.ranch.trips = []; const e = newEntry(ranchSpecies().find(x => SP[x].types.length === 1), 3, 'trip'); condEntry(e, ['delta']); ranchAdd(e); }); render();
+                      if (!document.querySelector('#main .tag.delta')) log.push('FAIL no Delta tag on the Ranch page');
+                      if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after conditions'); }
                     { const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at == null && !x.sale); });
                       if (!e) log.push('nothing free in the ranch');
                       else { const sel = document.querySelector('select.ranchressel[data-id="' + e.uid + '"]'); if (!sel) log.push('FAIL no reserve picker'); else { sel.value = 'gym:0'; sel.dispatchEvent(new Event('change', { bubbles: true })); if (e.res !== 'gym:0') log.push('FAIL reserving'); }

@@ -33,7 +33,6 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **A demoted senior member (to gym trainer) counts as leaving the ranch:** they keep the ranch Pokémon they held.
 - **Other places that still hand out Pokémon outside the ranch:** a Gym Leader's temporary top-up for a seat challenge draws on the ranch but an acting Elite Four stand-in and acting leaders keep the old builder; legendary departures refill through `staffPicks` (so from the ranch); the `keep` steer no longer conjures signature Pokémon for senior staff (it only favours their lines).
 - **The AI doesn't use reserves or locks.** Since 0.26.0 it lists and sells back spares it won't keep (`ranchSpares`, `AI_IDLE`).
-- **Hunting by condition (the owner, Nov 17):** eventually targeted trips should be able to hunt a species in a particular condition for more money (for example a plain Ledyba for about 1,000, a Delta Ledyba for about 5,000; shiny and other conditions likewise). Not designed yet; fits catching trips and the long-term idea of rarer finds tied to money (item 34).
 - **Ranch Pokémon aren't counted in wealth** (the economy report counts cash and buildings); a ranch is a sink.
 - **Part 3** (challenger storage, picking at hire, the Sanctuary rework) is designed (6.5) and not built. Part 2 was built in 0.27.0.
 
@@ -240,3 +239,9 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Your own Elite Four members can still challenge rival Champions** (`rivalChampChallenger` in their League) and trade places on a win, without your say. Whether that should need your approval too is open.
 - **The field alarm (160, 200 after a fold)** fails now and then in the hand-placed sim, on 0.33.0 too (fields of 201 to 206 after the forced folds). Since 0.32.0 gyms in any order let more through and fields run larger; settle with the wall targets.
 
+
+## Left over from conditions in the ranch (0.36.0)
+- **Not measured:** how much conditioned Pokémon strengthen walls, or how often the showcase cap (400 a week) is hit. The 0.36.0 sims showed AI Elite Fours and Champions often at the cap, mostly from alphas and Deltas staff bring with them.
+- **Challengers' wild Delta odds ignore the regional Delta lines** (only ranch finds and hunts use `deltaMul`). Could follow later if Deltas should feel regional on the circuit too.
+- **Hires' storage** (ranch part 3) will be a further source of conditioned Pokémon; until then a hire's own conditioned Pokémon that they don't field go into the ranch through `dropMon`.
+- **Conditioned ranch Pokémon are never swapped out for value** (`ranchSwap` leaves special Pokémon alone, as it did for staff's own); only a lock, listing, reservation elsewhere or an off-type steer change moves them.

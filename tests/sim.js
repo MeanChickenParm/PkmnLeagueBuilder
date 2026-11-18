@@ -43,6 +43,8 @@ const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, 
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
 const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
+// (0.36.0) conditions in the ranch
+const CON = { hunts: 0, huntRefused: 0, obTrips: 0, held: 0, fielded: 0, shop: 0, kinds: {}, showMax: 0 };
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
@@ -96,7 +98,15 @@ function check(tag) {
       if (!(e.g >= 1 && e.g <= 5) || !g.ranchable(e.b) || !g.SP[e.sp] || g.LINE[e.sp] !== g.LINE[e.b] || !e.iv) bad('a bad ranch entry ' + JSON.stringify(e));
       if (e.res != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(e.res)) bad('a bad reservation ' + e.res);
       if (e.sale && e.at != null) bad('a listed ranch Pokémon is being fielded');
-      if (e.at != null) { const t = g.T(e.at); if (!t || !g.seniorIds().includes(t.id) || !t.team.some(m => m.rid === e.uid)) bad('a ranch entry held by someone not fielding it'); } }
+      if (e.at != null) { const t = g.T(e.at); if (!t || !g.seniorIds().includes(t.id) || !t.team.some(m => m.rid === e.uid)) bad('a ranch entry held by someone not fielding it'); }
+      // (0.36.0) a condition: real kinds, a Delta with a real type, never shiny and Radiant together, IVs to match
+      if (e.c) { const ks = g.condKeys(e.c); if (!ks.length) bad('an empty ranch condition'); if (e.c.shiny && e.c.radiant) bad('a shiny Radiant in the ranch');
+        if (e.c.delta && !g.TYPES.includes(e.c.delta)) bad('a Delta with no type'); if (e.c.shiny && Object.values(e.iv).some(v => v !== 31)) bad('a shiny without perfect IVs');
+        if (e.at != null) { const m = g.T(e.at).team.find(x => x.rid === e.uid); if (m && ks.some(k => !m[k])) bad('a fielded ranch Pokémon lost its condition'); CON.fielded++; }
+        CON.held++; ks.forEach(k => { CON.kinds[k] = (CON.kinds[k] || 0) + 1; }); } }
+    for (const x of R.shop) if (x.c) { CON.shop++; if (!(x.price >= 100 * g.condMul(x.c))) bad('a conditioned market price too low'); }
+    for (const tr of R.trips) if (tr.cond && !g.COND_MUL[tr.cond]) bad('a hunt with no condition');
+    if (z.fin) CON.showMax = Math.max(CON.showMax, g.showcase().income);
     if (R.mons.length > g.RANCH_CAP[g.RANCH_CAP.length - 1]) bad('a ranch over every capacity');
     // (0.27.0) the market only sells what the League can reach; the safari holds foreign lines; lanes only in ports
     if (g.homeSet(z.region) && !g.lapsed()) { const ml = new Set(g.marketLines()); for (const x of R.shop) { if (!ml.has(x.b)) bad('the market sells ' + x.b + ' out of reach'); if (!g.homeSet(z.region).has(x.b)) REG.shopForeign++; }
@@ -301,6 +311,12 @@ for (let i = 0; i < N; i++) {
         if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
+    // (0.36.0) a condition hunt (refused out of reach, the cost the plan's) and a trip to an outbreak
+    if (HAND && Math.random() < 0.02) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const m0 = z.fin.money;
+      { const k = rnd(g.COND_KINDS), okL = g.ranchSpecies().filter(x => g.huntOk(x, k)), b = okL.length && Math.random() < 0.6 ? rnd(okL) : rnd(g.ranchSpecies()), ok = g.huntOk(b, k), p = g.huntPlan(b, k), w = g.startTrip('target', b, k);
+        if (!w) { CON.hunts++; if (!ok) fail.push('a hunt out of reach: ' + b); if (z.fin.money !== m0 - p.cost) fail.push('hunt cost wrong'); if (p.cost <= g.tripPlan(b).cost) fail.push('a hunt no dearer than a trip'); }
+        else { CON.huntRefused++; if (ok && z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('hunt refused: ' + w); }
+        const o = g.obTrip(); if (o && z.ranch.trips.length < g.tripMax() && z.fin.money >= g.OB_TRIP_COST) { const m1 = z.fin.money; if (g.startTrip('outbreak')) fail.push('outbreak trip refused'); else { CON.obTrips++; if (z.fin.money !== m1 - g.OB_TRIP_COST) fail.push('outbreak trip cost wrong'); if (!g.startTrip('outbreak')) fail.push('two trips to one outbreak'); } } } });
     // (0.25.0) the ranch: trips, the market, other Leagues' sales, selling, releasing, locks, reserves and listings
     if (HAND && Math.random() < 0.08) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const r = Math.random(), m0 = z.fin.money;
       if (r < 0.15) { const ok = g.tripOk, b = Math.random() < 0.3 ? rnd(g.ranchSpecies()) : rnd(g.ranchSpecies().filter(x => ok(x))), p = g.tripPlan(b), avail = ok(b), w = g.startTrip('target', b);
@@ -480,6 +496,7 @@ console.log('legendaries', JSON.stringify(LEG));
   console.log('any order', 'out of number order', (100 * anyOrder.outOfOrder / Math.max(1, anyOrder.out)).toFixed(0) + '%', 'held early/mid/late', sb.map(x => x[0] ? Math.round(100 * x[1] / x[0]) + '% of ' + x[0] : '—').join(' · '), 'tries by gym', perGym.join('/'));
 }
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
+console.log('conditions', JSON.stringify(CON));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
