@@ -967,7 +967,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch'];
+const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)

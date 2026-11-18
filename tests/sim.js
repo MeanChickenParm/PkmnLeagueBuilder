@@ -32,6 +32,7 @@ const PG = { start: [], famous: 0 }, PGH = { blocked: 0 };
 g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x => x.leader)]; for (const id of ids) { const t = g.T(id); if (t.famous && !t.founded) PG.famous++; } PG.start.push(Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length)); });
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
+let renames = 0;
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
@@ -47,6 +48,7 @@ const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
+  { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
   // (0.27.0) migration waves: from another region, lines that aren't the region's own, not past their end
   for (const [r, w] of Object.entries(s.migr || {})) { if (!w || w.from === +r || !(w.from >= 0 && w.from < g.nRegionsBuilt()) || !w.lines.length || w.until < s.turn) bad('a bad migration ' + r + ' ' + JSON.stringify(w)); else { for (const b of w.lines) if (g.regionLines().sets[r].has(b)) bad('a migrant ' + b + ' already lives in region ' + r); const key = r + ':' + w.at; if (!WAVES.has(key)) { WAVES.add(key); REG.waves++; if (w.far) REG.far++; } } }
@@ -371,6 +373,11 @@ for (let i = 0; i < N; i++) {
     // (0.18.0) the red: a rival League forced deep into the red folds at New Year in year 7; the player's own League
     // in year 9 (each needs a third red New Year running, and debts its buildings can't cover); a decay is forced now and then
     let foldWatch = null;
+    // (0.33.0) the player renames their League now and then; a rival can't be renamed without the setup option
+    if (HAND && !S().founding && Math.random() < 0.01) { const me = g.ME(), nm = 'Test League ' + S().turn, was = g.leagueName(me);
+      if (g.renameLeague(me, nm) || g.leagueName(me) !== nm || !g.inLeague(me, () => (S().oldNames || []).some(x => x.name === was))) fail.push('renaming your League');
+      const other = g.eachLeague(i => i).find(i => i !== me); if (other != null && !g.renameLeague(other, 'Nope League')) fail.push('a rival was renamed without the option');
+      renames++; }
     if (HAND && S().week === 47 && ((S().season === 7 && g.nLeagues() > 1) || S().season === 9)) {
       const k = S().season === 7 ? [...Array(g.nLeagues()).keys()].find(i => i !== g.ME()) : g.ME();
       g.inLeague(k, () => { S().fin.money = -50000000; S().fin.redYears = g.FOLD_YEARS - 1; });
@@ -444,7 +451,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
-console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
+console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none', 'renames', renames, 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));
 { // (0.32.0) gyms in any order: how often a challenger's badges came out of number order, and gyms held by stage
