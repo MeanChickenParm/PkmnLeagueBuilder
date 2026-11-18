@@ -4,7 +4,7 @@
 // the League where it was first found (S.legendPool, one per League), keeping its lifetime stats, awards and IVs.
 // The next trainer to find it, catch it or be given it gets that same Pokémon, at their own level. A legendary
 // never goes back to a trainer it has already been with. Ultra Beasts and Paradox Pokémon are not covered.
-const LEGEND_TENURE = [3, 5];
+const LEGEND_TENURE = [5, 8]; // (0.37.0, the owner: longer with everyone; was 3 to 5)
 // v184: Missingno stays longer, and can glitch away mid-season
 const GLITCH_TENURE = [6, 10], GLITCH_CHANCE = 0.0005, GLITCH_LEAVE = 0.001;
 const LEG_UB_LINES = new Set(BABY_LEGENDS.filter(b => { const q = [b]; while (q.length) { const n = q.shift(); if (SP[n].ub || ULTRA_BEASTS.includes(n)) return true; for (const e of SP[n].evos || []) q.push(e.to); } return false; }));
@@ -967,7 +967,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -1021,7 +1021,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); }
+function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1520,7 +1520,7 @@ function retireHere(t, why) {
 // a retired trainer keeps their career, but not last season's week-by-week log or Pokémon that barely battled:
 // it keeps saves small enough for the browser with several Leagues
 function compactRetired(t) {
-  t.weekLog = [];
+  t.weekLog = []; t.store = null; t.storePick = null; // (0.37.0)
   t.alumni = (t.alumni || []).filter(m => m.st && m.st.b >= 3).slice(0, 8);
   trimH2h(t);
 }
@@ -2441,6 +2441,14 @@ function letGo(t, was) {
   if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
   t.wish = null;
   severance(t, was);
+  // (0.37.0) someone who stored their own legendary with this League takes being let go hard: a certain grudge, and
+  // likelier than usual to take it to another League
+  if (t.storedLg != null && t.storedLg === (S.lg || 0)) {
+    t.storedLg = null; t.stepDown = null;
+    returnToCircuit(t, `took being let go as ${was} hard, after trusting the League with a legendary`); t.grudge = S.season; t.grudgeLg = S.lg || 0;
+    if (nLeagues() < 2 || rand() >= GRUDGE_AWAY_LEG) return 'grudge';
+    shiftLeague(t, pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== homeLeague(t)))); return 'away';
+  }
   if (t.stepDown != null) {
     t.stepDown = null;
     if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; t.grudgeLg = S.lg || 0; return grudgeAway(t); }

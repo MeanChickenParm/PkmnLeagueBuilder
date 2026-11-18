@@ -247,6 +247,22 @@ async def run(path):
                       inLeague(0, () => { S.outbreak = null; S.ranch.trips = []; const e = newEntry(ranchSpecies().find(x => SP[x].types.length === 1), 3, 'trip'); condEntry(e, ['delta']); ranchAdd(e); }); render();
                       if (!document.querySelector('#main .tag.delta')) log.push('FAIL no Delta tag on the Ranch page');
                       if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after conditions'); }
+                    // 0.37.0: take from a new hire's storage, store a challenger's legendary in a Sanctuary (paying their fee) and
+                    // give it to an Elite Four member
+                    { const t = inLeague(0, () => { const t = T(S.e4[0]); const b = ranchSpecies().find(x => !SP[x].rare); t.store = [{ uid: 990001, sp: b, iv: { hp: 20, atk: 20, def: 20, spa: 20, spd: 20, spe: 20 }, at: S.turn }]; t.storePick = { n: 1, until: S.turn + 8 }; return t; }); render();
+                      const pb = document.querySelector('[data-act=storepick]'), n0 = R().mons.length; if (!/New hires' storage/.test(txt()) || !pb) log.push('FAIL no storage pick');
+                      else if (!pb.disabled) { pb.click(); if (R().mons.length !== n0 + 1 || t.store.length || t.storePick) log.push('FAIL the storage pick'); else log.push('took ' + R().mons[R().mons.length - 1].sp + ' from storage'); }
+                      const L = inLeague(0, () => { const own = ownedLegends(), pooled = new Set((S.wPool || []).map(m => m.sp)); const sp = LEGENDS.map(x => x.name || x).find(x => SP[x] && SP[x].legend && !SP[x].baby && !own.has(x) && !pooled.has(x) && !legendHeld(x));
+                        const c = S.challengers.map(T).find(x => x && x.team.length >= 2 && !legendFull(x)); if (!sp || !c) return null;
+                        const m = claimLegend(c, makeMon(sp, 50)); c.team.push(m); const city = S.cities[S.gyms[0].city]; city.site = { sp, from: S.season, sps: [sp] }; cityB(city).push({ k: 'sanct', lv: 1 }); S.fin.money = Math.max(S.fin.money, 400000); return { c, m }; });
+                      if (!L) log.push('no legendary to store'); else { render();
+                        if (!/Sanctuaries and the vault/.test(txt())) log.push('FAIL no Sanctuary panel');
+                        const ab = document.querySelector('[data-act=vaultask][data-id="' + L.c.id + '"]'), fee = inLeague(0, () => vaultFee(L.m)), m0 = S.fin.money;
+                        if (!ab) log.push('FAIL no store button'); else { ab.click(); const v = inLeague(0, () => S.vault || []); if (!v.some(e => e.m === L.m) || L.c.team.includes(L.m) || S.fin.money !== m0 - fee) log.push('FAIL storing a legendary ' + JSON.stringify({ dis: ab.disabled, n: v.length, team: L.c.team.includes(L.m), m0, now: S.fin.money, fee, toast: (document.querySelector('.toast') || {}).textContent })); else log.push('stored ' + L.m.sp + ' for ' + fee); }
+                        if (!/open/.test(document.querySelector('#main').textContent)) log.push('FAIL the Sanctuary not shown open');
+                        const gb = document.querySelector('[data-act=vaultgive]'), sel = document.querySelector('select.vaultsel');
+                        if (!gb || !sel) log.push('FAIL no give button'); else { const to = T(+sel.value); gb.click(); if (!to.team.includes(L.m)) log.push('FAIL giving a stored legendary'); else log.push('gave ' + L.m.sp + ' to ' + to.name); }
+                        if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the vault'); } }
                     { const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at == null && !x.sale); });
                       if (!e) log.push('nothing free in the ranch');
                       else { const sel = document.querySelector('select.ranchressel[data-id="' + e.uid + '"]'); if (!sel) log.push('FAIL no reserve picker'); else { sel.value = 'gym:0'; sel.dispatchEvent(new Event('change', { bubbles: true })); if (e.res !== 'gym:0') log.push('FAIL reserving'); }

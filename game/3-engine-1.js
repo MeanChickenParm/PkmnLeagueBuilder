@@ -198,6 +198,7 @@ function maybeWormhole() {
 // (0.31.0) or fewer than one for each region that has it at home
 function freeBabies() {
   const held = {}; for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held[LINE[m.sp]] = (held[LINE[m.sp]] || 0) + 1;
+  for (const { e } of allVault()) if (e.m) held[LINE[e.m.sp]] = (held[LINE[e.m.sp]] || 0) + 1; // (0.37.0) stored in a Sanctuary
   return BABY_LEGENDS.filter(b => (held[b] || 0) < legendCap(b));
 }
 // For branching lines (Eevee, Tyrogue, Kirlia...) pick the branch that fits the preferred type, else at random
@@ -216,7 +217,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 16; // 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 17; // 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -2301,6 +2302,8 @@ const FR_START = { starter: 120, caught: 50, gift: 90, assigned: 100 };
 function stamp(m, how) { if (!m.metFr) { m.fr = FR_START[how] ?? m.fr; m.metFr = 1;  } if (!m.met) m.met = { how, season: S.season || 1, week: S.week + 1 }; return m; }
 // keep a record of Pokémon that leave a trainer's team after they've battled
 function farewell(t, m, why) {
+  // (0.37.0) a legendary the League stored in a Sanctuary goes back to its vault instead of moving on
+  if (m && m.vaulted && vaultReturn(t, m, why)) return;
   // a released Pokémon's held item goes back in the bag
   if (m && m.item && t && t.team && t.team.includes(m)) { bagAdd(t, m.item); m.item = null; }
   if (m && m.partners && isLegendLine(m.sp) && t && t.id != null && S.trainers[t.id]) {
@@ -2309,6 +2312,8 @@ function farewell(t, m, why) {
     if (p && p.st && p.st.b) { t.alumni = t.alumni || []; t.alumni.unshift({ uid: m.uid, sp: m.sp, lvl: Math.floor(m.lvl), st: Object.assign(blankStat(), p.st), met: m.met, left: S.season || 1, why, nat: m.nat, iv: m.iv, fr: m.fr, cov: m.cov, legendRef: true, shiny: m.shiny, radiant: m.radiant }); }
     return;
   }
+  // (0.37.0) a challenger keeps what they drop in storage (a League can take some when it hires them)
+  if (t && t.role === 'challenger') storeMon(t, m);
   if (!m || !m.st || !m.st.b) return;
   t.alumni = t.alumni || [];
   // 0.15.0: slimmer entries (no evolution log, Pokérus or Lucky marks), to keep saves small with several Leagues

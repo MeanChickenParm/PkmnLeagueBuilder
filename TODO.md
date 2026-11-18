@@ -34,13 +34,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Other places that still hand out Pokémon outside the ranch:** a Gym Leader's temporary top-up for a seat challenge draws on the ranch but an acting Elite Four stand-in and acting leaders keep the old builder; legendary departures refill through `staffPicks` (so from the ranch); the `keep` steer no longer conjures signature Pokémon for senior staff (it only favours their lines).
 - **The AI doesn't use reserves or locks.** Since 0.26.0 it lists and sells back spares it won't keep (`ranchSpares`, `AI_IDLE`).
 - **Ranch Pokémon aren't counted in wealth** (the economy report counts cash and buildings); a ranch is a sink.
-- **Part 3** (challenger storage, picking at hire, the Sanctuary rework) is designed (6.5) and not built. Part 2 was built in 0.27.0.
+- **Part 3** built in 0.37.0 (storage, picking at hire, the Sanctuary rework). Breeding waits for its own design round (the owner, Nov 18).
 
 ## Left over from regional encounters (0.27.0)
 - **All the numbers are provisional** (item 41): `REGION_SIZE` 250 (350 before 0.28.0), `REGION_FLOOR` 5 at `FLOOR_BST` 450, the neighbour ring, migration odds, length and size, the far share, lane and route prices and the weekly fee, charter cost and size, safari sizes, refresh and grade bonus, `FOREIGN_MAX` 3, `STEER_GAP` 0.5. Which port cities count is a judgment call (`PORTS`).
 - **The lists are algorithmic,** not the real regional dexes: each generation to its own region (regional forms to their region too), then borrowing for the type floor and to reach `REGION_SIZE`. Borrowing spreads some starters widely (Rowlet is in five regions). Hand-tuning by theme is still open.
 - **Delta forms** stay with their base species' regions; the owner may want Deltas found elsewhere as flavour (open).
-- **Released on moving region:** part 3's storage should take these instead of `farewell`.
 - **Not measured:** the wall and the economy under regional rules (lighter testing). Thinner home pools may mean more stopgaps early; worth a look when balance comes back.
 - **Obedience by region** left as is (owner, Nov 17).
 - **Steer gaps** are shown, not acted on; rivals don't read them.
@@ -245,3 +244,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Challengers' wild Delta odds ignore the regional Delta lines** (only ranch finds and hunts use `deltaMul`). Could follow later if Deltas should feel regional on the circuit too.
 - **Hires' storage** (ranch part 3) will be a further source of conditioned Pokémon; until then a hire's own conditioned Pokémon that they don't field go into the ranch through `dropMon`.
 - **Conditioned ranch Pokémon are never swapped out for value** (`ranchSwap` leaves special Pokémon alone, as it did for staff's own); only a lock, listing, reservation elsewhere or an off-type steer change moves them.
+
+## Left over from ranch part 3 (0.37.0)
+- **All the numbers are provisional** (item 43): `STORE_MAX` 12, `STORE_PICKS` 3 (+ a scouting office level), `STORE_PICK_WEEKS` 8, `STORE_PAY_MAX` 0.25 at `STORE_PAY_PER` 150,000, `SITE_KEEP` 4, `VAULT_STAFF` 0.3 and its steps, `VAULT_FEE` 50,000–200,000, `VAULT_ASK_WEEKS` 24, `AI_VAULT` 0.25, `GRUDGE_AWAY_LEG` 0.75, `LEGEND_TENURE` 5–8.
+- **A challenger's fee or a post:** the design said a challenger may want money or a post; built as a fee, with hiring them (then asking as staff) as the other road. No direct "store it for a post" offer.
+- **Sanctuaries flicker:** a challenger on your circuit counts, so a Sanctuary can open and close as challengers move between circuits. Not measured. Whether Sanctuaries are still too generous (item 36) needs the balance pass.
+- **Unpicked storage picks lapse** after 8 weeks with nothing taken (no automatic pick for the player).
+- **Storage on staff** stays with them (it's theirs) and keeps their pay multiplier fixed at hire; it is cleared on retirement. Save size not measured (12 slim entries a challenger).
+- **The AI's judgement** for storing is simple (a monthly chance, the strongest candidate); it never takes a legendary back from a holder or moves one between its posts.
