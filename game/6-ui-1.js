@@ -306,29 +306,33 @@ function header() {
     <div class="top-act">${btn}<button class="btn ghost" data-act="nav" data-v="board" title="The progress board: how far everyone has got">Board</button><button class="btn ghost" data-act="simmany">Sim years</button><button class="btn icon" data-act="menu" aria-label="Save and league options${updatesNew() ? ' (new updates)' : ''}">⋯${updatesNew() ? '<span class="newdot"></span>' : ''}</button></div>
   </div></header>`;
 }
-// the page menu: three groups, each a dropdown (League / Trainers / Stats), plus the Glossary
+// the page menu (0.35.0): four groups by what you're doing — Manage (run your League), Circuit (watch the
+// challengers), World (the other Leagues and what happened), Records — plus the Glossary and Updates.
+// The progress board is the header's Board button; God mode is in the ⋯ menu.
 let navOpen = null;
 function navGroups() {
-  const league = [['circuit', 'Badge circuit'], ['board', 'Progress board'], ['gyms', 'Gyms & Elite']];
-  if (handOn()) league.push(['staff', 'Your staff']);
-  if (playerFin()) league.push(['money', 'Money'], ['cities', 'Cities'], ['ranch', 'Ranch']);
-  if (handOn() && nLeagues() > 1) league.push(['contenders', 'Contenders']);
-  if (nLeagues() > 1) league.push(['table', 'League table']);
-  if (S.history.some(x => x.titles != null)) league.push(['recap', 'Year report']);
-  league.push(['meta', 'Meta']);
-  league.push(['news', 'News'], ['history', 'History']);
-  if (godOn()) league.push(['god', 'God mode']);
+  const manage = [['gyms', 'Gyms & Elite']];
+  if (handOn()) manage.push(['staff', 'Your staff']);
+  if (playerFin()) manage.push(['ranch', 'Ranch'], ['money', 'Money'], ['cities', 'Cities']);
+  if (handOn() && nLeagues() > 1) manage.push(['contenders', 'Contenders']);
+  const world = [];
+  if (nLeagues() > 1) world.push(['table', 'League table']);
+  world.push(['news', 'News'], ['history', 'History']);
+  const records = [];
+  if (S.history.some(x => x.titles != null)) records.push(['recap', 'Year report']);
+  records.push(['records', 'Records'], ['hof', 'Hall of Fame'], ['dex', 'Pokémon']);
   return [
-    { k: 'league', label: 'League', items: league },
-    { k: 'trainers', label: 'Trainers', items: [['trainers', 'All trainers']] },
-    { k: 'stats', label: 'Stats', items: [['records', 'Records'], ['dex', 'Pokémon'], ['hof', 'Hall of Fame']] },
+    { k: 'manage', label: 'Manage', items: manage },
+    { k: 'circuit', label: 'Circuit', items: [['circuit', 'Badge circuit'], ['trainers', 'All trainers'], ['meta', 'Meta']] },
+    { k: 'world', label: 'World', items: world },
+    { k: 'records', label: 'Records', items: records },
   ];
 }
 function nav() {
   const groups = navGroups();
   const grp = g => {
     const here = g.items.some(x => x && x[0] === view), open = navOpen === g.k;
-    const cur = here && g.k !== 'trainers' ? g.items.find(x => x && x[0] === view)[1] : null;
+    const cur = here ? g.items.find(x => x && x[0] === view)[1] : null;
     return `<div class="navgrp${open ? ' open' : ''}"><button class="tab navbtn${here ? ' on' : ''}" data-act="navgrp" data-k="${g.k}" aria-haspopup="true" aria-expanded="${open}">${g.label}${cur && cur !== g.label ? `<span class="navcur"> · ${cur}</span>` : ''}<span class="navchev" aria-hidden="true">▾</span></button>
       <div class="navmenu" role="menu">${g.items.map(x => x ? `<button class="navitem${view === x[0] ? ' on' : ''}" role="menuitem" data-act="nav" data-v="${x[0]}">${x[1]}</button>` : '<div class="navsep" role="separator"></div>').join('')}</div></div>`;
   };
