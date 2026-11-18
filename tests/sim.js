@@ -41,6 +41,7 @@ const chal = { n: 0, claims: 0, claimWon: 0, claimNo: 0, claimPost: 0, champ: 0,
 const spon = { sent: 0, later: 0, refused: 0, recalled: 0, renewed: 0, left: 0, carried: 0 };
 const red = { sold: 0, restored: 0, decayed: 0, folded: 0, myFold: 0, moved: 0, offered: 0, bought: 0, declined: 0, lapsedYears: 0 };
 const LEG = { held: 0, px: 0, sites: 0, sanct: 0, sanctBuilt: 0 }; // (0.20.0)
+const PART3 = { vaultMax: 0, storeMax: 0, open: 0, sealed: 0, picked: 0, pickRefused: 0, asked: 0, stored: 0, given: 0, giveRefused: 0, payMulMax: 1 }; // (0.37.0)
 const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
 // (0.36.0) conditions in the ranch
@@ -244,9 +245,20 @@ function check(tag) {
         if (g.SP[m.sp].paradox) { if (px[m.sp]) bad('two of ' + m.sp + ' (Paradox) held'); px[m.sp] = 1; } } }
     { const wait = {}; for (const m of s.wPool || []) { if (g.SP[m.sp].baby) continue; wait[m.sp] = (wait[m.sp] || 0) + 1; if ((held[m.sp] || 0) + wait[m.sp] > g.legendCap(m.sp)) bad(m.sp + ' held and waiting past its places'); } }
     if (s.leagues) for (const L of s.leagues) if (L && L.legendPool) bad('a League still has its own legendary pool');
+    // (0.37.0) the vault: a stored legendary counts toward one of each; a fielded one is on its holder's team
+    for (const { lg, e } of g.allVault()) {
+      if (!!e.m === (e.holder != null)) bad('a vault entry both stored and fielded (or neither)');
+      if (e.m) { if (!g.isLegendLine(e.m.sp) || !e.m.vaulted) bad('a bad stored legendary'); if (e.m.leg) bad('a stored legendary with its clock running'); if (!(e.left >= 1)) bad('a stored legendary with no years left');
+        if (g.SP[e.m.sp].legend && !g.SP[e.m.sp].baby) { held[e.m.sp] = (held[e.m.sp] || 0) + 1; if (held[e.m.sp] > g.legendCap(e.m.sp)) bad(held[e.m.sp] + ' of ' + e.m.sp + ' in the world (vault)'); } }
+      else { const h = g.T(e.holder), m = h && h.team.find(x => x.uid === e.uid); if (!m || !m.vaulted || !m.leg) bad('a fielded vault legendary not on its holder'); }
+      if (!s.cities[e.city]) bad('a vault entry at no city'); PART3.vaultMax = Math.max(PART3.vaultMax, g.allVault().length); }
+    for (const t of Object.values(s.trainers)) { for (const m of t.team) if (m.vaulted && !g.allVault().some(x => x.e.uid === m.uid && x.e.holder === t.id)) bad('a vaulted legendary with no vault entry');
+      if (t.store) { if (t.store.length > g.STORE_MAX) bad('storage past its cap'); if (t.role === 'retired' && t.store.length) bad('a retiree with storage'); if (t.store.some(x => !g.ranchKeeps(x))) bad('storage holding what a ranch could never take'); PART3.storeMax = Math.max(PART3.storeMax, t.store.length); }
+      if (t.storePick && !(t.storePick.n > 0)) bad('a storage pick with nothing left'); }
     LEG.held = Math.max(LEG.held, Object.keys(held).length); LEG.px = Math.max(LEG.px, Object.keys(px).length);
     LEG.sites = Math.max(LEG.sites, Object.values(s.cities).filter(c => g.siteOn(c)).length);
-    for (const c of Object.values(s.cities)) if (c.site && !(c.site.until >= c.site.from)) bad('a bad legendary site in ' + c.name); }
+    for (const c of Object.values(s.cities)) if (c.site && !(Array.isArray(c.site.sps) && c.site.sps.length && c.site.sps.length <= 4 && c.site.sps.includes(c.site.sp) && c.site.from >= 1)) bad('a bad legendary site in ' + c.name);
+    g.eachLeague(() => { for (const x of g.sanctuaries()) { PART3[x.open ? 'open' : 'sealed']++; } }); }
   // money and cities (0.13.0; every League since 0.15.0): books, pay, bans and buildings; rivals have an aim
   if (!s.founding) g.eachLeague(i => { const z = S(), mine = HAND && i === g.ME();
     if (!z.fin || !Number.isFinite(z.fin.money) || Math.round(z.fin.money) !== z.fin.money) bad('books broken in League ' + i);
@@ -342,6 +354,13 @@ for (let i = 0; i < N; i++) {
         else if (q < 0.55 && e) { if (!g.lockMon(e.uid, !e.lock)) RAN.locked++; }
         else if (q < 0.8 && e) { if (!g.reserveMon(e.uid, rnd([null, 'champion', 'e4:1', 'gym:3', 'gym:6']))) RAN.reserved++; if (!g.reserveMon(e.uid, 'nowhere')) fail.push('a reservation for no post'); }
         else if (free.length && g.nLeagues() > 1) { const f = rnd(free); if (f.sale) { if (!g.unlistMon(f.uid)) RAN.unlisted++; } else if (!g.listMon(f.uid)) RAN.listed++; } }
+      // (0.37.0) take from a new hire's storage; ask a holder to store a legendary; give a stored one to the Elite Four
+      for (const id of g.seniorIds()) { const t = g.T(id); if (!g.storePickOk(t)) continue; const s0 = rnd(t.store), n0 = z.ranch.mons.length, k0 = t.storePick.n;
+        const w = g.pickStore(id, s0.uid); if (!w) { PART3.picked++; if (z.ranch.mons.length !== n0 + 1 || t.store.includes(s0) || (t.storePick && t.storePick.n !== k0 - 1)) fail.push('a storage pick went wrong'); } else PART3.pickRefused++; break; }
+      { const c = g.vaultCands(); if (c.length && Math.random() < 0.3) { const x = rnd(c), m0 = z.fin.money, fee = x.staff ? 0 : g.vaultFee(x.m), r = g.storeLegend(x.t.id, x.m.uid); PART3.asked++;
+          if (r.ok) { PART3.stored++; if (z.fin.money !== m0 - fee) fail.push('vault fee wrong'); if (x.t.team.includes(x.m) || !z.vault.some(e => e.m === x.m)) fail.push('storing a legendary went wrong'); } } }
+      { const e = (z.vault || []).find(v => v.m), tk = g.vaultTakers(); if (e && tk.length && Math.random() < 0.5) { const t = rnd(tk), w = g.vaultGive(e.uid, t.id); if (!w) { PART3.given++; if (!t.team.some(m => m.uid === e.uid) || e.m) fail.push('giving a stored legendary went wrong'); } else PART3.giveRefused++; }
+        const busy = g.staffIds().map(g.T).find(t => t && t.role === 'leader'); if (e && busy && !g.vaultGive(e.uid, busy.id)) fail.push('a Gym Leader was given a stored legendary'); }
       if (Math.random() < 0.1) { const ck = g.buildCheck('seat', 'ranch'); if (!ck.why && z.fin.money >= ck.cost) { const c0 = g.ranchCap(); if (!g.build('seat', 'ranch')) { RAN.built++; if (g.ranchCap() <= c0) fail.push('the Ranch did not add room'); } } } });
     // money and cities (0.13.0): build, ban, give raises and move gyms now and then
     if (HAND && S().season >= 2 && Math.random() < 0.05) g.inLeague(g.ME(), () => { const z = S(), r = Math.random();
@@ -497,6 +516,7 @@ console.log('legendaries', JSON.stringify(LEG));
 }
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('conditions', JSON.stringify(CON));
+console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));

@@ -1,5 +1,15 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 37, ver: '0.37.0', date: 'November 18, 2026', time: '11:30 AM ET', title: 'Storage, picking at hire and Sanctuaries reworked (the ranch, part 3)', items: [
+    "Challengers keep what they drop in storage: Pokémon released for a catch, left behind for a new run, or over the foreign limit when they move region (they are no longer released). Up to 12, the oldest let go.",
+    "Hire a challenger with storage as a Gym Leader, Elite Four member or Champion and you can take up to 3 of their stored Pokémon into your ranch (one more a scouting office level), from the Ranch page within 8 weeks. Alphas, Deltas, shinies and Radiants can be taken too. The rest stays theirs. Hiring rows show a candidate's storage and its value, and a rich storage asks up to a quarter more pay. Rival Leagues take theirs by aim.",
+    "Legendary sites no longer run out after ten years. A Sanctuary is open while one of its site's legendaries is with your League (held by your staff, by a challenger on your circuit, or stored in the Sanctuary), and sealed otherwise: no income, upkeep or prestige until one comes back. Sanctuary income and prestige when open are as before.",
+    "Store legendaries in your Sanctuaries from the Ranch page. Staff agree or refuse by their ambition and record (they would rather keep theirs); a challenger asks for money by the legendary's strength, or hire them and ask again. While stored, a legendary's years with a partner stop counting.",
+    "Give a stored legendary to an Elite Four member or your Champion who has none. It belongs to the League: it comes back to the vault when they leave the post. A member of staff you let go after they stored their own legendary with you takes it hard: a sure grudge, and likelier to take it to another League.",
+    "Legendaries stay with their partners longer: 5 to 8 years (was 3 to 5).",
+    "Rival Leagues store legendaries now and then; wall-builders and star-makers give them to their Elite Four or Champion. A League that folds lets its stored legendaries go to wait for new partners.",
+    "Old saves can't be loaded.",
+  ] },
   { id: 36, ver: '0.36.0', date: 'November 17, 2026', time: '11:59 PM ET', title: 'Alphas, Deltas, shinies and Radiants in the ranch', items: [
     "Your ranch can hold alphas, Deltas, shinies and Radiants now, and keeps them whole: a Delta keeps its unusual type and ability, a Radiant its ability, a shiny its perfect IVs. Staff field them as they are, and a Delta counts by its own types when a gym picks on type.",
     "They turn up now and then on catching trips, charters and the market, at the same odds challengers get in the wild (Scouting nudges alphas). Staff who drop one, and new hires who don't field theirs, put them in the ranch like any other.",
@@ -674,6 +684,10 @@ document.addEventListener('click', ev => {
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
     case 'ranchob': { const w = inLeague(ME(), () => startTrip('outbreak')); save(); render(); toast(w || 'The trip has set out for the outbreak.'); break; }
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b, el.dataset.c || undefined)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'storepick': { const w = inLeague(ME(), () => pickStore(+el.dataset.id, +el.dataset.u)); save(); render(); toast(w || 'Taken into the ranch.'); break; }
+    case 'storedone': { inLeague(ME(), () => doneStore(+el.dataset.id)); save(); render(); toast('The rest stays with them.'); break; }
+    case 'vaultask': { const r = inLeague(ME(), () => storeLegend(+el.dataset.id, +el.dataset.u)); save(); render(); toast(r.ok ? 'Stored in the Sanctuary.' : r.why); break; }
+    case 'vaultgive': { const sel = document.querySelector(`.vaultsel[data-u="${el.dataset.u}"]`); const w = sel ? inLeague(ME(), () => vaultGive(+el.dataset.u, +sel.value)) : 'Pick who fields it.'; save(); render(); toast(w || 'Given from the vault.'); break; }
     case 'ranchcharter': { const w = inLeague(ME(), () => startTrip('charter', +el.dataset.v)); save(); render(); toast(w || 'The charter is on its way.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }

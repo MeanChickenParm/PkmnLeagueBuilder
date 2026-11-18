@@ -4910,6 +4910,7 @@ function maybeWormhole() {
 // (0.31.0) or fewer than one for each region that has it at home
 function freeBabies() {
   const held = {}; for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) held[LINE[m.sp]] = (held[LINE[m.sp]] || 0) + 1;
+  for (const { e } of allVault()) if (e.m) held[LINE[e.m.sp]] = (held[LINE[e.m.sp]] || 0) + 1; // (0.37.0) stored in a Sanctuary
   return BABY_LEGENDS.filter(b => (held[b] || 0) < legendCap(b));
 }
 // For branching lines (Eevee, Tyrogue, Kirlia...) pick the branch that fits the preferred type, else at random
@@ -4928,7 +4929,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 16; // 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 17; // 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -7013,6 +7014,8 @@ const FR_START = { starter: 120, caught: 50, gift: 90, assigned: 100 };
 function stamp(m, how) { if (!m.metFr) { m.fr = FR_START[how] ?? m.fr; m.metFr = 1;  } if (!m.met) m.met = { how, season: S.season || 1, week: S.week + 1 }; return m; }
 // keep a record of Pokémon that leave a trainer's team after they've battled
 function farewell(t, m, why) {
+  // (0.37.0) a legendary the League stored in a Sanctuary goes back to its vault instead of moving on
+  if (m && m.vaulted && vaultReturn(t, m, why)) return;
   // a released Pokémon's held item goes back in the bag
   if (m && m.item && t && t.team && t.team.includes(m)) { bagAdd(t, m.item); m.item = null; }
   if (m && m.partners && isLegendLine(m.sp) && t && t.id != null && S.trainers[t.id]) {
@@ -7021,6 +7024,8 @@ function farewell(t, m, why) {
     if (p && p.st && p.st.b) { t.alumni = t.alumni || []; t.alumni.unshift({ uid: m.uid, sp: m.sp, lvl: Math.floor(m.lvl), st: Object.assign(blankStat(), p.st), met: m.met, left: S.season || 1, why, nat: m.nat, iv: m.iv, fr: m.fr, cov: m.cov, legendRef: true, shiny: m.shiny, radiant: m.radiant }); }
     return;
   }
+  // (0.37.0) a challenger keeps what they drop in storage (a League can take some when it hires them)
+  if (t && t.role === 'challenger') storeMon(t, m);
   if (!m || !m.st || !m.st.b) return;
   t.alumni = t.alumni || [];
   // 0.15.0: slimmer entries (no evolution log, Pokérus or Lucky marks), to keep saves small with several Leagues
@@ -7051,7 +7056,7 @@ function trimH2h(t) {
 // the League where it was first found (S.legendPool, one per League), keeping its lifetime stats, awards and IVs.
 // The next trainer to find it, catch it or be given it gets that same Pokémon, at their own level. A legendary
 // never goes back to a trainer it has already been with. Ultra Beasts and Paradox Pokémon are not covered.
-const LEGEND_TENURE = [3, 5];
+const LEGEND_TENURE = [5, 8]; // (0.37.0, the owner: longer with everyone; was 3 to 5)
 // v184: Missingno stays longer, and can glitch away mid-season
 const GLITCH_TENURE = [6, 10], GLITCH_CHANCE = 0.0005, GLITCH_LEAVE = 0.001;
 const LEG_UB_LINES = new Set(BABY_LEGENDS.filter(b => { const q = [b]; while (q.length) { const n = q.shift(); if (SP[n].ub || ULTRA_BEASTS.includes(n)) return true; for (const e of SP[n].evos || []) q.push(e.to); } return false; }));
@@ -8014,7 +8019,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -8068,7 +8073,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); }
+function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -8567,7 +8572,7 @@ function retireHere(t, why) {
 // a retired trainer keeps their career, but not last season's week-by-week log or Pokémon that barely battled:
 // it keeps saves small enough for the browser with several Leagues
 function compactRetired(t) {
-  t.weekLog = [];
+  t.weekLog = []; t.store = null; t.storePick = null; // (0.37.0)
   t.alumni = (t.alumni || []).filter(m => m.st && m.st.b >= 3).slice(0, 8);
   trimH2h(t);
 }
@@ -9488,6 +9493,14 @@ function letGo(t, was) {
   if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
   t.wish = null;
   severance(t, was);
+  // (0.37.0) someone who stored their own legendary with this League takes being let go hard: a certain grudge, and
+  // likelier than usual to take it to another League
+  if (t.storedLg != null && t.storedLg === (S.lg || 0)) {
+    t.storedLg = null; t.stepDown = null;
+    returnToCircuit(t, `took being let go as ${was} hard, after trusting the League with a legendary`); t.grudge = S.season; t.grudgeLg = S.lg || 0;
+    if (nLeagues() < 2 || rand() >= GRUDGE_AWAY_LEG) return 'grudge';
+    shiftLeague(t, pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== homeLeague(t)))); return 'away';
+  }
   if (t.stepDown != null) {
     t.stepDown = null;
     if (rand() < GRUDGE_CHANCE) { returnToCircuit(t, `took being let go as ${was} as a slight`); t.grudge = S.season; t.grudgeLg = S.lg || 0; return grudgeAway(t); }
@@ -11412,10 +11425,12 @@ function simWeeks(n, stops) {
 // whose places are all taken, and `legendHeld(sp)` counts the holders
 function legendCounts() {
   const c = {};
-  for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) {
+  const one = m => {
     if (SP[m.sp].legend) c[m.sp] = (c[m.sp] || 0) + 1;
     if (SP[m.sp].baby) { const q = [m.sp], seen = new Set(); while (q.length) { const n = q.shift(); for (const e of SP[n].evos || []) { if (seen.has(e.to)) continue; seen.add(e.to); if (SP[e.to].legend) c[e.to] = (c[e.to] || 0) + 1; q.push(e.to); } } }
-  }
+  };
+  for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) one(m);
+  for (const { e } of allVault()) if (e.m) one(e.m); // (0.37.0) stored in a Sanctuary
   return c;
 }
 const legendHeld = sp => legendCounts()[sp] || 0;
@@ -12021,9 +12036,9 @@ function payFor(t, post, slot, o) {
   const v = o != null ? o : ovr(t);
   return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? PAY_FAMOUS : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
 }
-function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1)) : 0; }
+function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1) * (t.storeMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
-const askFor = (t, post, slot) => Math.round(payFor(t, post, slot) * richMul());
+const askFor = (t, post, slot) => Math.round(payFor(t, post, slot) * richMul() * (STAFF_ROLES.includes(t.role) ? 1 : storePayMul(t, post))); // (0.37.0) a rich storage asks more of a senior post
 // the bound League's weekly wage bill
 function wageBill() { return staffIds().map(T).filter(Boolean).reduce((a, t) => a + payOf(t), 0); }
 // (0.15.0, catch-up) stars ask more of a League much richer than the world's average, fixed when they are hired: up to
@@ -12059,7 +12074,9 @@ function initBooks() {
 }
 // a member of staff takes a post: their pay is set, and someone new to the staff costs a signing fee
 function postPay(t, wasStaff) {
-  t.payOvr = ovr(t); t.payMul = (t.bidMul || 1) * (wasStaff || t.acting ? 1 : richMul()); t.bidMul = null; t.raised = false; t.lastPay = payOf(t);
+  t.payOvr = ovr(t); t.payMul = (t.bidMul || 1) * (wasStaff || t.acting ? 1 : richMul()); t.bidMul = null;
+  if (!wasStaff && !t.acting) { const p = postOf(t); t.storeMul = p ? storePayMul(t, p.post) : 1; } // (0.37.0) fixed at hire
+  t.raised = false; t.lastPay = payOf(t);
   // (0.15.0) no signing fee while in the red (only automatic hires happen then), so the red doesn't feed on itself
   if (!booksOn() || wasStaff || S.founding || S.fin.quiet || t.acting || S.fin.money < 0) return;
   const fee = SIGN_WEEKS * payOf(t);
@@ -12284,7 +12301,7 @@ function cityNewYear() {
 // (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
 // UPKEEP of that a year, so a large estate costs to hold
 function estateCost() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + p.b.reduce((c, x) => c + builtCost(x), 0), 0); }
-const upkeepWeek = () => Math.round(estateCost() * UPKEEP / YEAR_WEEKS);
+const upkeepWeek = () => Math.round(Math.max(0, estateCost() - sealedCost()) * UPKEEP / YEAR_WEEKS); // (0.37.0) sealed Sanctuaries cost nothing
 // (0.16.0) the youth academy: each level raises a young prospect a year (in week ACADEMY_WEEK), a little better than
 // an ordinary newcomer, who sets out on the League's circuit tagged as its own (t.academy = the League). The League
 // pays them ACADEMY_PAY of the usual wage and they are ACADEMY_LOYAL likelier to take its offers. Stage 5 can later
@@ -12309,21 +12326,24 @@ function academyWeek() {
 function homeEdge(where) { return lapsed() ? 1 : 1 + 0.015 * placeLv(where, 'feature'); }
 function attractionIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === 'attract') ? UPGRADES.attract.income[upLevel(p.b, 'attract') - 1] : 0), 0); }
 // ---------- (0.20.0) legendary sites and sanctuaries ----------
-// A gym city where a legendary appeared or was caught becomes a legendary site for SITE_YEARS (c.site = { sp, from, until },
-// on the world's city object, so every League with a gym there shares it; a new legendary there renews it). A League with
-// a gym in a site can build a Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week
-// while the site lasts, an attraction's income after, and SANCT_PRESTIGE a level each New Year while the site lasts.
-const SITE_YEARS = 10, SANCT_PRESTIGE = 1;
-const siteOn = c => !!(c && c.site && S.season <= c.site.until);
+// A gym city where a legendary appeared or was caught becomes a legendary site (c.site = { sp, from, sps } since 0.37.0),
+// on the world's city object, so every League with a gym there shares it. A League with a gym in a site can build a
+// Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week and SANCT_PRESTIGE a level
+// each New Year while open.
+// (0.37.0, ranch part 3) the site timer is gone: a site lasts while its legendaries are in the world (one is), and keeps
+// the last SITE_KEEP legendaries found there (c.site.sps). A Sanctuary is open while one of them is with the League
+// (sanctOpen, 5-engine-4) and sealed otherwise: no income, upkeep or prestige.
+const SANCT_PRESTIGE = 1, SITE_KEEP = 4;
+const siteOn = c => !!(c && c.site);
 function noteSite(gi, sp) {
   const g = S.gyms[gi]; const c = g && S.cities[g.city]; if (!c) return;
-  const was = siteOn(c);
-  c.site = { sp, from: was ? c.site.from : S.season, until: S.season + SITE_YEARS - 1 };
-  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary until the end of Year ${c.site.until}.`, 'league');
+  const was = siteOn(c), sps = was ? (c.site.sps || [c.site.sp]).filter(x => lineOf(x) !== lineOf(sp)) : [];
+  c.site = { sp, from: was ? c.site.from : S.season, sps: sps.concat(sp).slice(-SITE_KEEP) };
+  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary, open while ${sp} is with them.`, 'league');
 }
-function sanctIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => { const lv = upLevel(p.b, 'sanct'); return a + (lv ? (siteOn(p.c) ? UPGRADES.sanct.income : UPGRADES.attract.income)[lv - 1] : 0); }, 0); }
-// sanctuary levels at live sites, for prestige
-function sanctLevels() { return myPlaces().filter(p => !p.none && siteOn(p.c)).reduce((a, p) => a + upLevel(p.b, 'sanct'), 0); }
+function sanctIncome() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + UPGRADES.sanct.income[s.lv - 1], 0); }
+// open Sanctuary levels, for prestige
+function sanctLevels() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + s.lv, 0); }
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
 function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
@@ -12832,6 +12852,7 @@ function foldLeague(k) {
   const info = inLeague(k, () => ({ name: S.lgName, region: S.region, from: (S.history[0] || {}).season || 1, prest: Math.round(S.prest || 0) }));
   const staff = [], field = [];
   inLeague(k, () => {
+    vaultFold(); // (0.37.0) its stored legendaries wait for new partners
     for (let n = 0; n < 300; n++) {
       const x = topLevels().sort((a, b) => b.cost - a.cost)[0]; if (!x) break;
       const sale = distressSale(x.where, x.k); dropLevel(placeOf(x.where), x.k);
@@ -12913,6 +12934,7 @@ function removeLeague(k, info) {
     if (t.sponFrom != null) t.sponFrom = t.sponFrom === k ? null : rm(t.sponFrom);
     if (t.leftLg != null) t.leftLg = rm(t.leftLg);
     if (t.grudgeLg != null) t.grudgeLg = rm(t.grudgeLg); // (0.23.0)
+    if (t.storedLg != null) t.storedLg = t.storedLg === k ? null : rm(t.storedLg); // (0.37.0)
     if (t.founded) t.founded.lg = rm(t.founded.lg);
     if (t.spon) { t.spon.lg = rm(t.spon.lg); t.spon.to = rm(t.spon.to); }
     if (t.titleLgs) t.titleLgs = t.titleLgs.map(rm);
@@ -13358,7 +13380,7 @@ function ranchWeek() {
   ranchSync();
   const u = ranchUpkeep(); if (u && booksOn()) book(-u, 'ranch');
   const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
-  safariWeek(); tripsWeek(); shopWeek();
+  safariWeek(); tripsWeek(); shopWeek(); vaultWeek(); // (0.37.0)
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -13399,6 +13421,7 @@ function aimRanch(aim) {
   const opts = R.shop.map(x => ({ shop: x, b: x.b, g: x.g, price: x.price })).concat(listings(lg).map(x => ({ list: x, b: x.e.b, g: x.e.g, price: x.e.sale.price })))
     .filter(o => o.price <= budget).map(o => Object.assign(o, { gain: gain(o.b, o.g) })).filter(o => o.gain > (p.worst.m.stop ? 0 : STEER_EDGE)).sort((a, b) => b.gain - a.gain);
   if (opts.length && ranchRoom() > 0) { const o = opts[0]; if (o.shop) buyShop(o.shop.uid); else buyListing(o.list.lg, o.list.e.uid); return; }
+  aimVault(aim, budget); // (0.37.0)
   if (aimHunt(aim, fits, gain, budget)) return; // (0.36.0)
   if (R.trips.length >= tripMax()) return;
   if (aim !== 'money' || p.worst.m.stop) {
@@ -13675,7 +13698,7 @@ function lineSource(b) {
 
 // ---------- moving region with at most FOREIGN_MAX foreign Pokémon ----------
 // A challenger who moves to a League in another region keeps their best FOREIGN_MAX Pokémon from outside it (special
-// ones first); the rest are released (part 3 will put them in storage instead).
+// ones first); the rest go into their storage (0.37.0; they were released).
 const FOREIGN_MAX = 3;
 const REGION_LOG = { released: 0, moves: 0 };
 function regionMove(t, fromR, toR) {
@@ -13687,7 +13710,7 @@ function regionMove(t, fromR, toR) {
   if (foreign.length <= FOREIGN_MAX && keepable.length === foreign.length) return;
   const keep = new Set(keepable.sort((a, b) => (isSpecial(b) - isSpecial(a)) || monPower(b) - monPower(a)).slice(0, FOREIGN_MAX));
   const gone = foreign.filter(m => !keep.has(m));
-  for (const m of gone) farewell(t, m, `released on moving to ${regionName(toR)}`);
+  for (const m of gone) farewell(t, m, `put in storage on moving to ${regionName(toR)}`); // farewell stores it (0.37.0)
   t.team = t.team.filter(m => !gone.includes(m));
   REGION_LOG.released += gone.length;
   if (t.mega && !t.team.some(m => m.uid === t.mega.uid)) t.mega = null;
@@ -14090,7 +14113,214 @@ function aimHunt(aim, fits, gain, budget) {
   return !startTrip('target', best.b, best.k);
 }
 
-if (typeof module !== 'undefined') module.exports = { TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, SITE_YEARS, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+// ================= RANCH PART 3 (0.37.0, design doc 6.5 and 6.15): storage, picking at hire, the Sanctuary rework =================
+// All numbers provisional (item 43).
+// STORAGE: a challenger keeps what they drop (released for a catch, left behind for a new run, over the foreign limit on
+// moving region…) in t.store, at most STORE_MAX, newest first: slim copies { uid, sp, top, iv, nat, at, met, conditions }.
+// Only what a ranch could take is kept (no legendaries, babies, gifts). Retirement clears it.
+// PICKING AT HIRE: a trainer new to the staff who takes a senior post (Gym Leader, Elite Four, Champion) with storage
+// lets the League take up to STORE_PICKS + a scouting office level of it into the ranch; the rest stays theirs. In your
+// League you pick on the Ranch page within STORE_PICK_WEEKS (t.storePick = { n, until }); rival Leagues pick at once by
+// aim. A rich storage asks more pay: up to STORE_PAY_MAX more for senior posts, by its value (STORE_PAY_PER).
+const STORE_MAX = 12, STORE_PICKS = 3, STORE_PICK_WEEKS = 8, STORE_PAY_MAX = 0.25, STORE_PAY_PER = 150000;
+const STORE_LOG = { stored: 0, picks: 0, aiPicks: 0, offered: 0 };
+function storeMon(t, m) {
+  if (!t || t.role !== 'challenger' || !m || !ranchKeeps(m)) return;
+  const b = LINE_BASE[LINE[m.sp]]; if (!b || !ranchable(b)) return;
+  const s = { uid: m.uid, sp: m.sp, iv: Object.assign({}, m.iv || {}), at: S.turn || 0 };
+  if (m.top && SP[m.top] && LINE[m.top] === LINE[m.sp]) s.top = m.top;
+  if (m.nat) s.nat = m.nat;
+  if (m.met && m.met.how) s.met = { how: m.met.how };
+  for (const k of COND_FIELDS) if (m[k]) s[k] = m[k];
+  t.store = (t.store || []).filter(x => x.uid !== m.uid);
+  t.store.unshift(s);
+  if (t.store.length > STORE_MAX) t.store.length = STORE_MAX;
+  STORE_LOG.stored++;
+}
+// a stored Pokémon's value, as it would enter the ranch
+function storeValue(s) { const b = LINE_BASE[LINE[s.sp]]; return b ? Math.round(monValue(b, monGrade(s)) * condMul(condOf(s)) / 50) * 50 : 0; }
+const storeTotal = t => (t.store || []).reduce((a, s) => a + storeValue(s), 0);
+const SENIOR_POSTS = ['leader', 'e4', 'champion'];
+// what a rich storage adds to a senior post's pay
+function storePayMul(t, post) { return SENIOR_POSTS.includes(post) && (t.store || []).length ? 1 + Math.min(STORE_PAY_MAX, storeTotal(t) / STORE_PAY_PER) : 1; }
+const storePickN = () => STORE_PICKS + scoutLv();
+// a trainer takes a post (openPost): someone new to the staff of a League with a ranch offers their storage
+function storeHire(t, role, was) {
+  if (was || t.acting || !SENIOR_POSTS.includes(role) || !ranchOn() || !(t.store || []).length || S.founding) return;
+  STORE_LOG.offered++;
+  const n = storePickN();
+  if (playerLeague()) {
+    t.storePick = { n, until: (S.turn || 0) + STORE_PICK_WEEKS };
+    news(`${dn(t)} brings ${t.store.length} stored Pokémon. You can take up to ${n} into the ranch from the Ranch page within ${STORE_PICK_WEEKS} weeks.`, 'move', t.id);
+    return;
+  }
+  aiStorePick(t, n, aimOf());
+}
+// is t's storage open to the bound League's picks?
+const storePickOk = t => !!(t && t.storePick && t.storePick.until >= (S.turn || 0) && seniorIds().includes(t.id) && (t.store || []).length && t.storePick.n > 0);
+function storeEntry(t, s) { const e = entryOfMon(s, t.id); if (e) e.from = 'storage'; return e; }
+// take stored Pokémon uid of trainer id into the bound League's ranch (the player's pick). Returns an error or null.
+function pickStore(id, sUid) {
+  const t = T(id); if (!storePickOk(t)) return 'Their storage is no longer open to you.';
+  const s = t.store.find(x => x.uid === sUid); if (!s) return 'Not in their storage.';
+  if (ranchRoom() <= 0) return 'The ranch is full.';
+  const e = storeEntry(t, s); if (!e) return "That one can't go in the ranch.";
+  ranchAdd(e); t.store = t.store.filter(x => x !== s); t.storePick.n--; STORE_LOG.picks++;
+  if (t.storePick.n <= 0 || !t.store.length) t.storePick = null;
+  return null;
+}
+function doneStore(id) { const t = T(id); if (t) t.storePick = null; }
+// rival Leagues pick by aim: a wall-builder what its posts can field, a star-maker the best grades, a money-maker the most valuable
+function aiStorePick(t, n, aim) {
+  const posts = seniorIds().map(T).filter(Boolean), types = new Set(posts.flatMap(p => specTypes(p))), anyMixed = posts.some(p => p.role === 'champion' || !p.specialty);
+  const fit = s => { const e = storeEntry(t, s); return e ? (anyMixed || entryTypes(e, e.sp).some(x => types.has(x))) : false; };
+  const score = s => aim === 'star' ? monGrade(s) * 1e7 + storeValue(s) : aim === 'wall' ? storeValue(s) * (fit(s) ? 1 : 0.3) : storeValue(s);
+  const pick = (t.store || []).filter(s => storeEntry(t, s)).sort((a, b) => score(b) - score(a)).slice(0, Math.min(n, Math.max(0, ranchRoom())));
+  for (const s of pick) { const e = storeEntry(t, s); if (e && ranchAdd(e)) { t.store = t.store.filter(x => x !== s); STORE_LOG.aiPicks++; } }
+}
+
+// SANCTUARIES: a legendary site (c.site = { sp, from, sps }) lasts while its legendaries are in the world (no timer). A
+// League's Sanctuary there is OPEN while any copy of a site legendary is with the League (held by its staff, by a
+// challenger on its circuit, or stored in its vault); otherwise SEALED: no income, upkeep or prestige, levels kept.
+// THE VAULT (League field S.vault): legendaries stored in its Sanctuaries, [{ uid, sp, city, m (the Pokémon while stored,
+// null while fielded), holder (an Elite Four member or Champion fielding it), of (who gave it), at, left (partner years
+// left, paused while stored) }]. Staff agree to store by ambition and record; a challenger asks a fee by its strength (or
+// hire them, and ask again). A stored legendary can be given to one Elite Four member or the Champion (one legendary a
+// trainer); it belongs to the League and comes back when they leave the post. Staff let go after storing their own take
+// it hard (t.storedLg: a certain grudge).
+const VAULT_ASK_WEEKS = 24, VAULT_FEE = [50000, 200000], VAULT_STAFF = 0.3, AI_VAULT = 0.25, GRUDGE_AWAY_LEG = 0.75;
+const VAULT_LOG = { asked: 0, stored: 0, refused: 0, given: 0, back: 0, movedOn: 0, aiStored: 0 };
+const vaultOfLg = k => (k === (S.lg || 0) ? S.vault : S.leagues && S.leagues[k] ? S.leagues[k].vault : null);
+const myVault = () => S.vault || (S.vault = []);
+// every vault entry in the world, with its League (no binding)
+function allVault() { const out = []; for (let k = 0; k < nLeagues(); k++) for (const e of vaultOfLg(k) || []) out.push({ lg: k, e }); return out; }
+const siteLines = c => c && c.site ? (c.site.sps || [c.site.sp]).map(lineOf) : [];
+// the legendary lines with the bound League: its staff's, its circuit's and its vault's
+function legendsWithLeague() {
+  const out = new Set();
+  for (const id of staffIds().concat(S.challengers || [])) { const t = id != null && T(id); if (t) for (const m of t.team) if (isLegendLine(m.sp)) out.add(lineOf(m.sp)); }
+  for (const e of S.vault || []) out.add(lineOf(e.sp));
+  return out;
+}
+function sanctOpen(c, have) { const ls = siteLines(c); if (!ls.length) return false; have = have || legendsWithLeague(); return ls.some(l => have.has(l)); }
+// the bound League's Sanctuaries: [{ where (gym index), c, lv, open }]
+function sanctuaries() { const have = legendsWithLeague(); return S.gyms.map((g, i) => { const c = S.cities[g.city], lv = c ? upLevel(cityB(c), 'sanct') : 0; return lv ? { where: i, c, lv, open: sanctOpen(c, have) } : null; }).filter(Boolean); }
+// sealed Sanctuary levels cost no upkeep
+function sealedCost() { return sanctuaries().filter(s => !s.open).reduce((a, s) => a + builtCost({ k: 'sanct', lv: s.lv }), 0); }
+// legendaries the bound League could ask to store: held by its staff or circuit challengers, matching one of its Sanctuaries
+function vaultCands() {
+  const sc = sanctuaries(), out = [];
+  if (!sc.length) return out;
+  for (const id of staffIds().concat(S.challengers || [])) {
+    const t = id != null && T(id); if (!t || t.team.length < 2) continue;
+    for (const m of t.team) { if (!isLegendLine(m.sp) || m.vaulted) continue; const s = sc.find(x => siteLines(x.c).includes(lineOf(m.sp))); if (s) out.push({ t, m, s, staff: STAFF_ROLES.includes(t.role) }); }
+  }
+  return out;
+}
+// what a holder wants: staff agree by odds (ambition, record); a challenger names a fee by the legendary's strength
+function vaultOdds(t) { let p = VAULT_STAFF; const k = t.wish && t.wish.k; if (k === 'stay') p += 0.2; if (k === 'run') p -= 0.15; if (k === 'up') p += 0.1; if (poorRecord(t)) p += 0.15; if (t.grudge) p -= 0.15; return clamp(p, 0.05, 0.8); }
+function vaultFee(m) { const b = clamp((SP[m.sp].bst - 580) / 140, 0, 1); return Math.round((VAULT_FEE[0] + b * (VAULT_FEE[1] - VAULT_FEE[0])) / 1000) * 1000; }
+const vaultBlocked = t => t.vaultNo != null && t.vaultNo > (S.turn || 0);
+// ask trainer id to store legendary uid in the bound League's Sanctuary. Returns { ok, why }.
+function storeLegend(id, mUid, ai) {
+  const c = vaultCands().find(x => x.t.id === id && x.m.uid === mUid); if (!c) return { why: "That legendary can't be stored with you now." };
+  const { t, m, s } = c;
+  if (vaultBlocked(t)) return { why: `${t.name} turned you down lately.` };
+  VAULT_LOG.asked++;
+  if (c.staff) {
+    if (rand() >= vaultOdds(t)) { t.vaultNo = (S.turn || 0) + VAULT_ASK_WEEKS; VAULT_LOG.refused++; if (playerLeague()) news(`${dn(t)} won't part with ${m.sp}.`, 'move', t.id); return { why: `${t.name} won't part with ${m.sp}. Ask again in ${VAULT_ASK_WEEKS / 4} months.` }; }
+  } else {
+    const fee = vaultFee(m); if (!canSpend(fee)) return { why: `${t.name} asks ${money(fee)}.` };
+    book(-fee, 'sanctuary', `${t.name} stored ${m.sp} in the Sanctuary at ${s.c.name}`);
+  }
+  // the clock stops: the years left go with it
+  const left = m.leg ? Math.max(1, m.leg.until - (S.season || 1) + 1) : LEGEND_TENURE[0];
+  const p = (m.partners || []).find(x => x.id === t.id && x.to == null);
+  if (p) { p.to = S.season || 1; p.why = 'stored in a Sanctuary'; }
+  if (t.mega && t.mega.uid === m.uid) t.mega = null;
+  if (m.item) { bagAdd(t, m.item); m.item = null; }
+  m.leg = null; m.cap = null; m.gift = null; delete m.bond; m.vaulted = true;
+  t.team = t.team.filter(x => x !== m);
+  t.storedLg = S.lg || 0;
+  myVault().push({ uid: m.uid, sp: m.sp, city: s.c.id, m, holder: null, of: t.id, at: S.turn || 0, left });
+  VAULT_LOG.stored++; if (ai) VAULT_LOG.aiStored++;
+  if (STAFF_ROLES.includes(t.role)) backfillElite(t, m);
+  news(`${dn(t)} stored ${m.sp} in the ${S.lgName}'s Sanctuary at ${s.c.name}.`, 'title', t.id);
+  return { ok: true };
+}
+// who can field a stored legendary: a non-acting Elite Four member or the Champion with no legendary
+function vaultTakers() { return [S.champion, ...S.e4].map(id => id != null && T(id)).filter(t => t && !t.acting && ['e4', 'champion'].includes(t.role) && !legendFull(t)); }
+function vaultGive(vUid, id) {
+  const e = myVault().find(x => x.uid === vUid); if (!e || !e.m) return "It isn't in the vault.";
+  const t = T(id); if (!t || !vaultTakers().includes(t)) return 'Only an Elite Four member or the Champion without a legendary can field it.';
+  const slot = eliteSlot(t), m = e.m;
+  if (slot && t.team.length >= slot.size) {
+    const out = t.team.filter(x => !isSpecial(x) && !(t.mega && t.mega.uid === x.uid)).sort((a, b) => monPower(a) - monPower(b))[0] || t.team.filter(x => !isLegendLine(x.sp)).slice(-1)[0];
+    if (!out) return 'Their team has no room.';
+    dropMon(t, out, `made room for ${m.sp} from the Sanctuary`); t.team = t.team.filter(x => x !== out);
+  }
+  m.leg = { until: (S.season || 1) + e.left - 1, n: e.left };
+  (m.partners = m.partners || []).push({ id: t.id, name: dn(t), from: S.season || 1, to: null, at: statSnap(m) });
+  stamp(m, 'assigned'); t.team.push(m); relevelElite(t); refreshMoves(m);
+  e.m = null; e.holder = t.id; VAULT_LOG.given++;
+  news(`${dn(t)} now fields ${m.sp} from the ${S.lgName}'s Sanctuary. It belongs to the League and returns when they leave the post.`, 'title', t.id);
+  return null;
+}
+// a vault legendary leaves a team (dropped, their post rebuilt, their trainer retired): back in its vault, the clock
+// paused again. Returns true if it was one. Called by farewell; one whose partner years ran out moves on as usual.
+function vaultReturn(t, m, why) {
+  if (!m || !m.vaulted) return false;
+  if (/^moved on after/.test(why || '')) { // its partner years ran out: it leaves the vault and moves on as usual
+    m.vaulted = false; VAULT_LOG.movedOn++;
+    for (let k = 0; k < nLeagues(); k++) { const V = vaultOfLg(k); const i = V ? V.findIndex(x => x.uid === m.uid && x.m == null) : -1; if (i >= 0) V.splice(i, 1); }
+    return false;
+  }
+  for (let k = 0; k < nLeagues(); k++) {
+    const e = (vaultOfLg(k) || []).find(x => x.uid === m.uid && x.m == null); if (!e) continue;
+    const p = (m.partners || []).find(x => x.id === (t && t.id) && x.to == null); if (p) { p.to = S.season || 1; p.why = 'returned to the Sanctuary'; }
+    e.left = m.leg ? Math.max(1, m.leg.until - (S.season || 1) + 1) : e.left;
+    if (t && t.mega && t.mega.uid === m.uid) t.mega = null;
+    if (m.item && t) { bagAdd(t, m.item); m.item = null; }
+    m.leg = null; delete m.bond; e.m = m; e.holder = null; VAULT_LOG.back++;
+    return true;
+  }
+  m.vaulted = false; return false;
+}
+// weekly in every League (ranchWeek): a holder who left the post gives it back; one that moved on leaves the vault;
+// storage picks that ran out close
+function vaultWeek() {
+  const V = S.vault || [], takers = new Set([S.champion, ...S.e4].filter(id => id != null));
+  for (const e of V.slice()) {
+    if (e.m) continue;
+    const h = T(e.holder), m = h && h.team.find(x => x.uid === e.uid);
+    if (!m) { S.vault = S.vault.filter(x => x !== e); continue; } // moved on (or gone)
+    if (takers.has(h.id) && ['e4', 'champion'].includes(h.role) && !h.acting) continue;
+    if (h.team.length <= 1) { m.vaulted = false; S.vault = S.vault.filter(x => x !== e); continue; }
+    h.team = h.team.filter(x => x !== m); vaultReturn(h, m, 'left the post');
+    if (inLeague(lgOf(h), () => STAFF_ROLES.includes(h.role))) inLeague(lgOf(h), () => backfillElite(h, m));
+    if (playerLeague()) news(`${m.sp} went back to the ${S.lgName}'s Sanctuary when ${h.name} left the post.`, 'title', h.id);
+  }
+  for (const id of seniorIds()) { const t = T(id); if (t && t.storePick && t.storePick.until < (S.turn || 0)) t.storePick = null; }
+}
+// a League folds: what its vault holds waits for new partners; what its staff field becomes theirs
+function vaultFold() {
+  for (const e of S.vault || []) { if (e.m) { e.m.vaulted = false; if (!legendPool().includes(e.m)) legendPool().push(e.m); } else { const h = T(e.holder), m = h && h.team.find(x => x.uid === e.uid); if (m) m.vaulted = false; } }
+  S.vault = [];
+}
+// rival Leagues (aimRanch, monthly): now and then ask a holder to store a site legendary (a fee within their ranch
+// budget); wall-builders and star-makers then give it to their strongest Elite Four member or Champion without one
+function aimVault(aim, budget) {
+  if (rand() < AI_VAULT) {
+    const c = vaultCands().filter(x => !vaultBlocked(x.t) && (x.staff || vaultFee(x.m) <= budget)).sort((a, b) => SP[b.m.sp].bst - SP[a.m.sp].bst)[0];
+    if (c) storeLegend(c.t.id, c.m.uid, true);
+  }
+  if (aim === 'money') return;
+  const e = myVault().find(x => x.m); if (!e) return;
+  const t = vaultTakers().sort((a, b) => (b.role === 'champion') - (a.role === 'champion') || ovr(b) - ovr(a))[0];
+  if (t) vaultGive(e.uid, t.id);
+}
+
+if (typeof module !== 'undefined') module.exports = { STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -15571,7 +15801,8 @@ function hireTags(t) {
   const sp = sponTag(t);
   if (!handOn() || (S.lg || 0) !== ME()) return sp;
   const imp = impressed(t);
-  return sp + (claimOn(t) ? ` <span class="tag notice small" title="Claims the Champion's seat; glad to take a post instead">Claimant</span>` : '') + (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
+  const st = (t.store || []).length && !STAFF_ROLES.includes(t.role) ? ` <span class="tag small" title="${esc(t.store.slice(0, 6).map(s => s.top || s.sp).join(', '))}${t.store.length > 6 ? '…' : ''}. Hired to a senior post, they let you take up to ${storePickN()} into the ranch, and ask more pay the richer it is.">Storage ${t.store.length} · ${money(storeTotal(t))}</span>` : '';
+  return st + sp + (claimOn(t) ? ` <span class="tag notice small" title="Claims the Champion's seat; glad to take a post instead">Claimant</span>` : '') + (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
 }
 // (0.9.0) a warning on a Gym Leader's poor years in a row, or an Elite Four member with the worst record of the four
 // two or more years running. In the player's League nothing happens on its own: replacing them is the player's call.
@@ -15838,7 +16069,9 @@ function viewCities0() {
     // (0.15.0) standing and control where Leagues share the city, and this League's share of its income
     const lgs = p.c ? gm[p.c.id] || [] : [], ctrl = p.c ? cityCtrl(p.c, lgs) : null;
     // (0.20.0) a legendary site: a Sanctuary can be built here while it lasts
-    const site = p.c && siteOn(p.c) ? `<p class="small"><span class="tag">Legendary site</span> ${esc(p.c.site.sp)} was found here. A Sanctuary can be built until the end of Year ${p.c.site.until}${p.none ? ' (you need a gym here)' : ''}.</p>` : '';
+    // (0.37.0) no timer: a Sanctuary is open while one of the site's legendaries is with your League
+    const sLv = p.c && !p.none ? upLevel(p.b, 'sanct') : 0;
+    const site = p.c && siteOn(p.c) ? `<p class="small"><span class="tag">Legendary site</span> Found here: ${(p.c.site.sps || [p.c.site.sp]).map(esc).join(', ')}. A Sanctuary here is open while one of them is with your League (held by your staff, by a challenger on your circuit, or stored in its vault)${p.none ? '; you need a gym here to build one' : ''}.${sLv ? ` Yours is <b>${sanctOpen(p.c) ? 'open' : 'sealed'}</b>${sanctOpen(p.c) ? '' : ': no income, upkeep or prestige until one comes back'}. Storing legendaries: the <button class="tlink" data-act="nav" data-v="ranch">Ranch</button> page.` : ''}</p>` : '';
     const share = p.c && lgs.includes(ME()) ? `<p class="small">${lgs.length > 1 ? `Shared with the ${lgs.filter(i => i !== ME()).map(leagueName).join(' and the ')}. Standing: ${lgs.map(i => `${lgShort(i)} ${standing(p.c, i)}`).join(', ')}. Controlled by the <b>${leagueName(ctrl)}</b>. ` : 'Yours alone. '}Your share of its income: <b>${money(cityShare(p.c, lgs, 0))}</b> a week (of ${money(CITY_INCOME[p.slots - 1])}).</p>` : lgs.length ? `<p class="small muted">Gyms here: the ${lgs.map(leagueName).join(' and the ')}.</p>` : '';
     const acts = p.none ? `<div class="confirm-row"><select id="move-${p.c.id}" aria-label="Gym to move">${gymOpts}</select><button class="btn small" data-act="movegym" data-c="${p.c.id}"${canSpend(MOVE_FEE) ? '' : ' disabled'}>Move it here (${money(MOVE_FEE)})</button></div>`
       : `<div class="confirm-row">${Object.keys(UPGRADES).map(k => { const ck = buildCheck(where, k); if (ck.why) return ''; return `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}${ck.restore ? ` Restoring a level you lost here in the red costs ${Math.round(RESTORE_SHARE * 100)}% of its price.` : ''}">${ck.restore ? `Restore ${UPGRADES[k].name.toLowerCase()}${ck.lv > 1 ? ` to level ${ck.lv}` : ''}` : ck.lv > 1 ? `${UPGRADES[k].name} to level ${ck.lv}` : `Build ${UPGRADES[k].name.toLowerCase()}`} (${money(ck.cost)})</button>`; }).join('')}</div>`;
@@ -15847,7 +16080,7 @@ function viewCities0() {
   };
   const red = lapsed() ? `<p class="warn">The ${S.lgName} is in the red: upkeep is going unpaid, so every building has lapsed (attractions earn nothing; halls, features, the scouting office and the academy do nothing). Every ${DECAY_WEEKS} weeks unpaid, your costliest building loses a level${S.fin.unpaid ? ` (next in ${DECAY_WEEKS - S.fin.unpaid % DECAY_WEEKS} weeks)` : ''}; in a shared city a rival may buy it at a distress price. In the red at ${FOLD_YEARS} New Years running, with debts your buildings can't cover, the League folds.</p>` : '';
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>${red}
-    <p>Build in your gym cities and at your League's seat. A city starts with one slot and gets a second once ${money(60000)} has been spent there and a third at ${money(180000)}; the seat has three. Each upgrade has three levels (${money(UP_COST[0])}, ${money(UP_COST[1])}, ${money(UP_COST[2])}); training halls and gym features go on to level 5 (${money(UP_COST[3])}, ${money(UP_COST[4])}), and the youth academy costs ${UPGRADES.academy.cost.map(money).join(', ')}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week). ${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b> for ${SITE_YEARS} years: a League with a gym there can build a <b>Sanctuary</b>, which earns more than an attraction while the site lasts and adds prestige.</p></section>
+    <p>Build in your gym cities and at your League's seat. A city starts with one slot and gets a second once ${money(60000)} has been spent there and a third at ${money(180000)}; the seat has three. Each upgrade has three levels (${money(UP_COST[0])}, ${money(UP_COST[1])}, ${money(UP_COST[2])}); training halls and gym features go on to level 5 (${money(UP_COST[3])}, ${money(UP_COST[4])}), and the youth academy costs ${UPGRADES.academy.cost.map(money).join(', ')}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week). ${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns more than an attraction and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></section>
     ${distressPanel()}${places.map(card).join('')}`;
 }
 // ---------- the ranch (0.25.0, design doc 6.5) ----------
@@ -15889,7 +16122,7 @@ function viewRanch0() {
     <p>Your Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the League's ranch; gym trainers keep their own. Each month a member of staff swaps one Pokémon for a better one from the ranch, by their steer and as well as their Strategy lets them; one they drop goes into the ranch (it is theirs to take back while they stay), and a ranch Pokémon they hold leaves with them if they go. A ranch Pokémon is fielded by one post at a time and takes the form its line has at that post's level. Its grade (1 to 5 stars) comes from its IVs; better grades cost more. <b>Reserve</b> one for a post (only that post fields it, first) or <b>lock</b> it away (nobody does); a holder gives it back at the next swap.</p>
     <p>The ranch holds <b>${R.mons.length} of ${ranchCap()}</b> (a Ranch building at the seat holds more; build it on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page). Upkeep: <b>${money(ranchUpkeep())}</b> a week (${RANCH_UPKEEP.map(money).join(', ')} a Pokémon by grade). Your Scouting for finds: <b>${sc}</b> (your best senior member's, plus ${RANCH_SCOUT_OFFICE} a scouting office level).</p>
     ${stops.length ? `<p class="warn">Fielding stopgaps (weak stand-ins, because nothing in the ranch fits): ${stops.map(t => `${esc(postName(t))} (${t.team.filter(m => m.stop).length})`).join(', ')}. Catch or buy Pokémon of their type.</p>` : ''}</section>
-${regionPanel()}
+${storagePanel()}${vaultPanel()}${regionPanel()}
   <section class="panel"><div class="ph"><h2>Who fields what</h2><span class="muted">Own: the trainer's own; ranch: from the ranch; stopgap: a weak stand-in</span></div>
     <div class="scroll"><table class="tbl"><thead><tr><th>Post</th><th>Trainer</th><th>Team</th></tr></thead><tbody>${teams}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>The pool</h2><span class="muted">${R.mons.length} of ${ranchCap()} · ${R.mons.filter(e => e.at == null).length} not fielded. Sell back for a third of the value or release for nothing (a fielded one is swapped out at once)${nLeagues() > 1 ? `, or list for other Leagues at its value (you get ${Math.round(SALE_SHARE * 100)}%, for up to ${SALE_WEEKS / 4} months)` : ''}.</span></div>
@@ -15907,6 +16140,32 @@ ${regionPanel()}
   <section class="panel"><div class="ph"><h2>The market</h2><span class="muted">A few Pokémon each week, each for two to four weeks, priced by strength, grade, rarity and your meta</span></div>
     ${shop ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Price</th><th></th><th></th></tr></thead><tbody>${shop}</tbody></table></div>` : '<p class="muted">Nothing this week.</p>'}
     ${nLeagues() > 1 ? `<h3>Other Leagues' sales</h3>${others ? `<div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Price</th><th>From</th><th></th></tr></thead><tbody>${others}</tbody></table></div>` : '<p class="muted">Nothing listed.</p>'}` : ''}</section>`;
+}
+// (0.37.0) new hires' storage: take up to the number shown into the ranch
+function storagePanel() {
+  const ts = seniorIds().map(T).filter(storePickOk);
+  if (!ts.length) return '';
+  const one = t => `<h3>${tname(t.id)} <span class="small muted">${esc(postName(t))} · take up to ${t.storePick.n} more by ${turnDate(t.storePick.until)}</span></h3>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Value</th><th></th></tr></thead><tbody>${t.store.map(s => { const b = LINE_BASE[LINE[s.sp]], c = condOf(s), sp = s.top || s.sp; return `<tr><td>${esc(sp)}${condTag(c)}${b && b !== sp ? ` <span class="small muted">(${esc(b)} line)</span>` : ''}</td><td>${chips(c && c.delta ? monTypes({ sp, delta: c.delta }) : SP[sp].types)}</td><td class="small">${gradeStars(monGrade(s))}</td><td class="num">${money(storeValue(s))}</td><td><button class="btn small" data-act="storepick" data-id="${t.id}" data-u="${s.uid}"${ranchRoom() > 0 ? '' : ' disabled'}>Take into the ranch</button></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="confirm-row"><button class="btn small ghost" data-act="storedone" data-id="${t.id}">Done: leave the rest with them</button></div>`;
+  return `<section class="panel"><div class="ph"><h2>New hires' storage</h2><span class="muted">Up to ${STORE_PICKS} (plus one a scouting office level) from each new senior hire; the rest stays theirs</span></div>${ts.map(one).join('')}</section>`;
+}
+// (0.37.0) Sanctuaries and the vault: open or sealed, legendaries stored, who fields them, and who could be asked
+function vaultPanel() {
+  const sc = sanctuaries();
+  if (!sc.length) return '';
+  const V = S.vault || [], takers = vaultTakers(), cands = vaultCands();
+  const sl = sc.map(s => `<li><b>${esc(s.c.name)}</b> (level ${s.lv}): ${s.open ? '<span class="tag small">open</span>' : '<span class="tag notice small">sealed</span>'} <span class="small muted">site of ${siteLines(s.c).map(esc).join(', ')}</span></li>`).join('');
+  const vrow = e => { const h = e.holder != null && T(e.holder); const c = S.cities[e.city];
+    return `<tr><td>${esc(e.sp)}</td><td class="small">${c ? esc(c.name) : ''}</td><td class="small">${h ? `Fielded by ${tname(h.id)}` : `Stored · ${e.left} year${e.left === 1 ? '' : 's'} left with a partner`}${e.of != null && T(e.of) ? `<br><span class="muted">from ${esc(T(e.of).name)}</span>` : ''}</td>
+      <td>${h ? '' : takers.length ? `<select class="vaultsel" data-u="${e.uid}" aria-label="Who fields it">${takers.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(postName(t))})</option>`).join('')}</select> <button class="btn small" data-act="vaultgive" data-u="${e.uid}">Give</button>` : '<span class="small muted">Your Elite Four and Champion all hold a legendary.</span>'}</td></tr>`; };
+  const crow = x => `<tr><td>${esc(x.m.sp)}</td><td>${tname(x.t.id)} <span class="small muted">${esc(x.staff ? postName(x.t) : 'challenger on your circuit')}</span></td><td class="small">${vaultBlocked(x.t) ? `Turned you down; ask again after ${turnDate(x.t.vaultNo)}` : x.staff ? `About ${Math.round(vaultOdds(x.t) * 100)}% they agree` : `Asks ${money(vaultFee(x.m))}`}</td>
+      <td>${vaultBlocked(x.t) ? '' : `<button class="btn small" data-act="vaultask" data-id="${x.t.id}" data-u="${x.m.uid}"${x.staff || canSpend(vaultFee(x.m)) ? '' : ' disabled'}>${x.staff ? 'Ask them' : `Pay ${money(vaultFee(x.m))}`}</button>`}</td></tr>`;
+  return `<section class="panel"><div class="ph"><h2>Sanctuaries and the vault</h2><span class="muted">A Sanctuary is open while one of its site's legendaries is with your League</span></div>
+    <ul>${sl}</ul>
+    <p class="small">Ask a holder to store a site legendary in your Sanctuary to keep it with the League. Staff decide by their ambition and record (they would rather keep it); a challenger asks for money, or hire them and ask again. A stored legendary's years with a partner stop counting. Give it to an Elite Four member or your Champion without a legendary: it belongs to the League and comes back when they leave the post. Staff let go after storing their own take it hard.</p>
+    ${V.length ? `<h3>In the vault</h3><div class="scroll"><table class="tbl"><thead><tr><th>Legendary</th><th>Sanctuary</th><th>Now</th><th></th></tr></thead><tbody>${V.map(vrow).join('')}</tbody></table></div>` : ''}
+    ${cands.length ? `<h3>Could be stored</h3><div class="scroll"><table class="tbl"><thead><tr><th>Legendary</th><th>Holder</th><th>What they want</th><th></th></tr></thead><tbody>${cands.map(crow).join('')}</tbody></table></div>` : '<p class="small muted">Nobody with your League holds one of these sites\' legendaries now.</p>'}</section>`;
 }
 // (0.27.0) the region: its own Pokémon, a migration, lanes, the safari, charters, and steers the region can't answer
 function regionPanel() {
@@ -16813,10 +17072,10 @@ const GLOSS_TERMS = {
     ['Radiant (✧)', "Rarer than a shiny. It wears its species' shiny colors, always has at least Good IVs, and has an ability its species never gets that's stronger in battle than any it does. The ability stays through evolution."],
     ['Delta (Δ)', 'A rare Pokémon with an unusual second type and outstanding IVs.'],
     ['Legendary / Mythical', `One-of-a-kind Pokémon: there is one of each in the whole world, held by one trainer or waiting for a new partner (one for each region of the world that has it at home, when a custom region shares it). The great legendaries appear through story events; others roam, come with storms, are found while exploring or choose a trainer. Each region's own legendaries turn up about ${LEGEND_HOME_MUL} times as often in a League of their region and half as often elsewhere. A legendary (an Ultra Beast or a Paradox Pokémon too) only battles for a challenger with enough badges for its strength: base stats under 600 from ${OBEY_BADGES[0][1]} badges, under 680 from ${OBEY_BADGES[1][1]}, the strongest from ${OBEY_BADGES[2][1]}. At the Elite Four every Pokémon obeys. Your staff are never held back.`],
-    ['Legendary site', `A gym city where a legendary appeared or was caught, for ${SITE_YEARS} years (a new one there starts the count again). Every League with a gym there can build a Sanctuary: it earns ${UPGRADES.sanct.income.map(money).join(', ')} a week by level while the site lasts (an attraction's income after) and adds ${SANCT_PRESTIGE} prestige a level each New Year while it lasts. Rival Leagues build them too.`],
+    ['Legendary site', `A gym city where a legendary appeared or was caught (it remembers the last four). Every League with a gym there can build a Sanctuary. A Sanctuary is open while one of the site's legendaries is with the League: held by its staff, by a challenger on its circuit, or stored in the Sanctuary's vault. Open, it earns ${UPGRADES.sanct.income.map(money).join(', ')} a week by level and adds ${SANCT_PRESTIGE} prestige a level each New Year; sealed, it earns and costs nothing until one comes back. Ask a holder to store their legendary on the Ranch page: staff agree or refuse by their ambition and record, and a challenger asks ${money(VAULT_FEE[0])} to ${money(VAULT_FEE[1])} by its strength (or hire them and ask again). A stored legendary's years with a partner stop counting, and one of your Elite Four or your Champion without a legendary can field it; it belongs to the League and comes back to the vault when they leave the post. Staff let go after storing their own take it hard: a sure grudge. Rival Leagues build them too.`],
     ['Roaming legendary', "Raikou, Entei, Suicune, Latias or Latios moving between towns for 7–9 weeks. Challengers exploring on the way to its town (or the next one) may find it among their wild Pokémon and catch it like any other."],
     ['Legendary storm', "Four weeks of weather over the whole region, brought by Articuno (blizzard), Moltres (heat wave), Zapdos (electric storm), Thundurus (thunderstorm), Tornadus (gale) or Landorus (who calms the skies after Tornadus or Thundurus). It powers up one type for everyone, and when it passes the legendary chooses the challenger who won the most battles in it, whatever their type."],
-    ['Legendary partner', "A legendary or mythical Pokémon stays with a trainer for 3–5 years, then moves on at New Year. It waits for a new partner, keeping its lifetime record, and the next trainer to find or be given it gets that same Pokémon at their own level. It never goes back to a trainer it has already been with. Baby legendaries count from their catch. Ultra Beasts and Paradox Pokémon aren't included."],
+    ['Legendary partner', "A legendary or mythical Pokémon stays with a trainer for 5–8 years, then moves on at New Year (the years stop counting while it is stored in a Sanctuary). It waits for a new partner, keeping its lifetime record, and the next trainer to find or be given it gets that same Pokémon at their own level. It never goes back to a trainer it has already been with. Baby legendaries count from their catch. Ultra Beasts and Paradox Pokémon aren't included."],
     ['Baby legendary / Rare find', 'Pokémon like Cosmog or Meltan that grow into legendaries. Only one exists in the world at a time.'],
     ['Paradox', `Ancient and Future Pokémon. When an expedition to Area Zero finds Koraidon, Miraidon or Terapagos, the crater stays open in that League for a year and exploring challengers can find a Paradox Pokémon. One of each in the world at a time; they aren't legendaries, so a trainer can hold one beside a legendary, and they don't move on.`],
     ['Banlist', `Each New Year a League's trainers (challengers, Gym Leaders, the Elite Four and the Champion) vote on banning five Pokémon drawn at random from the year's top 20 performers, with at most two legendaries on the ballot. They vote against Pokémon that beat them, that their team is weak to or that their rival uses, never ones on their own team. Each votes Allow or a ban of 1 to ${BAN_MAX_SEASONS} seasons, and a ban passes for the longest length that more than half of them back. A ban covers the Pokémon, what it evolves from and what it evolves into. Challengers let banned Pokémon go; Gym Leaders, the Elite Four and the Champion get a replacement.`],
@@ -16849,7 +17108,7 @@ const GLOSS_TERMS = {
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
     ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
-    ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When nothing fits a post, weak stopgaps stand in. Rival Leagues run their ranches by their aim. Since 0.36.0 the ranch also keeps alphas, Deltas, shinies and Radiants whole, found by luck on trips, charters and the market, by hunts (a trip for a line in a chosen condition, at a multiple of the price and lower odds) and by outbreak trips; each region has its own Delta lines. A condition multiplies a Pokémon's value, and shinies and Radiants on your Elite Four's and Champion's teams earn showcase income and a little prestige.`],
+    ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When nothing fits a post, weak stopgaps stand in. Rival Leagues run their ranches by their aim. Since 0.36.0 the ranch also keeps alphas, Deltas, shinies and Radiants whole, found by luck on trips, charters and the market, by hunts (a trip for a line in a chosen condition, at a multiple of the price and lower odds) and by outbreak trips; each region has its own Delta lines. A condition multiplies a Pokémon's value, and shinies and Radiants on your Elite Four's and Champion's teams earn showcase income and a little prestige. Challengers keep what they drop in storage (up to ${STORE_MAX}); a new Gym Leader, Elite Four member or Champion lets the League take up to ${STORE_PICKS} of it (one more a scouting office level) into the ranch, and asks more pay the richer it is.`],
     ['Regional encounters', `Each region has its own Pokémon (about ${REGION_SIZE} species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto; Sylveon brings Eevee's family to Kalos), and regional forms belong to their region as well (Alolan forms to Alola, Galarian to Galar, Paldean to Paldea, Hisuian ones to Sinnoh). Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. Neighbours: ${NEIGHBOURS.map((ns, r) => `${regionName(r)} (${ns.map(regionName).join(', ')})`).join('; ')}. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
     ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 3 towns and 2 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries (one shared with another region can then be held once for each region that has it at home) and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region; one with a base stat total over ${DEX_LEGEND_BST} can be a legendary encounter, at home in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
     ['Shipping lanes, charters and the safari', `A shipping lane is built in a port city where the League has a gym (Vermilion, Cinnabar, Olivine, Cianwood, Slateport, Lilycove, Dewford, Canalave, Sunyshore; Goldenrod's is the railway) and serves one other region: its Pokémon can be caught on the League's targeted trips and turn up at its market all the time. It costs a weekly fee besides upkeep, and a fee to change the route. A charter is a one-off shipment of two or three Pokémon from any other region. The Safari Zone (one per League, in a gym city) holds foreign Pokémon from mixed regions, changing every 12 weeks, that only the League's own targeted trips can catch; higher levels hold more and bring back better grades. All lapse while the League is in the red. When a post's steer wants a Pokémon the League can't reach, the Ranch page says where it lives.`],
@@ -16960,6 +17219,16 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 37, ver: '0.37.0', date: 'November 18, 2026', time: '11:30 AM ET', title: 'Storage, picking at hire and Sanctuaries reworked (the ranch, part 3)', items: [
+    "Challengers keep what they drop in storage: Pokémon released for a catch, left behind for a new run, or over the foreign limit when they move region (they are no longer released). Up to 12, the oldest let go.",
+    "Hire a challenger with storage as a Gym Leader, Elite Four member or Champion and you can take up to 3 of their stored Pokémon into your ranch (one more a scouting office level), from the Ranch page within 8 weeks. Alphas, Deltas, shinies and Radiants can be taken too. The rest stays theirs. Hiring rows show a candidate's storage and its value, and a rich storage asks up to a quarter more pay. Rival Leagues take theirs by aim.",
+    "Legendary sites no longer run out after ten years. A Sanctuary is open while one of its site's legendaries is with your League (held by your staff, by a challenger on your circuit, or stored in the Sanctuary), and sealed otherwise: no income, upkeep or prestige until one comes back. Sanctuary income and prestige when open are as before.",
+    "Store legendaries in your Sanctuaries from the Ranch page. Staff agree or refuse by their ambition and record (they would rather keep theirs); a challenger asks for money by the legendary's strength, or hire them and ask again. While stored, a legendary's years with a partner stop counting.",
+    "Give a stored legendary to an Elite Four member or your Champion who has none. It belongs to the League: it comes back to the vault when they leave the post. A member of staff you let go after they stored their own legendary with you takes it hard: a sure grudge, and likelier to take it to another League.",
+    "Legendaries stay with their partners longer: 5 to 8 years (was 3 to 5).",
+    "Rival Leagues store legendaries now and then; wall-builders and star-makers give them to their Elite Four or Champion. A League that folds lets its stored legendaries go to wait for new partners.",
+    "Old saves can't be loaded.",
+  ] },
   { id: 36, ver: '0.36.0', date: 'November 17, 2026', time: '11:59 PM ET', title: 'Alphas, Deltas, shinies and Radiants in the ranch', items: [
     "Your ranch can hold alphas, Deltas, shinies and Radiants now, and keeps them whole: a Delta keeps its unusual type and ability, a Radiant its ability, a shiny its perfect IVs. Staff field them as they are, and a Delta counts by its own types when a gym picks on type.",
     "They turn up now and then on catching trips, charters and the market, at the same odds challengers get in the wild (Scouting nudges alphas). Staff who drop one, and new hires who don't field theirs, put them in the ranch like any other.",
@@ -17634,6 +17903,10 @@ document.addEventListener('click', ev => {
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
     case 'ranchob': { const w = inLeague(ME(), () => startTrip('outbreak')); save(); render(); toast(w || 'The trip has set out for the outbreak.'); break; }
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b, el.dataset.c || undefined)); save(); render(); toast(w || 'The trip has set out.'); break; }
+    case 'storepick': { const w = inLeague(ME(), () => pickStore(+el.dataset.id, +el.dataset.u)); save(); render(); toast(w || 'Taken into the ranch.'); break; }
+    case 'storedone': { inLeague(ME(), () => doneStore(+el.dataset.id)); save(); render(); toast('The rest stays with them.'); break; }
+    case 'vaultask': { const r = inLeague(ME(), () => storeLegend(+el.dataset.id, +el.dataset.u)); save(); render(); toast(r.ok ? 'Stored in the Sanctuary.' : r.why); break; }
+    case 'vaultgive': { const sel = document.querySelector(`.vaultsel[data-u="${el.dataset.u}"]`); const w = sel ? inLeague(ME(), () => vaultGive(+el.dataset.u, +sel.value)) : 'Pick who fields it.'; save(); render(); toast(w || 'Given from the vault.'); break; }
     case 'ranchcharter': { const w = inLeague(ME(), () => startTrip('charter', +el.dataset.v)); save(); render(); toast(w || 'The charter is on its way.'); break; }
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }

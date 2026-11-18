@@ -953,10 +953,12 @@ function simWeeks(n, stops) {
 // whose places are all taken, and `legendHeld(sp)` counts the holders
 function legendCounts() {
   const c = {};
-  for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) {
+  const one = m => {
     if (SP[m.sp].legend) c[m.sp] = (c[m.sp] || 0) + 1;
     if (SP[m.sp].baby) { const q = [m.sp], seen = new Set(); while (q.length) { const n = q.shift(); for (const e of SP[n].evos || []) { if (seen.has(e.to)) continue; seen.add(e.to); if (SP[e.to].legend) c[e.to] = (c[e.to] || 0) + 1; q.push(e.to); } } }
-  }
+  };
+  for (const t of Object.values(S.trainers)) if (!['retired', 'prospect'].includes(t.role)) for (const m of t.team) one(m);
+  for (const { e } of allVault()) if (e.m) one(e.m); // (0.37.0) stored in a Sanctuary
   return c;
 }
 const legendHeld = sp => legendCounts()[sp] || 0;
@@ -1562,9 +1564,9 @@ function payFor(t, post, slot, o) {
   const v = o != null ? o : ovr(t);
   return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? PAY_FAMOUS : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
 }
-function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1)) : 0; }
+function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1) * (t.storeMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
-const askFor = (t, post, slot) => Math.round(payFor(t, post, slot) * richMul());
+const askFor = (t, post, slot) => Math.round(payFor(t, post, slot) * richMul() * (STAFF_ROLES.includes(t.role) ? 1 : storePayMul(t, post))); // (0.37.0) a rich storage asks more of a senior post
 // the bound League's weekly wage bill
 function wageBill() { return staffIds().map(T).filter(Boolean).reduce((a, t) => a + payOf(t), 0); }
 // (0.15.0, catch-up) stars ask more of a League much richer than the world's average, fixed when they are hired: up to
@@ -1600,7 +1602,9 @@ function initBooks() {
 }
 // a member of staff takes a post: their pay is set, and someone new to the staff costs a signing fee
 function postPay(t, wasStaff) {
-  t.payOvr = ovr(t); t.payMul = (t.bidMul || 1) * (wasStaff || t.acting ? 1 : richMul()); t.bidMul = null; t.raised = false; t.lastPay = payOf(t);
+  t.payOvr = ovr(t); t.payMul = (t.bidMul || 1) * (wasStaff || t.acting ? 1 : richMul()); t.bidMul = null;
+  if (!wasStaff && !t.acting) { const p = postOf(t); t.storeMul = p ? storePayMul(t, p.post) : 1; } // (0.37.0) fixed at hire
+  t.raised = false; t.lastPay = payOf(t);
   // (0.15.0) no signing fee while in the red (only automatic hires happen then), so the red doesn't feed on itself
   if (!booksOn() || wasStaff || S.founding || S.fin.quiet || t.acting || S.fin.money < 0) return;
   const fee = SIGN_WEEKS * payOf(t);
@@ -1825,7 +1829,7 @@ function cityNewYear() {
 // (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
 // UPKEEP of that a year, so a large estate costs to hold
 function estateCost() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + p.b.reduce((c, x) => c + builtCost(x), 0), 0); }
-const upkeepWeek = () => Math.round(estateCost() * UPKEEP / YEAR_WEEKS);
+const upkeepWeek = () => Math.round(Math.max(0, estateCost() - sealedCost()) * UPKEEP / YEAR_WEEKS); // (0.37.0) sealed Sanctuaries cost nothing
 // (0.16.0) the youth academy: each level raises a young prospect a year (in week ACADEMY_WEEK), a little better than
 // an ordinary newcomer, who sets out on the League's circuit tagged as its own (t.academy = the League). The League
 // pays them ACADEMY_PAY of the usual wage and they are ACADEMY_LOYAL likelier to take its offers. Stage 5 can later
@@ -1850,21 +1854,24 @@ function academyWeek() {
 function homeEdge(where) { return lapsed() ? 1 : 1 + 0.015 * placeLv(where, 'feature'); }
 function attractionIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === 'attract') ? UPGRADES.attract.income[upLevel(p.b, 'attract') - 1] : 0), 0); }
 // ---------- (0.20.0) legendary sites and sanctuaries ----------
-// A gym city where a legendary appeared or was caught becomes a legendary site for SITE_YEARS (c.site = { sp, from, until },
-// on the world's city object, so every League with a gym there shares it; a new legendary there renews it). A League with
-// a gym in a site can build a Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week
-// while the site lasts, an attraction's income after, and SANCT_PRESTIGE a level each New Year while the site lasts.
-const SITE_YEARS = 10, SANCT_PRESTIGE = 1;
-const siteOn = c => !!(c && c.site && S.season <= c.site.until);
+// A gym city where a legendary appeared or was caught becomes a legendary site (c.site = { sp, from, sps } since 0.37.0),
+// on the world's city object, so every League with a gym there shares it. A League with a gym in a site can build a
+// Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week and SANCT_PRESTIGE a level
+// each New Year while open.
+// (0.37.0, ranch part 3) the site timer is gone: a site lasts while its legendaries are in the world (one is), and keeps
+// the last SITE_KEEP legendaries found there (c.site.sps). A Sanctuary is open while one of them is with the League
+// (sanctOpen, 5-engine-4) and sealed otherwise: no income, upkeep or prestige.
+const SANCT_PRESTIGE = 1, SITE_KEEP = 4;
+const siteOn = c => !!(c && c.site);
 function noteSite(gi, sp) {
   const g = S.gyms[gi]; const c = g && S.cities[g.city]; if (!c) return;
-  const was = siteOn(c);
-  c.site = { sp, from: was ? c.site.from : S.season, until: S.season + SITE_YEARS - 1 };
-  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary until the end of Year ${c.site.until}.`, 'league');
+  const was = siteOn(c), sps = was ? (c.site.sps || [c.site.sp]).filter(x => lineOf(x) !== lineOf(sp)) : [];
+  c.site = { sp, from: was ? c.site.from : S.season, sps: sps.concat(sp).slice(-SITE_KEEP) };
+  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary, open while ${sp} is with them.`, 'league');
 }
-function sanctIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => { const lv = upLevel(p.b, 'sanct'); return a + (lv ? (siteOn(p.c) ? UPGRADES.sanct.income : UPGRADES.attract.income)[lv - 1] : 0); }, 0); }
-// sanctuary levels at live sites, for prestige
-function sanctLevels() { return myPlaces().filter(p => !p.none && siteOn(p.c)).reduce((a, p) => a + upLevel(p.b, 'sanct'), 0); }
+function sanctIncome() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + UPGRADES.sanct.income[s.lv - 1], 0); }
+// open Sanctuary levels, for prestige
+function sanctLevels() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + s.lv, 0); }
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
 function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
@@ -2373,6 +2380,7 @@ function foldLeague(k) {
   const info = inLeague(k, () => ({ name: S.lgName, region: S.region, from: (S.history[0] || {}).season || 1, prest: Math.round(S.prest || 0) }));
   const staff = [], field = [];
   inLeague(k, () => {
+    vaultFold(); // (0.37.0) its stored legendaries wait for new partners
     for (let n = 0; n < 300; n++) {
       const x = topLevels().sort((a, b) => b.cost - a.cost)[0]; if (!x) break;
       const sale = distressSale(x.where, x.k); dropLevel(placeOf(x.where), x.k);
@@ -2454,6 +2462,7 @@ function removeLeague(k, info) {
     if (t.sponFrom != null) t.sponFrom = t.sponFrom === k ? null : rm(t.sponFrom);
     if (t.leftLg != null) t.leftLg = rm(t.leftLg);
     if (t.grudgeLg != null) t.grudgeLg = rm(t.grudgeLg); // (0.23.0)
+    if (t.storedLg != null) t.storedLg = t.storedLg === k ? null : rm(t.storedLg); // (0.37.0)
     if (t.founded) t.founded.lg = rm(t.founded.lg);
     if (t.spon) { t.spon.lg = rm(t.spon.lg); t.spon.to = rm(t.spon.to); }
     if (t.titleLgs) t.titleLgs = t.titleLgs.map(rm);
