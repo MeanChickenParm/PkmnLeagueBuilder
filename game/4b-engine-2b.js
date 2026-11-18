@@ -65,7 +65,7 @@ function leagueNewYear(changes) {
   moneyNewYear(L.report.titles);
   news(L.report.titles ? `Year ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Year ${S.season} wall report: a perfect year! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
   S.history.push({
-    season: S.season, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
+    season: S.season, name: S.lgName, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
     qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L),
@@ -152,7 +152,42 @@ function nextRegion() {
   return r2 == null ? null : r2;
 }
 const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');
-const nextRegionName = () => { const r = nextRegion(); return r == null ? null : regionsUsed().includes(r) ? `new ${regionWord(r)} League` : LEAGUE_SETS[r].name; };
+// (0.33.0, design doc 6.10) League names: a region's first seat is `<Region> League` and its second `<seat2> League`,
+// unless the region (a custom one) names them in `lgNames`. Every League takes these defaults unless named at setup;
+// a name is unique in the world (folded Leagues included): a repeat becomes `New <name>`, then numbered.
+const LG_NAME_MAX = 30;
+const cleanLgName = s => String(s == null ? '' : s).replace(/[<>&"`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, LG_NAME_MAX);
+function seatLgName(r, second) {
+  const reg = LEAGUE_SETS[r]; if (!reg) return 'New League';
+  return cleanLgName((reg.lgNames || [])[second ? 1 : 0]) || (second ? `${reg.seat2} League` : reg.name);
+}
+function lgNamesTaken(except) {
+  const a = [];
+  for (let i = 0; i < nLeagues(); i++) if (i !== except && (i === (S.lg || 0) || S.leagues[i])) a.push(leagueName(i));
+  (S.folded || []).forEach(f => f && a.push(f.name));
+  return a.filter(Boolean).map(n => String(n).toLowerCase());
+}
+function uniqueLgName(name, except) {
+  name = cleanLgName(name) || 'New League';
+  const taken = lgNamesTaken(except), free = n => !taken.includes(n.toLowerCase());
+  if (free(name)) return name;
+  if (free('New ' + name)) return 'New ' + name;
+  for (let k = 2; ; k++) if (free(`New ${name} ${k}`)) return `New ${name} ${k}`;
+}
+// your League any time; a rival only with the setup option Rename rival Leagues (S.cfg.renameAny). The old name is
+// kept on the League (`oldNames`) and each year's history entry keeps the name it had then
+function canRename(i) { return i === ME() || !!(S.cfg && S.cfg.renameAny); }
+function renameLeague(i, name) {
+  if (!Number.isInteger(i) || i < 0 || i >= nLeagues()) return 'No such League.';
+  if (!canRename(i)) return 'Rival Leagues can be renamed only with Rename rival Leagues on (Advanced options at setup).';
+  const n = cleanLgName(name); if (!n) return 'Give it a name.';
+  const old = leagueName(i); if (n === old) return null;
+  if (lgNamesTaken(i).includes(n.toLowerCase())) return `There is already a League called ${n}.`;
+  inLeague(i, () => { (S.oldNames = S.oldNames || []).push({ name: old, to: S.season }); S.lgName = n; });
+  news(`The ${old} is now the ${n}.`, 'league');
+  return null;
+}
+const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, regionsUsed().includes(r))); };
 // (0.17.0, stage 5) prestige: one scale for trainers and Leagues. A trainer's comes from their career (titles, the
 // Hall of Fame, badges, years, World titles: the founder score of 0.15.0). A League's is earned each New Year from its
 // record (a perfect year, letting through fewer than the world's average, a World Championship, cities controlled, its
@@ -196,7 +231,7 @@ function openNewLeague(f, r) {
   if (f === undefined) f = pickFounder();
   const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r);
   const champ = f && ((f.titleSeasons || []).length || f.career.titles) && f.retAge <= 55 && ovr(f) >= FOUNDER_CHAMP_OVR && rand() < FOUNDER_CHAMP_CHANCE ? f : null;
-  const lgName = second ? `${regionWord(r)} ${f ? f.name.split(' ').pop() : 'New'} League` : reg.name;
+  const lgName = uniqueLgName(seatLgName(r, second));
   S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: second ? reg.seat2 : reg.seat, founder: f ? f.id : null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   if (champ) unretire(champ);

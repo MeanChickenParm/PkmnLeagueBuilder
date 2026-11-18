@@ -227,3 +227,8 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Strict borders (the owner, idea, not a priority):** an option to see only the Pokémon of the regions in play (e.g. a world with Kanto and Hoenn only), instead of re-homing orphans and migration from regions with no League.
 - **The speed estimate** (`SPEED_AT`, amber over 20 s, red over 40 s a simulated year) is from Node at 0.29.0; a browser, especially a phone, is slower. Remeasure in a browser, and with region count once custom regions add more.
 - **A name clash for a region's new species** (a name already in My Pokédex or another region's file): decided (the owner): the species is left out of the import and the import flags it (which species, and why), so clashes never reach a game.
+
+## Left over from League names (0.33.0)
+- **The field alarm with gyms in any order.** In 0.33.0's chat one run of `sim.js 3 1 12 1` (growth and god mode on, seven Leagues by year 14) failed on a field of 164 to 173 against the 160 alarm; a rerun of the same build, and 0.32.0 at the same time, passed (the sims aren't seeded). Gyms in any order (0.32.0) let far more through, so fields run larger; retune the wall or move the alarm when wall targets are set.
+- **Pool swaps keep the built-in names.** A custom region used as a pool swap keeps the built-in region's League names (as it keeps its region name); only an added region or a whole replacement uses the region's own seat names.
+- **Naming a League you found mid-game:** leaving your League and the fresh start after a fold take the seat's default name (no name field on the leave panel or the founding screen); rename it from the League table afterwards. A name field there would be small.

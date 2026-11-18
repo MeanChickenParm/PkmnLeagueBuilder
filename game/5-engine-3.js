@@ -1206,7 +1206,7 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, renameAny: !!cfg.renameAny, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good
@@ -1230,10 +1230,12 @@ function newWorld(cfg = {}) {
   S.cfg.leagues = regions.length;
   // a second League in a region at the start sits at its second seat and is named for it
   const second = i => regions.slice(0, i).includes(regions[i]);
+  // (0.33.0) cfg.names[i]: a name given at setup (index 0 yours, then the rivals in order); blank takes the seat's default
+  const names = Array.isArray(cfg.names) ? cfg.names : [];
   const blank = i => { const reg = LEAGUE_SETS[regions[i]], two = second(i);
-    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: two ? `${reg.seat2} League` : reg.name, seatName: two ? reg.seat2 : reg.seat }; };
+    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], two)), seatName: two ? reg.seat2 : reg.seat }; };
   S.leagues = [null]; S.lg = 0;
-  S.region = regions[0]; S.lgName = LEAGUE_SETS[regions[0]].name;
+  S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], false);
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
   if (cfg.hand) { S.cfg.hand = true; initBooks(); }
@@ -2172,7 +2174,7 @@ function leaveLeague(region, takeIds = [], name = null) {
   const old = ME(), willing = new Set(leaveTakers().filter(x => x.willing).map(x => x.t.id));
   const take = takeIds.filter(id => willing.has(id)).slice(0, LEAVE_TAKE);
   const second = regionsUsed().includes(region), reg = LEAGUE_SETS[region];
-  const lgName = String(name || '').replace(/[<>&"]/g, '').trim().slice(0, 30) || (second ? `${regionWord(region)} Founders League` : reg.name);
+  const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, second));
   inLeague(old, () => {
     book(-LEAVE_FEE, 'founding', `Paid ${money(LEAVE_FEE)} to leave the ${S.lgName} and found the ${lgName}.`);
     // settle what waits for the player: challenges go ahead, offers accepted are withdrawn, vacancies take an outsider
@@ -2394,7 +2396,7 @@ function foldLeague(k) {
     // the old region always has room once the folded League is gone
     const region = info.region, second = regionCount(region) >= 2, reg = LEAGUE_SETS[region];
     neu = nLeagues();
-    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: second ? `${regionWord(region)} Founders League` : reg.name, seatName: second ? reg.seat2 : reg.seat, founder: null });
+    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: uniqueLgName(seatLgName(region, second)), seatName: second ? reg.seat2 : reg.seat, founder: null });
   }
   removeLeague(k, info);
   if (mine) {
@@ -2429,7 +2431,7 @@ function foldRegion(r) {
   return inLeague(ME(), () => {
     if (S.region === r) return null;
     const second = eachLeague(() => S.region).filter(x => x === r).length >= 1, reg = LEAGUE_SETS[r];
-    S.region = r; S.lgName = second ? `${regionWord(r)} Founders League` : reg.name; S.seatName = second ? reg.seat2 : reg.seat;
+    S.region = r; S.lgName = uniqueLgName(seatLgName(r, second), ME()); S.seatName = second ? reg.seat2 : reg.seat;
     const cities = leagueCities();
     S.gyms.forEach((g, i) => { g.city = cities[i].id; });
     return null;

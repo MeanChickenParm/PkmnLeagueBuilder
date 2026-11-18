@@ -34,6 +34,8 @@ async def run(path):
           // Advanced: rival 2 starts in Hoenn, the region this test picks for the player's League
           click('[data-act=setuppage][data-v=advanced]');
           { const sels = document.querySelectorAll('.rivalsel'); if (sels.length !== 2) log.push('FAIL the rival picker lists ' + sels.length + ' rivals'); else { sels[1].value = '2'; sels[1].dispatchEvent(new Event('change', { bubbles: true })); } }
+          // 0.33.0: rival 1 is named here; rival 2 keeps its seat's default
+          { const inp = document.querySelector('.rivalname[data-i="1"]'); if (!inp) log.push('FAIL no name field for rival 1'); else { inp.value = 'Browser Rival Cup'; inp.dispatchEvent(new Event('input', { bubbles: true })); } }
           // 0.31.0: the region editor. Make a region (rename it and a city, a port, neighbours, a legendary, a generated
           // list, a line added and removed, a Pokémon of its own), save it, export it, import the code back (its own
           // Pokémon's name is taken, so it is left out and flagged), delete the copy, and use the first as a 10th region
@@ -77,6 +79,8 @@ async def run(path):
               if (document.querySelectorAll('[data-act=newworld]').length !== 10) log.push('FAIL ' + document.querySelectorAll('[data-act=newworld]').length + ' region cards, not 10');
               click('[data-act=setuppage][data-v=advanced]'); } }
           click('[data-act=setuppage][data-v=main]');
+          // 0.33.0: your League's name on the main setup page
+          { const inp = document.querySelector('#setlgname'); if (!inp) log.push('FAIL no name field for your League'); else { inp.value = 'Browser Home Cup'; inp.dispatchEvent(new Event('input', { bubbles: true })); } }
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
           if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
@@ -107,7 +111,7 @@ async def run(path):
           if (/Defending/.test((document.querySelector('#main') || {}).textContent || '') || eachLeague(() => dn(T(S.champion))).some(x => /Defending/.test(x))) log.push('FAIL a Champion is still titled Defending');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
-          { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
+          { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League' || nm[0] !== 'Browser Home Cup' || nm[1] !== 'Browser Rival Cup') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
           const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
@@ -339,6 +343,13 @@ async def run(path):
             if (!b) log.push('FAIL nobody to send'); else { const id = +b.dataset.id; b.click(); const t = T(id); log.push('contender: ' + (t.spon ? (t.spon.pending ? 'goes after their run' : 'sent') : 'turned it down')); if (t.spon && !t.spon.pending && lgOf(t) !== 1) log.push('FAIL a contender sent at once is not on the other circuit'); }
             if (/undefined|NaN|\[object/.test(document.querySelector('#main').textContent)) log.push('FAIL the Contenders page shows undefined');
             go('table'); if (!/Prestige/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table has no prestige');
+            // 0.33.0: rename your League from the League table (rivals have no Rename without the setup option)
+            { const bs = [...document.querySelectorAll('[data-act=lgrename]')];
+              if (bs.length !== 1 || +bs[0].dataset.i !== ME()) log.push('FAIL Rename buttons on the League table: ' + bs.map(b => b.dataset.i));
+              else { bs[0].click(); const inp = document.querySelector('#lgrenamein'); if (!inp) log.push('FAIL no rename field');
+                else { inp.value = 'Sky Pillar League'; click('[data-act=lgrenamego]'); if (!/already a League/.test(document.querySelector('#main').textContent)) log.push('FAIL renamed to a name already taken');
+                  document.querySelector('#lgrenamein').value = 'Renamed Home Cup'; click('[data-act=lgrenamego]');
+                  if (leagueName(ME()) !== 'Renamed Home Cup' || !/Formerly the Browser Home Cup/.test(document.querySelector('#main').textContent)) log.push('FAIL renaming your League: ' + leagueName(ME())); } } }
             inLeague(ME(), () => { S.prest = PRESTIGE_BAR; S.fin.money = Math.max(S.fin.money, LEAVE_FEE + 50000); });
             go('money'); if (!click('[data-act=leaveask]')) log.push('FAIL no way to leave on the Money page');
             const cb = document.querySelector('.leavetake'); if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }

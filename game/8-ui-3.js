@@ -1,5 +1,14 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 33, ver: '0.33.0', date: 'November 17, 2026', time: '7:05 PM ET', title: 'League names', items: [
+    "Leagues are now named for their seats. A region's first League is named for the region (the Kanto League) and its second for its own seat (the Victory Road League, the Dragon's Den League, the Sky Pillar League…), for your League, the starting rivals, Leagues founded later and a League refounded after a fold alike. No more Leagues named after their founder's surname, and no more Founders League.",
+    "Name your League on the setup screen, and each starting rival under Advanced options → Where rival Leagues start. Leave a name blank and it takes its seat's default.",
+    "Rename your League any time from the League table. A new Advanced option, Rename rival Leagues, lets you rename any League there too. Past names show on the League table, and each year's report keeps the name the League had that year.",
+    "Founders now show beside the League they founded on the League table, with the year (Founded by …, Year 9).",
+    "Names are unique in the world, folded Leagues included: a League opening at a seat whose old League folded becomes the New … League.",
+    "Custom regions can set the default names of the Leagues at their two seats in the region editor (under Places), saved in the region file.",
+    "Titles follow the League's name, so a Champion of a League you named the Indigo Cup is the Indigo Cup Champion."
+  ] },
   { id: 32, ver: '0.32.0', date: 'November 17, 2026', time: '5:35 PM ET', title: 'Gyms in any order', items: [
     "Challengers can now take the eight gyms in any order. Every gym scales to the challenger in front of it: it fights at the level and team size for the badges they already hold (level 16 with three Pokémon at none, up to level 77 with six at seven badges), whichever gym it is. Every gym now sees beginners and challengers close to the Elite Four alike, so the later gyms face far more battles than before.",
     "Gym Leaders hold up to six Pokémon and gym trainers up to five. For each battle they field the number that stage needs (gym trainers one fewer than the leader), in the form each Pokémon would have at that level, picked by their Strategy against the challenger. Deeper teams draw more on the ranch.",
@@ -585,6 +594,10 @@ document.addEventListener('click', ev => {
     case 'godleague': { const why = godOpenLeague(); save(); render(); toast(why || `The ${leagueName(nLeagues() - 1)} is open.`); break; }
     case 'lgview': viewLg = +el.dataset.v; boardSel = null; render(); break;
     case 'setuppage': setupPage = el.dataset.v; render(); window.scrollTo(0, 0); break;
+    case 'lgrename': lgRenameAt = +el.dataset.i; lgRenameText = leagueName(lgRenameAt); lgRenameMsg = ''; render(); break;
+    case 'lgrenamecancel': lgRenameAt = null; lgRenameMsg = ''; render(); break;
+    case 'lgrenamego': { const i = +el.dataset.i, inp = $('#lgrenamein'), err = renameLeague(i, inp ? inp.value : lgRenameText);
+      if (err) lgRenameMsg = err; else { lgRenameAt = null; lgRenameMsg = ''; save(); } render(); break; }
     case 'advtoggle': setupAdv[el.dataset.k] = !setupAdv[el.dataset.k]; render(); break;
     case 'packlist': setupPackOpen[el.dataset.k] = !setupPackOpen[el.dataset.k]; render(); break;
     case 'feattoggle': setupOff[el.dataset.k] = !setupOff[el.dataset.k]; render(); break;
@@ -630,7 +643,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -743,6 +756,9 @@ document.addEventListener('input', e => {
   if (id === 'glosssearch') { glossQ = e.target.value; const r = $('#glossres'); if (r) { r.innerHTML = glossResults(); applyFolds(r, 'modal-glossary'); } }
   if (id === 'dexsearch') { dexQ = e.target.value; const r = $('#dexres'); if (r) r.innerHTML = dexResults(); }
   if (id === 'setupload') setupLoadText = e.target.value;
+  if (id === 'setlgname') setupNames[0] = e.target.value;
+  if (id === 'lgrenamein') lgRenameText = e.target.value;
+  if (e.target && e.target.classList && e.target.classList.contains('rivalname')) setupNames[+e.target.dataset.i] = e.target.value;
   if (id === 'dx-pick') dxPickText = e.target.value;
   if (id === 'dx-imp') dxImpText = e.target.value;
   if (id === 'rg-imp') rgImpText = e.target.value;

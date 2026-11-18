@@ -342,6 +342,8 @@ function nav() {
 let setupGrowth = true, setupGod = false, setupLeagues = 3; // (0.21.0) Leagues at the start, yours included
 // (0.30.0) where each rival starts (Advanced): a region index, or null for anywhere
 let setupRivals = [];
+// (0.33.0) League names given at setup: [yours, rival 1, rival 2…]; blank takes the seat's default
+let setupNames = [];
 // (0.30.0) how long a simulated year takes with n Leagues, in seconds: measured in Node at 0.29.0 (a browser may be
 // slower), straight lines between the measurements and on past the last; a guide for the setup screen's warning
 const SPEED_AT = [[1, 2], [3, 5.5], [6, 14], [10, 20], [14, 37], [18, 65]], SPEED_AMBER = 20, SPEED_RED = 40;
@@ -366,9 +368,9 @@ function foldSec(key, title, sub, summary, body, extra = '') {
 function rivalsSection() {
   const n = setupLeagues - 1, placed = setupRivals.slice(0, n).filter(x => x != null).length;
   const body = n < 1 ? '<p class="muted small">The world starts with your League alone. Set Starting Leagues above 1 on the main page to place rivals.</p>'
-    : `<p class="muted small">Each rival starts anywhere (spread over regions with no League first) or in the region you pick. A region holds two Leagues; picking your own region puts a rival beside you at its second seat. Picks past a region's room start anywhere.</p>
-    <div class="adv-list rival-list">${Array.from({ length: n }, (_, i) => `<label class="rival-row"><span>Rival ${i + 1}</span> <select class="rivalsel" data-i="${i}"><option value="">Anywhere</option>${LEAGUE_SETS.map((r, k) => `<option value="${k}"${setupRivals[i] === k ? ' selected' : ''}>${esc(regionName(k))}</option>`).join('')}</select></label>`).join('')}</div>`;
-  return foldSec('rivals', 'Where rival Leagues start', 'Your region is chosen on the main page', n < 1 ? 'No rivals' : placed ? `${placed} of ${n} placed` : 'Anywhere', body);
+    : `<p class="muted small">Each rival starts anywhere (spread over regions with no League first) or in the region you pick, and can be given a name (left blank, it takes its seat's default: the region's name at the first seat, the second seat's name at the second, as the Victory Road League). A region holds two Leagues; picking your own region puts a rival beside you at its second seat. Picks past a region's room start anywhere.</p>
+    <div class="adv-list rival-list">${Array.from({ length: n }, (_, i) => `<label class="rival-row"><span>Rival ${i + 1}</span> <select class="rivalsel" data-i="${i}"><option value="">Anywhere</option>${LEAGUE_SETS.map((r, k) => `<option value="${k}"${setupRivals[i] === k ? ' selected' : ''}>${esc(regionName(k))}</option>`).join('')}</select> <input class="cf-in rivalname" data-i="${i + 1}" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[i + 1] || '')}" placeholder="Name: the seat's default" aria-label="Rival ${i + 1}'s name" autocomplete="off"></label>`).join('')}</div>`;
+  return foldSec('rivals', 'Where rival Leagues start', 'Your region is chosen on the main page', n < 1 ? 'No rivals' : (placed ? `${placed} of ${n} placed` : 'Anywhere') + (setupNames.slice(1, n + 1).some(x => x && x.trim()) ? ' · named' : ''), body);
 }
 function viewAdvanced() {
   const opt = (k, title, desc) => `<button class="adv-opt${setupAdv[k] ? ' on' : ''}" data-act="advtoggle" data-k="${k}" role="switch" aria-checked="${setupAdv[k]}">
@@ -384,7 +386,8 @@ function viewAdvanced() {
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>Advanced options</h1>
     <p>Optional rules for the new world. These aren't balanced; they're here for fun.</p>
     <div class="confirm-row"><button class="btn small" data-act="advfoldall" data-v="${anyOpen ? 1 : 0}">${anyOpen ? 'Collapse all' : 'Expand all'}</button></div></section>
-    ${foldSec('rules', 'Rules', 'Optional league rules', setupAdv.allFamous ? 'All-famous league on' : 'Nothing on', `<div class="adv-list">
+    ${foldSec('rules', 'Rules', 'Optional league rules', [setupAdv.allFamous && 'All-famous league on', setupAdv.renameAny && 'Rename rival Leagues on'].filter(Boolean).join(' · ') || 'Nothing on', `<div class="adv-list">
+      ${opt('renameAny', 'Rename rival Leagues', 'Rename any League from the League table during play, not only your own (rival Leagues are always nameable here at setup, under Where rival Leagues start).')}
       ${opt('allFamous', 'All-famous league', `Every trainer is a famous trainer from the games and anime: Gym Leaders, Elite Four, Champions, rivals and newcomers. Draws from ${famousCount} famous trainers${famousCount ? '' : ' (none are switched on, so the league will use ordinary trainers)'}; once every one has debuted, they come round again as V2 (Kanto Leader Misty V2), then V3, and so on.`)}
     </div>`)}
     ${rivalsSection()}
@@ -884,7 +887,9 @@ function viewRegionEditor() {
     <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
       <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
       <div class="eyebrow">Towns with no gym</div><div class="rg-places">${d.extra.map((_, i) => place(`Town ${i + 1}`, `extra.${i}`, 8 + i)).join('')}</div>
-      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}</div></section>
+      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}</div>
+      <div class="eyebrow">League names</div><p class="muted small">The names the Leagues at each seat take unless named at a new game. Blank: the region's name at the first seat (${esc((d.name || 'Region') + ' League')}), the seat's name at the second (${esc((d.seat2 || 'Second Seat') + ' League')}).</p>
+      <div class="cf-grid">${rgField('League at the first seat', 'lgNames.0', (d.lgNames || {})[0], LG_NAME_MAX, (d.name || 'Region') + ' League')}${rgField('League at the second seat', 'lgNames.1', (d.lgNames || {})[1], LG_NAME_MAX, (d.seat2 || 'Second Seat') + ' League')}</div></section>
     <section class="panel"><div class="ph"><h2>Neighbours</h2><span class="muted">${d.nb.length} chosen · pick 2 or 3</span></div>
       <p class="muted small">Migrations come from neighbours (and now and then from further off). Neighbours are two-way. With none chosen, a replacement keeps the replaced region's, and a new region takes the two built-in regions sharing most of its Pokémon.</p>
       <div class="rg-chips">${BUILTIN_REGIONS.map((_, i) => tog('rgnb', builtinRegionName(i), d.nb.includes(builtinRegionName(i)), builtinRegionName(i))).join('')}</div></section>
@@ -973,7 +978,7 @@ function viewSetup() {
   if (setupPage === 'custom') return viewCustom();
   if (setupPage === 'import') return viewImport();
   const offNames = FEATURES.flatMap(g => g.items).filter(i => setupOff[i[0]]).map(i => i[1]);
-  const advOn = Object.entries(setupAdv).filter(([, v]) => v).map(([k]) => ({ allFamous: 'All-famous league' }[k])).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []).concat(setupChoices().map(c => `${c.rec.name}: ${useLabel(setupCustom[c.rec.id]).toLowerCase()}`));
+  const advOn = Object.entries(setupAdv).filter(([, v]) => v).map(([k]) => ({ allFamous: 'All-famous league', renameAny: 'Rename rival Leagues' }[k])).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []).concat(setupChoices().map(c => `${c.rec.name}: ${useLabel(setupCustom[c.rec.id]).toLowerCase()}`));
   const opt = (act, v, cur, label) => `<button class="seg${cur === v ? ' on' : ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${label}</button>`;
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
     <p>You run a Pokémon League and try to let nobody through. After you choose a region you place its first staff by hand: a Champion, four Elite Four members and eight Gym Leaders. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
@@ -984,6 +989,7 @@ function viewSetup() {
     </div>
     <p class="muted small">${setupLeagues > 1 ? `The world starts with ${setupLeagues} Leagues: yours in the region you choose and ${setupLeagues === 2 ? 'a rival' : `${setupLeagues - 1} rivals`}, founded on their own${setupRivals.slice(0, setupLeagues - 1).some(x => x != null) ? ' where you placed them in Advanced options, the rest' : ''} ${setupLeagues - 1 < LEAGUE_SETS.length ? 'in other regions' : 'two to a region where needed (one shares your region only when every other seat is taken or you place it there)'}. Their Champions meet in a World Championship every year. ` : 'The world starts with your League alone, in the region you choose. '}${setupGrowth ? `More Leagues open over time when a distinguished retired trainer founds one (up to two a region); each new one needs more prestige than the last. ` : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
     ${speedNote(setupLeagues)}
+    <label class="cf-field setup-name"><span class="eyebrow">Your League's name</span><input class="cf-in" id="setlgname" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[0] || '')}" placeholder="Left blank: named after its region (the Kanto League)" autocomplete="off"></label>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
