@@ -1148,7 +1148,7 @@ function aimHunt(aim, fits, gain, budget) {
   return !startTrip('target', best.b, best.k);
 }
 
-// ================= RANCH PART 3 (0.37.0, design doc 6.5 and 6.15): storage, picking at hire, the Sanctuary rework =================
+// ================= RANCH PART 3 (0.37.0, design doc 6.5 and 6.16): storage, picking at hire, the Sanctuary rework =================
 // All numbers provisional (item 43).
 // STORAGE: a challenger keeps what they drop (released for a catch, left behind for a new run, over the foreign limit on
 // moving region…) in t.store, at most STORE_MAX, newest first: slim copies { uid, sp, top, iv, nat, at, met, conditions }.
