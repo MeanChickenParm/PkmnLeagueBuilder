@@ -32,7 +32,7 @@ const PG = { start: [], famous: 0 }, PGH = { blocked: 0 };
 g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x => x.leader)]; for (const id of ids) { const t = g.T(id); if (t.famous && !t.founded) PG.famous++; } PG.start.push(Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length)); });
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
-let renames = 0;
+let renames = 0, postSets = 0;
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
@@ -452,6 +452,23 @@ for (let i = 0; i < N; i++) {
       if (g.renameLeague(me, nm) || g.leagueName(me) !== nm || !g.inLeague(me, () => (S().oldNames || []).some(x => x.name === was))) fail.push('renaming your League');
       const other = g.eachLeague(i => i).find(i => i !== me); if (other != null && !g.renameLeague(other, 'Nope League')) fail.push('a rival was renamed without the option');
       renames++; }
+    // (0.42.0) post names: every League's set well-formed, its words real; a rival drawn a theme once it has an aim;
+    // the player sets theirs now and then (a theme and a custom name), and a rival's can't be set without the option
+    g.eachLeague(i => { const ps = S().postSet;
+      if (ps != null && (!g.THEMES[ps.theme] || typeof ps.names !== 'object' || Object.entries(ps.names).some(([k, v]) => !g.POST_KEYS.includes(k) || typeof v !== 'string' || !v || v.length > g.POST_MAX || /[<>&"`\\]/.test(v)))) fail.push('a malformed post set: ' + JSON.stringify(ps));
+      if (S().fin && S().fin.aim && !S().founding && !(ps && ps.theme)) fail.push(`rival ${i} has no theme`);
+      const w = g.postWords(i); if (g.POST_KEYS.some(k => !w[k] || typeof w[k] !== 'string')) fail.push('a post word missing: ' + JSON.stringify(w));
+      if (ps && ps.names) for (const k of g.POST_KEYS) if (ps.names[k] && w[k] !== ps.names[k]) fail.push('a League\'s own post name not used');
+      const h = S().history[S().history.length - 1]; if (h && h.season >= 1 && !h.posts) fail.push('a year with no post names'); });
+    if (HAND && !S().founding && Math.random() < 0.01) { const me = g.ME(), th = g.THEME_KEYS[Math.floor(Math.random() * g.THEME_KEYS.length)], nm = Math.random() < 0.5 ? { e4: 'Test Four ' + (S().turn % 100) } : {};
+      const err = g.setPosts(me, th, nm); if (err) fail.push('setting your posts: ' + err);
+      else { const w = g.postWords(me), tw = g.themeWords(th, g.inLeague(me, () => S().region));
+        if (nm.e4 && w.e4 !== nm.e4) fail.push('your own Elite Four name not used');
+        if (g.POST_KEYS.some(k => !nm[k] && w[k] !== tw[k])) fail.push('a theme word not used: ' + JSON.stringify([th, w, tw])); }
+      if (!g.setPosts(me, 'nope', {})) fail.push('a made-up theme was taken');
+      if (!g.setPosts(me, th, { leader: 'Bad <b>' })) fail.push('a post name with < was taken');
+      const other = g.eachLeague(i => i).find(i => i !== me); if (other != null && !g.setPosts(other, 'dojo', {})) fail.push('a rival\'s posts were set without the option');
+      postSets++; }
     if (HAND && S().week === 47 && ((S().season === 7 && g.nLeagues() > 1) || S().season === 9)) {
       const k = S().season === 7 ? [...Array(g.nLeagues()).keys()].find(i => i !== g.ME()) : g.ME();
       g.inLeague(k, () => { S().fin.money = -50000000; S().fin.redYears = g.FOLD_YEARS - 1; });
@@ -576,6 +593,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'calls', JSON.stringify(call), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
+console.log('themes', g.eachLeague(i => `${S().lgName}: ${g.themeOf(i).name} (${Object.values(g.postWords(i)).join('/')})`).join('; '), 'drawn', g.THEME_LOG.picked, 'rebrands', g.THEME_LOG.rebrands, 'set by hand', postSets);
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none', 'renames', renames, 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });
 console.log('legendaries', JSON.stringify(LEG));

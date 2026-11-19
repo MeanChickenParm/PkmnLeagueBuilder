@@ -348,6 +348,16 @@ let setupGrowth = true, setupGod = false, setupLeagues = 3; // (0.21.0) Leagues 
 let setupRivals = [];
 // (0.33.0) League names given at setup: [yours, rival 1, rival 2…]; blank takes the seat's default
 let setupNames = [];
+// (0.42.0) your League's posts at setup ({ theme, names }) and each rival's theme ('' = drawn by its aim and region)
+let setupPosts = { theme: 'region', names: {} }, setupRivalThemes = [];
+const POST_LABELS = { leader: 'Gym Leaders', gymtrainer: 'Gym trainers', e4: 'Elite Four', champion: 'Champion' };
+// (0.42.0) the post-name form: a theme picker that fills the four fields, each still editable. cls: the fields' class,
+// sel: the picker's id, r: the region (placeholders), ps: { theme, names }
+function postsForm(sel, cls, ps, r) {
+  const w = themeWords(ps.theme, r), custom = POST_KEYS.some(k => ps.names[k] != null && ps.names[k] !== '' && ps.names[k] !== w[k]);
+  return `<div class="posts-form"><label class="cf-field"><span class="eyebrow">Theme${custom ? ' <span class="tag">Custom</span>' : ''}</span><select class="cf-in" id="${sel}">${THEME_KEYS.map(k => `<option value="${k}"${ps.theme === k ? ' selected' : ''}>${esc(THEMES[k].name)}</option>`).join('')}</select></label>
+    <div class="cf-grid">${POST_KEYS.map(k => `<label class="cf-field"><span class="eyebrow">${POST_LABELS[k]}</span><input class="cf-in ${cls}" data-k="${k}" maxlength="${POST_MAX}" value="${esc(ps.names[k] != null ? ps.names[k] : w[k])}" placeholder="${esc(w[k])}" autocomplete="off"></label>`).join('')}</div></div>`;
+}
 // (0.30.0) how long a simulated year takes with n Leagues, in seconds: measured in Node at 0.29.0 (a browser may be
 // slower), straight lines between the measurements and on past the last; a guide for the setup screen's warning
 // (0.41.0) rescaled for the regional field's smaller fields (measured in Node at years 2 to 3, scaled to the 0.29.0 table's machine)
@@ -374,7 +384,7 @@ function rivalsSection() {
   const n = setupLeagues - 1, placed = setupRivals.slice(0, n).filter(x => x != null).length;
   const body = n < 1 ? '<p class="muted small">The world starts with your League alone. Set Starting Leagues above 1 on the main page to place rivals.</p>'
     : `<p class="muted small">Each rival starts anywhere (spread over regions with no League first) or in the region you pick, and can be given a name (left blank, it takes its seat's default: the region's name at the first seat, the second seat's name at the second, as the Victory Road League). A region holds two Leagues; picking your own region puts a rival beside you at its second seat. Picks past a region's room start anywhere.</p>
-    <div class="adv-list rival-list">${Array.from({ length: n }, (_, i) => `<label class="rival-row"><span>Rival ${i + 1}</span> <select class="rivalsel" data-i="${i}"><option value="">Anywhere</option>${LEAGUE_SETS.map((r, k) => `<option value="${k}"${setupRivals[i] === k ? ' selected' : ''}>${esc(regionName(k))}</option>`).join('')}</select> <input class="cf-in rivalname" data-i="${i + 1}" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[i + 1] || '')}" placeholder="Name: the seat's default" aria-label="Rival ${i + 1}'s name" autocomplete="off"></label>`).join('')}</div>`;
+    <div class="adv-list rival-list">${Array.from({ length: n }, (_, i) => `<label class="rival-row"><span>Rival ${i + 1}</span> <select class="rivalsel" data-i="${i}"><option value="">Anywhere</option>${LEAGUE_SETS.map((r, k) => `<option value="${k}"${setupRivals[i] === k ? ' selected' : ''}>${esc(regionName(k))}</option>`).join('')}</select> <input class="cf-in rivalname" data-i="${i + 1}" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[i + 1] || '')}" placeholder="Name: the seat's default" aria-label="Rival ${i + 1}'s name" autocomplete="off"> <select class="rivaltheme" data-i="${i}" aria-label="Rival ${i + 1}'s theme"><option value="">Theme: by its aim and region</option>${THEME_KEYS.map(k => `<option value="${k}"${setupRivalThemes[i] === k ? ' selected' : ''}>${esc(THEMES[k].name)}</option>`).join('')}</select></label>`).join('')}</div>`;
   return foldSec('rivals', 'Where rival Leagues start', 'Your region is chosen on the main page', n < 1 ? 'No rivals' : (placed ? `${placed} of ${n} placed` : 'Anywhere') + (setupNames.slice(1, n + 1).some(x => x && x.trim()) ? ' · named' : ''), body);
 }
 function viewAdvanced() {
@@ -885,6 +895,8 @@ function viewRegionEditor() {
     ${rgErrs.length ? `<ul class="warn cf-errs">${rgErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <section class="panel"><div class="ph"><h2>The region</h2><span class="muted">Name, rules and post names</span></div>
       <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}${rgField('The Elite Four are called', 'posts.e4', d.posts && d.posts.e4, POST_NAME_MAX, 'Elite Four')}${rgField('The Champion is called', 'posts.champion', d.posts && d.posts.champion, POST_NAME_MAX, 'Champion')}</div>
+      <p class="muted small">These are the defaults for every League here that hasn't named its own posts or taken a theme.</p>
+      <div class="eyebrow">Themes rival Leagues here lean to</div><div class="rg-chips">${THEME_KEYS.filter(k => k !== 'region').map(k => tog('rgtheme', k, (d.themes || []).includes(k), THEMES[k].name)).join('')}</div>
       <div class="adv-list">
         <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (up to four to a region). Off: only your League.</span></span></button>
         <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>
@@ -949,6 +961,7 @@ function regionAction(a, el) {
     case 'rgsave': { const errs = saveRegion(rgRec()); if (errs.length) { rgErrs = errs; return true; } const n = rgDraft.name.trim(); rgDraft = null; rgErrs = []; setupPage = 'advanced'; setupFold.regions = false; rgImpMsg = ''; toast(`Saved ${n}.`); return true; }
     case 'rgcancel': rgDraft = null; rgErrs = []; setupPage = 'advanced'; return true;
     case 'rgflag': rgDraft[k] = k === 'rivals' ? rgDraft.rivals === false : !rgDraft[k]; return true;
+    case 'rgtheme': rgDraft.themes = (rgDraft.themes || []).includes(k) ? rgDraft.themes.filter(x => x !== k) : (rgDraft.themes || []).concat(k); return true;
     case 'rgnb': rgDraft.nb = rgDraft.nb.includes(k) ? rgDraft.nb.filter(x => x !== k) : rgDraft.nb.concat(k); return true;
     case 'rglegkeep': rgDraft.legends = rgDraft.legends == null ? [] : null; return true;
     case 'rglegrm': rgDraft.legends = rgDraft.legends.filter(x => x !== k); return true;
@@ -995,6 +1008,7 @@ function viewSetup() {
     <p class="muted small">${setupLeagues > 1 ? `The world starts with ${setupLeagues} Leagues: yours in the region you choose and ${setupLeagues === 2 ? 'a rival' : `${setupLeagues - 1} rivals`}, founded on their own${setupRivals.slice(0, setupLeagues - 1).some(x => x != null) ? ' where you placed them in Advanced options, the rest' : ''} ${setupLeagues - 1 < LEAGUE_SETS.length ? 'in other regions' : 'two to a region where needed (one shares your region only when every other seat is taken or you place it there)'}. Their Champions meet in a World Championship every year. ` : 'The world starts with your League alone, in the region you choose. '}${setupGrowth ? `More Leagues open over time when a distinguished retired trainer founds one (up to two a region); each new one needs more prestige than the last. ` : ''}${setupGod ? 'God mode lets you open a League and edit any trainer. ' : ''}</p>
     ${speedNote(setupLeagues)}
     <label class="cf-field setup-name"><span class="eyebrow">Your League's name</span><input class="cf-in" id="setlgname" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[0] || '')}" placeholder="Left blank: named after its region (the Kanto League)" autocomplete="off"></label>
+    <div class="setup-name"><div class="eyebrow">Your League's posts</div><p class="muted small">Pick a theme to fill the four names, or type your own over any of them. Region default uses the region's own names (Alola's Kahuna and Trial Captain, a custom region's), else the usual ones.</p>${postsForm('setposttheme', 'setpost', setupPosts, null)}</div>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">

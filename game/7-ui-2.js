@@ -50,8 +50,8 @@ function eliteCard(t, label, extra = '', foot = '') {
 }
 function viewGyms() {
   const ch = T(S.champion);
-  return `${staffNotices()}<section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">${ch.career.defenses} defenses · ${ch.career.conceded || 0} title${(ch.career.conceded || 0) === 1 ? '' : 's'} conceded · keeps the seat when beaten</span></div>${eliteCard(ch, `${S.lgName} Champion`)}</section>
-  <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order, each at a set level for both sides (${E4_LV.join(', ')}; the Champion at ${champLv()})</span></div><div class="elite-grid">${S.e4.map((id, i) => eliteCard(T(id), `Elite Four #${i + 1} · ${T(id).career.e4Wins} career wins`)).join('')}</div></section>
+  return `${staffNotices()}<section class="panel champ"><div class="ph"><h2>${esc(postWord('champion'))}</h2><span class="muted">${ch.career.defenses} defenses · ${ch.career.conceded || 0} title${(ch.career.conceded || 0) === 1 ? '' : 's'} conceded · keeps the seat when beaten</span></div>${eliteCard(ch, `${S.lgName} ${postWord('champion')}`)}</section>
+  <section class="panel"><div class="ph"><h2>${esc(postWord('e4'))}</h2><span class="muted">Faced in this order, each at a set level for both sides (${E4_LV.join(', ')}; the Champion at ${champLv()})</span></div><div class="elite-grid">${S.e4.map((id, i) => eliteCard(T(id), `${postWord('e4')} #${i + 1} · ${T(id).career.e4Wins} career wins`)).join('')}</div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">Gyms can be taken in any order, and every gym scales to the challenger: it fights at the level and team size for the badges they already hold (Lv ${GYM_LV[0]} with ${GYM_SIZE[0]} Pokémon at none, up to Lv ${GYM_LV[GYM_TOP]} with ${GYM_SIZE[GYM_TOP]} at seven), and a challenger fields as many as the trainer in front of them. Leaders hold up to ${LEADER_HOLD} Pokémon and gym trainers ${GYM_TRAINERS ? GT_HOLD : 0}, each fielding what the battle needs (gym trainers one fewer than the leader). Challengers must beat both gym trainers, then the leader, and get ${GYM_TRIES} tries at each gym on a run. Record is tries turned back–badges conceded this year. A gym's type is its leader's class; a leader with no type focus fields a mixed team. Staff build their own teams: Scouting finds stronger Pokémon, Strategy fits the team together, Training raises each Pokémon.</span></div><div class="elite-grid">${S.gyms.map((g, i) => g.leader ? eliteCard(T(g.leader), `Gym ${i + 1} · ${townName(i)}`, `${gymWeatherTag(T(g.leader))}<span class="rec">${g.w}–${g.l}</span>`, gymTrainerList(g, i) + gymWatch(g, i)) : `<article class="elite"><div class="eyebrow">Gym ${i + 1} · ${townName(i)}</div><p class="muted">Vacant</p></article>`).join('')}</div></section>${banCard()}`;
 }
 function gymTrainerList(g, i) {
@@ -155,7 +155,7 @@ function chalNotice() {
     <p class="muted small">One battle at the seat's level, the challenger with a team built for the seat. A beaten Champion takes the winner's Elite Four seat; a beaten Elite Four member takes the winning Gym Leader's gym, or returns to the circuit if a challenger beat them. Refusing, or losing, makes a member of staff restless (their promotion clock moves a year on).</p>
     ${claims.length ? `<p class="muted small">A title claim never goes ahead without you. Allowed, it is one battle at the Champion's level, your Champion with their full team and the seat's edge; a beaten Champion leaves the post. Turned down or left unanswered, your League loses ${CLAIM_PRESTIGE} prestige and the claimant leaves unhappy, perhaps to come back as another League's contender. Or offer them a post from the hiring pages while the claim stands: a claimant is glad to take one, and the claim ends there.</p>` : ''}`;
 }
-const vacancyName = v => v.post === 'leader' ? `${townName(v.slot)} Gym Leader (badge ${v.slot + 1})` : `Elite Four seat #${v.slot + 1}`;
+const vacancyName = v => v.post === 'leader' ? `${townName(v.slot)} ${postWord('leader')} (badge ${v.slot + 1})` : `${postWord('e4')} seat #${v.slot + 1}`;
 const vacancyActing = v => v.post === 'leader' ? S.gyms[v.slot].leader : S.e4[v.slot];
 // the hiring page for one vacancy: everyone who can take the post, best first
 let hireIdx = 0, hireFit = false;
@@ -206,9 +206,9 @@ function viewStaff() {
   return `${staffNotices()}<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Your staff</h2>
     <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes when they step down or leave, or lose a seat challenge. <b>Calling a challenge:</b> you decide when your Champion's seat is fought for: up to ${CALL_MAX} times a year, name an Elite Four member, a Gym Leader or a recent title winner to challenge the Champion, ${CALL_WEEKS} weeks later. A Champion called against may come to want to leave. <b>Seat challenges:</b> at New Year a Gym Leader who wants promotion (or a challenger after a run to the Elite Four) may challenge an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger; the Champion may also want a bigger League's seat, or to step down. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last); then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves unless promoted, and a gym trainer just goes. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
   ${steersPanel()}
-  <section class="panel champ"><div class="ph"><h2>Champion</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>Champion</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
+  <section class="panel champ"><div class="ph"><h2>${esc(postWord('champion'))}</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>${esc(postWord('champion'))}</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
   ${callPanel()}
-  <section class="panel"><div class="ph"><h2>Elite Four</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `Elite Four #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
+  <section class="panel"><div class="ph"><h2>${esc(postWord('e4'))}</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `${postWord('e4')} #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">A gym's type is its leader's class; gym trainers share a type with the leader</span></div><div class="scroll"><table class="tbl">${head}<tbody>${gymRows}</tbody></table></div></section>`;
 }
 // ---------- steers and the meta (0.12.0) ----------
@@ -220,7 +220,7 @@ function steerSelect(key, label) {
 }
 // the senior posts of the bound League, with their keys
 function steerPosts() {
-  return [{ key: 'champion', label: 'Champion', t: T(S.champion) }].concat(S.e4.map((id, k) => ({ key: 'e4:' + k, label: `Elite Four #${k + 1}`, t: T(id) })), S.gyms.map((g, i) => ({ key: 'gym:' + i, label: `Gym ${i + 1} · ${townName(i)}`, t: T(g.leader) })));
+  return [{ key: 'champion', label: postWord('champion'), t: T(S.champion) }].concat(S.e4.map((id, k) => ({ key: 'e4:' + k, label: `${postWord('e4')} #${k + 1}`, t: T(id) })), S.gyms.map((g, i) => ({ key: 'gym:' + i, label: `Gym ${i + 1} · ${townName(i)}`, t: T(g.leader) })));
 }
 const followText = t => { const f = Math.round(steerFollow(t) * 100); return `${f}%`; };
 function onTypeTag(t, s) { return answersOnType(t, s) ? '<span class="tag gold small">on type</span>' : specTypes(t).length ? '<span class="tag small" title="Countering, they may field one Pokémon off their type">one off-type</span>' : ''; }
@@ -281,16 +281,20 @@ function leagueRow(i) {
     return { i, name: S.lgName, aim: f ? (f.aim ? AIMS[f.aim].name : 'Yours') : '—', money: f ? f.money : null, estate: f ? estateCost() : null, inc: last ? sum(last.in) : null, out: last ? sum(last.out) : null,
       wage: f ? wageBill() : null, ctrl: S.gyms.filter(g => { const c = S.cities[g.city]; return c.ctrl === i && c.tier >= 2; }).length, strong: S.gyms.filter(g => strongholdOf(S.cities[g.city], i)).length, shared: S.gyms.filter(g => (m[g.city] || []).length > 1).length,
       let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, old: (S.oldNames || []).map(x => x.name), prest: Math.round(S.prest || 0), spon: contendersOf(i).length,
-      field: S.challengers.length, share: fieldShare(i), rebuild: !!(f && f.rebuild) };
+      field: S.challengers.length, share: fieldShare(i), rebuild: !!(f && f.rebuild), posts: postWords(), theme: themeOf().name, custom: POST_KEYS.some(k => postSetOf(i).names[k]), region: S.region };
   });
 }
 // (0.33.0) renaming from the League table: your League any time, a rival with Rename rival Leagues on
 let lgRenameAt = null, lgRenameText = '', lgRenameMsg = '';
+// (0.42.0) post names from the League table (the same rule as renaming)
+let lgPostsAt = null, lgPostsDraft = null, lgPostsMsg = '';
 function lgNameCell(r) {
   const fy = r.founder && r.founder.founded && r.founder.founded.lg === r.i ? `, Year ${r.founder.founded.season}` : '';
   const sub = (r.founder ? `<div class="small muted">Founded by ${tname(r.founder.id)}${fy}</div>` : '') + (r.old.length ? `<div class="small muted">Formerly the ${r.old.slice().reverse().map(esc).join(', the ')}</div>` : '');
+  const pw = r.posts, postLine = `<div class="small muted">${esc(r.theme)}${r.custom ? ' (custom)' : ''}: ${[pw.leader, pw.gymtrainer, pw.e4, pw.champion].map(esc).join(' · ')}</div>`;
+  if (lgPostsAt === r.i && lgPostsDraft) return `<b>${esc(r.name)}</b>${postsForm('lgposttheme', 'lgpostin', lgPostsDraft, r.region)}<div class="confirm-row"><button class="btn small primary" data-act="lgpostsgo" data-i="${r.i}">Save posts</button><button class="btn small" data-act="lgpostscancel">Cancel</button></div>${lgPostsMsg ? `<div class="small bad">${esc(lgPostsMsg)}</div>` : ''}${sub}`;
   if (lgRenameAt === r.i) return `<label class="cf-field"><input class="cf-in" id="lgrenamein" maxlength="${LG_NAME_MAX}" value="${esc(lgRenameText)}" autocomplete="off" aria-label="New name"></label><div class="confirm-row"><button class="btn small primary" data-act="lgrenamego" data-i="${r.i}">Rename</button><button class="btn small" data-act="lgrenamecancel">Cancel</button></div>${lgRenameMsg ? `<div class="small bad">${esc(lgRenameMsg)}</div>` : ''}${sub}`;
-  return `<b>${esc(r.name)}</b>${handOn() && canRename(r.i) ? ` <button class="btn small" data-act="lgrename" data-i="${r.i}">Rename</button>` : ''}${sub}`;
+  return `<b>${esc(r.name)}</b>${handOn() && canRename(r.i) ? ` <button class="btn small" data-act="lgrename" data-i="${r.i}">Rename</button> <button class="btn small" data-act="lgposts" data-i="${r.i}">Posts</button>` : ''}${postLine}${sub}`;
 }
 function viewTable() {
   const rows = Array.from({ length: nLeagues() }, (_, i) => leagueRow(i)).sort((a, b) => (b.money ?? -1e12) - (a.money ?? -1e12));
@@ -371,7 +375,7 @@ let ranchType = 'Normal', ranchSp = null, charterReg = null, ranchCond = '';
 // (0.36.0) a condition's tag on the Ranch page
 const condTag = c => condKeys(c).map(k => ` <span class="tag ${k} small"${k === 'delta' ? ` title="An unusual ${esc(c.delta)} type"` : ''}>${k === 'delta' ? 'Δ Delta' : k === 'shiny' ? '✦ Shiny' : k === 'radiant' ? '✧ Radiant' : 'Alpha'}</span>`).join('');
 function ranchPostOpts() {
-  return [['champion', 'Champion']].concat(S.e4.map((_, k) => [`e4:${k}`, `Elite Four #${k + 1}`]), S.gyms.map((_, i) => [`gym:${i}`, `Gym ${i + 1} · ${townName(i)}`]));
+  return [['champion', postWord('champion')]].concat(S.e4.map((_, k) => [`e4:${k}`, `${postWord('e4')} #${k + 1}`]), S.gyms.map((_, i) => [`gym:${i}`, `Gym ${i + 1} · ${townName(i)}`]));
 }
 function viewRanch() { return inLeague(ME(), viewRanch0); }
 function viewRanch0() {
@@ -916,9 +920,9 @@ function boardRows() {
   });
   const ready = out.filter(t => t.badges.length >= 8).length;
   for (let k = 0; k < 4; k++) { const h = T(S.e4[k]), faced = E.filter(e => e.stage >= k).length, st = E.filter(e => e.stage === k).length;
-    rows.push(row('e4:' + k, `Elite Four #${k + 1}`, h ? `${dn(h)} · ${typeLabel(h)}` : 'Vacant', k === 0 ? ready : '—', faced - st, st, st, faced - st)); }
+    rows.push(row('e4:' + k, `${postWord('e4')} #${k + 1}`, h ? `${dn(h)} · ${typeLabel(h)}` : 'Vacant', k === 0 ? ready : '—', faced - st, st, st, faced - st)); }
   { const c = T(S.champion), faced = E.filter(e => e.stage >= 4).length, won = E.filter(e => e.stage === 5).length;
-    rows.push(row('champ', 'Champion', c ? `${dn(c)} · ${typeLabel(c)}` : 'Vacant', '—', won, faced - won, faced - won, won)); }
+    rows.push(row('champ', postWord('champion'), c ? `${dn(c)} · ${typeLabel(c)}` : 'Vacant', '—', won, faced - won, faced - won, won)); }
   return rows.join('');
 }
 // (0.32.0) with gyms in any order, how far the field has got is counted by badges held: challengers out on a run with
@@ -955,7 +959,7 @@ function boardDetail() {
   const runs = boardRuns().filter(([e]) => e.stage >= k);
   const thru = runs.filter(([e]) => e.stage > k).slice(0, BOARD_KEEP), stop = runs.filter(([e]) => e.stage === k).slice(0, BOARD_KEEP);
   const ready = k === 0 ? S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.rest == null && t.badges.length >= 8) : [];
-  return `<div class="ph"><h3>${champ ? 'Champion' : `Elite Four #${k + 1}`}${h ? ' · ' + tname(h.id) : ''}</h3><span class="muted">${h ? `${typeLabel(h)} · Lv ${champ ? champLv() : E4_LV[k]}` : 'Vacant'}</span></div>
+  return `<div class="ph"><h3>${champ ? postWord('champion') : `${postWord('e4')} #${k + 1}`}${h ? ' · ' + tname(h.id) : ''}</h3><span class="muted">${h ? `${typeLabel(h)} · Lv ${champ ? champLv() : E4_LV[k]}` : 'Vacant'}</span></div>
     ${h ? `<p class="small muted">${h.team.map(m => m.sp).join(', ')}</p>` : ''}
     <div class="hist3">
       ${k === 0 ? list(`Preparing for the Elite Four (${ready.length})`, ready.map(t => li(t.id, `${t.team.length} Pokémon`)), 'Nobody has eight badges right now.') : ''}
@@ -989,7 +993,7 @@ const hofMon = m => `<span class="hofmon" title="${esc([`Lv ${m.lv}`, m.ab, m.it
 function hofCard(e) {
   const t = T(e.id), n = t ? t.hofN || 1 : 1, k = (S.hof || []).filter(x => x.id === e.id && x.uid <= e.uid).length, w = hofLog(e);
   return `<article class="hofcard"><div class="eyebrow">Year ${e.season} · ${weekShort(e.week)} · ${esc(leagueName(e.lg))}${e.lg < 0 ? ' (folded)' : ''}</div><div class="hof-name">${t ? tname(t.id) : 'Unknown'}</div>
-    <div class="hof-stats"><span>beat Champion ${T(e.champ) ? tname(e.champ) : '?'}</span>${n > 1 ? `<span><b>${k}</b> of ${n} entries</span>` : ''}${e.spon != null ? `<span class="tag small">Contender for the ${esc(lgShort(e.spon))}</span>` : ''}</div>
+    <div class="hof-stats"><span>beat ${esc(e.cw || 'Champion')} ${T(e.champ) ? tname(e.champ) : '?'}</span>${n > 1 ? `<span><b>${k}</b> of ${n} entries</span>` : ''}${e.spon != null ? `<span class="tag small">Contender for the ${esc(lgShort(e.spon))}</span>` : ''}</div>
     <div class="hof-team">${e.team.map(hofMon).join('')}</div>
     ${e.route && e.route.length ? `<div class="small muted">Route: ${e.route.map(esc).join(' → ')}</div>` : ''}
     ${w ? `<button class="btn small" data-act="watchhof" data-u="${e.uid}">Watch the title battle</button>` : ''}</article>`;
@@ -1119,7 +1123,7 @@ function viewRecap() {
       <td class="num">${g.wt}</td><td class="num">${g.wl}</td><td class="num">${g.l}</td><td class="num">${n ? Math.round(100 * tb / n) + '%' : '—'}</td>
       ${[0, 1, 2].map(k => { const x = (g.sb || [])[k] || [0, 0]; return `<td class="num small" title="${BAND_NAMES[k]}: ${x[1]} of ${x[0]} tries held">${x[0] ? `${Math.round(100 * x[1] / x[0])}%<div class="muted">of ${x[0]}</div>` : '<span class="muted">—</span>'}</td>`; }).join('')}
       <td>${w.map(x => `<button class="btn small" data-act="watchgym" data-g="${k}" data-i="${x.k}">${esc(x.r.sides[0].name)}</button>`).join(' ')}</td></tr>`; }).join('');
-  const seatName = k => k < 4 ? `Elite Four #${k + 1}` : 'Champion';
+  const pw = h.posts || postWords(), seatName = k => k < 4 ? `${pw.e4} #${k + 1}` : pw.champion; // (0.42.0) the year's own post names
   const seatRows = (h.seats || []).map((st, k) => { const also = st.held.filter(id => id !== st.id);
     return `<tr><td>${seatName(k)}</td><td>${st.id != null && T(st.id) ? tname(st.id) : '—'}${st.acting ? ' <span class="tag">acting</span>' : ''}${(st.poor || 0) >= 2 ? ' ' + e4PoorTag(st.poor) : ''}${also.length ? `<div class="muted small">also held by ${names(also)}</div>` : ''}</td><td class="small">${st.type || '—'}${h.steers ? `<div class="muted">${steerName((h.steers.posts || {})[k < 4 ? 'e4:' + k : 'champion'] || h.steers.line)}</div>` : ''}</td><td class="num">${st.faced}</td><td class="num">${st.stopped}</td><td class="num">${st.faced - st.stopped}</td></tr>`; }).join('');
   // (0.11.0) the year's seat challenges, held at its New Year, with the battle to watch while it is still kept

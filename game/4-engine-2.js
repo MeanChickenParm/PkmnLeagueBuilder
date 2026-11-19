@@ -967,7 +967,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans', 'postSet'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -1312,7 +1312,7 @@ function gymTry(t, entry) {
       gmemNote(t, g, foe);
       t.gymAt = null; // (0.32.0) they pick their next gym again (it may be this one)
       if (t.gymTries[g] < GYM_TRIES) t.gymAt = pickGym(t);
-      else { gym.out = (gym.out || 0) + 1; boardNote(gym, 'wall', [t.id, S.turn, foe.id]); news(`${dn(t)} lost a third time at ${townName(g)} Gym. Their run is over with ${b} badge${b === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
+      else { gym.out = (gym.out || 0) + 1; boardNote(gym, 'wall', [t.id, S.turn, foe.id]); const th = themeOf(); news(th.out ? th.out(dn(t), townName(g), b) : `${dn(t)} lost a third time at ${townName(g)} ${gymWord()}. Their run is over with ${b} badge${b === 1 ? '' : 's'}.`, 'circuit', t.id); endRun(t, entry, null); }
       return;
     }
     if (!isLeader) { foe.career.gymL = (foe.career.gymL || 0) + 1; t.gymStage[g] = k + 1; t.gymLine[g] = key; }
@@ -1346,7 +1346,7 @@ function hofEnter(q, champ, r) {
     const i = pool.findIndex(m => m.sp === b.sp); const m = i >= 0 ? pool.splice(i, 1)[0] : null;
     team.push({ sp: b.sp, lv: b.L, moves: m && m.moves ? m.moves.slice() : [], item: m ? heldItem(m) || null : null, ab: b.ab || null, shiny: !!b.shiny });
   }
-  const e = { uid: uid(), id: q.id, season: S.season, week: S.week, lg: S.lg || 0, champ: champ.id, spon: q.spon ? q.spon.lg : null, team, route: (q.badges || []).map(townName) };
+  const e = { uid: uid(), id: q.id, season: S.season, week: S.week, lg: S.lg || 0, champ: champ.id, cw: postWord('champion'), spon: q.spon ? q.spon.lg : null, team, route: (q.badges || []).map(townName) };
   (S.hof = S.hof || []).push(e); r.hof = e.uid;
   q.hof = true; q.hofN = (q.hofN || 0) + 1;
   return e;
@@ -1382,13 +1382,13 @@ function leagueRun(q, entry) {
       champ.career.conceded = (champ.career.conceded || 0) + 1;
       L.conceded.push(q.id); S.lastTitle = S.turn;
       hofEnter(q, champ, r);
-      const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the Champion's seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
+      const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the ${postWord('champion')}'s seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
       news(msg, 'title', q.id); stopFor('title', msg);
     } else {
       e.lostTo = champ.id; champ.career.defenses++;
-      news(`${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id);
+      const th = themeOf(); news(th.defend ? th.defend(dn(champ), dn(q)) : `${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id); // (0.42.0) the theme's wording
     }
-  } else news(`${dn(q)}'s run at the ${S.lgName} ended against ${dn(T(e.lostTo))} of the Elite Four.`, 'title', q.id);
+  } else news(`${dn(q)}'s run at the ${S.lgName} ended against ${dn(T(e.lostTo))} of the ${postWord('e4')}.`, 'title', q.id);
   L.entries.push(e);
   y.st = Math.max(y.st == null ? -1 : y.st, e.stage);
   // a deep League run (reaching the last Elite Four member or further) earns a rare item
@@ -2222,9 +2222,9 @@ function postName(t) {
   if (t.role === 'e4') return `${postWord('e4')} seat #${S.e4.indexOf(t.id) + 1}`;
   // (0.28.0) Alola's gyms are its island challenge: a Kahuna's grand trial with Trial Captains before it. (0.30.0) Any
   // region can rename the posts (its `posts`)
-  const posts = (LEAGUE_SETS[S.region] || {}).posts || {};
-  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} ${posts.leader || 'Gym Leader'}`;
-  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} ${posts.gymtrainer || 'Gym trainer'}`;
+  // (0.42.0) the League's own post names or theme first (postWord)
+  if (t.role === 'leader') return `${townName(S.gyms.findIndex(g => g.leader === t.id))} ${postWord('leader')}`;
+  if (t.role === 'gymtrainer') return `${townName(S.gyms.findIndex(g => (g.trainers || []).includes(t.id)))} ${postWord('gymtrainer')}`;
   return '';
 }
 function announceStepDown(t) {

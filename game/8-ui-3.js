@@ -1,5 +1,13 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 42, ver: '0.42.0', date: 'November 19, 2026', time: '3:52 PM ET', title: 'Post names by League, and League themes', items: [
+    "Each League now names its own posts, instead of the region naming them for every League in it. At setup, under your League's name, pick a theme to fill in the names of your Gym Leaders, gym trainers, Elite Four and Champion, then type over any of them. You can change them later from the League table's Posts button.",
+    "Themes: Classic (Gym Leader, Gym trainer, Elite Four, Champion), Dojo (Sensei, Student, Grandmasters, Master), Court (Warden, Squire, High Council, Sovereign), Board (Branch Head, Associate, Board, Chair), Academy (Professor, Assistant, Faculty, Dean), Island trials (Kahuna, Trial Captain, Island Elders, Champion), and Region default, which uses the region's own names. A theme also changes a few lines in the news.",
+    "Rival Leagues draw a theme by their aim and their region: wall-builders lean to Dojo and Court, star-makers to Academy and Classic, money-makers to Board; Kalos and Galar lean to Court, Paldea to Academy, Unova to Board and Alola to Island trials. Set a starting rival's theme under Advanced options, Where rival Leagues start. A rival may rebrand when it starts rebuilding or changes its aim for good, and the news says so.",
+    "A custom region's post names are now the defaults for Leagues there, and the region editor can pick the themes rival Leagues there lean to.",
+    "Staff carry the titles of the League they serve now. Each year's report keeps the titles that year was played under, and Hall of Fame entries the Champion's title of the day. If you leave your League, your post names and theme go with you.",
+    "Saves from earlier versions won't load.",
+  ] },
   { id: 41, ver: '0.41.0', date: 'November 19, 2026', time: '11:30 AM ET', title: 'Four Leagues a region and a shared regional field', items: [
     "A region can now hold up to four Leagues. Every region has three more towns with no gym (six in all, fourteen cities and towns) and two more League seats, so the Kanto region's third and fourth Leagues sit at Cerulean Cave and Trainer Tower, Johto's at the Bell Tower and the Battle Frontier, and so on. You can start a world with up to four Leagues in each region.",
     "Founders now face a bar set by the region: a region's first or second League needs a founder with prestige 30, its third 50 and its fourth 70. A founder opens a League where their prestige clears the bar, your region first.",
@@ -722,6 +730,10 @@ document.addEventListener('click', ev => {
     case 'setuppage': setupPage = el.dataset.v; render(); window.scrollTo(0, 0); break;
     case 'lgrename': lgRenameAt = +el.dataset.i; lgRenameText = leagueName(lgRenameAt); lgRenameMsg = ''; render(); break;
     case 'lgrenamecancel': lgRenameAt = null; lgRenameMsg = ''; render(); break;
+    case 'lgposts': lgPostsAt = +el.dataset.i; lgPostsDraft = postSetOf(lgPostsAt); lgPostsMsg = ''; lgRenameAt = null; render(); break;
+    case 'lgpostscancel': lgPostsAt = null; lgPostsDraft = null; lgPostsMsg = ''; render(); break;
+    case 'lgpostsgo': { const i = +el.dataset.i, d = lgPostsDraft || postSetOf(i), err = setPosts(i, d.theme, d.names);
+      if (err) lgPostsMsg = err; else { lgPostsAt = null; lgPostsDraft = null; lgPostsMsg = ''; save(); } render(); break; }
     case 'lgrenamego': { const i = +el.dataset.i, inp = $('#lgrenamein'), err = renameLeague(i, inp ? inp.value : lgRenameText);
       if (err) lgRenameMsg = err; else { lgRenameAt = null; lgRenameMsg = ''; save(); } render(); break; }
     case 'advtoggle': setupAdv[el.dataset.k] = !setupAdv[el.dataset.k]; render(); break;
@@ -769,7 +781,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -897,6 +909,8 @@ document.addEventListener('input', e => {
   if (id === 'setupload') setupLoadText = e.target.value;
   if (id === 'setlgname') setupNames[0] = e.target.value;
   if (id === 'lgrenamein') lgRenameText = e.target.value;
+  if (e.target && e.target.classList && e.target.classList.contains('setpost')) setupPosts.names[e.target.dataset.k] = e.target.value;
+  if (e.target && e.target.classList && e.target.classList.contains('lgpostin') && lgPostsDraft) lgPostsDraft.names[e.target.dataset.k] = e.target.value;
   if (e.target && e.target.classList && e.target.classList.contains('rivalname')) setupNames[+e.target.dataset.i] = e.target.value;
   if (id === 'dx-pick') dxPickText = e.target.value;
   if (id === 'dx-imp') dxImpText = e.target.value;
@@ -928,6 +942,10 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('rguse')) { if (e.target.value) setupCustom[e.target.dataset.k] = e.target.value; else delete setupCustom[e.target.dataset.k]; render(); return; }
   if (e.target && e.target.id === 'rgfile' && e.target.files && e.target.files[0]) { const f = e.target.files[0], rd = new FileReader();
     rd.onload = () => { rgImpText = String(rd.result || ''); rgImpMsg = `Read ${f.name}. Press Import this region.`; render(); }; rd.onerror = () => { rgImpMsg = "Couldn't read that file."; render(); }; rd.readAsText(f); return; }
+  // (0.42.0) a theme picked fills the four fields (typed names are cleared)
+  if (e.target && e.target.id === 'setposttheme') { setupPosts = { theme: e.target.value, names: {} }; render(); return; }
+  if (e.target && e.target.id === 'lgposttheme' && lgPostsDraft) { lgPostsDraft = { theme: e.target.value, names: {} }; render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('rivaltheme')) { setupRivalThemes[+e.target.dataset.i] = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }

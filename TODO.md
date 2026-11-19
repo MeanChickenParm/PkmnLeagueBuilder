@@ -68,6 +68,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Staff build for the top stage only.** A gym's team is built at level 77 and devolves for early challengers; a builder that weighs how a line does at early levels too might suit gyms that mostly see beginners. `adaptGym` swaps against what beats the gym at any stage.
 - **Rival Leagues' poor-gym rule** (`replacePoorStaff`, held under 30% of 12+ tries) and Gym Leader of the Year read the whole gym record; with every gym seeing every stage that's fairer than before, but not checked.
 
+## Left over from post names and themes (0.42.0)
+- **Most explanatory text still says Gym Leader, Elite Four and Champion** (help paragraphs, glossary entries, the challenge notices, the year report's notes): the game's terms. Names, headings, labels on the main pages, the year report's seat rows, Hall cards and a few news lines use each League's own words. Widen if the owner wants it.
+- **The year's history entry keeps the year-end words** (a mid-year rename shows the new words for that year).
+- **Provisional:** the theme list and its names, the aim and region leanings (`AIM_THEMES`, `REGION_THEMES`, `THEME_LEAN` 2.5), `REBRAND_ODDS` 0.5, the news phrasings. Island trials' Elite Four is "Island Elders" (the design doc's sketch had Captain / Trial Hand, changed to match Alola's own Kahuna and Trial Captain).
+
 ## Carried over from Pokémon League GM's list
 - **Doubles battles.** `battle()` assumes one active Pokémon per side. See the source repo's `TODO.md` for the work involved.
 

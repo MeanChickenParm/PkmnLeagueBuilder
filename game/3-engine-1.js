@@ -217,7 +217,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 19; // 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 20; // 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -400,9 +400,42 @@ function dnLeague(t) { try { const n = S && (nLeagues() > 1 ? leagueName(lgOf(t)
 // (0.31.0) a post's name in League lg's region: its own (a custom region's, or Alola's Kahuna) or the usual one.
 // key: 'leader' | 'gymtrainer' | 'e4' | 'champion'
 const POST_WORDS = { leader: 'Gym Leader', gymtrainer: 'Gym trainer', e4: 'Elite Four', champion: 'Champion' };
+// (0.42.0, design doc 6.20) League themes: a named set of the four post names, plus the word for a gym and a few news
+// phrasings. 'region' takes the region's own post names (Classic when it has none). All names provisional.
+const THEMES = {
+  region: { name: 'Region default', posts: null, gym: 'Gym' },
+  classic: { name: 'Classic', posts: POST_WORDS, gym: 'Gym' },
+  dojo: { name: 'Dojo', posts: { leader: 'Sensei', gymtrainer: 'Student', e4: 'Grandmasters', champion: 'Master' }, gym: 'Dojo',
+    out: (t, town, b) => `${t} was turned away from ${town} Dojo after a third loss, with ${b} badge${b === 1 ? '' : 's'}.`,
+    defend: (c, q) => `${c} held the title against ${q}: the student was not ready yet.` },
+  court: { name: 'Court', posts: { leader: 'Warden', gymtrainer: 'Squire', e4: 'High Council', champion: 'Sovereign' }, gym: 'Keep',
+    out: (t, town, b) => `${t} fell a third time at ${town} Keep and was sent from the realm with ${b} badge${b === 1 ? '' : 's'}.`,
+    defend: (c, q) => `${c} kept the crown against ${q}.` },
+  board: { name: 'Board', posts: { leader: 'Branch Head', gymtrainer: 'Associate', e4: 'Board', champion: 'Chair' }, gym: 'Branch',
+    out: (t, town, b) => `${t}'s run was closed at ${town} Branch after a third loss (${b} badge${b === 1 ? '' : 's'}).`,
+    defend: (c, q) => `${c} ruled ${q} out: the title stays with the Chair.` },
+  academy: { name: 'Academy', posts: { leader: 'Professor', gymtrainer: 'Assistant', e4: 'Faculty', champion: 'Dean' }, gym: 'Hall',
+    out: (t, town, b) => `${t} failed ${town} Hall a third time and leaves with ${b} badge${b === 1 ? '' : 's'}.`,
+    defend: (c, q) => `${c} failed ${q} in the final examination.` },
+  island: { name: 'Island trials', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain', e4: 'Island Elders', champion: 'Champion' }, gym: 'Trial',
+    out: (t, town, b) => `${t} could not clear ${town}'s trial after three tries and goes home with ${b} stamp${b === 1 ? '' : 's'}.`,
+    defend: (c, q) => `${c} turned back ${q} on the mountaintop.` },
+};
+const THEME_KEYS = Object.keys(THEMES);
+// (0.31.0) a post's name; (0.42.0) a League's own names first, then its theme, then the region's (a custom region's, or
+// Alola's Kahuna), then the usual one. key: 'leader' | 'gymtrainer' | 'e4' | 'champion'
 function postWord(key, lg) {
-  try { const r = lg == null || lg === (S.lg || 0) ? S.region : S.leagues[lg] && S.leagues[lg].region; const p = LEAGUE_SETS[r] && LEAGUE_SETS[r].posts; return (p && p[key]) || POST_WORDS[key]; } catch (e) { return POST_WORDS[key]; }
+  try {
+    const L = lgState(lg), ps = L && L.postSet;
+    if (ps && ps.names && ps.names[key]) return ps.names[key];
+    const th = ps && THEMES[ps.theme]; if (th && th.posts) return th.posts[key];
+    const p = L && LEAGUE_SETS[L.region] && LEAGUE_SETS[L.region].posts; return (p && p[key]) || POST_WORDS[key];
+  } catch (e) { return POST_WORDS[key]; }
 }
+// the League's theme (its news wording and the word for a gym)
+function themeOf(lg) { try { const L = lgState(lg); return THEMES[L && L.postSet && L.postSet.theme] || THEMES.region; } catch (e) { return THEMES.region; } }
+const gymWord = lg => themeOf(lg).gym;
+const postWords = lg => ({ leader: postWord('leader', lg), gymtrainer: postWord('gymtrainer', lg), e4: postWord('e4', lg), champion: postWord('champion', lg) });
 // Display name the way the games print it: class + name, or the elite title
 function dn(t) {
   if (!t) return '—';
