@@ -65,7 +65,7 @@ function leagueNewYear(changes) {
   moneyNewYear(L.report.titles);
   news(L.report.titles ? `Year ${S.season} wall report: ${L.report.titles} title${L.report.titles === 1 ? '' : 's'} conceded, ${L.report.badges} badges conceded.` : `Year ${S.season} wall report: a perfect year! No title conceded, ${L.report.badges} badges conceded${best ? `; ${dn(best)} got furthest (${depthName(L.report.best)})` : ''}.`, 'title');
   S.history.push({
-    season: S.season, name: S.lgName, champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
+    season: S.season, name: S.lgName, posts: postWords(), champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
     qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}),
@@ -199,6 +199,75 @@ function renameLeague(i, name) {
   inLeague(i, () => { (S.oldNames = S.oldNames || []).push({ name: old, to: S.season }); S.lgName = n; });
   news(`The ${old} is now the ${n}.`, 'league');
   return null;
+}
+// ================= POST NAMES AND LEAGUE THEMES (0.42.0) =================
+// Design doc 6.20. Post names belong to each League (the League field postSet = { theme, names, old }): its own names
+// for any of the four posts, else its theme's (THEMES, 3-engine-1), else the region's, else the usual ones. Your League
+// sets them at setup and from the League table (a rival's only with Rename rival Leagues); a rival draws a theme by its
+// aim and its region, and may rebrand on a big shift (rebuild mode, a lasting change of aim). History keeps the words a
+// year was played under (each year's entry carries `posts`; Hall entries `cw`). All numbers provisional.
+const POST_KEYS = ['leader', 'gymtrainer', 'e4', 'champion'], POST_MAX = 20;
+const AIM_THEMES = { wall: ['dojo', 'court'], star: ['academy', 'classic'], money: ['board'] };
+// built-in regions' leanings (a custom region names its own in the editor: `themes`)
+const REGION_THEMES = { Kanto: ['classic'], Johto: ['classic'], Kalos: ['court'], Galar: ['court'], Paldea: ['academy'], Unova: ['board'], Alola: ['island'] };
+const THEME_LEAN = 2.5, THEME_REGION_OWN = 2.5, REBRAND_ODDS = 0.5;
+const THEME_LOG = { picked: 0, rebrands: 0, set: 0 };
+const cleanPost = x => String(x == null ? '' : x).replace(/[<>&"`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, POST_MAX);
+const regionThemes = r => { const reg = LEAGUE_SETS[r]; return (reg && (reg.themes || REGION_THEMES[regionWord(r)])) || []; };
+// the odds of each theme for a League in region r with aim `aim`
+function themeWeights(r, aim) {
+  const reg = LEAGUE_SETS[r] || {}, lean = AIM_THEMES[aim] || [], rl = regionThemes(r);
+  return THEME_KEYS.map(k => ({ k, w: 1 + (lean.includes(k) ? THEME_LEAN : 0) + (rl.includes(k) ? THEME_LEAN : 0) + (k === 'region' && reg.posts ? THEME_REGION_OWN : 0) }));
+}
+function pickTheme(r, aim, not) {
+  const ws = themeWeights(r, aim).filter(x => x.k !== not), tot = ws.reduce((a, x) => a + x.w, 0);
+  let v = rand() * tot; for (const x of ws) { v -= x.w; if (v <= 0) return x.k; }
+  return ws[ws.length - 1].k;
+}
+// the bound League (a rival) draws its theme, unless it already has one (set at setup)
+function drawTheme() {
+  if (S.postSet && S.postSet.theme) return;
+  S.postSet = { theme: pickTheme(S.region, S.fin && S.fin.aim), names: {} }; THEME_LOG.picked++;
+}
+// r (when given): the League's region; a name the same as the theme's own word there is left to the theme
+function normPostSet(ps, r) {
+  const theme = ps && THEMES[ps.theme] ? ps.theme : 'region', names = {}, w = r === undefined ? null : themeWords(theme, r);
+  for (const k of POST_KEYS) { const v = cleanPost(ps && ps.names && ps.names[k]); if (v && !(w && w[k] === v)) names[k] = v; }
+  return { theme, names };
+}
+const postSetOf = i => { const L = lgState(i); return normPostSet(L && L.postSet); };
+// League i takes a theme and its own names (blank: the theme's); returns an error or null
+function setPosts(i, theme, names) {
+  if (!Number.isInteger(i) || i < 0 || i >= nLeagues()) return 'No such League.';
+  if (!canRename(i)) return 'Rival Leagues\' posts can be renamed only with Rename rival Leagues on (Advanced options at setup).';
+  if (!THEMES[theme]) return 'No such theme.';
+  for (const k of POST_KEYS) { const v = names && names[k]; if (v != null && /[<>&"`\\]/.test(String(v))) return 'Post names can\'t contain < > & " ` or \\.'; if (v != null && String(v).trim().length > POST_MAX) return `Post names can be up to ${POST_MAX} characters.`; }
+  const next = normPostSet({ theme, names }, lgRegion(i)), was = postWords(i);
+  inLeague(i, () => { (S.postSet = S.postSet || {}).old = S.postSet.old || []; const old = S.postSet.old; S.postSet = Object.assign(next, { old }); });
+  const now = postWords(i);
+  if (POST_KEYS.some(k => now[k] !== was[k])) {
+    inLeague(i, () => S.postSet.old.push({ words: was, to: S.season }));
+    news(`The ${leagueName(i)}'s posts are now ${now.leader}, ${now.gymtrainer}, ${now.e4} and ${now.champion}.`, 'league');
+  }
+  THEME_LOG.set++;
+  return null;
+}
+// a theme's four words in region r (null: no region yet), for placeholders
+function themeWords(theme, r) {
+  const th = THEMES[theme], rp = r != null && LEAGUE_SETS[r] && LEAGUE_SETS[r].posts;
+  return Object.fromEntries(POST_KEYS.map(k => [k, (th && th.posts && th.posts[k]) || (rp && rp[k]) || POST_WORDS[k]]));
+}
+// a rival rebrands (a fresh draw, REBRAND_ODDS of the time) when it enters rebuild mode or its aim changes for good
+function maybeRebrand(why) {
+  if (!S.fin || !S.fin.aim || fixedStaff() || rand() >= REBRAND_ODDS) return false;
+  const was = postWords(), cur = (S.postSet && S.postSet.theme) || 'region', old = (S.postSet && S.postSet.old) || [];
+  S.postSet = { theme: pickTheme(S.region, S.fin.aim, cur), names: {}, old };
+  const now = postWords();
+  if (POST_KEYS.every(k => now[k] === was[k])) return false;
+  old.push({ words: was, to: S.season }); THEME_LOG.rebrands++;
+  const text = `The ${S.lgName} rebrands ${why}: its ${was.champion} is now its ${now.champion}, and its ${was.e4} the ${now.e4}.`;
+  news(text, 'league'); noteChange(text);
+  return true;
 }
 const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, freeSeat(r))); };
 // (0.17.0, stage 5) prestige: one scale for trainers and Leagues. A trainer's comes from their career (titles, the

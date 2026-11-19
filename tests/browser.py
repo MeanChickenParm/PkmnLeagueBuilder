@@ -36,6 +36,8 @@ async def run(path):
           { const sels = document.querySelectorAll('.rivalsel'); if (sels.length !== 2) log.push('FAIL the rival picker lists ' + sels.length + ' rivals'); else { sels[1].value = '2'; sels[1].dispatchEvent(new Event('change', { bubbles: true })); } }
           // 0.33.0: rival 1 is named here; rival 2 keeps its seat's default
           { const inp = document.querySelector('.rivalname[data-i="1"]'); if (!inp) log.push('FAIL no name field for rival 1'); else { inp.value = 'Browser Rival Cup'; inp.dispatchEvent(new Event('input', { bubbles: true })); } }
+          // 0.42.0: rival 1's theme
+          { const sel = document.querySelector('.rivaltheme[data-i="0"]'); if (!sel) log.push('FAIL no theme picker for rival 1'); else { sel.value = 'board'; sel.dispatchEvent(new Event('change', { bubbles: true })); } }
           // 0.31.0: the region editor. Make a region (rename it and a city, a port, neighbours, a legendary, a generated
           // list, a line added and removed, a Pokémon of its own), save it, export it, import the code back (its own
           // Pokémon's name is taken, so it is left out and flagged), delete the copy, and use the first as a 10th region
@@ -81,6 +83,11 @@ async def run(path):
           click('[data-act=setuppage][data-v=main]');
           // 0.33.0: your League's name on the main setup page
           { const inp = document.querySelector('#setlgname'); if (!inp) log.push('FAIL no name field for your League'); else { inp.value = 'Browser Home Cup'; inp.dispatchEvent(new Event('input', { bubbles: true })); } }
+          // 0.42.0: your League's posts: the Dojo theme fills the fields, then the Champion's is typed over
+          { const sel = document.querySelector('#setposttheme'); if (!sel) log.push('FAIL no theme picker for your League');
+            else { sel.value = 'dojo'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+              const f = document.querySelector('.setpost[data-k="e4"]'); if (!f || f.value !== 'Grandmasters') log.push('FAIL the theme did not fill the fields: ' + (f && f.value));
+              const c = document.querySelector('.setpost[data-k="champion"]'); if (c) { c.value = 'Grand Sensei'; c.dispatchEvent(new Event('input', { bubbles: true })); } } }
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
           if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
@@ -428,6 +435,18 @@ async def run(path):
                 else { inp.value = 'Sky Pillar League'; click('[data-act=lgrenamego]'); if (!/already a League/.test(document.querySelector('#main').textContent)) log.push('FAIL renamed to a name already taken');
                   document.querySelector('#lgrenamein').value = 'Renamed Home Cup'; click('[data-act=lgrenamego]');
                   if (leagueName(ME()) !== 'Renamed Home Cup' || !/Formerly the Browser Home Cup/.test(document.querySelector('#main').textContent)) log.push('FAIL renaming your League: ' + leagueName(ME())); } } }
+            // 0.42.0: your posts from setup, rival 1's theme, and changing yours from the League table
+            if (postWord('champion', ME()) !== 'Grand Sensei' || postWord('e4', ME()) !== 'Grandmasters') log.push('FAIL your posts from setup: ' + JSON.stringify(postWords(ME())));
+            if (themeOf(1).name !== 'Board') log.push('FAIL rival 1 theme: ' + themeOf(1).name);
+            { const bs = [...document.querySelectorAll('[data-act=lgposts]')];
+              if (bs.length !== 1) log.push('FAIL Posts buttons on the League table: ' + bs.length);
+              else { bs[0].click(); const sel = document.querySelector('#lgposttheme'); if (!sel) log.push('FAIL no theme picker on the League table');
+                else { sel.value = 'academy'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  const f = document.querySelector('.lgpostin[data-k="leader"]'); if (f) { f.value = 'Head Tutor'; f.dispatchEvent(new Event('input', { bubbles: true })); }
+                  click('[data-act=lgpostsgo]');
+                  const w = postWords(ME()); if (w.e4 !== 'Faculty' || w.leader !== 'Head Tutor' || w.champion !== 'Dean') log.push('FAIL posts from the League table: ' + JSON.stringify(w));
+                  if (!document.querySelector('#main').textContent.includes('Academy (custom)')) log.push('FAIL the League table does not show the theme');
+                  go('gyms'); if (!/Dean/.test(document.querySelector('#main').textContent)) log.push('FAIL the Gyms page does not use your post names'); go('table'); } } }
             inLeague(ME(), () => { S.prest = PRESTIGE_BAR; S.fin.money = Math.max(S.fin.money, LEAVE_FEE + 50000); });
             go('money'); if (!click('[data-act=leaveask]')) log.push('FAIL no way to leave on the Money page');
             const cb = document.querySelector('.leavetake'); if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }

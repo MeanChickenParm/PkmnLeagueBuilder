@@ -45,11 +45,29 @@ land.pool.push('Testmon'); land.ports = { Vermilion: 'port' }; land.posts = { le
   g.newWorld({ leagues: 3, region: 0, renameAny: true });
   const d = g.eachLeague(() => [g.S.region, g.S.lgName]); if (d.some(([r, n]) => n !== g.LEAGUE_SETS[r].name)) fail('default names: ' + JSON.stringify(d));
   if (g.renameLeague(2, 'Renamed Rival League') || g.leagueName(2) !== 'Renamed Rival League') fail('renaming a rival with the option on'); }
+// ---------- (0.42.0) post names and themes by League ----------
+{ const th = JSON.parse(JSON.stringify(land)); th.themes = ['dojo', 'nope', 'region', 'dojo'];
+  const r = g.regionRead(g.regionCode(th)); if (r.err || (r.rec.themes || []).join() !== 'dojo') fail('themes through a region file: ' + JSON.stringify(r.rec && r.rec.themes));
+  g.newWorld({ leagues: 3, region: 0, rivals: [6, 3], posts: [{ theme: 'court', names: { e4: 'Inner Circle', champion: 'Sovereign' } }, { theme: 'board' }, null] });
+  const w0 = g.postWords(0); if (w0.e4 !== 'Inner Circle' || w0.champion !== 'Sovereign' || w0.leader !== 'Warden' || g.inLeague(0, () => Object.keys(g.S.postSet.names).join()) !== 'e4') fail('your posts at setup: ' + JSON.stringify([w0, g.inLeague(0, () => g.S.postSet)]));
+  if (g.postWords(1).champion !== 'Chair' || g.themeOf(1).name !== 'Board') fail('a rival\'s theme at setup');
+  if (!g.inLeague(2, () => g.S.postSet && g.THEMES[g.S.postSet.theme])) fail('a rival drew no theme');
+  const wt = (r, aim) => Object.fromEntries(g.themeWeights(r, aim).map(x => [x.k, x.w]));
+  const alola = g.LEAGUE_SETS.findIndex(x => x.name === 'Alola League'), al = wt(alola, 'money');
+  if (!(al.island > al.dojo && al.board > al.dojo && al.region > al.dojo)) fail('Alola and money-maker leanings: ' + JSON.stringify(al));
+  // a champion on a rival League's seat reads its own League's word; your League's from yours
+  const ch = g.T(g.inLeague(1, () => g.S.champion)); if (!/Chair/.test(g.dn(ch))) fail('a Board Champion\'s title: ' + g.dn(ch));
+  if (g.setPosts(0, 'dojo', { leader: '' }) || g.postWords(0).leader !== 'Sensei' || g.postWords(0).e4 !== 'Grandmasters') fail('changing your theme');
+  const old = g.inLeague(0, () => g.S.postSet.old); if (!old.length || old[old.length - 1].words.e4 !== 'Inner Circle') fail('the old post names kept: ' + JSON.stringify(old));
+  if (!g.setPosts(1, 'dojo', {})) fail('a rival\'s posts set without the option');
+  g.seedRandom(5); let n = 0; for (let i = 0; i < 400; i++) if (g.pickTheme(alola, 'money') === 'island') n++; g.seedRandom();
+  if (n < 60) fail('Alola rarely draws Island trials: ' + n); }
 // ---------- the world ----------
 const aqua = Object.assign(g.regionBlank(), { name: 'Aqua', legends: null, pool: g.generatePool({ types: ['Water', 'Ice'], power: 'strong' }) });
 aqua.towns = aqua.towns.map((_, i) => 'Aqua ' + i); aqua.ports = { 'Aqua 0': 'railway' };
 const swap = g.regionCopy(3); swap.name = 'Sinnohish';
-g.newWorld({ leagues: 8, growth: true, region: 9, regions: [{ rec: land, mode: 'add' }, { rec: aqua, mode: 'whole', of: 2 }, { rec: swap, mode: 'pool', of: 1 }] });
+// (0.42.0) League 0 keeps the region default, so the region's own post names apply
+g.newWorld({ leagues: 8, growth: true, region: 9, posts: [{ theme: 'region' }], regions: [{ rec: land, mode: 'add' }, { rec: aqua, mode: 'whole', of: 2 }, { rec: swap, mode: 'pool', of: 1 }] });
 const S = () => g.S, R = g.S.regions, B = g.builtinLines();
 if (g.S.lgName !== 'Testland Grand League' || R[9].lgNames[0] !== 'Testland Grand League') fail('a custom region\'s League name: ' + g.S.lgName);
 if (R.length !== 10 || R[9].name !== 'Testland League' || !R[9].solo || R[9].posts.leader !== 'Warden' || R[9].nb.join() !== '0,6') fail('the 10th region: ' + JSON.stringify(R[9]).slice(0, 200));
@@ -69,7 +87,8 @@ if (g.wildOk('Testmon', 0) || !g.wildOk('Testmon', 9)) fail('a locked line found
 // (0.31.0) its post names: the player's League sits in Testland; no "Defending" before a Champion anywhere (0.33.0: titles follow the League's name)
 g.inLeague(0, () => { const c = g.T(g.S.champion), e = g.T(g.S.e4[0]), l = g.T(g.S.gyms[0].leader);
   if (g.dn(c) !== 'Testland Grand Lord Warden ' + c.name || g.dn(e) !== 'Testland Grand High Wardens ' + e.name || g.dn(l) !== 'Testland Grand Warden ' + l.name || g.postName(c) !== 'Lord Warden of the Testland Grand League' || !/^High Wardens seat #1$/.test(g.postName(e))) fail('post names: ' + [g.dn(c), g.dn(e), g.dn(l), g.postName(c), g.postName(e)].join(' | ')); });
-g.inLeague(1, () => { const c = g.T(g.S.champion); if (!/^\w+ Champion /.test(g.dn(c)) || /Defending/.test(g.dn(c))) fail('a built-in region\'s Champion: ' + g.dn(c)); });
+// (0.42.0) a rival's Champion carries its own League's word (its theme's, or the region's)
+g.inLeague(1, () => { const c = g.T(g.S.champion), w = g.postWord('champion', 1); if (!g.dn(c).startsWith(g.S.lgName.replace(/ League$/, '') + ' ' + w + ' ') || /Defending/.test(g.dn(c)) || (g.themeOf(1).posts == null && w !== 'Champion')) fail('a built-in region\'s Champion: ' + g.dn(c)); });
 // its legendary: a legendary encounter at home in Testland, never on a list
 if (!g.SP.Testgod || !g.SP.Testgod.dexLegend || g.LEGEND_HOME.Testgod !== 9 || g.regionLines().sets.some(s => s.has('Testgod')) || g.ranchSpecies().includes('Testgod')) fail('Testland\'s legendary: ' + JSON.stringify(g.SP.Testgod));
 g.inLeague(0, () => { if (g.S.region !== 9 || g.regionMul('Testgod') !== 3) fail('Testgod is not three times likelier at home'); });
