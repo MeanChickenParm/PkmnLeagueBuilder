@@ -1,5 +1,11 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 38, ver: '0.38.0', date: 'November 18, 2026', time: '7:15 PM ET', title: 'Backup types', items: [
+    "Every typed trainer now has three backup types outside their own (shown on their profile and the Ranch page). They lean toward types that answer the trainer's weaknesses: an Ice specialist gets Fire or Steel more often than Dragon.",
+    "When your ranch has nothing left of a Gym Leader's or Elite Four member's own type, they field a ranch Pokémon of one of their backup types instead of a weak stopgap. Stopgaps only stand in when neither fits.",
+    "At most half a team can be backup types, and the monthly swap trades one back for a Pokémon of their own type as soon as the ranch has one. A gym still counts as its own type for challengers' routes and gym memory.",
+    "Rival Leagues treat a backup-type Pokémon as the next thing to replace after a stopgap when they shop and send trips.",
+  ] },
   { id: 37, ver: '0.37.0', date: 'November 18, 2026', time: '11:30 AM ET', title: 'Storage, picking at hire and Sanctuaries reworked (the ranch, part 3)', items: [
     "Challengers keep what they drop in storage: Pokémon released for a catch, left behind for a new run, or over the foreign limit when they move region (they are no longer released). Up to 12, the oldest let go.",
     "Hire a challenger with storage as a Gym Leader, Elite Four member or Champion and you can take up to 3 of their stored Pokémon into your ranch (one more a scouting office level), from the Ranch page within 8 weeks. Alphas, Deltas, shinies and Radiants can be taken too. The rest stays theirs. Hiring rows show a candidate's storage and its value, and a rich storage asks up to a quarter more pay. Rival Leagues take theirs by aim.",

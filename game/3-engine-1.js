@@ -815,7 +815,7 @@ function adaptGym(i) {
   // how well a Pokémon handles the types that have been winning: hits them hard, and isn't hit hard by them
   const vs = sp => { let sc = 0; for (const [ty, c] of Object.entries(foes)) sc += c / n * (bestMult(SP[sp].types, [ty]) - bestMult([ty], SP[sp].types)); return sc; };
   const lines = new Set(L.team.map(m => LINE[m.sp]));
-  const cands = staffPicks(L, slot.lvl, 8, { lines, team: L.team, noOff: L.team.some(m => m.offType), stop: false });
+  const cands = staffPicks(L, slot.lvl, 8, { lines, team: L.team, noOff: L.team.some(m => m.offType), stop: false, noAlt: true }); // (0.38.0) no backup types here
   if (!cands.length) return;
   const best = cands.sort((a, b) => vs(b.sp) + SP[b.sp].bst / 900 - vs(a.sp) - SP[a.sp].bst / 900)[0];
   // drop the one doing least this season (knockouts minus faints), never their strongest
@@ -916,7 +916,7 @@ function installElite(t, role, slotIndex) {
   relevelElite(t);
   // (0.17.0) a Gym Leader's kept Pokémon can evolve off type at the gym's level (Nincada into Ninjask): it is replaced,
   // as for gym trainers since 0.7.0
-  const off = t.specialty && role === 'leader' ? t.team.filter(m => !isSpecial(m) && !m.offType && !specFit(t, m.sp)) : [];
+  const off = t.specialty && role === 'leader' ? t.team.filter(m => !isSpecial(m) && !m.offType && !m.backup && !specFit(t, m.sp)) : []; // (0.38.0) backup types stay
   if (off.length) {
     for (const m of off) (ranchFor(t) ? dropMon : farewell)(t, m, 'left behind on becoming Gym Leader');
     t.team = t.team.filter(m => !off.includes(m));

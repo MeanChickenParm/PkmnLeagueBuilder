@@ -1175,7 +1175,7 @@ function banReplace(t, outs) {
   for (const gone of outs) {
     if (t.team.length >= slot.size) break;
     const lines = new Set(t.team.map(m => LINE[m.sp]));
-    const pool = staffPicks(t, slot.lvl, 10, { lines, mixed: t.role === 'champion' || !t.specialty, noOff: t.team.some(m => m.offType) }).filter(m => !banOf(m.sp, i));
+    const pool = staffPicks(t, slot.lvl, 10, { lines, team: t.team, mixed: t.role === 'champion' || !t.specialty, noOff: t.team.some(m => m.offType) }).filter(m => !banOf(m.sp, i));
     const target = SP[gone.sp].bst;
     const sc = m => (onSpec(t, m.sp) ? 300 : 0) - Math.abs(SP[m.sp].bst - target) / 2 + (SP[m.sp].types.some(ty => counters.includes(ty)) ? 60 : 0) + rand() * 20;
     const best = pool.sort((a, b) => sc(b) - sc(a))[0];

@@ -205,7 +205,7 @@ function rivalLine(t) {
 }
 const specChips = t => t.specialty ? chip(t.specialty) + (t.spec2 ? ' ' + chip(t.spec2) : '') : chip(null);
 const specName = t => t.specialty ? t.specialty + (t.spec2 ? ' / ' + t.spec2 : '') : 'Mixed';
-const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}` : `${chip(null)} team, no type focus`;
+const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}${t.role !== 'champion' && backupTypes(t).length ? ` <span class="muted">· backups</span> ${chips(backupTypes(t))}` : ''}` : `${chip(null)} team, no type focus`;
 function ovrPill(t) { const o = ovr(t); const c = o >= 70 ? 'hi' : o >= 55 ? 'mid' : 'lo'; return `<span class="ovr ${c}">${o}</span>`; }
 function roleLabel(t) {
   const r = roleHere(t);

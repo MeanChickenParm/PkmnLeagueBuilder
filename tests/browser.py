@@ -229,6 +229,7 @@ async def run(path):
                   // and build the Ranch at the seat
                   { const keep = S.fin.money; S.fin.money = 300000; go('ranch'); const txt = () => document.querySelector('#main').textContent, R = () => inLeague(0, () => S.ranch);
                     if (!/Who fields what/.test(txt()) || !/The pool/.test(txt()) || !/The market/.test(txt())) log.push('FAIL the Ranch page');
+                    if (S.gyms.some(g => T(g.leader) && T(g.leader).specialty) && !/backups/.test(txt())) log.push('FAIL the Ranch page shows no backup types'); // (0.38.0)
                     if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined');
                     { const b = document.querySelector('[data-act=ranchbuy]'), n0 = R().mons.length, m0 = S.fin.money, x = b && R().shop.find(y => y.uid === +b.dataset.id);
                       if (!b || !x) log.push('FAIL no market to buy from'); else if (!b.disabled) { b.click(); if (R().mons.length !== n0 + 1 || S.fin.money !== m0 - x.price) log.push('FAIL buying at the market'); else log.push('bought ' + x.b + ' at the market'); } else log.push('the ranch is full'); }

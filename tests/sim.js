@@ -49,6 +49,7 @@ const CON = { hunts: 0, huntRefused: 0, obTrips: 0, held: 0, fielded: 0, shop: 0
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
+const backupStat = { teams: 0, mons: 0, most: 0, stopgaps: 0 }; // (0.38.0) summed over weekly checks
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 function check(tag) {
@@ -144,7 +145,7 @@ function check(tag) {
       if (act !== !!L.acting) bad('gym ' + j + ' acting flags disagree');
       if (act && !(s.vacancies || []).some(v => v.post === 'leader' && v.slot === j) && i === g.ME()) bad('gym ' + j + ' acting with no vacancy');
       if (L.team.length !== g.LEADER_HOLD - (act ? 1 : 0)) bad('gym ' + j + ' leader fields ' + L.team.length);
-      for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
+      for (const m of L.team) if (L.specialty && !g.isSpecial(m) && !m.offType && !m.backup && !g.specFit(L, m.sp) && !(m.met && ['starter', 'caught'].includes(m.met.how))) bad('gym ' + j + ' leader ' + g.typeLabel(L) + ' fields off-type ' + m.sp);
       if (gts.length !== g.GYM_TRAINERS - (act ? 1 : 0)) bad('gym ' + j + ' has ' + gts.length + ' gym trainers' + (act ? ' (acting)' : ''));
       for (const id of gts) { const t = g.T(id);
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
@@ -159,7 +160,19 @@ function check(tag) {
       if (!g.STEERS[st.line]) bad('League ' + i + ' line steer ' + st.line);
       for (const [k, v] of Object.entries(st.posts || {})) { if (!g.STEERS[v]) bad('steer ' + v + ' on ' + k); if (!/^(champion|e4:[0-3]|gym:[0-7])$/.test(k)) bad('steer on unknown post ' + k); }
       if ((z.metaTrend || []).length > 5 || (z.metaYear || []).length > 5) bad('a meta reading of more than five');
-      for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])]) { const t = g.T(id); if (t && t.team.filter(m => m.offType).length > 1) bad('two off-type Pokémon on ' + t.name); }
+      for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])]) { const t = g.T(id); if (t && t.team.filter(m => m.offType).length > 1) bad('two off-type Pokémon on ' + t.name + ' (' + t.role + (t.acting ? ', acting' : '') + ' ' + g.typeLabel(t) + ': ' + t.team.filter(m => m.offType).map(m => m.sp + (m.rid != null ? ' ranch' : '') + (m.backup ? ' backup' : '') + (m.met ? ' ' + m.met.how : '')).join(', ') + ')'); }
+      // (0.38.0) backup types: only on typed senior staff, of one of their backup types, at most half the team
+      // (marks are tidied by ranchSync, which runs weekly; a promotion later in the week can leave one stale until then)
+      if (z.ranch) g.ranchSync();
+      for (const id of [z.champion, ...z.e4, ...z.gyms.flatMap(x => [x.leader, ...(x.trainers || [])])]) { const t = g.T(id); if (!t) continue;
+        const bk = t.team.filter(m => m.backup), alt = g.backupTypes(t);
+        if (bk.length) backupStat.teams++; backupStat.mons += bk.length; backupStat.stopgaps += t.team.filter(m => m.stop).length; backupStat.most = Math.max(backupStat.most, bk.length);
+        if (bk.length > g.backupMax(6)) bad('too many backup-type Pokémon on ' + t.name + ': ' + bk.length);
+        if (alt.length && alt.length !== g.BACKUP_N) bad('backup types of ' + t.name + ': ' + alt.join('/'));
+        if (alt.some(x => g.specTypes(t).includes(x))) bad('a backup type that is their own on ' + t.name);
+        for (const m of bk) { if (!t.specialty || t.role === 'champion' || t.role === 'gymtrainer') bad('a backup-type Pokémon on ' + t.name + ' (' + t.role + ')');
+          else if (m.rid == null && m.rfrom == null) bad('a backup-type Pokémon not from the ranch on ' + t.name);
+          else if (!g.monTypes(m).some(x => alt.includes(x))) bad('a backup-type Pokémon of none of the backup types on ' + t.name + ': ' + m.sp); } }
       }
     z.e4.forEach((id, k) => { const t = g.T(id); if (t && t.acting && !(s.vacancies || []).some(v => v.post === 'e4' && v.slot === k)) bad('acting Elite Four member with no vacancy'); });
     if (i === g.ME()) { const held = new Set((s.vacancies || []).flatMap(v => v.outsiders || []).concat(z.gyms.flatMap(x => x.outs || []))); for (const t of Object.values(s.trainers)) if (t.role === 'prospect' && !held.has(t.id)) bad('a stranded outsider: ' + t.name); }
@@ -518,6 +531,7 @@ console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of 
 console.log('conditions', JSON.stringify(CON));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
+console.log('backup types', JSON.stringify(backupStat));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
