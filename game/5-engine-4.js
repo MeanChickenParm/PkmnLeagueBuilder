@@ -101,6 +101,9 @@ function seniorIds() { return [S.champion, ...S.e4, ...S.gyms.map(g => g.leader)
 function ranchSync() {
   const R = S.ranch; if (!R) return;
   const byUid = new Set(R.mons.map(e => e.uid)), held = new Map();
+  // (0.38.0) a backup-type mark only stays on a typed post's Pokémon that is still off their type (a promotion to
+  // Champion, a type change at the gym or an evolution clears it)
+  for (const id of seniorIds()) { const t = T(id), mixed = t.role === 'champion' || !t.specialty; for (const m of t.team) if (m.backup && (mixed || onSpec(t, m.sp) || !monTypes(m).some(x => backupTypes(t).includes(x)))) delete m.backup; }
   for (const id of seniorIds()) for (const m of T(id).team) if (m.rid != null) { if (byUid.has(m.rid) && !held.has(m.rid)) held.set(m.rid, id); else m.rid = null; }
   // (0.28.0) an acting holder sent back to a gym trainer's place keeps what they fielded, like anyone leaving the
   // senior staff, even if the entry never recorded them; their stopgaps stay behind
@@ -152,6 +155,33 @@ function stopPicks(t, L, n, lines, mixed) {
   }
   return out;
 }
+// (0.38.0) backup types: every typed trainer has BACKUP_N types outside their own that their ranch picks fall back on
+// when the ranch can't fill their team with their own type, before stopgaps. Drawn once per trainer and type (stable
+// from the id, so nothing is saved and a gym that changes type redraws them), weighted toward types that answer the
+// trainer's own weaknesses (Ice: Fire and Steel likelier than Dragon). At most BACKUP_SHARE of a team; the monthly swap
+// trades one back for a Pokémon of their own type as soon as the ranch has one. The gym still counts as its type.
+const BACKUP_N = 3, BACKUP_COVER = 2, BACKUP_SHARE = 0.5;
+const backupCache = new Map();
+function backupTypes(t) {
+  const own = specTypes(t); if (!own.length || t.id == null) return [];
+  const key = t.id + '|' + own.join('/');
+  if (backupCache.has(key)) return backupCache.get(key);
+  const threats = TYPES.filter(a => own.some(d => effOne(a, d) >= 2));
+  let pool = TYPES.filter(x => !own.includes(x)).map(x => [x, 1 + BACKUP_COVER * threats.filter(a => effOne(a, x) < 1 || effOne(x, a) >= 2).length]);
+  let h = ((t.id * 2654435761) ^ own.reduce((a, x) => a * 31 + TYPES.indexOf(x) + 1, 7)) >>> 0;
+  const next = () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 4294967296; };
+  const out = [];
+  while (out.length < BACKUP_N && pool.length) {
+    let r = next() * pool.reduce((a, x) => a + x[1], 0), i = 0;
+    while (i < pool.length - 1 && (r -= pool[i][1]) > 0) i++;
+    out.push(pool[i][0]); pool = pool.filter((_, j) => j !== i);
+  }
+  out.sort((a, b) => TYPES.indexOf(a) - TYPES.indexOf(b));
+  backupCache.set(key, out);
+  return out;
+}
+// how many backup-type Pokémon a team of `size` may field (a Gym Leader's six, an Elite Four member's six)
+const backupMax = size => Math.floor(size * BACKUP_SHARE);
 // the ranch's team builder (staffPicks hands over to it for senior staff of a League with a ranch): n Pokémon for t at
 // level L from their own Pokémon (opts.own, when they take a post) and the ranch, scored as the old builder scores
 // species, plus a grade, plus a little for their own and much for a reservation; stopgaps fill what's left unless
@@ -167,22 +197,30 @@ function ranchPicks(t, L, n, opts = {}) {
   const offOk = isCounter(steer) && meta.length && !opts.mixed && !opts.noOff && ty.length && !(opts.team || []).some(m => m.offType);
   const onType = sp => !ty.length || SP[sp].types.some(x => ty.includes(x));
   const mine = new Set(t.team.map(m => m.rid).filter(x => x != null)), lg = S.lg || 0;
-  let cands = (opts.own || []).map(m => ({ sp: m.sp, g: monGrade(m), m }));
+  // (0.38.0) backup types, used only once nothing of their own type is left
+  const alt = opts.mixed || opts.noAlt ? [] : backupTypes(t);
+  let altLeft = alt.length ? backupMax(t.role === 'leader' ? LEADER_HOLD : E4_SIZE) - (opts.team || []).filter(m => m.backup).length : 0;
+  let cands = (opts.own || []).map(m => ({ sp: m.sp, g: monGrade(m), m })), altC = [];
   for (const e of ranchFree(t)) {
     if (mine.has(e.uid)) continue;
     const sp = ranchForm(e, L, t.specialty); if (bannedIn(sp, lg)) continue;
-    if (!ty.length || entryTypes(e, sp).some(x => ty.includes(x))) cands.push({ sp, g: e.g, e }); // (0.36.0) a Delta by its own type
-    else if (offOk && steerScore('trend', sp, {}, meta) + SP[sp].bst / 300 > 2) cands.push({ sp, g: e.g, e, off: true });
+    const ety = entryTypes(e, sp); // (0.36.0) a Delta by its own type
+    if (!ty.length || ety.some(x => ty.includes(x))) { cands.push({ sp, g: e.g, e }); continue; }
+    if (offOk && steerScore('trend', sp, {}, meta) + SP[sp].bst / 300 > 2) cands.push({ sp, g: e.g, e, off: true });
+    if (alt.length && ety.some(x => alt.includes(x))) altC.push({ sp, g: e.g, e, alt: true });
   }
-  cands = cands.filter(c => !lines.has(LINE[c.sp]));
+  cands = cands.filter(c => !lines.has(LINE[c.sp])); altC = altC.filter(c => !lines.has(LINE[c.sp]));
   const steerV = sp => (steer === 'bal' ? 0 : fol * steerScore(steer, sp, weak, meta)) + (sig && sig.has(LINE[sp]) ? 2 * fol : 0);
-  while (out.length < n && cands.length) {
+  while (out.length < n) {
+    const from = cands.length ? cands : altLeft > 0 ? altC : [];
+    if (!from.length) break;
     const sc = c => fitScore(c.sp, weak, threats) + steerV(c.sp) + GRADE_PICK * (c.g - 3) + (c.m ? OWN_PICK + (isSpecial(c.m) ? 5 : 0) : 0) + (c.e && c.e.res === key ? RES_PICK : 0) + (rand() - 0.5) * 2 * noise;
-    const best = cands.map(c => [c, sc(c)]).sort((a, b) => b[1] - a[1])[0][0];
+    const best = from.map(c => [c, sc(c)]).sort((a, b) => b[1] - a[1])[0][0];
     const m = best.m || ranchMon(t, best.e, L, best.sp);
     if (best.off) { m.offType = true; cands = cands.filter(c => !c.off); }
+    if (best.alt) { m.backup = true; altLeft--; }
     out.push(m); addWeak(best.sp); lines.add(LINE[best.sp]);
-    cands = cands.filter(c => LINE[c.sp] !== LINE[best.sp]);
+    cands = cands.filter(c => LINE[c.sp] !== LINE[best.sp]); altC = altC.filter(c => LINE[c.sp] !== LINE[best.sp]);
   }
   if (out.length < n && opts.stop !== false) out.push(...stopPicks(t, L, n - out.length, lines, opts.mixed));
   return out;
@@ -200,6 +238,7 @@ function dropMon(t, m, why) {
 function ranchInstall(t, slot, mixed, label) {
   const own = t.team.filter(m => mixed || onSpec(t, m.sp) || isSpecial(m));
   const picks = staffPicks(t, slot.lvl, slot.size, { own, mixed, team: [] }), keep = new Set(picks);
+  for (const m of picks) if (m.backup && (mixed || onSpec(t, m.sp))) delete m.backup; // (0.38.0)
   for (const m of t.team) if (!keep.has(m)) dropMon(t, m, `left out on becoming ${label}`);
   t.team = picks.map(m => (m.met ? m : stamp(m, 'assigned')));
 }
@@ -218,13 +257,23 @@ function ranchSwap(t, slot, s) {
   if (!out && !isCounter(s)) { out = t.team.find(m => m.offType); if (out) { must = true; why = 'swapped out as the steer changed'; } }
   const resIn = ranchFree(t).find(e => e.res === key && !t.team.some(m => m.rid === e.uid));
   if (!out) { out = t.team.find(m => m.stop); if (out) why = 'a stopgap replaced from the ranch'; }
+  // (0.38.0) a backup-type Pokémon goes back as soon as the ranch has one of their own type for its place
+  if (!out && own.length) {
+    const b = t.team.find(m => m.backup);
+    if (b) {
+      const lns = new Set(t.team.filter(m => m !== b).map(m => LINE[m.sp])), lg = S.lg || 0;
+      const ok = ranchFree(t).some(e => { if (t.team.some(m => m.rid === e.uid)) return false; const sp = ranchForm(e, slot.lvl, t.specialty); return !lns.has(LINE[sp]) && !bannedIn(sp, lg) && entryTypes(e, sp).some(x => own.includes(x)); });
+      if (ok) { out = b; why = 'a backup-type Pokémon swapped for one of their own type'; }
+    }
+  }
   const vals = t.team.filter(m => !isSpecial(m) && !(t.mega && t.mega.uid === m.uid)).map(m => { const rest = t.team.filter(x => x !== m); return { m, v: ranchVal(t, m.sp, mg(m), rest, s, threats) }; }).sort((a, b) => a.v - b.v);
   if (!out) { if (!vals.length) return; out = vals[0].m; why = `swapped out for a better Pokémon from the ranch${s !== 'bal' ? ` (${steerName(s)})` : ''}`; }
   const rest = t.team.filter(m => m !== out);
-  const inn = staffPicks(t, slot.lvl, 1, { lines: rest.map(m => LINE[m.sp]), team: rest, mixed, steer: s, stop: must, noOff: rest.some(m => m.offType) || !isCounter(s) })[0];
+  // (0.38.0) a backup type only takes a place their own type can't fill: a stopgap's, another backup's, or one that must go
+  const inn = staffPicks(t, slot.lvl, 1, { lines: rest.map(m => LINE[m.sp]), team: rest, mixed, steer: s, stop: must, noAlt: !(must || out.stop || out.backup), noOff: rest.some(m => m.offType) || !isCounter(s) })[0];
   if (!inn) return;
-  const reserved = resIn && inn.rid === resIn.uid;
-  if (!must && !out.stop && !reserved && (LINE[inn.sp] === LINE[out.sp] && mg(inn) <= mg(out) || ranchVal(t, inn.sp, mg(inn), rest, s, threats) < ranchVal(t, out.sp, mg(out), rest, s, threats) + STEER_EDGE)) return;
+  const reserved = resIn && inn.rid === resIn.uid, home = out.backup && !inn.backup && !inn.stop;
+  if (!must && !out.stop && !reserved && !home &&(LINE[inn.sp] === LINE[out.sp] && mg(inn) <= mg(out) || ranchVal(t, inn.sp, mg(inn), rest, s, threats) < ranchVal(t, out.sp, mg(out), rest, s, threats) + STEER_EDGE)) return;
   dropMon(t, out, why);
   t.team = rest.concat(stamp(inn, 'assigned')); relevelElite(t);
   if (playerLeague()) news(`${dn(t)} swapped ${out.sp} for ${inn.sp}${inn.rid != null ? ' from the ranch' : ''} (${why}).`, 'move', t.id);
@@ -445,16 +494,16 @@ function aimRanch(aim) {
     const f0 = free().find(e => e.g <= 2); if (f0) sellMon(f0.uid, true);
   }
   if (budget <= 0) return;
-  // the neediest post: a stopgap first, else its weakest Pokémon
+  // the neediest post: a stopgap first, then a backup-type Pokémon (0.38.0), else its weakest Pokémon
   const posts = seniorIds().map(T).map(t => { const slot = eliteSlot(t), mixed = t.role === 'champion' || !t.specialty, ty = mixed ? [] : specTypes(t), th = TYPES.filter(a => ty.some(d => effOne(a, d) >= 2));
-    const worst = t.team.filter(m => !isSpecial(m)).map(m => { const rest = t.team.filter(x => x !== m); return { m, rest, v: m.stop ? -99 : ranchVal(t, m.sp, monGrade(m), rest, 'bal', th) }; }).sort((a, b) => a.v - b.v)[0];
+    const worst = t.team.filter(m => !isSpecial(m)).map(m => { const rest = t.team.filter(x => x !== m); return { m, rest, v: m.stop ? -99 : m.backup ? -50 : ranchVal(t, m.sp, monGrade(m), rest, 'bal', th) }; }).sort((a, b) => a.v - b.v)[0];
     return slot && worst ? { t, slot, ty, th, worst } : null; }).filter(Boolean).sort((a, b) => a.worst.v - b.worst.v);
   const p = posts[0]; if (!p) return;
   const L = p.slot.lvl, lines = new Set(p.worst.rest.map(m => LINE[m.sp]));
   const fits = b => { const sp = formAt(b, L, p.t.specialty); return (!p.ty.length || SP[sp].types.some(x => p.ty.includes(x))) && !lines.has(LINE[b]) && !bannedIn(sp, lg) ? sp : null; };
   const gain = (b, g) => { const sp = fits(b); return sp ? ranchVal(p.t, sp, g, p.worst.rest, 'bal', p.th) - p.worst.v : -99; };
   const opts = R.shop.map(x => ({ shop: x, b: x.b, g: x.g, price: x.price })).concat(listings(lg).map(x => ({ list: x, b: x.e.b, g: x.e.g, price: x.e.sale.price })))
-    .filter(o => o.price <= budget).map(o => Object.assign(o, { gain: gain(o.b, o.g) })).filter(o => o.gain > (p.worst.m.stop ? 0 : STEER_EDGE)).sort((a, b) => b.gain - a.gain);
+    .filter(o => o.price <= budget).map(o => Object.assign(o, { gain: gain(o.b, o.g) })).filter(o => o.gain > (p.worst.m.stop || p.worst.m.backup ? 0 : STEER_EDGE)).sort((a, b) => b.gain - a.gain);
   if (opts.length && ranchRoom() > 0) { const o = opts[0]; if (o.shop) buyShop(o.shop.uid); else buyListing(o.list.lg, o.list.e.uid); return; }
   aimVault(aim, budget); // (0.37.0)
   if (aimHunt(aim, fits, gain, budget)) return; // (0.36.0)
@@ -1355,4 +1404,4 @@ function aimVault(aim, budget) {
   if (t) vaultGive(e.uid, t.id);
 }
 
-if (typeof module !== 'undefined') module.exports = { STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
