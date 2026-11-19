@@ -49,6 +49,7 @@ const CON = { hunts: 0, huntRefused: 0, obTrips: 0, held: 0, fielded: 0, shop: 0
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
+const PLAN = { set: 0, now: 0, later: 0, cleared: 0, refused: 0, sugg: 0, reviews: 0, checked: 0, kept: 0, benched: 0, restless: 0 }; // (0.39.0) team plans
 const backupStat = { teams: 0, mons: 0, most: 0, stopgaps: 0 }; // (0.38.0) summed over weekly checks
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
@@ -462,7 +463,45 @@ for (let i = 0; i < N; i++) {
     if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], all = g.inLeague(g.ME(), () => g.vacancyCands(v)), c = all.filter(x => !x.refuse), no = all.find(x => x.refuse);
       if (no) { amb.refusedMove++; if (g.fillVacancy(v, no.t.id)) fail.push('a refused vacancy move went ahead'); }
       else if (!g.fillVacancy(v, rnd(c.slice(0, 10)).t.id)) fail.push('fillVacancy refused'); }
+    // (0.39.0) team plans: set, clear or take the suggestion now and then; a plan set now is built at once; a planned
+    // Pokémon stays on its holder's team through the week unless the plan, the holder or the Pokémon's place changed
+    if (HAND && !S().founding && Math.random() < 0.06) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch) return; g.ranchSync();
+      const key = rnd(g.planKeys()), t = g.planHolder(key), q = Math.random();
+      if (!t) return;
+      let refs;
+      if (q < 0.15) refs = [];
+      else if (q < 0.3 && (z.plans && z.plans.sugg || {})[key]) { refs = z.plans.sugg[key]; PLAN.sugg++; }
+      else { const opts = t.team.filter(m => m.rid == null && !m.stop && !g.isSpecial(m)).map(m => ({ o: m.uid })).concat(z.ranch.mons.map(e => ({ r: e.uid })));
+        const ok = opts.filter(r => !g.planResolve(t, r, key).gap), lines = new Set(); refs = [];
+        for (const r of ok.sort(() => Math.random() - 0.5)) { const x = g.planResolve(t, r, key), sp = x.m ? x.m.sp : x.sp; if (lines.has(g.LINE[sp])) continue; lines.add(g.LINE[sp]); refs.push(r); if (refs.length >= 1 + Math.floor(Math.random() * 4)) break; }
+        if (refs.length && typeof g.setPlan(key, [refs[0], refs[0]]) !== 'object') PLAN.refused++; else if (refs.length) fail.push('a plan naming one Pokémon twice was taken');
+        const other = g.planKeys().find(k => k !== key && g.planOf(k) && g.planOf(k).some(r => r.r != null && !g.planResolve(g.planHolder(k), r, k).gap));
+        if (other) { const r = g.planOf(other).find(r => r.r != null); if (typeof g.setPlan(key, [r]) === 'object') fail.push('an entry planned for two posts'); else PLAN.refused++; } }
+      const r = g.setPlan(key, refs);
+      if (typeof r !== 'object') { if (refs.every(x => !g.planResolve(t, x, key).gap)) fail.push('setPlan refused: ' + r); return; }
+      if (!refs.length) PLAN.cleared++; else PLAN.set++;
+      if (r.now) { PLAN.now++; const slot = g.eliteSlot(t), room = slot.size - t.team.filter(m => g.isSpecial(m) || (t.mega && t.mega.uid === m.uid)).length;
+        if (refs.length && refs.slice(0, room).some(x => !t.team.some(m => (x.o != null && m.uid === x.o) || (x.r != null && m.rid === x.r)))) fail.push('a plan set now was not built on ' + t.name);
+        if (t.team.length !== slot.size) fail.push('a plan left ' + t.name + ' with ' + t.team.length); }
+      else { PLAN.later++; if (JSON.stringify(g.planNext(key)) !== JSON.stringify(refs)) fail.push('a plan for the review not kept'); } });
+    const planSnap = HAND ? g.inLeague(g.ME(), () => g.planKeys().map(key => { const t = g.planHolder(key), on = g.planOf(key); if (!t || !on) return null;
+      return { key, id: t.id, plan: JSON.stringify(on), mons: t.team.filter(m => g.isPlanned(t, m)).map(m => m.rid != null ? { r: m.rid } : { o: m.uid }) }; }).filter(Boolean)) : [];
     g.simWeek();
+    if (HAND && !S().founding) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch) return;
+      for (const x of planSnap) { const t = g.planHolder(x.key); if (!t || t.id !== x.id || JSON.stringify(g.planOf(x.key)) !== x.plan) continue;
+        for (const r of x.mons) { PLAN.checked++; if (g.planResolve(t, r, x.key).gap) continue; if (t.team.some(m => (r.o != null && m.uid === r.o) || (r.r != null && m.rid === r.r))) PLAN.kept++; else fail.push('a planned Pokémon left ' + t.name + "'s team"); } }
+      if (z.plans && z.plans.at === S().turn - 1) { PLAN.reviews++;
+        if (z.plans.win !== S().turn) fail.push('the review is not open the week after');
+        for (const key of g.planKeys()) { const t = g.planHolder(key), on = g.planOf(key); if (!t || !on || (z.plans.seen || {})[key] !== t.id) continue;
+          const room = g.eliteSlot(t).size - t.team.filter(m => g.isSpecial(m) || (t.mega && t.mega.uid === m.uid)).length, want = on.filter(r => !g.planResolve(t, r, key).gap).slice(0, room);
+          if (want.some(r => !t.team.some(m => (r.o != null && m.uid === r.o) || (r.r != null && m.rid === r.r)))) fail.push('the review did not build ' + t.name + "'s plan"); } }
+      PLAN.benched = Math.max(PLAN.benched, z.ranch.mons.filter(e => e.bench != null).length);
+      PLAN.restless = Math.max(PLAN.restless, g.seniorIds().filter(id => (g.T(id).benchQ || 0) >= g.BENCH_QUARTERS).length); });
+    // only your League plans; plans name real posts, at most PLAN_MAX each, no entry in two posts' plans
+    g.eachLeague(i => { const z = S(); if (!z.plans) return; if (i !== g.ME() && Object.keys(z.plans.posts).length) fail.push('a rival League with team plans');
+      const seen = new Set(); for (const [k, p] of Object.entries(z.plans.posts)) { if (!/^(champion|e4:[0-3]|gym:[0-7])$/.test(k)) fail.push('a plan for no post: ' + k);
+        for (const list of [p.on, p.next]) if (list && list.length > g.PLAN_MAX) fail.push('a plan of ' + list.length);
+        for (const r of p.on || []) if (r.r != null) { if (seen.has(r.r)) fail.push('an entry in two plans'); seen.add(r.r); } } });
     if (foldWatch) {
       if (g.nLeagues() !== foldWatch.n - (foldWatch.mine ? 0 : 1)) fail.push('a League forced into the red did not fold');
       else if (foldWatch.mine) { red.myFold++;
@@ -529,6 +568,7 @@ console.log('legendaries', JSON.stringify(LEG));
 }
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('conditions', JSON.stringify(CON));
+console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
 console.log('backup types', JSON.stringify(backupStat));

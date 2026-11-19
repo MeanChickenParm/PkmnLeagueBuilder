@@ -313,7 +313,7 @@ let navOpen = null;
 function navGroups() {
   const manage = [['gyms', 'Gyms & Elite']];
   if (handOn()) manage.push(['staff', 'Your staff']);
-  if (playerFin()) manage.push(['ranch', 'Ranch'], ['money', 'Money'], ['cities', 'Cities']);
+  if (playerFin()) manage.push(['ranch', 'Ranch'], ['plans', 'Team plans'], ['money', 'Money'], ['cities', 'Cities']);
   if (handOn() && nLeagues() > 1) manage.push(['contenders', 'Contenders']);
   const world = [];
   if (nLeagues() > 1) world.push(['table', 'League table']);

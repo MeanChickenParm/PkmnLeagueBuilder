@@ -112,7 +112,7 @@ async def run(path):
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League' || nm[0] !== 'Browser Home Cup' || nm[1] !== 'Browser Rival Cup') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
-          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch'];
+          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch', 'plans'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -275,6 +275,24 @@ async def run(path):
                       if (!e) log.push('nothing fielded from the ranch'); else { const t = T(e.at), n0 = t.team.length, sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]');
                         if (!sb || !/swaps it out/.test(sb.closest('tr').textContent)) log.push('FAIL no Sell button or note on a fielded ranch Pokémon');
                         else { sb.click(); if (t.team.length !== n0 || t.team.some(m => m.rid === e.uid) || R().mons.includes(e)) log.push('FAIL selling a fielded ranch Pokémon'); else log.push('sold a fielded ' + e.sp); } } }
+                    // 0.39.0: team plans. With the review open, plan a ranch Pokémon for gym 1 (built at once); with it closed and
+                    // the holder seen, a plan for gym 2 waits for the review; clear it; the review-stop box
+                    { inLeague(0, () => { ranchSync(); const P = plansState(); P.win = S.turn; }); go('plans'); const txt2 = () => document.querySelector('#main').textContent;
+                      if (!/Team plans/.test(txt2()) || !/quarterly team review/.test(txt2())) log.push('FAIL the Team plans page');
+                      if (/undefined|NaN|\[object/.test(txt2())) log.push('FAIL the Team plans page shows undefined');
+                      const sel = document.querySelector('select.plansel[data-k="gym:0"][data-i="0"]'), opt = sel && [...sel.options].find(o => o.value[0] === 'r');
+                      if (!sel) log.push('FAIL no plan picker'); else if (!opt) log.push('nothing in the ranch to plan for gym 1');
+                      else { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('[data-act=planset][data-k="gym:0"]').click();
+                        const L0 = T(S.gyms[0].leader), uid = +opt.value.slice(1);
+                        if (!L0.team.some(m => m.rid === uid) || !inLeague(0, () => planOf('gym:0'))) log.push('FAIL a plan set in the review week was not built'); else log.push('planned ' + L0.team.find(m => m.rid === uid).sp + ' for gym 1');
+                        if (!/planned/.test(txt2())) log.push('FAIL the planned tag'); }
+                      inLeague(0, () => { const P = plansState(); P.win = null; for (const k of planKeys()) { const h = planHolder(k); if (h) P.seen[k] = h.id; } }); go('plans');
+                      const sel2 = document.querySelector('select.plansel[data-k="gym:1"][data-i="0"]'), opt2 = sel2 && [...sel2.options].find(o => o.value);
+                      if (sel2 && opt2) { sel2.value = opt2.value; sel2.dispatchEvent(new Event('change', { bubbles: true })); const b = document.querySelector('[data-act=planset][data-k="gym:1"]');
+                        if (!/next review/.test(b.textContent)) log.push('FAIL the plan button does not say it waits'); b.click();
+                        if (!inLeague(0, () => planNext('gym:1')) || inLeague(0, () => planOf('gym:1'))) log.push('FAIL a plan set mid-quarter did not wait'); else log.push('a plan waits for the review');
+                        const cb = document.querySelector('[data-act=planclear][data-k="gym:1"]'); if (!cb) log.push('FAIL no clear button'); else cb.click(); }
+                      const st = document.querySelector('input.planstop'); if (!st) log.push('FAIL no review stop box'); else { st.checked = false; st.dispatchEvent(new Event('change', { bubbles: true })); if (!inLeague(0, () => plansState().off)) log.push('FAIL turning the review stop off'); st.checked = true; st.dispatchEvent(new Event('change', { bubbles: true })); } }
                     go('cities'); const rb = document.querySelector('[data-act=build][data-w=seat][data-k=ranch]'), c0 = inLeague(0, () => ranchCap());
                     if (!rb) log.push('FAIL no Ranch to build'); else { rb.click(); if (inLeague(0, () => ranchCap()) <= c0) log.push('FAIL building the Ranch'); else log.push('built the Ranch'); }
                     // 0.27.0: the region panel, a charter, a lane in a port (moving a gym there if needed) and its route, the safari
