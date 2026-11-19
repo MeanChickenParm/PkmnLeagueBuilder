@@ -1,14 +1,20 @@
 // ---------- the badge circuit, gyms and Elite ----------
+// (0.41.0) the circuit shows this League's challengers, or the whole region's field (circScope 'region'): challengers
+// belong to the region and draw which of its Leagues to take on before each run
+let circScope = 'lg';
 function viewCircuit() {
   // challengers out on a run first (most badges first), then those resting between runs (soonest back first)
-  const out = t => t.rest == null;
-  const rows = challengers().sort((a, b) => out(b) - out(a) || (out(a) ? b.badges.length - a.badges.length || ovr(b) - ovr(a) : a.rest - b.rest));
-  const onRun = rows.filter(out).length;
+  const out = t => t.rest == null, r = S.region, lgs = regionLgs(r), region = circScope === 'region' && lgs.length > 1;
+  const rows = (region ? fieldIds(r).map(T).filter(Boolean) : challengers()).sort((a, b) => out(b) - out(a) || (out(a) ? b.badges.length - a.badges.length || ovr(b) - ovr(a) : a.rest - b.rest));
+  const onRun = rows.filter(out).length, size = fieldSize(r), aim = fieldTarget(r);
+  const shares = lgs.map(i => `${i === (S.lg || 0) ? '<b>' : ''}${esc(lgShort(i))} ${(lgObj(i).challengers || []).length}${i === (S.lg || 0) ? '</b>' : ''}`).join(' · ');
+  const scope = lgs.length > 1 ? `<span class="confirm-row"><button class="btn small${region ? '' : ' primary'}" data-act="circscope" data-v="lg">This League</button><button class="btn small${region ? ' primary' : ''}" data-act="circscope" data-v="region">The region's field</button></span>` : '';
   return `${staffNotices()}${legendBanner()}${roamBanner()}${stormBanner()}${outbreakBanner()}${yearSoFar()}
-  <section class="panel"><div class="ph"><h2>Badge circuit${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${rows.length} challengers: ${onRun} out on a run, ${rows.length - onRun} resting. Each is on their own clock: a run starts with their best ${START_TEAM} Pokémon, takes the gyms in any order, and ends on a third loss at one gym or after the Elite Four.</span></div>
-  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th><th>Badges</th><th title="Gym tries won and lost this year">Gym W–L</th><th>Where they are</th><th>Pokémon</th></tr></thead><tbody>
+  <section class="panel"><div class="ph"><h2>Badge circuit${region ? ' · ' + esc(regionWord(r)) + "'s field" : nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${rows.length} challengers: ${onRun} out on a run, ${rows.length - onRun} resting. Each is on their own clock: a run starts with their best ${START_TEAM} Pokémon, takes the gyms in any order, and ends on a third loss at one gym or after the Elite Four.</span></div>
+  ${lgs.length > 1 ? `<p class="small">The region's field: <b>${size}</b> challengers (it aims at about ${aim}). Before each run a challenger draws which of the region's Leagues to take on, by prestige, standing in their hometown, loyalty to a League that holds it, and for weaker challengers easier walls and quieter Leagues. Now: ${shares}.</p>${scope}` : ''}
+  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th>${region ? '<th>League</th>' : ''}<th>Badges</th><th title="Gym tries won and lost this year">Gym W–L</th><th>Where they are</th><th>Pokémon</th></tr></thead><tbody>
   ${rows.map((t, i) => { const w = t.weekLog.filter(e => e.won === true).length, l = t.weekLog.filter(e => e.won === false).length;
-    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}${hireTags(t)}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${gymStatus(t)}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
+    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}${hireTags(t)}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td>${region ? `<td class="small">${esc(lgShort(lgOf(t)))}</td>` : ''}<td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${inLeague(lgOf(t), () => gymStatus(t))}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
   </tbody></table></div></section>${skyPanel()}`;
 }
 // how a run ended, in words
@@ -167,8 +173,8 @@ function viewHire() {
   ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : c.from === 'rival' ? 'their League gets the signing fee' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
-const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
-const pickFrom = c => PICK_FROM[c.from] + (c.from === 'rival' || c.from === 'away' ? ' · ' + lgShort(c.lg) : '') + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
+const PICK_FROM = { circuit: 'Circuit', field: 'Region\'s field', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
+const pickFrom = c => (c.from === 'circuit' && lgOf(c.t) !== (S.lg || 0) ? `${PICK_FROM.field} · last at the ${lgShort(lgOf(c.t))}` : PICK_FROM[c.from]) + (c.from === 'rival' || c.from === 'away' ? ' · ' + lgShort(c.lg) : '') + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
 // ---------- your staff (0.7.0) ----------
 // Every post of the player's League in one place: let anyone but the Champion go, swap two Gym Leaders or two Elite
 // Four members, and replace gym trainers by hand. A senior post someone leaves waits for you with an acting holder.
@@ -274,7 +280,8 @@ function leagueRow(i) {
     const h = S.history.filter(x => x.titles != null), lh = h[h.length - 1];
     return { i, name: S.lgName, aim: f ? (f.aim ? AIMS[f.aim].name : 'Yours') : '—', money: f ? f.money : null, estate: f ? estateCost() : null, inc: last ? sum(last.in) : null, out: last ? sum(last.out) : null,
       wage: f ? wageBill() : null, ctrl: S.gyms.filter(g => { const c = S.cities[g.city]; return c.ctrl === i && c.tier >= 2; }).length, strong: S.gyms.filter(g => strongholdOf(S.cities[g.city], i)).length, shared: S.gyms.filter(g => (m[g.city] || []).length > 1).length,
-      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, old: (S.oldNames || []).map(x => x.name), prest: Math.round(S.prest || 0), spon: contendersOf(i).length };
+      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, old: (S.oldNames || []).map(x => x.name), prest: Math.round(S.prest || 0), spon: contendersOf(i).length,
+      field: S.challengers.length, share: fieldShare(i), rebuild: !!(f && f.rebuild) };
   });
 }
 // (0.33.0) renaming from the League table: your League any time, a rival with Rename rival Leagues on
@@ -289,9 +296,9 @@ function viewTable() {
   const rows = Array.from({ length: nLeagues() }, (_, i) => leagueRow(i)).sort((a, b) => (b.money ?? -1e12) - (a.money ?? -1e12));
   const avg = rows.filter(r => r.money != null), am = avg.length ? avg.reduce((a, r) => a + r.money, 0) / avg.length : 0;
   return `<section class="panel callout"><div class="eyebrow">${nLeagues()} Leagues</div><h2>League table</h2>
-    <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Built is what the League owns in cities and at its seat, at cost. Income and spending are last year's; cities count those where the League has a gym and Holds it or better, with how many are Strongholds (shared cities in brackets). Trainers let through are last year's.</p></section>
-  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th><th title="Earned each New Year, fading a tenth a year">Prestige</th><th>Contenders</th></tr></thead><tbody>
-    ${rows.map(r => `<tr${r.i === ME() && handOn() ? ' class="me"' : ''}><td>${lgNameCell(r)}</td><td class="small">${r.aim}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.strong ? ` <span class="small muted">${r.strong} strong</span>` : ''}${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td><td class="num">${r.prest}</td><td class="num">${r.spon}</td></tr>`).join('')}
+    <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Built is what the League owns in cities and at its seat, at cost. Income and spending are last year's; cities count those where the League has a gym and Holds it or better, with how many are Strongholds (shared cities in brackets). Trainers let through are last year's. Challengers counts those taking the League on now or last, with its share of its region's field; a rival drawing well under an even share rebuilds.</p></section>
+  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th><th title="Earned each New Year, fading a tenth a year">Prestige</th><th title="Challengers taking it on now or last, and its share of the region's field">Challengers</th><th>Contenders</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.i === ME() && handOn() ? ' class="me"' : ''}><td>${lgNameCell(r)}</td><td class="small">${r.aim}${r.rebuild ? ' <span class="tag notice">Rebuilding</span>' : ''}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.strong ? ` <span class="small muted">${r.strong} strong</span>` : ''}${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td><td class="num">${r.prest}</td><td class="num">${r.field} <span class="small muted">${Math.round(r.share * 100)}%</span></td><td class="num">${r.spon}</td></tr>`).join('')}
   </tbody></table></div></section>`;
 }
 // ---------- contenders (0.17.0, stage 5) ----------

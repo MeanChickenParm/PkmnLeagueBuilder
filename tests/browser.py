@@ -25,10 +25,10 @@ async def run(path):
           click('[data-act=setgod][data-v="1"]');
           // 0.21.0: three starting Leagues by default (the option is pressed anyway)
           if ((document.querySelector('.setleaguesn') || {}).textContent !== '3') log.push('FAIL Starting Leagues does not default to 3');
-          // 0.30.0: the stepper goes to the world's full room (two a region), with the speed estimate warning on big worlds
-          for (let n = 0; n < 20; n++) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent + 1) + '"]');
-          if (document.querySelector('.setleaguesn').textContent !== '18') log.push('FAIL Starting Leagues stops at ' + document.querySelector('.setleaguesn').textContent + ', not 18');
-          if (!document.querySelector('.speed-est.red')) log.push('FAIL no warning for an 18-League world');
+          // 0.30.0: the stepper goes to the world's full room (0.41.0: four a region), with the speed estimate warning on big worlds
+          for (let n = 0; n < 40; n++) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent + 1) + '"]');
+          if (document.querySelector('.setleaguesn').textContent !== '36') log.push('FAIL Starting Leagues stops at ' + document.querySelector('.setleaguesn').textContent + ', not 36');
+          if (!document.querySelector('.speed-est.red')) log.push('FAIL no warning for a 36-League world');
           while (+document.querySelector('.setleaguesn').textContent > 3) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent - 1) + '"]');
           if (!document.querySelector('.speed-est') || document.querySelector('.speed-est.amber, .speed-est.red')) log.push('FAIL the speed estimate for three Leagues');
           // Advanced: rival 2 starts in Hoenn, the region this test picks for the player's League
@@ -112,6 +112,14 @@ async def run(path):
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League' || nm[0] !== 'Browser Home Cup' || nm[1] !== 'Browser Rival Cup') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
+          // 0.41.0: the regional field: the Circuit page shows the whole region's field (both Hoenn Leagues), the League
+          // table each League's challengers and share
+          { go('circuit'); if (!click('[data-act=circscope][data-v=region]')) log.push('FAIL no region field toggle on the Circuit page');
+            else { const rows = document.querySelectorAll('#main table.tbl tbody tr').length; if (rows !== fieldSize(S.region)) log.push('FAIL the region field lists ' + rows + ' of ' + fieldSize(S.region));
+              if (!/The region's field: /.test(document.querySelector('#main').textContent)) log.push('FAIL no region field summary'); click('[data-act=circscope][data-v=lg]');
+              if (document.querySelectorAll('#main table.tbl tbody tr').length !== S.challengers.length) log.push('FAIL back to this League'); }
+            go('table'); if (!/Challengers/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table has no Challengers column');
+            log.push('region field ' + fieldSize(S.region) + ' of ' + fieldTarget(S.region) + ', yours ' + S.challengers.length); }
           const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch', 'plans'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
@@ -220,7 +228,7 @@ async def run(path):
                           else { sb.click(); if (S.fin.money !== m3 - 25000 || !inLeague(0, () => placeLv(gi, 'sanct'))) log.push('FAIL building a Sanctuary'); else log.push('built a Sanctuary'); } }
                         if (!document.querySelector('[data-act=build][data-w=seat][data-k=sanct]') === false) log.push('FAIL a Sanctuary offered at the seat'); }
                       S.fin.money = keep; go('cities'); }
-                    if (document.querySelectorAll('[data-act=movegym]').length !== 3) log.push('FAIL the Cities page should list three cities with no gym');
+                    if (document.querySelectorAll('[data-act=movegym]').length !== 6) log.push('FAIL the Cities page should list six cities with no gym');
                     // 0.40.0: every gym city shows its control tier; a staff member's profile shows their hometown
                     { const txt = document.body.innerText; if (!TIER_NAMES.some(n => txt.includes(n))) log.push('FAIL the Cities page shows no control tier');
                       const sid = inLeague(0, () => S.champion); modal = { kind: 'profile', id: sid }; renderModal(); const pt = (document.querySelector('.sheet-profile') || {}).textContent || ''; if (homeName(T(sid)) && !pt.includes('From ' + homeName(T(sid)))) log.push('FAIL a profile without its hometown'); modal = null; renderModal(); go('cities'); }

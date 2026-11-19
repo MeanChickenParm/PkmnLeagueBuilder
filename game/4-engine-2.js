@@ -1009,7 +1009,7 @@ function leagueTrainers() { return Object.values(S.trainers).filter(inLg); }
 // put every trainer the bound League holds on its books
 function stampLeague() { for (const id of [...S.challengers, ...staffIds()]) { const t = T(id); if (t) t.lg = S.lg || 0; } }
 // how many challengers a League's circuit holds
-const CIRCUIT_SIZE = 36; // the founding field of a League (24 before 0.6.0). A circuit has no cap (0.4.0): everyone who wants to challenge does
+const CIRCUIT_SIZE = 30; // the founding field of a League (24 before 0.6.0, 36 before 0.41.0). A circuit has no cap (0.4.0): everyone who wants to challenge does
 const START_TEAM = 3; // Pokémon a challenger sets out with on each run (their best; a tuning dial)
 // positions held (Gym Leader, Elite Four, Champion), for the Trainers tab
 function postPlace(t, role) {
@@ -1114,7 +1114,9 @@ function endRun(t, entry, stage) {
   // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
   if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
   // weak challengers give up: several early runs in a row, and they retire or try their luck at another League
-  if (t.early >= GIVE_UP_RUNS && (t.seasons || 0) >= GIVE_UP_GRACE && !comebackProtected(t) && rand() < GIVE_UP_CHANCE) {
+  // (0.41.0) likelier in a crowded regional field, less in a thin one (crowdMul)
+  if (t.early >= GIVE_UP_RUNS && (t.seasons || 0) >= GIVE_UP_GRACE && !comebackProtected(t) && rand() < GIVE_UP_CHANCE * crowdMul(S.region)) {
+    if (crowdMul(S.region) > 1) FIELD_LOG.crowdQuit++;
     const n = t.early;
     if (nLeagues() > 1 && rand() < GIVE_UP_MOVE && leagueMove(t, true)) t.early = 0;
     else { retire(t, `after ${n} runs in a row that ended early`); if (t.role !== 'challenger') return; }
@@ -1123,16 +1125,21 @@ function endRun(t, entry, stage) {
   // has a quick turnaround; the longer rest only keeps a challenger from trying the same League over and over.
   // (0.17.0) a contender goes to the League they were sent at, or comes home when recalled or the contract is over
   if (t.spon && sponMove(t)) { if (!t.spon) t.sponFrom = null; t.rest = S.turn + ri(REST_QUICK[0], REST_QUICK[1]); return; }
-  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || (stage == null && easeMove(t));
+  // (0.41.0) a challenger staying in the region draws which of its Leagues to take on next (regionDraw)
+  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || regionDraw(t);
   t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
 }
+const MOVE_CROWD = 1.25;
 // a challenger moves to another League's circuit between runs: a Triple Crown chaser or a Globetrotter when its
 // matchups suit them clearly better, anyone when `keen`
 function leagueMove(t, keen) {
   if (nLeagues() < 2 || t.role !== 'challenger' || t.spon) return false;
   const from = lgOf(t);
   // (0.18.0) prestige draws challengers: PRESTIGE_DRAW per 100 prestige on top of the matchups
-  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
+  // (0.41.0) a challenger who isn't chasing a Triple Crown or the world won't move into a region whose field is already
+  // MOVE_CROWD times its aim (tours and give-up moves would otherwise pile challengers into the most attractive region)
+  const roomy = i => slamChaser(t) || globetrotter(t) || lgRegion(i) === lgRegion(from) || fieldCrowd(lgRegion(i)) < MOVE_CROWD;
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
   if (!best) return false;
   const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
   if (!pulled && !keen) return false;
@@ -1140,23 +1147,13 @@ function leagueMove(t, keen) {
   inLeague(best.i, () => news(`${dn(t)} moved from the ${leagueName(from)} to the ${leagueName(best.i)}.`, 'move', t.id));
   return true;
 }
-// (0.15.0, catch-up) a challenger below EASE_OVR whose run ended on a third loss looks, EASE_MOVE of the time, for a
-// League where runs go further (more of them reached the Elite Four over the last two years, by EASE_EDGE or more):
-// a leaky wall draws more entry fees. Strong challengers still chase tough titles. Provisional.
-const EASE_MOVE = 0.25, EASE_EDGE = 0.03, EASE_OVR = 66, EASE_CROWD = 1.25;
+// (0.15.0, catch-up) runs that reach the Elite Four as a share of runs, by League, over the last two years. Until
+// 0.41.0 weak challengers moved to a leakier League's circuit (easeMove); since the regional field it weighs in their
+// draw (drawWeights) and in rivals' choice of targets for contenders.
 function leagueEase() {
   if (S.easeAt === S.season && S.ease) return S.ease;
   S.ease = eachLeague(() => { const h = S.history.slice(-2), r = h.reduce((a, x) => a + (x.runs || 0), 0); return r ? h.reduce((a, x) => a + (x.qualifiers || 0), 0) / r : 0; });
   S.easeAt = S.season; return S.ease;
-}
-function easeMove(t) {
-  if (nLeagues() < 2 || t.role !== 'challenger' || t.spon || ovr(t) >= EASE_OVR || rand() >= EASE_MOVE) return false;
-  // never to a circuit already EASE_CROWD times the average field (a leaky wall shouldn't swell without end)
-  const e = leagueEase(), from = lgOf(t), size = eachLeague(() => S.challengers.length), avg = size.reduce((a, b) => a + b, 0) / size.length;
-  const best = e.map((v, i) => ({ i, gain: v - e[from] })).filter(x => x.i !== from && x.gain >= EASE_EDGE && size[x.i] < avg * EASE_CROWD && slamRoom(t, x.i)).sort((a, b) => b.gain - a.gain)[0];
-  if (!best) return false;
-  shiftLeague(t, best.i);
-  return true;
 }
 function doAction(t, act) {
   if (act === 'seek' && (t.role !== 'challenger' || !S.legend || legendBlocked(t, S.legend.sp))) act = 'train';
@@ -1438,7 +1435,7 @@ function leagueWeek() {
 // newcomers set out one at a time through the year, and anyone without a place takes one: a circuit has no cap
 function arrivals() {
   const every = Math.round(YEAR_WEEKS / NEWCOMERS_PER_LEAGUE);
-  if (S.week % every === Math.floor(every / 2)) fillCircuits(makeNewcomers(nLeagues()));
+  if (S.week % every === Math.floor(every / 2)) fieldArrivals(); // (0.41.0) by region, to each region's field
   if (S.freeAgents.length) fillCircuits(S.freeAgents.slice());
   academyWeek();
 }
@@ -2312,7 +2309,8 @@ function openVacancy(post, slot) {
 // can't be picked. Best first. `opts.noStaff` leaves the senior staff out ("Fill it for me" and the sims).
 function vacancyCands(v, opts = {}) {
   const out = [];
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && (!t.hired || t.id === v.incoming) && !underContract(t)) out.push({ t, from: 'circuit' });
+  // (0.41.0) the region's field: this League's circuit and the region's other challengers resting between runs
+  for (const t of fieldPool()) if (t && t.role === 'challenger' && t.age >= 16 && (!t.hired || t.id === v.incoming) && !underContract(t)) out.push({ t, from: 'circuit' });
   for (const t of hireRetirees()) out.push({ t, from: 'retired' });
   S.gyms.forEach((g, i) => {
     for (const id of g.trainers || []) if (T(id)) out.push({ t: T(id), from: 'gym', gym: i });
@@ -2501,7 +2499,7 @@ function swapStaff(a, b) {
 function gymTrainerCands(i) {
   const g = S.gyms[i], L = T(g.leader), out = [];
   if (!L) return out;
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.hired && !underContract(t) && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
+  for (const t of fieldPool()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.hired && !underContract(t) && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
   for (const t of hireRetirees(x => gymFits(x, L))) out.push({ t, from: 'retired' });
   for (const id of g.outs || []) { const t = T(id); if (t && t.role === 'prospect' && gymFits(t, L)) out.push({ t, from: 'outsider' }); }
   S.gyms.forEach((h, j) => {
@@ -2768,7 +2766,7 @@ function rivalHire(min, exclude = [], post = null, bidAt = null) {
   // near the floor (cheaper); in the red, anyone takes the cheapest who fits
   const aim = S.fin && S.fin.aim, red = S.fin && S.fin.money < 0;
   const val = t => red ? -ovr(t) : aim === 'star' ? ovr(t) + Math.max(0, 30 - t.age) * 0.6 : aim === 'money' ? ovr(t) + (ovr(t) <= min + 8 ? 100 : 0) : ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
-  const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
+  const cs = fieldPool().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
     .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
@@ -2789,7 +2787,7 @@ function rivalE4(i) {
   if (!c) return outsiderE4(i);
   if (c.role === 'retired') unretire(c);
   if (STAFF_ROLES.includes(c.role)) { const from = leagueName(homeLeague(c)); leaveForPost(c, S.lgName); news(`${dn(c)} left the ${from} to join the ${S.lgName}'s Elite Four.`, 'move', c.id); }
-  S.challengers = S.challengers.filter(x => x !== c.id);
+  dropFromCircuits(c.id);
   installElite(c, 'e4', i);
   return c;
 }
@@ -2811,7 +2809,8 @@ function otherStaffFor(post, min) {
 function otherCircuits(fit) {
   const out = [], me = S.lg || 0;
   if (nLeagues() < 2 || fixedStaff()) return out;
-  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { for (const t of challengers()) if (t && t.role === 'challenger' && t.rest != null && !underContract(t, me) && !t.hired && !t.hireDue && !t.leaving && t.age >= 16 && fit(t)) out.push(t); });
+  // (0.41.0) other regions only: the region's own challengers are in the League's field (fieldPool)
+  for (let j = 0; j < nLeagues(); j++) if (j !== me && lgRegion(j) !== S.region) inLeague(j, () => { for (const t of challengers()) if (t && t.role === 'challenger' && t.rest != null && !underContract(t, me) && !t.hired && !t.hireDue && !t.leaving && t.age >= 16 && fit(t)) out.push(t); });
   return out;
 }
 function leaveForPost(t, toName) {
@@ -2868,7 +2867,7 @@ function replacePoorStaff(changes, worstSeat) {
         S.e4[worstSeat] = null; t.e4Poor = 0; t.letGoAt = S.turn;
         const fate = retireOrReturn(t, `lost Elite Four seat #${worstSeat + 1} after ${POOR_YEARS} years with the worst record of the four`);
         const back = c.role === 'retired'; if (back) unretire(c);
-        S.challengers = S.challengers.filter(x => x !== c.id); installElite(c, 'e4', worstSeat);
+        dropFromCircuits(c.id); installElite(c, 'e4', worstSeat);
         changes.push(`${dn(c)}${back ? ', out of retirement,' : ''} replaced ${t.name} on the Elite Four (seat #${worstSeat + 1}) after ${POOR_YEARS} years with the worst record of the four; ${t.name} ${fate === 'retired' ? 'retired' : 'returns to the circuit'}.`);
         news(changes[changes.length - 1], 'move', c.id);
       }
@@ -2887,7 +2886,7 @@ function fillGym(i, changes) {
     const back = cand.role === 'retired', away = STAFF_ROLES.includes(cand.role), from = away ? leagueName(homeLeague(cand)) : null; if (back) unretire(cand);
     if (away) leaveForPost(cand, S.lgName);
     changes.push(back ? `${dn(cand)} came out of retirement to lead ${townName(i)} Gym (${typeLabel(cand)}).` : away ? `${dn(cand)} left the ${from} to lead ${townName(i)} Gym (${typeLabel(cand)}).` : `${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
-    S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
+    dropFromCircuits(cand.id); installElite(cand, 'leader', i);
     nl = cand;
   } else {
     // sometimes the outsider is a famous trainer of the right type

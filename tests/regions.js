@@ -34,7 +34,7 @@ land.pool.push('Testmon'); land.ports = { Vermilion: 'port' }; land.posts = { le
   const gen1 = g.generatePool({ gens: [0] }); if (gen1.some(b => g.lineGen(b) !== 0)) fail('a Gen I list has other generations'); }
 // ---------- (0.33.0) League names ----------
 { const nm = JSON.parse(JSON.stringify(land)); nm.lgNames = ['Testland Grand League', 'Harbor League'];
-  const r = g.regionRead(g.regionCode(nm)); if (r.err || !r.rec.lgNames || r.rec.lgNames.join() !== 'Testland Grand League,Harbor League') fail('League names lost in a region file: ' + JSON.stringify(r.rec && r.rec.lgNames));
+  const r = g.regionRead(g.regionCode(nm)); if (r.err || !r.rec.lgNames || r.rec.lgNames.slice(0, 2).join() !== 'Testland Grand League,Harbor League') fail('League names lost in a region file: ' + JSON.stringify(r.rec && r.rec.lgNames));
   const same = Object.assign(g.regionBlank(), { lgNames: ['Same League', 'same league'] }); if (!g.regionChecks(same).errs.some(e => /different names/.test(e))) fail('two seats with one League name passed the checks');
   g.newWorld({ leagues: 4, region: 0, rivals: [0], names: ['My Cup', '', 'Rival Cup', 'my cup'] });
   const ns = g.eachLeague(() => g.S.lgName);

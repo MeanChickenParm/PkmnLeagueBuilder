@@ -1,5 +1,15 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 41, ver: '0.41.0', date: 'November 19, 2026', time: '11:30 AM ET', title: 'Four Leagues a region and a shared regional field', items: [
+    "A region can now hold up to four Leagues. Every region has three more towns with no gym (six in all, fourteen cities and towns) and two more League seats, so the Kanto region's third and fourth Leagues sit at Cerulean Cave and Trainer Tower, Johto's at the Bell Tower and the Battle Frontier, and so on. You can start a world with up to four Leagues in each region.",
+    "Founders now face a bar set by the region: a region's first or second League needs a founder with prestige 30, its third 50 and its fourth 70. A founder opens a League where their prestige clears the bar, your region first.",
+    "Challengers now belong to their region, not to one League. Before each run, a challenger draws which of the region's Leagues to take on: prestige counts (more for strong challengers), so does a League's standing in their hometown, and a League that holds their hometown keeps their loyalty for a few years even if its prestige dips. Weaker challengers favour Leagues where runs get further and quieter Leagues with fewer challengers, so a struggling League can win its share back. New challengers may even be drawn to a famous League from another region with renown in their hometown.",
+    "Smaller fields: a region's field aims at about 30 challengers for each League in it, growing a little as its cities grow. Newcomers stop coming while a region is well past that, and weak challengers give up sooner in a crowded field. A new League's founding field is 30.",
+    "You hire from the region's field: your own circuit plus the region's other challengers resting between runs. The Circuit page can show your League's challengers or the whole region's field with the League each is taking on, and the League table shows each League's challengers and its share of its region.",
+    "Rival Leagues drawing well under an even share of their region's challengers go into rebuild mode: they spend only in their strongest city, always try to have a contender out, and replace their costliest staff with cheaper hires each New Year, returning to their aim once their share recovers.",
+    "The region editor has six towns, four seats and four League names. Region files from 0.40.0 and earlier still load (the new places take default names).",
+    "Saves from earlier versions can't be loaded (the regions have new cities)."
+  ] },
   { id: 40, ver: '0.40.0', date: 'November 18, 2026', time: '9:50 PM ET', title: 'City control by tiers, renown and hometowns', items: [
     "Control of a city is now graded by how far the leading League is ahead of the second: Contested, Leaning, Held or Stronghold. The leader's share of the city's income grows with its tier (nothing extra when Contested, 40% Leaning, 50% Held, 60% Stronghold), Held and Stronghold cities earn prestige (more for a larger city), and a Stronghold gives your gym there a small crowd edge, makes trainers from that city cheaper to sign (less prestige needed) and gives you first refusal when a rival has to sell a building there at a distress price.",
     "Standing now comes from more than spending once. Each New Year it grows from your gym's record against the region, from your presence (buildings standing there count every year, by their value, and stop counting if they lapse or are sold), from your prestige (a share in every home city) and from local heroes (your staff from that city). A League far behind the leader gains standing half again as fast, so a lost city can be won back.",
@@ -789,6 +799,7 @@ document.addEventListener('click', ev => {
     case 'leaveask': leaveAsk = !leaveAsk; render(); break;
     case 'leavego': { const w = leaveLeague(leaveRegion, [...leaveTake]); leaveAsk = false; leaveTake = new Set(); save(); render(); window.scrollTo(0, 0); toast(w || 'Place your new League\'s staff.'); break; }
     case 'foundquit': clearSave(); S = null; view = 'circuit'; foundSel = null; render(); break;
+    case 'circscope': circScope = el.dataset.v === 'region' ? 'region' : 'lg'; render(); break;
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;

@@ -350,7 +350,8 @@ let setupRivals = [];
 let setupNames = [];
 // (0.30.0) how long a simulated year takes with n Leagues, in seconds: measured in Node at 0.29.0 (a browser may be
 // slower), straight lines between the measurements and on past the last; a guide for the setup screen's warning
-const SPEED_AT = [[1, 2], [3, 5.5], [6, 14], [10, 20], [14, 37], [18, 65]], SPEED_AMBER = 20, SPEED_RED = 40;
+// (0.41.0) rescaled for the regional field's smaller fields (measured in Node at years 2 to 3, scaled to the 0.29.0 table's machine)
+const SPEED_AT = [[1, 2], [3, 5.5], [6, 9.5], [10, 17], [18, 33], [36, 115]], SPEED_AMBER = 20, SPEED_RED = 40;
 function speedEst(n) {
   let i = SPEED_AT.findIndex(p => p[0] >= n); if (i < 1) i = i === 0 ? 1 : SPEED_AT.length - 1;
   const [a, b] = [SPEED_AT[i - 1], SPEED_AT[i]];
@@ -878,22 +879,22 @@ function viewRegionEditor() {
   const spTag = b => `<span class="rg-sp">${esc(b)}${SP[b] ? ' ' + SP[b].types.map(t => `<span class="dot sm" title="${t}" style="--tc:${TYPE_COLOR[t]};--tc2:${TYPE_COLOR[t]}"></span>`).join('') : ''}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`;
   return `<main class="wrap setup">
     <section class="panel callout"><div class="eyebrow">Advanced options · Custom regions</div><h1>${d.id ? 'Edit ' + esc(libRegion(d.id) ? libRegion(d.id).name : d.name) : 'New region'}</h1>
-      <p class="muted small">A region always has 8 gym cities, 3 towns and 2 League seats. Saved in this browser; worlds already running keep their own copy.</p>
+      <p class="muted small">A region always has 8 gym cities, 6 towns and 4 League seats (up to four Leagues). Saved in this browser; worlds already running keep their own copy.</p>
       <div class="confirm-row"><button class="btn primary" data-act="rgsave">Save region</button><button class="btn" data-act="rgcancel">Cancel</button></div></section>
     ${rgMsg ? `<p class="cf-msg">${esc(rgMsg)}</p>` : ''}
     ${rgErrs.length ? `<ul class="warn cf-errs">${rgErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <section class="panel"><div class="ph"><h2>The region</h2><span class="muted">Name, rules and post names</span></div>
       <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}${rgField('The Elite Four are called', 'posts.e4', d.posts && d.posts.e4, POST_NAME_MAX, 'Elite Four')}${rgField('The Champion is called', 'posts.champion', d.posts && d.posts.champion, POST_NAME_MAX, 'Champion')}</div>
       <div class="adv-list">
-        <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
+        <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (up to four to a region). Off: only your League.</span></span></button>
         <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>
       </div></section>
     <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
       <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
       <div class="eyebrow">Towns with no gym</div><div class="rg-places">${d.extra.map((_, i) => place(`Town ${i + 1}`, `extra.${i}`, 8 + i)).join('')}</div>
-      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}</div>
-      <div class="eyebrow">League names</div><p class="muted small">The names the Leagues at each seat take unless named at a new game. Blank: the region's name at the first seat (${esc((d.name || 'Region') + ' League')}), the seat's name at the second (${esc((d.seat2 || 'Second Seat') + ' League')}).</p>
-      <div class="cf-grid">${rgField('League at the first seat', 'lgNames.0', (d.lgNames || {})[0], LG_NAME_MAX, (d.name || 'Region') + ' League')}${rgField('League at the second seat', 'lgNames.1', (d.lgNames || {})[1], LG_NAME_MAX, (d.seat2 || 'Second Seat') + ' League')}</div></section>
+      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}${place('A third League\'s seat', 'seat3')}${place('A fourth League\'s seat', 'seat4')}</div>
+      <div class="eyebrow">League names</div><p class="muted small">The names the Leagues at each seat take unless named at a new game. Blank: the region's name at the first seat (${esc((d.name || 'Region') + ' League')}), the seat's name at the others (${esc((d.seat2 || 'Second Seat') + ' League')}).</p>
+      <div class="cf-grid">${rgField('League at the first seat', 'lgNames.0', (d.lgNames || {})[0], LG_NAME_MAX, (d.name || 'Region') + ' League')}${['second', 'third', 'fourth'].map((w, j) => rgField(`League at the ${w} seat`, `lgNames.${j + 1}`, (d.lgNames || {})[j + 1], LG_NAME_MAX, (d[SEAT_KEYS[j + 1]] || w[0].toUpperCase() + w.slice(1) + ' Seat') + ' League')).join('')}</div></section>
     <section class="panel"><div class="ph"><h2>Neighbours</h2><span class="muted">${d.nb.length} chosen · pick 2 or 3</span></div>
       <p class="muted small">Migrations come from neighbours (and now and then from further off). Neighbours are two-way. With none chosen, a replacement keeps the replaced region's, and a new region takes the two built-in regions sharing most of its Pokémon.</p>
       <div class="rg-chips">${BUILTIN_REGIONS.map((_, i) => tog('rgnb', builtinRegionName(i), d.nb.includes(builtinRegionName(i)), builtinRegionName(i))).join('')}</div></section>
