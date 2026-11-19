@@ -2193,7 +2193,7 @@ function leaveLeague(region, takeIds = [], name = null) {
       if (!(o != null && fillVacancy(v, o)) && autoFillVacancy(v) !== true) S.vacancies.shift();
     }
     S.gyms.forEach((g, i) => { if (g.outs) flushGymOutsiders(i); });
-    S.fin.aim = pickAim(); S.fin.aimAt = S.season; S.fin.prevAim = null;
+    S.fin.aim = pickAim(); S.fin.aimAt = S.season; S.fin.prevAim = null; S.plans = undefined; // (0.39.0) team plans are the player's
     news(`The ${S.lgName} carries on without its founder at the helm, now run as a ${AIMS[S.fin.aim].name.toLowerCase()}.`, 'league');
   });
   S.vacancies = []; S.chalPending = []; S.distress = [];

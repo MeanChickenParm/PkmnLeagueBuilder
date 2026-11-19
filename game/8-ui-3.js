@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 39, ver: '0.39.0', date: 'November 18, 2026', time: '7:45 PM ET', title: 'Team plans and the quarterly team review', items: [
+    "A new Team plans page (Manage menu): name up to six Pokémon for any Gym Leader, Elite Four member or your Champion, from their own team or your ranch (of the post's type). The steer fills any place you leave empty, as before. A plan belongs to the post, like a steer, so a new holder follows it.",
+    "Plans take effect at the quarterly team review, every 12 weeks (the start of the first, fourth, seventh and tenth months). The sim stops for it (you can turn that off on the page) and the page suggests a team for every post, which you can take with one click. A plan set in the review's week takes effect at once; one set later waits for the next review, except for a post whose holder is new since the last review, or a vacant post.",
+    "Planned Pokémon are locked in: the monthly swap and a Gym Leader's losing-streak shake-up never trade them out. Legendaries and the Mega Evolution holder keep their places. A ranch Pokémon another post was fielding is taken from them when your plan takes effect.",
+    "Staff always go along with a plan, but one whose own Pokémon it keeps on the bench for two reviews running grows restless: promotion's clock moves on a quarter, and a member who wanted to stay put may start wanting more.",
+    "A planned Pokémon you sell, lock, list or that gets banned leaves a gap the steer fills; the Ranch page and the Team plans page flag it. Rival Leagues don't plan.",
+  ] },
   { id: 38, ver: '0.38.0', date: 'November 18, 2026', time: '7:15 PM ET', title: 'Backup types', items: [
     "Every typed trainer now has three backup types outside their own (shown on their profile and the Ranch page). They lean toward types that answer the trainer's weaknesses: an Ice specialist gets Fire or Steel more often than Dragon.",
     "When your ranch has nothing left of a Gym Leader's or Elite Four member's own type, they field a ranch Pokémon of one of their backup types instead of a weak stopgap. Stopgaps only stand in when neither fits.",
@@ -492,7 +499,7 @@ function render() {
   if (S.founding) useLeague(ME());
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders', 'ranch'].includes(view)) useLeague(ME());
+  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders', 'ranch', 'plans'].includes(view)) useLeague(ME());
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -512,6 +519,7 @@ function render() {
   if (view === 'board') v = viewBoard();
   if (view === 'cities') v = viewCities();
   if (view === 'ranch') v = viewRanch();
+  if (view === 'plans') v = viewPlans();
   if (view === 'contenders') v = viewContenders();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
@@ -557,7 +565,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch', 'plans'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records', 'board'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -571,7 +579,7 @@ function lgBar() {
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders', 'plans'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
 
 // after a staffing move: a post it opened (a vacancy) goes straight to its hiring page; otherwise back to the staff page
 function afterMove(r, msg) {
@@ -593,12 +601,75 @@ function hireResult(o, id, name) {
 // ---------- actions ----------
 
 
+// ---------- team plans (0.39.0, design doc 6.18) ----------
+// Each senior post's team plan: up to six named Pokémon (their own or the ranch's), the steer filling the rest.
+// Set at the quarterly Team Review they take effect at once; otherwise they wait for the next review.
+let planDraft = {};
+const planVal = ref => !ref ? '' : ref.r != null ? 'r' + ref.r : 'o' + ref.o;
+const planRefOf = v => !v ? null : v[0] === 'r' ? { r: +v.slice(1) } : { o: +v.slice(1) };
+function planRefName(t, ref, key) {
+  const x = planResolve(t, ref, key);
+  const sp = x.m ? x.m.sp : x.sp || (x.e && x.e.sp);
+  return sp ? `${esc(sp)}${x.e ? condTag(x.e.c) : ''}` : '<span class="muted">(gone)</span>';
+}
+// what a post's plan can name: its holder's own Pokémon and the ranch's of the post's type, free of other plans
+function planOptions(t, key) {
+  const out = [], slot = eliteSlot(t), ty = t.role === 'champion' || !t.specialty ? [] : specTypes(t);
+  for (const m of t.team) if (m.rid == null && !m.stop && !isSpecial(m) && !(t.mega && t.mega.uid === m.uid)) out.push([planVal({ o: m.uid }), `${m.sp} (their own)`]);
+  for (const e of S.ranch.mons) {
+    if (e.lock || e.sale || planClaim(e.uid, key)) continue;
+    const sp = ranchForm(e, slot.lvl, t.specialty); if (bannedIn(sp, S.lg || 0)) continue;
+    if (ty.length && !entryTypes(e, sp).some(x => ty.includes(x))) continue;
+    const h = e.at != null && e.at !== t.id && T(e.at);
+    out.push([planVal({ r: e.uid }), `${sp} ${'★'.repeat(e.g)}${e.c ? ' ' + condKeys(e.c).join('/') : ''}${h ? ` (fielded by ${h.name})` : ''}`]);
+  }
+  return out;
+}
+function viewPlans() { return inLeague(ME(), viewPlans0); }
+function viewPlans0() {
+  if (!ranchOn()) return '<section class="panel"><p class="muted">Only a League that keeps books has a ranch, and so team plans.</p></section>';
+  ranchSync();
+  const P = plansState(), gaps = planGaps(), open = planOpen();
+  const nextAt = S.turn + (QUARTER_WEEKS - S.week % QUARTER_WEEKS) % QUARTER_WEEKS;
+  const post = key => {
+    const t = planHolder(key), on = planOf(key), next = planNext(key), sugg = (P.sugg || {})[key];
+    const label = key === 'champion' ? 'Champion' : key.startsWith('e4:') ? `Elite Four #${+key.slice(3) + 1}` : `Gym ${+key.slice(4) + 1} · ${townName(+key.slice(4))}`;
+    if (!t) return `<section class="panel"><div class="ph"><h2>${esc(label)}</h2><span class="muted">No holder who fields from the ranch now (vacant or acting)${on ? '; the plan is kept for the next holder' : ''}</span></div></section>`;
+    const now = planNow(key), slot = eliteSlot(t);
+    const team = t.team.map(m => `${esc(m.sp)}${condTag(condOf(m))} <span class="muted">${gradeStars(monGrade(m))}</span>${isPlanned(t, m) ? ' <span class="tag small">planned</span>' : isSpecial(m) || (t.mega && t.mega.uid === m.uid) ? ' <span class="tag small">keeps their place</span>' : m.stop ? ' <span class="tag notice small">stopgap</span>' : ''}`).join(', ');
+    const d = planDraft[key] || (planDraft[key] = Array.from({ length: PLAN_MAX }, (_, i) => planVal((next || on || [])[i])));
+    const opts = planOptions(t, key);
+    const sel = i => `<select class="plansel" data-k="${key}" data-i="${i}" aria-label="Place ${i + 1}"><option value="">The steer picks</option>${opts.map(([v, n]) => `<option value="${v}"${d[i] === v ? ' selected' : ''}>${esc(n)}</option>`).join('')}${d[i] && !opts.some(o => o[0] === d[i]) ? `<option value="${d[i]}" selected>${planRefName(t, planRefOf(d[i]), key)} (can't be fielded)</option>` : ''}</select>`;
+    const pgaps = gaps.filter(g => g.key === key);
+    return `<section class="panel"><div class="ph"><h2>${esc(label)}: ${tname(t.id)}</h2><span class="muted">${esc(t.specialty && t.role !== 'champion' ? typeLabel(t) : 'any type')} · steer ${esc(steerName(steerOf(t)))} · ${slot.size} Pokémon</span></div>
+      <p class="small"><b>Now:</b> ${team || '—'}</p>
+      ${on ? `<p class="small"><b>Plan in force:</b> ${on.map(r => planRefName(t, r, key)).join(', ')}</p>` : '<p class="small muted">No plan: the steer picks the whole team, one swap a month.</p>'}
+      ${next ? `<p class="small"><b>At the next review (${turnDate(nextAt)}):</b> ${next.length ? next.map(r => planRefName(t, r, key)).join(', ') : 'the plan is cleared'}</p>` : ''}
+      ${pgaps.length ? `<p class="warn small">Can't be fielded: ${pgaps.map(g => `${esc(g.sp || 'a Pokémon')} (${esc(g.why)})`).join(', ')}. The steer fills those places.</p>` : ''}
+      ${sugg && sugg.length ? `<p class="small"><b>Suggested at the review:</b> ${sugg.map(r => planRefName(t, r, key)).join(', ')} <button class="btn small ghost" data-act="plansugg" data-k="${key}">Use it</button></p>` : ''}
+      <div class="confirm-row">${d.map((_, i) => sel(i)).join('')}</div>
+      <div class="confirm-row"><button class="btn small" data-act="planset" data-k="${key}">${now ? 'Set the plan now' : 'Set for the next review'}</button>${on || next ? ` <button class="btn small ghost" data-act="planclear" data-k="${key}">Clear the plan</button>` : ''}</div></section>`;
+  };
+  return `<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Team plans</h2>
+    <p>Name up to ${PLAN_MAX} Pokémon for any Gym Leader, Elite Four member or your Champion, from their own team or your ranch (of the post's type; one fielded by another post is taken from them). The steer fills any place left empty, as before. A plan belongs to the post, like a steer, so a new holder follows it. Planned Pokémon are locked in: the monthly swap never trades them out. Legendaries and the Mega Evolution holder keep their places.</p>
+    <p>Plans take effect at the <b>quarterly team review</b> (every ${QUARTER_WEEKS} weeks: the start of the first, fourth, seventh and tenth months), when the game also suggests a team for every post. ${open ? '<b>The review is open this week: plans you set now take effect at once.</b>' : `The next is ${turnDate(nextAt)}. A plan set before then waits for it, except for a post whose holder is new since the last review.`} Staff always go along with a plan, but one whose own Pokémon it keeps on the bench for ${BENCH_QUARTERS} reviews running grows restless.</p>
+    <div class="confirm-row"><label class="small"><input type="checkbox" class="planstop"${P.off ? '' : ' checked'}> Stop the sim for the review</label></div></section>
+    ${planKeys().map(post).join('')}`;
+}
+// the Ranch page's note: plans that name Pokémon that can't be fielded
+function planGapNote() {
+  const g = plansOn() ? planGaps() : [];
+  return g.length ? `<section class="panel"><p class="warn small">Team plans with places that can't be filled (the steer fills them): ${g.map(x => `${esc(x.sp || 'a Pokémon')} for ${esc(planHolder(x.key) ? postName(planHolder(x.key)) : x.key)} (${esc(x.why)})`).join(', ')}. See <button class="tlink" data-act="nav" data-v="plans">Team plans</button>.</p></section>` : '';
+}
+GLOSS_TERMS.league.push(['Team plans', `The Team plans page: up to ${PLAN_MAX} named Pokémon for a Gym Leader, Elite Four member or your Champion, from their own team or your ranch, with the steer filling the rest. A plan belongs to the post. It takes effect at the quarterly team review (every ${QUARTER_WEEKS} weeks, when the game suggests a team for each post), or at once when set in the review's week, for a post whose holder is new since the review, or for a vacant post. Planned Pokémon are never swapped out by the monthly swap or a Gym Leader's losing-streak shake-up. Staff always follow a plan, but one whose own Pokémon it keeps benched for ${BENCH_QUARTERS} reviews running grows restless (promotion's clock moves on a quarter; a stay-put member may start wanting more). A planned Pokémon sold, locked, listed or banned leaves a gap, flagged on the Ranch page, that the steer fills.`]);
+
 // Move time on by up to n weeks. A step of more than a week stops early when something needs you: a title
 // conceded, a post that fell vacant, or the New Year report (which opens the year report).
 function playWeeks(n) {
   const y = S.season, stop = simWeeks(n, n > 1);
   save();
   if (S.season !== y) { repYear = null; go('recap'); toast(`Year ${y} is over. Here is the year report.`); return; }
+  if (stop && stop.why === 'review' && playerFin()) { view = 'plans'; planDraft = {}; window.scrollTo(0, 0); } // (0.39.0)
   render();
   toast(stop ? `Stopped in ${weekName(S.week)}: ${stop.text}` : `It is now ${weekName(S.week)}, Year ${S.season}.`);
 }
@@ -698,6 +769,11 @@ document.addEventListener('click', ev => {
     case 'ranchbuy': { const w = inLeague(ME(), () => buyShop(+el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchlbuy': { const w = inLeague(ME(), () => buyListing(+el.dataset.lg, +el.dataset.id)); save(); render(); toast(w || 'Bought: it is in the ranch.'); break; }
     case 'ranchsell': case 'ranchrel': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => sellMon(+el.dataset.id, a === 'ranchrel')); save(); render(); toast(w || (a === 'ranchrel' ? 'Released.' : 'Sold back.') + (!w && who ? ` ${who} swapped it out.` : '')); break; }
+    case 'planset': case 'planclear': case 'plansugg': { const k = el.dataset.k;
+      const refs = a === 'planclear' ? [] : a === 'plansugg' ? inLeague(ME(), () => (plansState().sugg || {})[k] || []) : (planDraft[k] || []).map(planRefOf).filter(Boolean);
+      const r = inLeague(ME(), () => setPlan(k, refs)); delete planDraft[k];
+      if (typeof r === 'string') { render(); toast(r); break; }
+      save(); render(); toast(a === 'planclear' ? (r.now ? 'Plan cleared.' : 'The plan is cleared at the next review.') : r.now ? 'Plan set: the team is built to it now.' : 'Plan set: it takes effect at the next review.'); break; }
     case 'ranchlock': { const w = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e ? lockMon(e.uid, !e.lock) : 'Not in the ranch.'; }); save(); render(); if (w) toast(w); break; }
     case 'ranchlist': case 'ranchunlist': { const w = inLeague(ME(), () => (a === 'ranchlist' ? listMon : unlistMon)(+el.dataset.id)); save(); render(); toast(w || (a === 'ranchlist' ? 'Listed for other Leagues.' : 'Withdrawn.')); break; }
     case 'sendcon': { const r = inLeague(ME(), () => sendContender(+el.dataset.id, sendTo)); save(); render(); toast(r === 'ok' ? `${T(+el.dataset.id).name} is on the way.` : r === 'later' ? `${T(+el.dataset.id).name} signed, and goes after their run.` : r === 'refused' ? `${T(+el.dataset.id).name} turned the contract down.` : r); break; }
@@ -826,6 +902,8 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('ranchcondsel')) { ranchCond = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('charterreg')) { charterReg = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('plansel')) { const k = e.target.dataset.k; (planDraft[k] = planDraft[k] || Array(PLAN_MAX).fill(''))[+e.target.dataset.i] = e.target.value; return; }
+  if (e.target && e.target.classList && e.target.classList.contains('planstop')) { inLeague(ME(), () => { plansState().off = !e.target.checked; }); save(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rg-port')) { rgPorts[+e.target.dataset.i] = e.target.value; return; }

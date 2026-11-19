@@ -821,7 +821,7 @@ function adaptGym(i) {
   // drop the one doing least this season (knockouts minus faints), never their strongest
   const ace = L.team.reduce((a, b) => (monPower(a) > monPower(b) ? a : b));
   const perf = m => { const s = m.ss && m.ss.season === S.season ? m.ss : null; return s ? s.ko - s.f + vs(m.sp) : vs(m.sp); };
-  const drop = L.team.filter(m => m !== ace && !isSpecial(m)).sort((a, b) => perf(a) - perf(b))[0];
+  const drop = L.team.filter(m => m !== ace && !isSpecial(m) && !isPlanned(L, m)).sort((a, b) => perf(a) - perf(b))[0];
   if (!drop) return;
   (ranchFor(L) ? dropMon : farewell)(L, drop, `swapped out after a losing streak at ${townName(i)} Gym`);
   L.team = L.team.filter(m => m !== drop);

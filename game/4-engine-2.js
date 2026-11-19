@@ -967,7 +967,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -1420,6 +1420,7 @@ function simWeek() {
 // one League's week: every challenger who is out on a run acts; one whose rest is over sets out again
 function leagueWeek() {
   noteHolders();
+  if (S.week % QUARTER_WEEKS === 0 && S.turn > 0) planReview(); // (0.39.0) the quarterly team review (your League)
   if (S.week % 4 === 0 && S.turn > 0) steerMonth();
   for (const id of shuffle(S.challengers)) {
     const t = T(id); if (!t || t.role !== 'challenger' || !S.challengers.includes(id)) continue;
