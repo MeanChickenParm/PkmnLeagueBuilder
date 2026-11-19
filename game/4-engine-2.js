@@ -1323,6 +1323,7 @@ function gymTry(t, entry) {
   boardNote(gym, 'thru', [t.id, S.turn, entry.tryNo, res ? res.sides[0].team.map(m => m.sp).slice(0, 3) : [], b]);
   if (res) { gym.beat = gym.beat || {}; for (const m of res.sides[0].team) for (const ty of m.types || []) gym.beat[ty] = (gym.beat[ty] || 0) + 1; }
   t.badges.push(g); t.career.badges++; t.career.gymW++; gym.l++;
+  contenderRenown(t, g); // (0.40.0) a contender's badge earns their sponsor renown in this city
   delete t.gymStage[g]; delete t.gymLine[g]; t.gymAt = t.badges.length < 8 ? pickGym(t) : null;
   // the player's League keeps the last few badges each gym conceded, to watch (0.7.0)
   if ((S.lg || 0) === ME() && res) { res.when = { season: S.season, week: S.week }; (gym.watch = gym.watch || []).push(res); if (gym.watch.length > GYM_WATCH) gym.watch.shift(); }
@@ -2616,6 +2617,7 @@ function prestMin(t, lg) {
   let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
   if (hungry(t)) m *= PM_HUNGRY;
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
+  const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
   return Math.round(m);
 }
 // would t sign for League lg now? (always in the report's fixed tiers)
