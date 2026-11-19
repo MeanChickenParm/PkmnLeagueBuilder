@@ -53,6 +53,7 @@ const PLAN = { set: 0, now: 0, later: 0, cleared: 0, refused: 0, sugg: 0, review
 const backupStat = { teams: 0, mons: 0, most: 0, stopgaps: 0 }; // (0.38.0) summed over weekly checks
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
+const ctrlStats = { cities: 0, tiers: [0, 0, 0, 0], renown: 0, slice: 0, homed: 0 }; // (0.40.0)
 function check(tag) {
   { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -285,7 +286,16 @@ function check(tag) {
   });
   // (0.15.0) at most two Leagues a region; standing only for Leagues with a gym in the city; control by one of them
   { const regs = g.eachLeague(() => S().region), gm = g.gymMap(); for (const r of new Set(regs)) if (regs.filter(x => x === r).length > 2) bad('three Leagues in one region');
-    for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || []; for (const k of Object.keys(c.st || {})) if (!lgs.includes(+k) && tag.startsWith('s')) {} if (lgs.length && !lgs.includes(g.cityCtrl(c, lgs))) bad('city controlled by a League with no gym there: ' + c.name); } }
+    for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || []; for (const k of Object.keys(c.st || {})) if (!lgs.includes(+k) && tag.startsWith('s')) {} if (lgs.length && !lgs.includes(g.cityCtrl(c, lgs))) bad('city controlled by a League with no gym there: ' + c.name); } 
+    // (0.40.0) tiers, renown and hometowns
+    for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || [];
+      if (c.tier != null && !(c.tier >= 0 && c.tier <= 3)) bad('a bad control tier in ' + c.name);
+      for (const [k, v] of Object.entries(c.rn || {})) { if (!(+k >= 0 && +k < g.nLeagues())) bad('renown for no League in ' + c.name); if (!(v > 0)) bad('renown not positive in ' + c.name); }
+      if (lgs.length) { const st = g.cityState(c, lgs); if (st.slice < 0 || st.slice > g.RN_SLICE + 1e-9) bad('a renown slice out of range in ' + c.name); for (const x of st.rn) if (lgs.includes(x.lg) || x.eff > Math.max(0, st.lead) * g.RN_CAP + 1e-9) bad('renown counted past its cap in ' + c.name);
+        const inc = g.CITY_INCOME[g.citySlots(c) - 1], tot = lgs.concat(st.rn.map(x => x.lg)).reduce((a, i) => a + g.cityShare(c, lgs, i), 0); if (Math.abs(tot - inc) > lgs.length + st.rn.length + 1) bad('city income shares add to ' + tot + ' of ' + inc + ' in ' + c.name);
+        if (tag.startsWith('step') && s.week === 1) { ctrlStats.cities++; ctrlStats.tiers[st.tier]++; if (st.rn.length) ctrlStats.renown++; if (st.slice) ctrlStats.slice++; } } }
+    for (const t of Object.values(s.trainers)) if (t.role !== 'retired' && t.home && !(t.home.r >= 0 && t.home.i >= 0)) bad('a bad hometown: ' + t.name);
+    if (tag.startsWith('step') && s.week === 1) { let n = 0, h = 0; for (const t of Object.values(s.trainers)) if (t.role !== 'retired') { n++; if (g.homeCity(t) != null) h++; } ctrlStats.homed = Math.round(h / Math.max(1, n) * 100); } }
   for (const t of Object.values(s.trainers)) {
     if (t.role === 'challenger' && seen[t.id] == null) bad('challenger on no circuit ' + t.name);
     if (t.role === 'free' && !s.freeAgents.includes(t.id)) bad('free agent not listed ' + t.name);
@@ -574,6 +584,7 @@ console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranc
 console.log('backup types', JSON.stringify(backupStat));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
+console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.join('/'));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'famous at founding', PG.famous, 'now: prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'Champion OVR', g.eachLeague(() => g.ovr(g.T(S().champion))).join('/'), 'senior OVR', g.eachLeague(() => { const ids = [S().champion, ...S().e4, ...S().gyms.map(x => x.leader)].filter(x => x != null); return Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length); }).join('/'));

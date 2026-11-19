@@ -193,7 +193,7 @@ const nextRegionName = () => { const r = nextRegion(); return r == null ? null :
 // record (a perfect year, letting through fewer than the world's average, a World Championship, cities controlled, its
 // rank by wealth) and fades PRESTIGE_FADE a year. Founding a League (a retiree, or the player leaving) needs
 // PRESTIGE_BAR. All provisional.
-const PRESTIGE_BAR = 60, PRESTIGE_FADE = 0.1, PRESTIGE_PERFECT = 10, PRESTIGE_LET = 2, PRESTIGE_LET_MAX = 10, PRESTIGE_WORLD = 10, PRESTIGE_CITY = 1, PRESTIGE_RANK = [6, 4, 2, 1];
+const PRESTIGE_BAR = 60, PRESTIGE_FADE = 0.1, PRESTIGE_PERFECT = 10, PRESTIGE_LET = 2, PRESTIGE_LET_MAX = 10, PRESTIGE_WORLD = 10, PRESTIGE_RANK = [6, 4, 2, 1];
 function trainerPrestige(t) {
   if (!t || !t.career) return 0;
   return Math.round(((t.titleSeasons || []).length || t.career.titles || 0) * 10 + (t.hofN || 0) * 5 + (t.career.badges || 0) / 10 + (t.seasons || 0) / 2 + (t.career.worlds || 0) * 8);
@@ -205,13 +205,13 @@ function prestigeNewYear() {
   const lets = hs.map(h => h ? h.titles || 0 : 0), avg = lets.reduce((a, b) => a + b, 0) / Math.max(1, lets.length);
   const wealth = eachLeague(() => S.fin ? S.fin.money + estateCost() : 0);
   const order = wealth.map((w, i) => ({ w, i })).sort((a, b) => b.w - a.w).map(x => x.i);
-  const gm = gymMap(), wl = S.worlds && S.worlds.winner != null ? lgOf(T(S.worlds.winner)) : null;
+  const wl = S.worlds && S.worlds.winner != null ? lgOf(T(S.worlds.winner)) : null;
   eachLeague(i => {
     const h = hs[i]; if (!h) return;
-    const cities = S.gyms.filter(g => { const c = S.cities[g.city]; return c && cityCtrl(c, gm[g.city] || [i]) === i; }).length;
+    const cities = cityPrestige(i); // (0.40.0) Held and Stronghold cities, by size
     const rank = nLeagues() > 1 ? PRESTIGE_RANK[order.indexOf(i)] || 0 : 0;
     const gain = (h.titles === 0 ? PRESTIGE_PERFECT : 0) + (nLeagues() > 1 ? Math.min(PRESTIGE_LET_MAX, Math.max(0, avg - lets[i]) * PRESTIGE_LET) : 0)
-      + (wl === i ? PRESTIGE_WORLD : 0) + cities * PRESTIGE_CITY + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0);
+      + (wl === i ? PRESTIGE_WORLD : 0) + cities + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0);
     S.prest = Math.round(((S.prest || 0) * (1 - PRESTIGE_FADE) + gain) * 10) / 10;
     h.prest = S.prest; h.prestGain = Math.round(gain * 10) / 10;
   });

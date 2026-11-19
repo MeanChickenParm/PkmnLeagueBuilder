@@ -221,6 +221,9 @@ async def run(path):
                         if (!document.querySelector('[data-act=build][data-w=seat][data-k=sanct]') === false) log.push('FAIL a Sanctuary offered at the seat'); }
                       S.fin.money = keep; go('cities'); }
                     if (document.querySelectorAll('[data-act=movegym]').length !== 3) log.push('FAIL the Cities page should list three cities with no gym');
+                    // 0.40.0: every gym city shows its control tier; a staff member's profile shows their hometown
+                    { const txt = document.body.innerText; if (!TIER_NAMES.some(n => txt.includes(n))) log.push('FAIL the Cities page shows no control tier');
+                      const sid = inLeague(0, () => S.champion); modal = { kind: 'profile', id: sid }; renderModal(); const pt = (document.querySelector('.sheet-profile') || {}).textContent || ''; if (homeName(T(sid)) && !pt.includes('From ' + homeName(T(sid)))) log.push('FAIL a profile without its hometown'); modal = null; renderModal(); go('cities'); }
                     go('meta'); const bn = [...document.querySelectorAll('[data-act=ban][data-v="1"]')].find(x => !x.disabled);
                     if (bn) { const sp = bn.dataset.sp; bn.click(); if (!inLeague(0, () => paidBans().some(x => x.sp === sp))) log.push('FAIL paying for a ban'); else log.push('banned ' + sp); } else log.push('nothing to ban yet');
                     go('money'); if (!/Ledger/.test(document.querySelector('#main').textContent) || !/Salaries/.test(document.querySelector('#main').textContent)) log.push('FAIL the Money page');
