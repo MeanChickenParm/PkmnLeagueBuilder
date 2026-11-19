@@ -4929,7 +4929,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 18; // 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 19; // 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -4946,22 +4946,23 @@ function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.seaso
 // and reshuffle). (0.30.0) These are the built-in nine; a world keeps its own copy (S.regions, made by applyRegions
 // in 5-engine-4) and LEAGUE_SETS is always the bound world's list, so custom regions can join it later.
 const BUILTIN_REGIONS = [
-  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau', seat2: 'Victory Road' },
-  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver', seat2: "Dragon's Den" },
-  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande', seat2: 'Sky Pillar' },
-  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar', seat2: 'Stark Mountain' },
+  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam','One Island','Four Island','Seven Island'], seat: 'Indigo Plateau', seat2: 'Victory Road', seat3: 'Cerulean Cave', seat4: 'Trainer Tower' },
+  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage','Ruins of Alph','National Park','Whirl Islands'], seat: 'Mount Silver', seat2: "Dragon's Den", seat3: 'Bell Tower', seat4: 'Battle Frontier' },
+  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor','Oldale','Verdanturf','Pacifidlog'], seat: 'Ever Grande', seat2: 'Sky Pillar', seat3: 'Battle Resort', seat4: 'Mt. Pyre' },
+  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic','Twinleaf','Sandgem','Floaroma'], seat: 'Spear Pillar', seat2: 'Stark Mountain', seat3: 'Battle Zone', seat4: 'Mt. Coronet' },
   // (0.28.0) the five later regions. Unova follows Black 2 and White 2's gyms; Galar's and Paldea's gyms fit as they are.
   // Alola has no gyms: its eight gym cities are the island challenge's stops (trial sites and the kahunas' towns, in
   // the challenge's order), its seat the League on Mount Lanakila, and its second League's seat the Battle Tree
-  { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm' },
-  { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette'], seat: 'Battle Château', seat2: 'Terminus Cave' },
-  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island'], seat: 'Mount Lanakila', seat2: 'Battle Tree', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain' } },
-  { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington'], seat: 'Wyndon', seat2: 'Crown Tundra' },
-  { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico'], seat: 'Mesagoza', seat2: 'Great Crater' },
+  { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus','Accumula','Nacrene','Lacunosa'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm', seat3: 'World Tournament', seat4: 'Abundant Shrine' },
+  { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette','Aquacorde','Geosenge','Couriway'], seat: 'Battle Château', seat2: 'Terminus Cave', seat3: 'Battle Maison', seat4: 'Kiloude' },
+  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island','Royal Avenue',"Kala'e Bay",'Poni Plains'], seat: 'Mount Lanakila', seat2: 'Battle Tree', seat3: 'Battle Royal Dome', seat4: 'Altar of the Sunne', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain' } },
+  { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington','Isle of Armor','Ballimere Lake','Slumbering Weald'], seat: 'Wyndon', seat2: 'Crown Tundra', seat3: 'Energy Plant', seat4: 'Master Dojo' },
+  { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico','Cabo Poco','Mossui Town','Terarium'], seat: 'Mesagoza', seat2: 'Great Crater', seat3: 'Blueberry Academy', seat4: 'Area Zero' },
 ];
 // the world's regions (S.regions once a world exists; the built-in nine before that): set by applyRegions
 let LEAGUE_SETS = BUILTIN_REGIONS;
 // (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
+// (0.41.0, design doc 6.19) six towns with no gym and four seats, so a region holds up to four Leagues (32 gyms in 14 cities)
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
 // (gym.city), and more than one League can come to have a gym in the same city. Each region's cities are made the
 // first time a League is founded there.
@@ -5690,13 +5691,13 @@ function fillGymTrainer(i, k, L) {
 // of those who fit is asked first, and must accept the place (acceptsOffer); none in the wall report's fixed tiers.
 const GT_CIRCUIT_CUT = 0.5;
 function gtCircuitCut() {
-  const o = S.challengers.map(T).filter(t => t && t.role === 'challenger').map(ovr).sort((a, b) => b - a);
+  const o = fieldPool().filter(t => t && t.role === 'challenger').map(ovr).sort((a, b) => b - a); // (0.41.0) the region's field
   return o.length ? o[Math.min(o.length - 1, Math.floor(o.length * GT_CIRCUIT_CUT))] : Infinity;
 }
 function circuitGymTrainer(L) {
   if (fixedStaff()) return null;
   const cut = gtCircuitCut();
-  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.spon && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
+  return fieldPool().filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.spon && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
     .sort((a, b) => S.fin && S.fin.money < 0 ? ovr(a) - ovr(b) : ovr(b) - ovr(a)).find(t => acceptsOffer(t, 'gymtrainer')) || null; // (0.15.0) in the red, the cheapest first
 }
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of
@@ -8062,7 +8063,7 @@ function leagueTrainers() { return Object.values(S.trainers).filter(inLg); }
 // put every trainer the bound League holds on its books
 function stampLeague() { for (const id of [...S.challengers, ...staffIds()]) { const t = T(id); if (t) t.lg = S.lg || 0; } }
 // how many challengers a League's circuit holds
-const CIRCUIT_SIZE = 36; // the founding field of a League (24 before 0.6.0). A circuit has no cap (0.4.0): everyone who wants to challenge does
+const CIRCUIT_SIZE = 30; // the founding field of a League (24 before 0.6.0, 36 before 0.41.0). A circuit has no cap (0.4.0): everyone who wants to challenge does
 const START_TEAM = 3; // Pokémon a challenger sets out with on each run (their best; a tuning dial)
 // positions held (Gym Leader, Elite Four, Champion), for the Trainers tab
 function postPlace(t, role) {
@@ -8167,7 +8168,9 @@ function endRun(t, entry, stage) {
   // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
   if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
   // weak challengers give up: several early runs in a row, and they retire or try their luck at another League
-  if (t.early >= GIVE_UP_RUNS && (t.seasons || 0) >= GIVE_UP_GRACE && !comebackProtected(t) && rand() < GIVE_UP_CHANCE) {
+  // (0.41.0) likelier in a crowded regional field, less in a thin one (crowdMul)
+  if (t.early >= GIVE_UP_RUNS && (t.seasons || 0) >= GIVE_UP_GRACE && !comebackProtected(t) && rand() < GIVE_UP_CHANCE * crowdMul(S.region)) {
+    if (crowdMul(S.region) > 1) FIELD_LOG.crowdQuit++;
     const n = t.early;
     if (nLeagues() > 1 && rand() < GIVE_UP_MOVE && leagueMove(t, true)) t.early = 0;
     else { retire(t, `after ${n} runs in a row that ended early`); if (t.role !== 'challenger') return; }
@@ -8176,16 +8179,21 @@ function endRun(t, entry, stage) {
   // has a quick turnaround; the longer rest only keeps a challenger from trying the same League over and over.
   // (0.17.0) a contender goes to the League they were sent at, or comes home when recalled or the contract is over
   if (t.spon && sponMove(t)) { if (!t.spon) t.sponFrom = null; t.rest = S.turn + ri(REST_QUICK[0], REST_QUICK[1]); return; }
-  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || (stage == null && easeMove(t));
+  // (0.41.0) a challenger staying in the region draws which of its Leagues to take on next (regionDraw)
+  const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || regionDraw(t);
   t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
 }
+const MOVE_CROWD = 1.25;
 // a challenger moves to another League's circuit between runs: a Triple Crown chaser or a Globetrotter when its
 // matchups suit them clearly better, anyone when `keen`
 function leagueMove(t, keen) {
   if (nLeagues() < 2 || t.role !== 'challenger' || t.spon) return false;
   const from = lgOf(t);
   // (0.18.0) prestige draws challengers: PRESTIGE_DRAW per 100 prestige on top of the matchups
-  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i)).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
+  // (0.41.0) a challenger who isn't chasing a Triple Crown or the world won't move into a region whose field is already
+  // MOVE_CROWD times its aim (tours and give-up moves would otherwise pile challengers into the most attractive region)
+  const roomy = i => slamChaser(t) || globetrotter(t) || lgRegion(i) === lgRegion(from) || fieldCrowd(lgRegion(i)) < MOVE_CROWD;
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
   if (!best) return false;
   const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
   if (!pulled && !keen) return false;
@@ -8193,23 +8201,13 @@ function leagueMove(t, keen) {
   inLeague(best.i, () => news(`${dn(t)} moved from the ${leagueName(from)} to the ${leagueName(best.i)}.`, 'move', t.id));
   return true;
 }
-// (0.15.0, catch-up) a challenger below EASE_OVR whose run ended on a third loss looks, EASE_MOVE of the time, for a
-// League where runs go further (more of them reached the Elite Four over the last two years, by EASE_EDGE or more):
-// a leaky wall draws more entry fees. Strong challengers still chase tough titles. Provisional.
-const EASE_MOVE = 0.25, EASE_EDGE = 0.03, EASE_OVR = 66, EASE_CROWD = 1.25;
+// (0.15.0, catch-up) runs that reach the Elite Four as a share of runs, by League, over the last two years. Until
+// 0.41.0 weak challengers moved to a leakier League's circuit (easeMove); since the regional field it weighs in their
+// draw (drawWeights) and in rivals' choice of targets for contenders.
 function leagueEase() {
   if (S.easeAt === S.season && S.ease) return S.ease;
   S.ease = eachLeague(() => { const h = S.history.slice(-2), r = h.reduce((a, x) => a + (x.runs || 0), 0); return r ? h.reduce((a, x) => a + (x.qualifiers || 0), 0) / r : 0; });
   S.easeAt = S.season; return S.ease;
-}
-function easeMove(t) {
-  if (nLeagues() < 2 || t.role !== 'challenger' || t.spon || ovr(t) >= EASE_OVR || rand() >= EASE_MOVE) return false;
-  // never to a circuit already EASE_CROWD times the average field (a leaky wall shouldn't swell without end)
-  const e = leagueEase(), from = lgOf(t), size = eachLeague(() => S.challengers.length), avg = size.reduce((a, b) => a + b, 0) / size.length;
-  const best = e.map((v, i) => ({ i, gain: v - e[from] })).filter(x => x.i !== from && x.gain >= EASE_EDGE && size[x.i] < avg * EASE_CROWD && slamRoom(t, x.i)).sort((a, b) => b.gain - a.gain)[0];
-  if (!best) return false;
-  shiftLeague(t, best.i);
-  return true;
 }
 function doAction(t, act) {
   if (act === 'seek' && (t.role !== 'challenger' || !S.legend || legendBlocked(t, S.legend.sp))) act = 'train';
@@ -8491,7 +8489,7 @@ function leagueWeek() {
 // newcomers set out one at a time through the year, and anyone without a place takes one: a circuit has no cap
 function arrivals() {
   const every = Math.round(YEAR_WEEKS / NEWCOMERS_PER_LEAGUE);
-  if (S.week % every === Math.floor(every / 2)) fillCircuits(makeNewcomers(nLeagues()));
+  if (S.week % every === Math.floor(every / 2)) fieldArrivals(); // (0.41.0) by region, to each region's field
   if (S.freeAgents.length) fillCircuits(S.freeAgents.slice());
   academyWeek();
 }
@@ -9365,7 +9363,8 @@ function openVacancy(post, slot) {
 // can't be picked. Best first. `opts.noStaff` leaves the senior staff out ("Fill it for me" and the sims).
 function vacancyCands(v, opts = {}) {
   const out = [];
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && (!t.hired || t.id === v.incoming) && !underContract(t)) out.push({ t, from: 'circuit' });
+  // (0.41.0) the region's field: this League's circuit and the region's other challengers resting between runs
+  for (const t of fieldPool()) if (t && t.role === 'challenger' && t.age >= 16 && (!t.hired || t.id === v.incoming) && !underContract(t)) out.push({ t, from: 'circuit' });
   for (const t of hireRetirees()) out.push({ t, from: 'retired' });
   S.gyms.forEach((g, i) => {
     for (const id of g.trainers || []) if (T(id)) out.push({ t: T(id), from: 'gym', gym: i });
@@ -9554,7 +9553,7 @@ function swapStaff(a, b) {
 function gymTrainerCands(i) {
   const g = S.gyms[i], L = T(g.leader), out = [];
   if (!L) return out;
-  for (const t of challengers()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.hired && !underContract(t) && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
+  for (const t of fieldPool()) if (t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.hired && !underContract(t) && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length) out.push({ t, from: 'circuit' });
   for (const t of hireRetirees(x => gymFits(x, L))) out.push({ t, from: 'retired' });
   for (const id of g.outs || []) { const t = T(id); if (t && t.role === 'prospect' && gymFits(t, L)) out.push({ t, from: 'outsider' }); }
   S.gyms.forEach((h, j) => {
@@ -9821,7 +9820,7 @@ function rivalHire(min, exclude = [], post = null, bidAt = null) {
   // near the floor (cheaper); in the red, anyone takes the cheapest who fits
   const aim = S.fin && S.fin.aim, red = S.fin && S.fin.money < 0;
   const val = t => red ? -ovr(t) : aim === 'star' ? ovr(t) + Math.max(0, 30 - t.age) * 0.6 : aim === 'money' ? ovr(t) + (ovr(t) <= min + 8 ? 100 : 0) : ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
-  const cs = challengers().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
+  const cs = fieldPool().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
     .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
@@ -9842,7 +9841,7 @@ function rivalE4(i) {
   if (!c) return outsiderE4(i);
   if (c.role === 'retired') unretire(c);
   if (STAFF_ROLES.includes(c.role)) { const from = leagueName(homeLeague(c)); leaveForPost(c, S.lgName); news(`${dn(c)} left the ${from} to join the ${S.lgName}'s Elite Four.`, 'move', c.id); }
-  S.challengers = S.challengers.filter(x => x !== c.id);
+  dropFromCircuits(c.id);
   installElite(c, 'e4', i);
   return c;
 }
@@ -9864,7 +9863,8 @@ function otherStaffFor(post, min) {
 function otherCircuits(fit) {
   const out = [], me = S.lg || 0;
   if (nLeagues() < 2 || fixedStaff()) return out;
-  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { for (const t of challengers()) if (t && t.role === 'challenger' && t.rest != null && !underContract(t, me) && !t.hired && !t.hireDue && !t.leaving && t.age >= 16 && fit(t)) out.push(t); });
+  // (0.41.0) other regions only: the region's own challengers are in the League's field (fieldPool)
+  for (let j = 0; j < nLeagues(); j++) if (j !== me && lgRegion(j) !== S.region) inLeague(j, () => { for (const t of challengers()) if (t && t.role === 'challenger' && t.rest != null && !underContract(t, me) && !t.hired && !t.hireDue && !t.leaving && t.age >= 16 && fit(t)) out.push(t); });
   return out;
 }
 function leaveForPost(t, toName) {
@@ -9921,7 +9921,7 @@ function replacePoorStaff(changes, worstSeat) {
         S.e4[worstSeat] = null; t.e4Poor = 0; t.letGoAt = S.turn;
         const fate = retireOrReturn(t, `lost Elite Four seat #${worstSeat + 1} after ${POOR_YEARS} years with the worst record of the four`);
         const back = c.role === 'retired'; if (back) unretire(c);
-        S.challengers = S.challengers.filter(x => x !== c.id); installElite(c, 'e4', worstSeat);
+        dropFromCircuits(c.id); installElite(c, 'e4', worstSeat);
         changes.push(`${dn(c)}${back ? ', out of retirement,' : ''} replaced ${t.name} on the Elite Four (seat #${worstSeat + 1}) after ${POOR_YEARS} years with the worst record of the four; ${t.name} ${fate === 'retired' ? 'retired' : 'returns to the circuit'}.`);
         news(changes[changes.length - 1], 'move', c.id);
       }
@@ -9940,7 +9940,7 @@ function fillGym(i, changes) {
     const back = cand.role === 'retired', away = STAFF_ROLES.includes(cand.role), from = away ? leagueName(homeLeague(cand)) : null; if (back) unretire(cand);
     if (away) leaveForPost(cand, S.lgName);
     changes.push(back ? `${dn(cand)} came out of retirement to lead ${townName(i)} Gym (${typeLabel(cand)}).` : away ? `${dn(cand)} left the ${from} to lead ${townName(i)} Gym (${typeLabel(cand)}).` : `${dn(cand)} left the circuit to lead ${townName(i)} Gym (${typeLabel(cand)}).`);
-    S.challengers = S.challengers.filter(x => x !== cand.id); installElite(cand, 'leader', i);
+    dropFromCircuits(cand.id); installElite(cand, 'leader', i);
     nl = cand;
   } else {
     // sometimes the outsider is a famous trainer of the right type
@@ -10335,7 +10335,18 @@ function leagueNewYear(changes) {
 // New Leagues open as the years go by. (0.15.0, stage 4) the next League opens in the player's region while it has
 // fewer than REGION_CAP, then in a region with none; (0.17.0, stage 5) then in any region with room, and openings are
 // driven by founders (below). (0.29.0) No cap on the world (it was 6, MAX_LEAGUES); only REGION_CAP a region.
-const REGION_CAP = 2, LEAGUE_MIN_GAP = 8;
+// (0.41.0, design doc 6.19 part 2) four Leagues a region: each region has four seats (seat, seat2, seat3, seat4)
+const REGION_CAP = 4, LEAGUE_MIN_GAP = 8;
+const SEAT_KEYS = ['seat', 'seat2', 'seat3', 'seat4'];
+const seatOf = (reg, k) => (reg && (reg[SEAT_KEYS[k]] || reg.seat)) || 'League Seat';
+// the first of region r's seats no live League holds (League `except` left out); with every seat taken, by count
+function freeSeat(r, except) {
+  const reg = LEAGUE_SETS[r]; if (!reg) return 0;
+  const held = [];
+  for (let i = 0; i < nLeagues(); i++) if (i !== except) inLeague(i, () => { if (S.region === r) held.push(S.seatName); });
+  const k = SEAT_KEYS.findIndex((_, j) => !held.includes(seatOf(reg, j)));
+  return k >= 0 ? k : Math.min(REGION_CAP - 1, held.length);
+}
 const regionsUsed = () => eachLeague(() => S.region);
 const regionOrder = () => S.regionOrder || LEAGUE_SETS.map((_, i) => i);
 const regionCount = r => regionsUsed().filter(x => x === r).length;
@@ -10352,14 +10363,16 @@ function nextRegion() {
   return r2 == null ? null : r2;
 }
 const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');
-// (0.33.0, design doc 6.10) League names: a region's first seat is `<Region> League` and its second `<seat2> League`,
-// unless the region (a custom one) names them in `lgNames`. Every League takes these defaults unless named at setup;
-// a name is unique in the world (folded Leagues included): a repeat becomes `New <name>`, then numbered.
+// (0.33.0, design doc 6.10) League names: a region's first seat is `<Region> League` and each other seat `<seat> League`
+// (0.41.0: four seats), unless the region (a custom one) names them in `lgNames`. Every League takes these defaults
+// unless named at setup; a name is unique in the world (folded Leagues included): a repeat becomes `New <name>`, then numbered.
 const LG_NAME_MAX = 30;
 const cleanLgName = s => String(s == null ? '' : s).replace(/[<>&"`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, LG_NAME_MAX);
-function seatLgName(r, second) {
+// k: the seat (0 to 3)
+function seatLgName(r, k) {
   const reg = LEAGUE_SETS[r]; if (!reg) return 'New League';
-  return cleanLgName((reg.lgNames || [])[second ? 1 : 0]) || (second ? `${reg.seat2} League` : reg.name);
+  k = k === true ? 1 : k || 0;
+  return cleanLgName((reg.lgNames || [])[k]) || (k ? `${seatOf(reg, k)} League` : reg.name);
 }
 function lgNamesTaken(except) {
   const a = [];
@@ -10387,7 +10400,7 @@ function renameLeague(i, name) {
   news(`The ${old} is now the ${n}.`, 'league');
   return null;
 }
-const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, regionsUsed().includes(r))); };
+const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, freeSeat(r))); };
 // (0.17.0, stage 5) prestige: one scale for trainers and Leagues. A trainer's comes from their career (titles, the
 // Hall of Fame, badges, years, World titles: the founder score of 0.15.0). A League's is earned each New Year from its
 // record (a perfect year, letting through fewer than the world's average, a World Championship, cities controlled, its
@@ -10429,10 +10442,10 @@ const founderChamp = t => !!t && t.founderUntil != null && S.season < t.founderU
 function openNewLeague(f, r) {
   if (r == null) r = nextRegion(); if (r == null || regionCount(r) >= REGION_CAP) return null;
   if (f === undefined) f = pickFounder();
-  const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r);
+  const i = nLeagues(), reg = LEAGUE_SETS[r], k = freeSeat(r);
   const champ = f && ((f.titleSeasons || []).length || f.career.titles) && f.retAge <= 55 && ovr(f) >= FOUNDER_CHAMP_OVR && rand() < FOUNDER_CHAMP_CHANCE ? f : null;
-  const lgName = uniqueLgName(seatLgName(r, second));
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: second ? reg.seat2 : reg.seat, founder: f ? f.id : null });
+  const lgName = uniqueLgName(seatLgName(r, k));
+  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: seatOf(reg, k), founder: f ? f.id : null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   if (champ) unretire(champ);
   inLeague(i, () => foundLeague({ champ }));
@@ -10443,23 +10456,36 @@ function openNewLeague(f, r) {
   }
   S.leagueOpened = { i, season: S.season }; S.lastOpen = S.season;
   // its founding field: a class of newcomers of its own, setting out over the first weeks
-  for (const id of makeNewcomers(CIRCUIT_SIZE)) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
+  // (0.41.0) made in its region, so their hometowns are there; they join the region's field at the new League
+  for (const id of inLeague(i, () => makeNewcomers(CIRCUIT_SIZE))) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
   inLeague(i, () => news(`The ${lgName} opens in Year ${S.season}, with its own gyms, Elite Four and Champion.`, 'league'));
   return i;
 }
 // (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years have passed since the last
 // opening and there is room, the most prestigious recent retiree over PRESTIGE_BAR may found a League, likelier the
 // higher their prestige (FOUNDER_ODDS at the bar, rising to 0.9). No founder, no League.
-// (0.18.0) a founder's bar rises with the Leagues already open: FOUNDER_BAR_BASE for the second League, FOUNDER_BAR_STEP
-// more for each after (30, 40, 50, 60, 70). The player leaving still needs PRESTIGE_BAR.
-const FOUNDER_BAR_BASE = 30, FOUNDER_BAR_STEP = 10;
-const founderBar = () => FOUNDER_BAR_BASE + FOUNDER_BAR_STEP * Math.max(0, nLeagues() - 1);
+// (0.18.0) a founder's bar rose with the Leagues already open in the world. (0.41.0, design doc 6.19) it is per region
+// now: FOUNDER_BARS by the Leagues already in the region (a region's first or second League 30, its third 50, its fourth
+// 70). A founder opens where their prestige clears the bar, in the order nextRegion would choose. The player leaving
+// still needs PRESTIGE_BAR. Provisional.
+const FOUNDER_BARS = [30, 30, 50, 70];
+const founderBar = r => FOUNDER_BARS[Math.min(FOUNDER_BARS.length - 1, regionCount(r == null ? nextRegion() : r))];
+// regions with room for a rival League, in the order nextRegion prefers (yours, then empty ones, then any)
+function growthRegions() {
+  const home = regionsUsed()[ME()], ok = x => rivalOk(x) && regionCount(x) < REGION_CAP;
+  const out = ok(home) ? [home] : [];
+  for (const x of regionOrder()) if (!out.includes(x) && ok(x) && !regionCount(x)) out.push(x);
+  for (const x of regionOrder()) if (!out.includes(x) && ok(x)) out.push(x);
+  return out;
+}
 function worldGrowth() {
-  if (!S.cfg || !S.cfg.growth || nextRegion() == null) return;
+  if (!S.cfg || !S.cfg.growth) return;
   if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
-  const f = pickFounder(), p = trainerPrestige(f), bar = founderBar();
-  if (!f || p < bar) return;
-  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f);
+  const f = pickFounder(), p = trainerPrestige(f);
+  if (!f) return;
+  const r = growthRegions().find(x => p >= founderBar(x)); if (r == null) return;
+  const bar = founderBar(r);
+  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f, r);
 }
 // ---------- god mode: open a League by hand, and edit any trainer ----------
 const godOn = () => !!(S && S.cfg && S.cfg.god);
@@ -11399,12 +11425,14 @@ function joinCircuit(t, i) {
   inLeague(i, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); if (!t.home) setHome(t); }); // (0.40.0) a hometown if they have none
   if (nLeagues() > 1) settleLegendClash(t);
 }
-// new trainers and free agents join a circuit, the emptiest first. A circuit has no cap (0.4.0). `stagger` spreads
+// new trainers and free agents join a circuit (0.41.0: by the regional field's draw; the emptiest before). A circuit has no cap (0.4.0). `stagger` spreads
 // a founding field's setting out over that many weeks; anyone else sets out within a few weeks.
 function fillCircuits(ids, stagger) {
   const pool = ids.map(T).filter(t => t && ['prospect', 'free'].includes(t.role)).sort((a, b) => circuitValue(b) - circuitValue(a));
   for (const t of pool) {
-    const room = eachLeague(i => ({ i, n: S.challengers.length })).sort((a, b) => a.n - b.n)[0];
+    // (0.41.0) the regional field: the region they belong with (fieldRegionFor), then the draw among its Leagues
+    const r = fieldRegionFor(t), drawn = r == null ? null : drawLeague(t, r);
+    const room = drawn != null ? { i: drawn } : eachLeague(i => ({ i, n: S.challengers.length })).sort((a, b) => a.n - b.n)[0];
     joinCircuit(t, room.i);
     t.rest = S.turn + (stagger != null ? ri(0, stagger) : ri(1, 3)); t.early = 0;
   }
@@ -11706,14 +11734,14 @@ function newWorld(cfg = {}) {
   if (LEAGUE_SETS[cfg.region]) S.regionOrder = [cfg.region, ...S.regionOrder.filter(r => r !== cfg.region)];
   const regions = startRegions(S.regionOrder, S.cfg.leagues, cfg.rivals || []);
   S.cfg.leagues = regions.length;
-  // a second League in a region at the start sits at its second seat and is named for it
-  const second = i => regions.slice(0, i).includes(regions[i]);
+  // a second (third, fourth) League in a region at the start sits at the next seat and is named for it
+  const seatK = i => regions.slice(0, i).filter(r => r === regions[i]).length;
   // (0.33.0) cfg.names[i]: a name given at setup (index 0 yours, then the rivals in order); blank takes the seat's default
   const names = Array.isArray(cfg.names) ? cfg.names : [];
-  const blank = i => { const reg = LEAGUE_SETS[regions[i]], two = second(i);
-    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], two)), seatName: two ? reg.seat2 : reg.seat }; };
+  const blank = i => { const reg = LEAGUE_SETS[regions[i]], k = seatK(i);
+    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], k)), seatName: seatOf(reg, k) }; };
   S.leagues = [null]; S.lg = 0;
-  S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], false);
+  S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], 0);
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
   if (cfg.hand) { S.cfg.hand = true; initBooks(); }
@@ -11722,7 +11750,7 @@ function newWorld(cfg = {}) {
   foundingField(Array.from({ length: nLeagues() }, (_, i) => i));
   startWorld();
 }
-// (0.30.0) the most Leagues a world can start with: two a region (REGION_CAP)
+// (0.30.0) the most Leagues a world can start with: REGION_CAP a region (four since 0.41.0)
 // (0.31.0) a region closed to rival Leagues counts for one (yours)
 const maxStartLeagues = () => LEAGUE_SETS.reduce((a, r, i) => a + (rivalOk(i) ? REGION_CAP : 1), 0);
 // where the Leagues start: yours in order[0], then each rival where the player asked (picks[i]: a region index, or
@@ -12534,7 +12562,7 @@ function aimUpgrade() {
     const back = c.role === 'retired', away = STAFF_ROLES.includes(c.role), from = away ? leagueName(homeLeague(c)) : null;
     if (back) unretire(c);
     if (away) leaveForPost(c, S.lgName);
-    S.challengers = S.challengers.filter(x => x !== c.id);
+    dropFromCircuits(c.id);
     installElite(c, post, post === 'e4' ? w.k : w.i);
     if (post === 'leader') staffGym(w.i);
     const text = `The ${S.lgName} paid over the odds to bring in ${dn(c)}${away ? ` from the ${from}` : back ? ' out of retirement' : ''} as ${postName(c)}, replacing ${old.name}, who ${fate === 'retired' ? 'retired' : 'returns to the circuit'}.`;
@@ -12557,15 +12585,15 @@ function aimMonth() {
 function aimSpend(aim) {
   const f = S.fin, A = AIMS[aim], lg = S.lg || 0;
   if (f.money < 0) return;
-  const spare = f.money - A.reserve;
-  if (aim === 'wall' && paidBans().length < BAN_PAID_MAX && rand() < AIM_BAN_ODDS) {
+  const spare = f.money - A.reserve, focus = f.rebuild ? strongestGym() : null; // (0.41.0) rebuilding: its strongest city only
+  if (aim === 'wall' && focus == null && paidBans().length < BAN_PAID_MAX && rand() < AIM_BAN_ODDS) {
     const c = banCands().find(x => !x.banned && !x.prot && x.rank <= 3);
     if (c && spare >= c.price + UP_COST[0]) { payBan(c.sp, 1, lg); return; }
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (attractions pay their own way)
   const net = runningNet();
   for (const [w, k] of A.build) {
-    const spots = w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
+    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
     for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && (k === 'attract' || k === 'sanct' || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
   }
 }
@@ -12574,7 +12602,8 @@ function aimSpend(aim) {
 // when it goes back to its old aim (f.prevAim); a money-maker by choice keeps the old rule (rich after three years)
 function aimNewYear() {
   const f = S.fin; if (!f || !f.aim) return;
-  aimUpgrade();
+  rebuildNewYear(); // (0.41.0) rebuild mode when its share of the region's field is well under an even share
+  if (!f.rebuild) aimUpgrade();
   let to = null;
   if (f.money < 0 && f.aim !== 'money') { f.prevAim = f.aim; to = 'money'; }
   else if (f.prevAim && f.money >= AIMS.money.reserve) { to = f.prevAim; f.prevAim = null; }
@@ -12699,8 +12728,9 @@ function sponsorWeek() {
 // (rival Leagues) a League sends up to SPON_AIM[aim] contenders: its academy prospects first, then the best of its
 // circuit at OVR SPON_AIM_OVR or better, at a League where runs go further (richer ones first), with money to spare
 function aimSponsor() {
-  const f = S.fin, me = S.lg || 0, cap = SPON_AIM[f.aim] || 0;
-  if (contendersOf(me).length >= cap || rand() >= SPON_AIM_ODDS) return;
+  const f = S.fin, me = S.lg || 0, cap = Math.max(f.rebuild ? 1 : 0, SPON_AIM[f.aim] || 0);
+  // (0.41.0) a rebuilding League always tries to have a contender out
+  if (contendersOf(me).length >= cap || (!f.rebuild && rand() >= SPON_AIM_ODDS)) return;
   if (f.money - (AIMS[f.aim] ? AIMS[f.aim].reserve : 0) < SPON_AIM_SPARE) return;
   const c = sendCands().filter(t => t.rest != null && (ownAcademy(t) || ovr(t) >= SPON_AIM_OVR) && canOffer(t))[0];
   if (!c) return;
@@ -12746,8 +12776,8 @@ function leaveLeague(region, takeIds = [], name = null) {
   if (!chk.regions.includes(region)) return 'That region has no room.';
   const old = ME(), willing = new Set(leaveTakers().filter(x => x.willing).map(x => x.t.id));
   const take = takeIds.filter(id => willing.has(id)).slice(0, LEAVE_TAKE);
-  const second = regionsUsed().includes(region), reg = LEAGUE_SETS[region];
-  const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, second));
+  const seatK = freeSeat(region), reg = LEAGUE_SETS[region];
+  const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, seatK));
   inLeague(old, () => {
     book(-LEAVE_FEE, 'founding', `Paid ${money(LEAVE_FEE)} to leave the ${S.lgName} and found the ${lgName}.`);
     // settle what waits for the player: challenges go ahead, offers accepted are withdrawn, vacancies take an outsider
@@ -12763,7 +12793,7 @@ function leaveLeague(region, takeIds = [], name = null) {
   });
   S.vacancies = []; S.chalPending = []; S.distress = [];
   const i = nLeagues();
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: second ? reg.seat2 : reg.seat, founder: null });
+  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
   // (0.27.0) someone a waiting challenge just moved out of their post stays behind
@@ -12971,9 +13001,9 @@ function foldLeague(k) {
   let neu = null;
   if (mine) {
     // the old region always has room once the folded League is gone
-    const region = info.region, second = regionCount(region) >= 2, reg = LEAGUE_SETS[region];
+    const region = info.region, seatK = freeSeat(region, k), reg = LEAGUE_SETS[region];
     neu = nLeagues();
-    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: uniqueLgName(seatLgName(region, second)), seatName: second ? reg.seat2 : reg.seat, founder: null });
+    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: uniqueLgName(seatLgName(region, seatK)), seatName: seatOf(reg, seatK), founder: null });
   }
   removeLeague(k, info);
   if (mine) {
@@ -12992,7 +13022,9 @@ function foldLeague(k) {
     t.hired = null; t.hireDue = false;
     // nowhere else to go (the player's League was the only one): they wait and join the new League when it opens
     if (!homes.length) { t.role = 'free'; t.lg = ME(); (S.founding.after = S.founding.after || []).push(t.id); continue; }
-    const to = eachLeague(i => ({ i, n: S.challengers.length })).filter(x => homes.includes(x.i)).sort((a, b) => a.n - b.n)[0].i;
+    // (0.41.0) the folded League's region first (by the draw), else the region whose field is thinnest for its aim
+    const regs = [...new Set(homes.map(lgRegion))], r = regs.includes(info.region) ? info.region : regs.sort((a, b) => fieldCrowd(a) - fieldCrowd(b))[0];
+    const to = (() => { const d = drawLeague(t, r); return homes.includes(d) ? d : homes.find(i => lgRegion(i) === r); })();
     joinCircuit(t, to); t.rest = S.turn + ri(1, 4); t.early = 0;
   }
 }
@@ -13007,8 +13039,8 @@ function foldRegion(r) {
   if (!foldRegions().includes(r)) return 'No room there.';
   return inLeague(ME(), () => {
     if (S.region === r) return null;
-    const second = eachLeague(() => S.region).filter(x => x === r).length >= 1, reg = LEAGUE_SETS[r];
-    S.region = r; S.lgName = uniqueLgName(seatLgName(r, second), ME()); S.seatName = second ? reg.seat2 : reg.seat;
+    const k = freeSeat(r, ME()), reg = LEAGUE_SETS[r];
+    S.region = r; S.lgName = uniqueLgName(seatLgName(r, k), ME()); S.seatName = seatOf(reg, k);
     const cities = leagueCities();
     S.gyms.forEach((g, i) => { g.city = cities[i].id; });
     return null;
@@ -13031,6 +13063,7 @@ function removeLeague(k, info) {
     if (t.leftLg != null) t.leftLg = rm(t.leftLg);
     if (t.grudgeLg != null) t.grudgeLg = rm(t.grudgeLg); // (0.23.0)
     if (t.storedLg != null) t.storedLg = t.storedLg === k ? null : rm(t.storedLg); // (0.37.0)
+    if (t.loyal) t.loyal = t.loyal.lg === k ? null : { lg: rm(t.loyal.lg), until: t.loyal.until }; // (0.41.0)
     if (t.founded) t.founded.lg = rm(t.founded.lg);
     if (t.spon) { t.spon.lg = rm(t.spon.lg); t.spon.to = rm(t.spon.to); }
     if (t.titleLgs) t.titleLgs = t.titleLgs.map(rm);
@@ -13889,14 +13922,15 @@ function steerGaps() {
 
 // ================= THE WORLD'S REGIONS (0.30.0, design doc 6.8) =================
 // A world keeps its own list of regions in the save (S.regions), so custom regions (a 10th region, or one replacing a
-// built-in one) can join it. A region: { name, towns (8 gym cities), extra (3 towns with no gym), seat, seat2, nb (its
+// built-in one) can join it. A region: { name, towns (8 gym cities), extra (6 towns with no gym; 3 before 0.41.0), seat,
+// seat2, seat3, seat4 (0.41.0: four Leagues a region), nb (its
 // neighbours, by index), ports ({ city name: 'port' | 'railway' }), legends (the legendaries at home there), posts
 // (names for its posts, e.g. Alola's Kahuna and Trial Captain), base (the built-in region whose list it uses, or
 // null), pool (its own lines, or null) }. Neighbours are two-way: a region listing another is listed back.
-const REGION_FMT = 1;
+const REGION_FMT = 2; // (0.41.0) 2: six towns with no gym, four seats, four League names
 function builtinRegion(i) {
   const r = BUILTIN_REGIONS[i], names = r.towns.concat(r.extra || []);
-  return { name: r.name, towns: r.towns.slice(), extra: (r.extra || []).slice(), seat: r.seat, seat2: r.seat2, nb: BUILTIN_NB[i].slice(),
+  return { name: r.name, towns: r.towns.slice(), extra: (r.extra || []).slice(), seat: r.seat, seat2: r.seat2, seat3: r.seat3, seat4: r.seat4, nb: BUILTIN_NB[i].slice(),
     ports: Object.fromEntries(names.filter(n => BUILTIN_PORTS[n]).map(n => [n, BUILTIN_PORTS[n]])),
     legends: Object.keys(BUILTIN_LEGEND_HOME).filter(sp => BUILTIN_LEGEND_HOME[sp] === i), posts: r.posts ? Object.assign({}, r.posts) : null, base: i, pool: null };
 }
@@ -13918,7 +13952,7 @@ function applyRegions(given) {
 // ================= CUSTOM REGIONS (0.31.0, design doc 6.8) =================
 // The player's own regions, kept in this browser (REGION_KEY) like My Pokédex and trainer packs, made in the region
 // editor (Advanced options) and shared as a file or a paste code. A region in the library: { fmt, id, name, towns (8
-// gym cities), extra (3 towns), seat, seat2, nb (2 to 3 built-in regions next to it, by name), ports ({ place: 'port' |
+// gym cities), extra (6 towns; 3 before 0.41.0), seat, seat2, seat3, seat4, nb (2 to 3 built-in regions next to it, by name), ports ({ place: 'port' |
 // 'railway' }), legends (the legendaries at home there; null: a replacement keeps the replaced region's), posts ({
 // leader, gymtrainer }: other names for the posts, or null), pool (its lines, by first stage), added (its own new
 // Pokémon, My Pokédex entries; one over DEX_LEGEND_BST can be a legendary encounter, at home there), lock (its new
@@ -13928,7 +13962,10 @@ function applyRegions(given) {
 const REGION_KEY = 'plb-regions-v1', REGION_CODE = 'PLR1:', REGION_NAME_MAX = 24, POST_NAME_MAX = 20;
 const REGION_WARN_LOW = 180, REGION_WARN_HIGH = 330, REGION_NB = [2, 3];
 // older region files are brought up to REGION_FMT step by step: REGION_UPGRADES[n] turns format n into n + 1
-const REGION_UPGRADES = {};
+const REGION_UPGRADES = {
+  // (0.41.0) format 1 had three towns with no gym and two seats: the rest take their defaults (regionNorm)
+  1: raw => raw,
+};
 let regionLib = (() => {
   try { const v = JSON.parse(localStorage.getItem(REGION_KEY) || 'null'); if (v && Array.isArray(v.regions)) return { regions: v.regions.map(r => regionNorm(r, { keepId: true, lib: { regions: [] } }).rec).filter(Boolean) }; } catch (e) {}
   return { regions: [] };
@@ -13938,16 +13975,17 @@ const builtinRegionName = i => BUILTIN_REGIONS[i].name.replace(' League', '');
 const builtinRegionIdx = n => BUILTIN_REGIONS.findIndex((r, i) => builtinRegionName(i).toLowerCase() === String(n).toLowerCase());
 const LEGEND_CHOICES = () => Object.keys(BUILTIN_LEGEND_HOME);
 const regionId = () => 'r' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-const placesOf = rec => rec.towns.concat(rec.extra, [rec.seat, rec.seat2]);
+const placesOf = rec => rec.towns.concat(rec.extra, [rec.seat, rec.seat2, rec.seat3, rec.seat4]);
+const EXTRA_N = 6, SEAT_DEFAULTS = ['League Seat', 'Second Seat', 'Third Seat', 'Fourth Seat'];
 
 // ---------- starting a region: blank, a copy of a built-in region, or generated ----------
 function regionBlank() {
-  return { fmt: REGION_FMT, id: null, name: 'New Region', towns: Array.from({ length: 8 }, (_, i) => `City ${i + 1}`), extra: ['Town 1', 'Town 2', 'Town 3'],
-    seat: 'League Seat', seat2: 'Second Seat', nb: [], ports: {}, legends: [], posts: null, pool: [], added: [], lock: false, rivals: true };
+  return { fmt: REGION_FMT, id: null, name: 'New Region', towns: Array.from({ length: 8 }, (_, i) => `City ${i + 1}`), extra: Array.from({ length: EXTRA_N }, (_, i) => `Town ${i + 1}`),
+    seat: SEAT_DEFAULTS[0], seat2: SEAT_DEFAULTS[1], seat3: SEAT_DEFAULTS[2], seat4: SEAT_DEFAULTS[3], nb: [], ports: {}, legends: [], posts: null, pool: [], added: [], lock: false, rivals: true };
 }
 function regionCopy(i) {
   const b = builtinRegion(i), rec = regionBlank();
-  return Object.assign(rec, { name: `My ${builtinRegionName(i)}`, towns: b.towns.slice(), extra: b.extra.slice(), seat: b.seat, seat2: b.seat2,
+  return Object.assign(rec, { name: `My ${builtinRegionName(i)}`, towns: b.towns.slice(), extra: b.extra.slice(), seat: b.seat, seat2: b.seat2, seat3: b.seat3, seat4: b.seat4,
     nb: b.nb.map(builtinRegionName), ports: Object.assign({}, b.ports), legends: b.legends.slice(), posts: b.posts ? Object.assign({}, b.posts) : null,
     pool: [...builtinLines().sets[i]].sort() });
 }
@@ -13995,7 +14033,7 @@ function regionChecks(rec, lib = regionLib) {
   if (rec.posts && Object.values(rec.posts).some(x => String(x || '').length > POST_NAME_MAX)) errs.push(`Post names can be up to ${POST_NAME_MAX} characters.`);
   const lns = Object.values(rec.lgNames || {}).map(x => String(x || '').trim().toLowerCase()).filter(Boolean);
   if (lns.some(x => x.length > LG_NAME_MAX)) errs.push(`League names can be up to ${LG_NAME_MAX} characters.`);
-  if (lns.length === 2 && lns[0] === lns[1]) errs.push('The two seats\' Leagues need different names.');
+  if (lns.some((x, i) => lns.indexOf(x) !== i)) errs.push('The seats\' Leagues need different names.');
   if (builtinRegionIdx(nm) >= 0) warns.push(`${nm} is also a built-in region's name; added as a new region the two would share it.`);
   if (!st.lines.length) warns.push('The list is empty: challengers will find every Pokémon here until you add some.');
   else if (st.size < REGION_WARN_LOW || st.size > REGION_WARN_HIGH) warns.push(`${st.size} species: the built-in regions have about ${REGION_SIZE}.`);
@@ -14019,7 +14057,8 @@ function regionNorm(raw, o = {}) {
   const str = (x, max = REGION_NAME_MAX) => String(x == null ? '' : x).replace(/[<>"`\\]/g, '').trim().replace(/\s+/g, ' ').slice(0, max);
   const list = (x, n, def) => Array.from({ length: n }, (_, i) => str(Array.isArray(x) && x[i] != null ? x[i] : def(i)));
   const rec = { fmt: REGION_FMT, id: o.keepId && typeof raw.id === 'string' ? raw.id : null, name: str(raw.name) || 'Region',
-    towns: list(raw.towns, 8, i => `City ${i + 1}`), extra: list(raw.extra, 3, i => `Town ${i + 1}`), seat: str(raw.seat) || 'League Seat', seat2: str(raw.seat2) || 'Second Seat' };
+    towns: list(raw.towns, 8, i => `City ${i + 1}`), extra: list(raw.extra, EXTRA_N, i => `Town ${i + 1}`) };
+  SEAT_KEYS.forEach((k, j) => { rec[k] = str(raw[k]) || SEAT_DEFAULTS[j]; });
   rec.nb = [...new Set((Array.isArray(raw.nb) ? raw.nb : []).map(n => builtinRegionIdx(n)).filter(i => i >= 0))].map(builtinRegionName);
   const names = new Set(rec.towns.concat(rec.extra));
   rec.ports = Object.fromEntries(Object.entries(raw.ports && typeof raw.ports === 'object' ? raw.ports : {}).filter(([k, v]) => names.has(k) && (v === 'port' || v === 'railway')));
@@ -14027,8 +14066,8 @@ function regionNorm(raw, o = {}) {
   // (0.31.0) any of the four posts can have a name of the region's own (blank: the usual one)
   const posts = raw.posts && typeof raw.posts === 'object' ? Object.fromEntries(['leader', 'gymtrainer', 'e4', 'champion'].map(k => [k, str(raw.posts[k], POST_NAME_MAX)]).filter(([, v]) => v)) : null;
   rec.posts = posts && Object.keys(posts).length ? posts : null;
-  // (0.33.0) the default names of the Leagues at its two seats (blank: `<Region> League` and `<seat2> League`)
-  const ln = raw.lgNames && typeof raw.lgNames === 'object' ? raw.lgNames : {}, lns = [str(ln[0], LG_NAME_MAX), str(ln[1], LG_NAME_MAX)];
+  // (0.33.0) the default names of the Leagues at its seats (blank: `<Region> League`, then `<seat> League`; four since 0.41.0)
+  const ln = raw.lgNames && typeof raw.lgNames === 'object' ? raw.lgNames : {}, lns = SEAT_KEYS.map((_, j) => str(ln[j], LG_NAME_MAX));
   rec.lgNames = lns.some(Boolean) ? lns : null;
   rec.lock = !!raw.lock; rec.rivals = raw.rivals !== false;
   // its own Pokémon: My Pokédex entries (a legendary encounter too, over DEX_LEGEND_BST), checked with every other new
@@ -14118,7 +14157,7 @@ function worldRegions(choices) {
   const nbOf = rec => rec.nb.map(builtinRegionIdx).filter(i => i >= 0);
   // (0.31.0) a region's own legendaries (legendary encounters among its new Pokémon) are at home there
   const ownLegs = rec => rec.added.filter(e => e.legend && !e.from).map(e => e.name);
-  const make = (rec, old, at) => ({ name: rec.name + ' League', towns: rec.towns.slice(), extra: rec.extra.slice(), seat: rec.seat, seat2: rec.seat2,
+  const make = (rec, old, at) => ({ name: rec.name + ' League', towns: rec.towns.slice(), extra: rec.extra.slice(), seat: rec.seat, seat2: rec.seat2, seat3: rec.seat3, seat4: rec.seat4,
     nb: nbOf(rec).length ? nbOf(rec) : old ? old.nb.slice() : null, ports: Object.assign({}, rec.ports),
     legends: (rec.legends ? rec.legends.slice() : old ? old.legends.slice() : []).concat(ownLegs(rec)), claims: rec.legends ? rec.legends.slice() : null,
     posts: rec.posts ? Object.assign({}, rec.posts) : null, lgNames: rec.lgNames ? rec.lgNames.slice() : null, base: null, pool: rec.pool.slice(), rep: old ? at : null, from: rec.name, lock: !!rec.lock, solo: rec.rivals === false });
@@ -14642,7 +14681,194 @@ function planSuggest(t) {
   return picks.map(m => (m.rid != null ? { r: m.rid } : own.includes(m) ? { o: m.uid } : null)).filter(Boolean);
 }
 
-if (typeof module !== 'undefined') module.exports = { cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+
+// ================= THE REGIONAL FIELD (0.41.0, design doc 6.19 part 2) =================
+// Challengers belong to a region, not a League. Each one is still listed on one League's circuit (S.challengers): the
+// League they are challenging now, or challenged last. Between runs they draw which of the region's Leagues to take on
+// next (regionDraw, from endRun), weighing its prestige (more so for strong challengers), its standing in their
+// hometown, hometown loyalty (a League that Held or better their hometown keeps a pull for LOYAL_YEARS), and for weaker
+// challengers the beatable walls (runs reaching the Elite Four) and the underdog pull (a quieter League with fewer
+// challengers). A new challenger's first draw also looks at Leagues from other regions with renown in their hometown.
+// The field aims at FIELD_PER challengers a League in the region, growing by up to FIELD_GROW as the region's cities
+// grow; newcomers stop coming while a region is past FIELD_FULL of it, and weak challengers give up sooner in a crowded
+// field. Hiring reads the region's field: a League's own circuit plus the region's other challengers resting between
+// runs. All numbers provisional (item 51).
+const FIELD_PER = 30, FIELD_GROW = 0.5, FIELD_FULL = 1.1, FIELD_THIN = 0.8, FIELD_CROWD = 3, FIELD_CROWD_MAX = 4;
+const DRAW_PREST = 1, DRAW_STAR = 1.5, DRAW_HOME = 1.5, DRAW_LOYAL = 1.5, LOYAL_YEARS = 3, DRAW_EASE = 1, DRAW_UNDER = 0.8, DRAW_RENOWN = 0.6, DRAW_OVR = 66;
+const FIELD_LOG = { draws: 0, moved: 0, loyal: 0, renown: 0, skipped: 0, extra: 0, crowdQuit: 0 };
+const lgObj = i => (i === (S.lg || 0) ? S : S.leagues[i]);
+const lgRegion = i => { const L = i != null && i >= 0 && i < nLeagues() ? lgObj(i) : null; return L ? L.region : null; };
+// the Leagues in region r a challenger can take on (your League while it is being founded has no gyms yet)
+function regionLgs(r) {
+  const out = [];
+  for (let i = 0; i < nLeagues(); i++) if (lgRegion(i) === r && !(S.founding && i === ME())) out.push(i);
+  return out;
+}
+const fieldIds = r => regionLgs(r).flatMap(i => lgObj(i).challengers || []);
+const fieldSize = r => fieldIds(r).length;
+// the field a region aims at: FIELD_PER a League, up to FIELD_GROW more as its cities fill their slots
+function fieldTarget(r) {
+  const n = regionLgs(r).length; if (!n) return 0;
+  const cs = Object.values(S.cities || {}).filter(c => c.region === r);
+  const grown = cs.reduce((a, c) => a + citySlots(c) - 1, 0), room = cs.length * 2;
+  return Math.round(FIELD_PER * n * (1 + FIELD_GROW * (room ? Math.min(1, grown / room) : 0)));
+}
+// how full region r's field is for its aim (cached for the week: it is read on every run's end)
+let crowdCache = { turn: -1, of: null, by: {} };
+function fieldCrowd(r) {
+  if (crowdCache.turn !== S.turn || crowdCache.of !== S) crowdCache = { turn: S.turn, of: S, by: {} };
+  if (crowdCache.by[r] == null) { const tg = fieldTarget(r); crowdCache.by[r] = tg ? fieldSize(r) / tg : 1; }
+  return crowdCache.by[r];
+}
+// how much likelier a weak challenger is to give up in a crowded field (less in a thin one)
+const crowdMul = r => clamp(1 + FIELD_CROWD * (fieldCrowd(r) - 1), 0.5, FIELD_CROWD_MAX);
+// hometown loyalty: a League that Holds (or better) a challenger's hometown keeps a pull on them for LOYAL_YEARS
+function noteLoyal(t) {
+  const hc = homeCity(t), c = hc != null ? S.cities[hc] : null;
+  if (c && c.ctrl != null && c.tier >= 2 && lgRegion(c.ctrl) === c.region) {
+    if (!t.loyal || t.loyal.lg !== c.ctrl) FIELD_LOG.loyal++;
+    t.loyal = { lg: c.ctrl, until: S.season + LOYAL_YEARS };
+  } else if (t.loyal && S.season > t.loyal.until) t.loyal = null;
+}
+// the draw: [{ i, w }] for each League challenger t could take on next in region r (with `renown`, also Leagues from
+// other regions with renown in their hometown)
+function drawWeights(t, r, opts = {}) {
+  const lgs = regionLgs(r); if (!lgs.length) return [];
+  const strong = ovr(t) >= DRAW_OVR, hc = homeCity(t), c = hc != null ? S.cities[hc] : null;
+  const there = c ? gymMap()[c.id] || [] : [], tot = there.reduce((a, i) => a + Math.max(0, standing(c, i)), 0);
+  const ease = leagueEase(), sizes = lgs.map(i => (lgObj(i).challengers || []).length);
+  const avgN = sizes.reduce((a, b) => a + b, 0) / lgs.length, eAvg = lgs.reduce((a, i) => a + (ease[i] || 0), 0) / lgs.length;
+  const out = lgs.map((i, k) => {
+    let w = 1 + DRAW_PREST * (strong ? DRAW_STAR : 1) * Math.max(0, prestOf(i)) / 100;
+    if (c && tot > 0 && there.includes(i)) w += DRAW_HOME * Math.max(0, standing(c, i)) / tot;
+    if (t.loyal && t.loyal.lg === i && S.season <= t.loyal.until) w += DRAW_LOYAL;
+    if (!strong) {
+      if (eAvg > 0) w += DRAW_EASE * clamp((ease[i] || 0) / eAvg - 1, -0.8, 0.8);
+      if (lgs.length > 1) w += DRAW_UNDER * clamp(avgN / Math.max(1, sizes[k]) - 1, -0.6, 0.6);
+    }
+    return { i, w: Math.max(0.1, w) };
+  });
+  if (opts.renown && c) for (let j = 0; j < nLeagues(); j++) if (!lgs.includes(j) && renown(c, j) > 0 && !(S.founding && j === ME())) out.push({ i: j, w: DRAW_RENOWN * Math.min(1, renown(c, j) / 10), away: true });
+  return out;
+}
+function drawLeague(t, r, opts) {
+  const ws = drawWeights(t, r, opts); if (!ws.length) return null;
+  let x = rand() * ws.reduce((a, b) => a + b.w, 0);
+  for (const o of ws) { x -= o.w; if (x <= 0) { if (o.away) FIELD_LOG.renown++; return o.i; } }
+  return ws[ws.length - 1].i;
+}
+// between runs (from endRun): which of the region's Leagues a challenger takes on next. Moves them onto its circuit
+// without the news and move record a change of region gets. True if they moved.
+function regionDraw(t) {
+  if (t.role !== 'challenger' || t.spon || t.hired || t.hireDue) return false;
+  noteLoyal(t);
+  const from = homeLeague(t), r = lgRegion(from);
+  if (r == null || regionLgs(r).length < 2) return false;
+  FIELD_LOG.draws++;
+  const to = drawLeague(t, r);
+  if (to == null || to === from) return false;
+  inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
+  t.lg = to;
+  inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
+  FIELD_LOG.moved++;
+  return true;
+}
+// the region a trainer joining the circuits goes to: the region of the League they were last with, else their
+// hometown's, else the thinnest field
+function fieldRegionFor(t) {
+  const live = [...new Set(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => !(S.founding && i === ME())).map(lgRegion))];
+  if (!live.length) return null;
+  const was = lgRegion(t.lg);
+  if (live.includes(was)) return was;
+  if (t.home && live.includes(t.home.r)) return t.home.r;
+  return live.sort((a, b) => fieldCrowd(a) - fieldCrowd(b))[0];
+}
+// newcomers (from arrivals): each region with Leagues gets one per League, made there (so their hometowns are there),
+// none while its field is past FIELD_FULL of its aim and one more while it is under FIELD_THIN. Each takes the draw,
+// with renown from other regions counting.
+function fieldArrivals() {
+  const regions = [...new Set(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => !(S.founding && i === ME())).map(lgRegion))];
+  for (const r of regions) {
+    const lgs = regionLgs(r), crowd = fieldCrowd(r);
+    if (crowd >= FIELD_FULL) { FIELD_LOG.skipped += lgs.length; continue; }
+    const n = lgs.length + (crowd < FIELD_THIN ? 1 : 0); if (crowd < FIELD_THIN) FIELD_LOG.extra++;
+    for (const id of inLeague(lgs[0], () => makeNewcomers(n))) {
+      const t = T(id); if (!t || !['prospect', 'free'].includes(t.role)) continue;
+      const to = drawLeague(t, r, { renown: true });
+      joinCircuit(t, to == null ? lgs[0] : to);
+      if (to != null && lgRegion(to) !== r) regionMove(t, r, lgRegion(to)); // drawn by renown to another region
+      t.rest = S.turn + ri(1, 3); t.early = 0;
+    }
+  }
+}
+// the bound League's hiring field: its own circuit, and the region's other challengers resting between runs (not
+// hired elsewhere, not another League's contender). The report's fixed tiers keep their own circuit only.
+function fieldPool() {
+  const me = S.lg || 0, out = challengers().filter(Boolean);
+  if (fixedStaff()) return out;
+  for (const i of regionLgs(S.region)) if (i !== me) for (const id of lgObj(i).challengers || []) {
+    const t = T(id); if (t && t.role === 'challenger' && t.rest != null && !t.hired && !t.hireDue && !underContract(t, me)) out.push(t);
+  }
+  return out;
+}
+
+// ---------- rebuild mode for rival Leagues (0.41.0, design doc 6.19 follow-up) ----------
+// A rival whose share of its region's field falls under REBUILD_UNDER of an even share (at New Year, with two or more
+// Leagues in the region) rebuilds until its share is back to REBUILD_BACK: it spends only in its strongest city (most
+// standing among its gym cities), always tries to send a contender, and each New Year replaces its costliest
+// non-Champion member of staff with someone cheaper (TRIM_DROP OVR or more below). Then it returns to its aim.
+const REBUILD_UNDER = 0.6, REBUILD_BACK = 0.85, TRIM_DROP = 3;
+const REBUILD_LOG = { into: 0, out: 0, years: 0, trims: 0 };
+const rebuilding = () => !!(S.fin && S.fin.rebuild);
+function fieldShare(i = S.lg || 0) {
+  const r = lgRegion(i), n = fieldSize(r);
+  return n ? (lgObj(i).challengers || []).length / n : 0;
+}
+function rebuildNewYear() {
+  const f = S.fin; if (!f || !f.aim || fixedStaff()) return;
+  const n = regionLgs(S.region).length, even = n ? 1 / n : 1, sh = fieldShare();
+  if (n < 2) { f.rebuild = null; return; }
+  if (!f.rebuild && sh < REBUILD_UNDER * even) {
+    f.rebuild = { since: S.season }; REBUILD_LOG.into++;
+    const text = `The ${S.lgName} is rebuilding: it draws only ${Math.round(sh * 100)}% of the region's challengers.`;
+    news(text, 'league'); noteChange(text);
+  } else if (f.rebuild && sh >= REBUILD_BACK * even) {
+    f.rebuild = null; REBUILD_LOG.out++;
+    const text = `The ${S.lgName} has finished rebuilding and returns to its aim as a ${AIMS[f.aim].name.toLowerCase()}.`;
+    news(text, 'league'); noteChange(text);
+  }
+  if (f.rebuild) { REBUILD_LOG.years++; aimTrim(); }
+}
+// the gym index of the bound League's strongest city (most standing there)
+function strongestGym() {
+  let best = null, v = -Infinity;
+  S.gyms.forEach((g, i) => { const st = standing(S.cities[g.city]); if (st > v) { v = st; best = i; } });
+  return best;
+}
+// replace the best-paid non-Champion member of staff with a cheaper hire (a money-maker's pick, TRIM_DROP below)
+function aimTrim() {
+  const ok = t => t && !t.acting && t.stepDown == null && !t.quit && !founderChamp(t);
+  const cands = S.e4.map((id, k) => ({ t: T(id), k })).concat(S.gyms.map((g, i) => ({ t: T(g.leader), i })).filter(x => !S.gyms[x.i].acting)).filter(x => ok(x.t)).sort((a, b) => payOf(b.t) - payOf(a.t));
+  const w = cands[0]; if (!w) return;
+  const post = w.k != null ? 'e4' : 'leader', old = w.t, floor = post === 'e4' ? E4_HIRE_MIN : GYM_HIRE_MIN;
+  if (ovr(old) - TRIM_DROP < floor) return;
+  const f = S.fin, aim = f.aim; let c;
+  f.aim = 'money'; try { c = rivalHire(floor, [old.id], post, 0); } finally { f.aim = aim; }
+  if (!c || ovr(c) > ovr(old) - TRIM_DROP || STAFF_ROLES.includes(c.role)) { if (c) c.bidMul = null; return; }
+  const was = postName(old);
+  if (post === 'e4') S.e4[w.k] = null; else S.gyms[w.i].leader = null;
+  closePost(old); severance(old, was); old.letGoAt = S.turn;
+  const fate = retireOrReturn(old, `was let go as ${was} while the League rebuilt`);
+  if (c.role === 'retired') unretire(c);
+  dropFromCircuits(c.id);
+  installElite(c, post, post === 'e4' ? w.k : w.i);
+  if (post === 'leader') staffGym(w.i);
+  REBUILD_LOG.trims++;
+  const text = `Rebuilding, the ${S.lgName} let ${old.name} go as ${was} (${fate === 'retired' ? 'retired' : 'back to the circuit'}) and brought in the cheaper ${dn(c)}.`;
+  news(text, 'move', c.id); noteChange(text);
+}
+
+if (typeof module !== 'undefined') module.exports = { FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -14997,7 +15223,8 @@ let setupRivals = [];
 let setupNames = [];
 // (0.30.0) how long a simulated year takes with n Leagues, in seconds: measured in Node at 0.29.0 (a browser may be
 // slower), straight lines between the measurements and on past the last; a guide for the setup screen's warning
-const SPEED_AT = [[1, 2], [3, 5.5], [6, 14], [10, 20], [14, 37], [18, 65]], SPEED_AMBER = 20, SPEED_RED = 40;
+// (0.41.0) rescaled for the regional field's smaller fields (measured in Node at years 2 to 3, scaled to the 0.29.0 table's machine)
+const SPEED_AT = [[1, 2], [3, 5.5], [6, 9.5], [10, 17], [18, 33], [36, 115]], SPEED_AMBER = 20, SPEED_RED = 40;
 function speedEst(n) {
   let i = SPEED_AT.findIndex(p => p[0] >= n); if (i < 1) i = i === 0 ? 1 : SPEED_AT.length - 1;
   const [a, b] = [SPEED_AT[i - 1], SPEED_AT[i]];
@@ -15525,22 +15752,22 @@ function viewRegionEditor() {
   const spTag = b => `<span class="rg-sp">${esc(b)}${SP[b] ? ' ' + SP[b].types.map(t => `<span class="dot sm" title="${t}" style="--tc:${TYPE_COLOR[t]};--tc2:${TYPE_COLOR[t]}"></span>`).join('') : ''}<button data-act="rgrm" data-k="${esc(b)}" aria-label="Remove ${esc(b)}">×</button></span>`;
   return `<main class="wrap setup">
     <section class="panel callout"><div class="eyebrow">Advanced options · Custom regions</div><h1>${d.id ? 'Edit ' + esc(libRegion(d.id) ? libRegion(d.id).name : d.name) : 'New region'}</h1>
-      <p class="muted small">A region always has 8 gym cities, 3 towns and 2 League seats. Saved in this browser; worlds already running keep their own copy.</p>
+      <p class="muted small">A region always has 8 gym cities, 6 towns and 4 League seats (up to four Leagues). Saved in this browser; worlds already running keep their own copy.</p>
       <div class="confirm-row"><button class="btn primary" data-act="rgsave">Save region</button><button class="btn" data-act="rgcancel">Cancel</button></div></section>
     ${rgMsg ? `<p class="cf-msg">${esc(rgMsg)}</p>` : ''}
     ${rgErrs.length ? `<ul class="warn cf-errs">${rgErrs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     <section class="panel"><div class="ph"><h2>The region</h2><span class="muted">Name, rules and post names</span></div>
       <div class="cf-grid">${rgField('Region name', 'name', d.name)}${rgField('Gym Leaders are called', 'posts.leader', d.posts && d.posts.leader, POST_NAME_MAX, 'Gym Leader')}${rgField('Gym trainers are called', 'posts.gymtrainer', d.posts && d.posts.gymtrainer, POST_NAME_MAX, 'Gym trainer')}${rgField('The Elite Four are called', 'posts.e4', d.posts && d.posts.e4, POST_NAME_MAX, 'Elite Four')}${rgField('The Champion is called', 'posts.champion', d.posts && d.posts.champion, POST_NAME_MAX, 'Champion')}</div>
       <div class="adv-list">
-        <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (two to a region). Off: only your League.</span></span></button>
+        <button class="adv-opt${d.rivals !== false ? ' on' : ''}" data-act="rgflag" data-k="rivals" role="switch" aria-checked="${d.rivals !== false}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Open to rival Leagues</b><span class="muted small">Rival Leagues may start here and open here later (up to four to a region). Off: only your League.</span></span></button>
         <button class="adv-opt${d.lock ? ' on' : ''}" data-act="rgflag" data-k="lock" role="switch" aria-checked="${!!d.lock}"><span class="adv-switch" aria-hidden="true"><i></i></span><span class="adv-text"><b>Keep its new Pokémon here</b><span class="muted small">This region's own new Pokémon never migrate, ride lanes or charters, or leave with a challenger moving away, and its own legendaries appear only here. Off: they travel like any Pokémon.</span></span></button>
       </div></section>
     <section class="panel"><div class="ph"><h2>Places</h2><span class="muted">Mark ports and railways for shipping lanes</span></div>
       <div class="eyebrow">Gym cities</div><div class="rg-places">${d.towns.map((_, i) => place(`Gym ${i + 1}`, `towns.${i}`, i)).join('')}</div>
       <div class="eyebrow">Towns with no gym</div><div class="rg-places">${d.extra.map((_, i) => place(`Town ${i + 1}`, `extra.${i}`, 8 + i)).join('')}</div>
-      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}</div>
-      <div class="eyebrow">League names</div><p class="muted small">The names the Leagues at each seat take unless named at a new game. Blank: the region's name at the first seat (${esc((d.name || 'Region') + ' League')}), the seat's name at the second (${esc((d.seat2 || 'Second Seat') + ' League')}).</p>
-      <div class="cf-grid">${rgField('League at the first seat', 'lgNames.0', (d.lgNames || {})[0], LG_NAME_MAX, (d.name || 'Region') + ' League')}${rgField('League at the second seat', 'lgNames.1', (d.lgNames || {})[1], LG_NAME_MAX, (d.seat2 || 'Second Seat') + ' League')}</div></section>
+      <div class="eyebrow">League seats</div><div class="rg-places">${place('The League\'s seat', 'seat')}${place('A second League\'s seat', 'seat2')}${place('A third League\'s seat', 'seat3')}${place('A fourth League\'s seat', 'seat4')}</div>
+      <div class="eyebrow">League names</div><p class="muted small">The names the Leagues at each seat take unless named at a new game. Blank: the region's name at the first seat (${esc((d.name || 'Region') + ' League')}), the seat's name at the others (${esc((d.seat2 || 'Second Seat') + ' League')}).</p>
+      <div class="cf-grid">${rgField('League at the first seat', 'lgNames.0', (d.lgNames || {})[0], LG_NAME_MAX, (d.name || 'Region') + ' League')}${['second', 'third', 'fourth'].map((w, j) => rgField(`League at the ${w} seat`, `lgNames.${j + 1}`, (d.lgNames || {})[j + 1], LG_NAME_MAX, (d[SEAT_KEYS[j + 1]] || w[0].toUpperCase() + w.slice(1) + ' Seat') + ' League')).join('')}</div></section>
     <section class="panel"><div class="ph"><h2>Neighbours</h2><span class="muted">${d.nb.length} chosen · pick 2 or 3</span></div>
       <p class="muted small">Migrations come from neighbours (and now and then from further off). Neighbours are two-way. With none chosen, a replacement keeps the replaced region's, and a new region takes the two built-in regions sharing most of its Pokémon.</p>
       <div class="rg-chips">${BUILTIN_REGIONS.map((_, i) => tog('rgnb', builtinRegionName(i), d.nb.includes(builtinRegionName(i)), builtinRegionName(i))).join('')}</div></section>
@@ -16052,16 +16279,22 @@ async function imgImport(fileList) {
 }
 async function imgClearAll() { const keys = [...IMGS.keys()]; for (const k of keys) imgUncache(k); try { await imgTx('readwrite', st => st.clear()); } catch (e) {} imgClearArm = false; imgMsg = `Removed ${keys.length} images.`; imgRefresh(); }
 // ---------- the badge circuit, gyms and Elite ----------
+// (0.41.0) the circuit shows this League's challengers, or the whole region's field (circScope 'region'): challengers
+// belong to the region and draw which of its Leagues to take on before each run
+let circScope = 'lg';
 function viewCircuit() {
   // challengers out on a run first (most badges first), then those resting between runs (soonest back first)
-  const out = t => t.rest == null;
-  const rows = challengers().sort((a, b) => out(b) - out(a) || (out(a) ? b.badges.length - a.badges.length || ovr(b) - ovr(a) : a.rest - b.rest));
-  const onRun = rows.filter(out).length;
+  const out = t => t.rest == null, r = S.region, lgs = regionLgs(r), region = circScope === 'region' && lgs.length > 1;
+  const rows = (region ? fieldIds(r).map(T).filter(Boolean) : challengers()).sort((a, b) => out(b) - out(a) || (out(a) ? b.badges.length - a.badges.length || ovr(b) - ovr(a) : a.rest - b.rest));
+  const onRun = rows.filter(out).length, size = fieldSize(r), aim = fieldTarget(r);
+  const shares = lgs.map(i => `${i === (S.lg || 0) ? '<b>' : ''}${esc(lgShort(i))} ${(lgObj(i).challengers || []).length}${i === (S.lg || 0) ? '</b>' : ''}`).join(' · ');
+  const scope = lgs.length > 1 ? `<span class="confirm-row"><button class="btn small${region ? '' : ' primary'}" data-act="circscope" data-v="lg">This League</button><button class="btn small${region ? ' primary' : ''}" data-act="circscope" data-v="region">The region's field</button></span>` : '';
   return `${staffNotices()}${legendBanner()}${roamBanner()}${stormBanner()}${outbreakBanner()}${yearSoFar()}
-  <section class="panel"><div class="ph"><h2>Badge circuit${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${rows.length} challengers: ${onRun} out on a run, ${rows.length - onRun} resting. Each is on their own clock: a run starts with their best ${START_TEAM} Pokémon, takes the gyms in any order, and ends on a third loss at one gym or after the Elite Four.</span></div>
-  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th><th>Badges</th><th title="Gym tries won and lost this year">Gym W–L</th><th>Where they are</th><th>Pokémon</th></tr></thead><tbody>
+  <section class="panel"><div class="ph"><h2>Badge circuit${region ? ' · ' + esc(regionWord(r)) + "'s field" : nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${rows.length} challengers: ${onRun} out on a run, ${rows.length - onRun} resting. Each is on their own clock: a run starts with their best ${START_TEAM} Pokémon, takes the gyms in any order, and ends on a third loss at one gym or after the Elite Four.</span></div>
+  ${lgs.length > 1 ? `<p class="small">The region's field: <b>${size}</b> challengers (it aims at about ${aim}). Before each run a challenger draws which of the region's Leagues to take on, by prestige, standing in their hometown, loyalty to a League that holds it, and for weaker challengers easier walls and quieter Leagues. Now: ${shares}.</p>${scope}` : ''}
+  <div class="scroll"><table class="tbl"><thead><tr><th>#</th><th>Trainer</th><th>OVR</th><th>Age</th><th>Type</th>${region ? '<th>League</th>' : ''}<th>Badges</th><th title="Gym tries won and lost this year">Gym W–L</th><th>Where they are</th><th>Pokémon</th></tr></thead><tbody>
   ${rows.map((t, i) => { const w = t.weekLog.filter(e => e.won === true).length, l = t.weekLog.filter(e => e.won === false).length;
-    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}${hireTags(t)}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td><td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${gymStatus(t)}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
+    return `<tr${out(t) ? '' : ' class="resting"'}><td class="num">${i + 1}</td><td>${tname(t.id)}${t.joined === S.season ? ' <span class="tag">rookie</span>' : ''}${hireTags(t)}</td><td>${ovrPill(t)}</td><td class="num">${t.age}</td><td>${specChips(t)}</td>${region ? `<td class="small">${esc(lgShort(lgOf(t)))}</td>` : ''}<td>${out(t) ? badgeRow(t) : '<span class="muted">—</span>'}</td><td class="num">${w}–${l}</td><td>${inLeague(lgOf(t), () => gymStatus(t))}</td><td>${teamDots(t)}</td></tr>`; }).join('')}
   </tbody></table></div></section>${skyPanel()}`;
 }
 // how a run ended, in words
@@ -16220,8 +16453,8 @@ function viewHire() {
   ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : c.from === 'rival' ? 'their League gets the signing fee' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
-const PICK_FROM = { circuit: 'Circuit', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
-const pickFrom = c => PICK_FROM[c.from] + (c.from === 'rival' || c.from === 'away' ? ' · ' + lgShort(c.lg) : '') + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
+const PICK_FROM = { circuit: 'Circuit', field: 'Region\'s field', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
+const pickFrom = c => (c.from === 'circuit' && lgOf(c.t) !== (S.lg || 0) ? `${PICK_FROM.field} · last at the ${lgShort(lgOf(c.t))}` : PICK_FROM[c.from]) + (c.from === 'rival' || c.from === 'away' ? ' · ' + lgShort(c.lg) : '') + (c.gym != null ? ' · ' + townName(c.gym) : c.seat != null ? ' #' + (c.seat + 1) : c.from === 'retired' ? ' · Year ' + c.t.retiredSeason : '');
 // ---------- your staff (0.7.0) ----------
 // Every post of the player's League in one place: let anyone but the Champion go, swap two Gym Leaders or two Elite
 // Four members, and replace gym trainers by hand. A senior post someone leaves waits for you with an acting holder.
@@ -16327,7 +16560,8 @@ function leagueRow(i) {
     const h = S.history.filter(x => x.titles != null), lh = h[h.length - 1];
     return { i, name: S.lgName, aim: f ? (f.aim ? AIMS[f.aim].name : 'Yours') : '—', money: f ? f.money : null, estate: f ? estateCost() : null, inc: last ? sum(last.in) : null, out: last ? sum(last.out) : null,
       wage: f ? wageBill() : null, ctrl: S.gyms.filter(g => { const c = S.cities[g.city]; return c.ctrl === i && c.tier >= 2; }).length, strong: S.gyms.filter(g => strongholdOf(S.cities[g.city], i)).length, shared: S.gyms.filter(g => (m[g.city] || []).length > 1).length,
-      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, old: (S.oldNames || []).map(x => x.name), prest: Math.round(S.prest || 0), spon: contendersOf(i).length };
+      let: lh ? lh.titles : null, perfect: h.filter(x => !x.titles).length, years: h.length, founder: S.founder ? T(S.founder) : null, old: (S.oldNames || []).map(x => x.name), prest: Math.round(S.prest || 0), spon: contendersOf(i).length,
+      field: S.challengers.length, share: fieldShare(i), rebuild: !!(f && f.rebuild) };
   });
 }
 // (0.33.0) renaming from the League table: your League any time, a rival with Rename rival Leagues on
@@ -16342,9 +16576,9 @@ function viewTable() {
   const rows = Array.from({ length: nLeagues() }, (_, i) => leagueRow(i)).sort((a, b) => (b.money ?? -1e12) - (a.money ?? -1e12));
   const avg = rows.filter(r => r.money != null), am = avg.length ? avg.reduce((a, r) => a + r.money, 0) / avg.length : 0;
   return `<section class="panel callout"><div class="eyebrow">${nLeagues()} Leagues</div><h2>League table</h2>
-    <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Built is what the League owns in cities and at its seat, at cost. Income and spending are last year's; cities count those where the League has a gym and Holds it or better, with how many are Strongholds (shared cities in brackets). Trainers let through are last year's.</p></section>
-  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th><th title="Earned each New Year, fading a tenth a year">Prestige</th><th>Contenders</th></tr></thead><tbody>
-    ${rows.map(r => `<tr${r.i === ME() && handOn() ? ' class="me"' : ''}><td>${lgNameCell(r)}</td><td class="small">${r.aim}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.strong ? ` <span class="small muted">${r.strong} strong</span>` : ''}${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td><td class="num">${r.prest}</td><td class="num">${r.spon}</td></tr>`).join('')}
+    <p>Ranked by money: success earns money, and money buys more ways to succeed. The world's average is <b>${money(am)}</b>. Built is what the League owns in cities and at its seat, at cost. Income and spending are last year's; cities count those where the League has a gym and Holds it or better, with how many are Strongholds (shared cities in brackets). Trainers let through are last year's. Challengers counts those taking the League on now or last, with its share of its region's field; a rival drawing well under an even share rebuilds.</p></section>
+  <section class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>League</th><th>Aim</th><th>Money</th><th>Built</th><th>Income</th><th>Spending</th><th>Wages/wk</th><th>Cities</th><th>Let through</th><th>Perfect years</th><th title="Earned each New Year, fading a tenth a year">Prestige</th><th title="Challengers taking it on now or last, and its share of the region's field">Challengers</th><th>Contenders</th></tr></thead><tbody>
+    ${rows.map(r => `<tr${r.i === ME() && handOn() ? ' class="me"' : ''}><td>${lgNameCell(r)}</td><td class="small">${r.aim}${r.rebuild ? ' <span class="tag notice">Rebuilding</span>' : ''}</td><td class="num">${r.money == null ? '—' : money(r.money)}</td><td class="num">${r.estate == null ? '—' : money(r.estate)}</td><td class="num">${r.inc == null ? '—' : money(r.inc)}</td><td class="num">${r.out == null ? '—' : money(r.out)}</td><td class="num">${r.wage == null ? '—' : money(r.wage)}</td><td class="num">${r.ctrl} of 8${r.strong ? ` <span class="small muted">${r.strong} strong</span>` : ''}${r.shared ? ` <span class="small muted">(${r.shared} shared)</span>` : ''}</td><td class="num">${r.let ?? '—'}</td><td class="num">${r.perfect} of ${r.years}</td><td class="num">${r.prest}</td><td class="num">${r.field} <span class="small muted">${Math.round(r.share * 100)}%</span></td><td class="num">${r.spon}</td></tr>`).join('')}
   </tbody></table></div></section>`;
 }
 // ---------- contenders (0.17.0, stage 5) ----------
@@ -17430,20 +17664,21 @@ const GLOSS_TERMS = {
     ['Aims', 'Each rival League has an aim. A wall-builder hires the best, counters the meta, builds gym features and pays for bans; a star-maker hires young and builds training halls, a youth academy and a scouting office; a money-maker keeps wages down, builds attractions and holds a reserve. A rival in the red turns money-maker until it is back on its feet, then goes back to its old aim; a money-maker by choice far richer than the world\'s average turns to a wall or to stars. A rich rival bids over the asking pay when it hires, and at New Year may pay to replace its weakest Elite Four member or Gym Leader with a clearly better trainer. It never builds more than its running income can keep up.'],
     ['Standing and control', `Standing is a League's reputation in a city where it has a gym. Each New Year it grows from how the gym held against the region's average (a point per percentage point), from presence (a point a year for every ${money(PRESENCE_PER)} of buildings standing there; nothing while they have lapsed), from prestige (a tenth of the League's prestige in every home city) and from local heroes (staff whose hometown it is: ${HERO_PTS.champion} for the Champion, ${HERO_PTS.e4} an Elite Four member, ${HERO_PTS.leader} a Gym Leader, ${HERO_PTS.gymtrainer} a gym trainer). A League under half the leader's standing gains half again as fast. Then all standing fades by a quarter. Control is graded by the leader's lead over the second League (or the strongest renown): Contested (under ${Math.round((TIER_AT[0] - 1) * 100)}% ahead: income shared by standing), Leaning (the leader takes ${Math.round(TIER_SHARE[1] * 100)}%), Held (${Math.round(TIER_SHARE[2] * 100)}% and prestige) and Stronghold (more than ${TIER_AT[2]} times the second: ${Math.round(TIER_SHARE[3] * 100)}%, more prestige, a small crowd edge for its gym there, hometown trainers who sign for less prestige, and first refusal on a rival's distress sale there). A city earns ${CITY_INCOME.map(money).join(', ')} a week by its size; a League alone there takes it all, less any renown's slice.`],
     ['Renown', `What a League earns in a city where it has no gym, usually in another region: a quarter of its prestige spillover, ${RN_BADGE} for each badge its contenders win there, ${RN_TITLE} in every gym city of a League its contender beats for the title, and ${RN_WORLD} in every other region's cities for a World title. It fades by a quarter each New Year. Renown never controls a city, but it counts at a third of its size (never more than half the leader's standing) against the leader's lead, which can drop them a tier, and takes up to ${Math.round(RN_SLICE * 100)}% of the city's income, shared by renown. Each city's renown shows on the Cities page.`],
+    ['The regional field', `Challengers belong to a region, not a League. Before each run a challenger draws which of the region's Leagues to take on: a League's prestige counts (more for strong challengers), so does its standing in the challenger's hometown, and a League that Held or better their hometown keeps their loyalty for ${LOYAL_YEARS} years. Weaker challengers also favour Leagues where runs get further and quieter Leagues with fewer challengers. A new challenger may be drawn to a League from another region with renown in their hometown. A region's field aims at about ${FIELD_PER} challengers a League in it, a little more as its cities grow; newcomers stop coming while it is well past that, and weak challengers give up sooner in a crowded field. You hire from the region's field: your circuit and the region's other challengers resting between runs. The Circuit page shows your League's challengers or the whole field.`],
     ['Hometowns', `Every trainer comes from a city or town of the region they were made in (on their profile). Staff in their hometown lift their League's standing there; when another League hires them away, that goes with them. A trainer from a city that is a League's Stronghold needs ${Math.round((1 - STRONG_RECRUIT) * 100)}% less prestige to sign for it.`],
-    ['League table', 'Every League ranked by money, with last year\'s income and spending, the wage bill, cities controlled and the wall. Balance in this game is economic: Leagues should stay close to level, and one that falls behind can catch up (challengers drift to walls they can get further against, and stars ask a little more of a League far richer than the rest).'],
-    ['League names', `A League takes its name from its seat: the first seat of a region is named for the region (the Kanto League) and the second for its seat (the Victory Road League; a custom region can set its own two names). You can name your League and the starting rivals at setup (rivals under Advanced options, Where rival Leagues start) and rename your League from the League table at any time; with Rename rival Leagues on at setup, any League. Names are unique: a League opening at a seat whose old League folded becomes the New … League. A League's past names show on the League table, and each year's report keeps the name it had then.`],
-    ['Founders', `A new League is founded by a distinguished recent retiree as a final act, and is named in the League table and its history (the League's own name comes from its seat: see League names). With new Leagues switched on, one may open each New Year once ${LEAGUE_MIN_GAP} years have passed since the last, if there is room (at most ${REGION_CAP} Leagues to a region) and the most prestigious recent retiree has enough prestige: ${FOUNDER_BAR_BASE} for the world's second League, ${FOUNDER_BAR_STEP} more for each League after. No founder, no League. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.`],
+    ['League table', 'Every League ranked by money, with last year\'s income and spending, the wage bill, cities controlled, the wall and its share of its region\'s challengers. Balance in this game is economic: Leagues should stay close to level, and one that falls behind can catch up (weaker challengers favour walls they can get further against and quieter Leagues, a League far behind in a city gains standing faster, and stars ask a little more of a League far richer than the rest). A rival drawing well under an even share of its region\'s field rebuilds: it spends only in its strongest city, sends a contender and trims its costliest staff until its share recovers.'],
+    ['League names', `A League takes its name from its seat: the first seat of a region is named for the region (the Kanto League) and each of the other three for its seat (the Victory Road League, the Cerulean Cave League, the Trainer Tower League; a custom region can set its own names). You can name your League and the starting rivals at setup (rivals under Advanced options, Where rival Leagues start) and rename your League from the League table at any time; with Rename rival Leagues on at setup, any League. Names are unique: a League opening at a seat whose old League folded becomes the New … League. A League's past names show on the League table, and each year's report keeps the name it had then.`],
+    ['Founders', `A new League is founded by a distinguished recent retiree as a final act, and is named in the League table and its history (the League's own name comes from its seat: see League names). With new Leagues switched on, one may open each New Year once ${LEAGUE_MIN_GAP} years have passed since the last, if there is room (at most ${REGION_CAP} Leagues to a region) and the most prestigious recent retiree has enough prestige for a region with room: ${FOUNDER_BARS[0]} for a region's first or second League, ${FOUNDER_BARS[2]} for its third and ${FOUNDER_BARS[3]} for its fourth. No founder, no League. Rarely a champion still fit enough becomes its Champion, protected from stepping down and from seat challenges for ten years.`],
     ['Growth', `Every trainer, staff and challengers alike, grows on one curve, a step on each birthday. They improve until their peak (age ${GROW_PEAK}), fastest while young (about ${GROW_STEP[0][1]} points a rating a year up to ${GROW_STEP[0][0]}, ${GROW_STEP[1][1]} to ${GROW_STEP[1][0]}, ${GROW_STEP[2][1]} after), hold, and decline slowly from ${GROW_DECLINE}, faster with age. Growth counts from the start of a career: a late starter improves for ${GROW_LATE} years from the start and declines ${GROW_LATE_DECLINE} years after it, by ${GROW_DECLINE_MAX} at the latest. Talent varies (×${GROW_TALENT[0]} to ×${GROW_TALENT[1]}), as does the coach: a gym trainer is coached by their Gym Leader, Gym Leaders and the Elite Four by the Champion, everyone else by themselves, and a coach's Training speeds growth (Training 50 is the usual pace). A training hall at a member of staff's post adds ${Math.round(GROW_HALL * 100)}% a level and slows their decline. Late Bloomers peak and decline ${GROW_BLOOM} years later. Potential (POT) is where a trainer's growth is heading at their own pace.`],
-    ['Prestige', `One scale for trainers and Leagues. A trainer's comes from their career: titles, the Hall of Fame, badges, years and World titles. A League's is earned each New Year (${PRESTIGE_PERFECT} for a perfect year, up to ${PRESTIGE_LET_MAX} for letting through fewer than the world's average, ${PRESTIGE_WORLD} for winning the World Championship, ${TIER_PREST[2]} for each city it Holds and ${TIER_PREST[3]} for each Stronghold (up to half again for a large city), and up to ${PRESTIGE_RANK[0]} for its rank by wealth) and fades by a tenth a year. A retiree founding a League needs ${FOUNDER_BAR_BASE} for the world's second, ${FOUNDER_BAR_STEP} more for each after; you need ${PRESTIGE_BAR} to leave yours. A prestigious League draws trainers: up to ${Math.round(PRESTIGE_PULL * 100)}% likelier to take its offers and sponsorships, and challengers moving League lean toward it. The League table shows every League's. Since 0.23.0 every trainer also has a prestige minimum for joining a League: nothing up to OVR ${PM_FREE}, then ${PM_PER} for each point above it, plus ${Math.round(PM_REC * 100)}% of their own prestige (at most ${PM_REC_MAX}) and ${PM_FAMOUS} for a famous trainer. A trainer hungry for a post (another League's staff who want promotion, a claimant, and about one challenger in four) needs only ${Math.round(PM_HUNGRY * 100)}% of it, and one holding a grudge against another League ${Math.round(PM_GRUDGE * 100)}%. Below it they won't sign, at founding, for a post or for an offer; candidates show it as Prestige X. Outsiders the game finds for a post are no stronger than the League's prestige can attract. Your own staff moving between posts, and staff who follow you to a new League, are never held back.`],
+    ['Prestige', `One scale for trainers and Leagues. A trainer's comes from their career: titles, the Hall of Fame, badges, years and World titles. A League's is earned each New Year (${PRESTIGE_PERFECT} for a perfect year, up to ${PRESTIGE_LET_MAX} for letting through fewer than the world's average, ${PRESTIGE_WORLD} for winning the World Championship, ${TIER_PREST[2]} for each city it Holds and ${TIER_PREST[3]} for each Stronghold (up to half again for a large city), and up to ${PRESTIGE_RANK[0]} for its rank by wealth) and fades by a tenth a year. A retiree founding a League needs ${FOUNDER_BARS[0]} for a region's first or second League, ${FOUNDER_BARS[2]} for its third and ${FOUNDER_BARS[3]} for its fourth; you need ${PRESTIGE_BAR} to leave yours. A prestigious League draws trainers: up to ${Math.round(PRESTIGE_PULL * 100)}% likelier to take its offers and sponsorships, and challengers moving League lean toward it. The League table shows every League's. Since 0.23.0 every trainer also has a prestige minimum for joining a League: nothing up to OVR ${PM_FREE}, then ${PM_PER} for each point above it, plus ${Math.round(PM_REC * 100)}% of their own prestige (at most ${PM_REC_MAX}) and ${PM_FAMOUS} for a famous trainer. A trainer hungry for a post (another League's staff who want promotion, a claimant, and about one challenger in four) needs only ${Math.round(PM_HUNGRY * 100)}% of it, and one holding a grudge against another League ${Math.round(PM_GRUDGE * 100)}%. Below it they won't sign, at founding, for a post or for an offer; candidates show it as Prestige X. Outsiders the game finds for a post are no stronger than the League's prestige can attract. Your own staff moving between posts, and staff who follow you to a new League, are never held back.`],
     ['Contenders', `A League can send challengers at another League as its contenders: its own academy prospects, or a challenger from its circuit it signs. A contender runs only at that League for ${SPON_YEARS} years (renewable), and nobody else can hire them or seat them after a deep run meanwhile. The sponsor pays a weekly stipend; the target still gets their entry fees and pays the sponsor a bounty of ${money(SPON_BOUNTY)} for each title they win there (${money(SPON_E4_BOUNTY)} for a run that reaches the Elite Four). Rival Leagues send them too, by their aim, and may send them at you. Your Contenders page has yours; the year report lists each year's.`],
     ['Founding your own League', `Once your League's prestige reaches ${PRESTIGE_BAR}, you can leave it to found a new League for ${money(LEAVE_FEE)} from its money (on the Money page), if the world has room. The League you leave carries on as a rival with an aim of its own, keeping its money, buildings, staff and history. Up to ${LEAVE_TAKE} members of staff who want promotion come with you, and your academy prospects follow. You place the new League's staff by hand and start with ${money(START_FUND)}. You only ever run one League.`],
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
-    ['Cities', 'Your gym cities, three more in the region with no gym, and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
+    ['Cities', 'Your gym cities, the region\'s other cities and towns (six with no gym at first), and your League\'s seat. Build where you have a gym, and at the seat: training halls (staff grow faster and decline more slowly) and gym features (a home edge), up to level 5; attractions (income) and a scouting office (seat only: more and better outsiders, better odds on offers), up to level 3; and a youth academy (seat only, no slot). A city gets more slots as money is spent there. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
     ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Attractions usually pay their own way; training halls and gym features don\'t, they buy strength.`],
     ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When the ranch has nothing of a typed post's own type left, its holder falls back on their three backup types (types outside their own, likelier ones that answer their weaknesses; at most half the team, swapped back for their own type as soon as one is in the ranch; the gym still counts as its type); when nothing fits even then, weak stopgaps stand in. Rival Leagues run their ranches by their aim. Since 0.36.0 the ranch also keeps alphas, Deltas, shinies and Radiants whole, found by luck on trips, charters and the market, by hunts (a trip for a line in a chosen condition, at a multiple of the price and lower odds) and by outbreak trips; each region has its own Delta lines. A condition multiplies a Pokémon's value, and shinies and Radiants on your Elite Four's and Champion's teams earn showcase income and a little prestige. Challengers keep what they drop in storage (up to ${STORE_MAX}); a new Gym Leader, Elite Four member or Champion lets the League take up to ${STORE_PICKS} of it (one more a scouting office level) into the ranch, and asks more pay the richer it is.`],
     ['Regional encounters', `Each region has its own Pokémon (about ${REGION_SIZE} species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto; Sylveon brings Eevee's family to Kalos), and regional forms belong to their region as well (Alolan forms to Alola, Galarian to Galar, Paldean to Paldea, Hisuian ones to Sinnoh). Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. Neighbours: ${NEIGHBOURS.map((ns, r) => `${regionName(r)} (${ns.map(regionName).join(', ')})`).join('; ')}. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
-    ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 3 towns and 2 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries (one shared with another region can then be held once for each region that has it at home) and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region; one with a base stat total over ${DEX_LEGEND_BST} can be a legendary encounter, at home in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
+    ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 6 towns and 4 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries (one shared with another region can then be held once for each region that has it at home) and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region; one with a base stat total over ${DEX_LEGEND_BST} can be a legendary encounter, at home in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
     ['Shipping lanes, charters and the safari', `A shipping lane is built in a port city where the League has a gym (Vermilion, Cinnabar, Olivine, Cianwood, Slateport, Lilycove, Dewford, Canalave, Sunyshore; Goldenrod's is the railway) and serves one other region: its Pokémon can be caught on the League's targeted trips and turn up at its market all the time. It costs a weekly fee besides upkeep, and a fee to change the route. A charter is a one-off shipment of two or three Pokémon from any other region. The Safari Zone (one per League, in a gym city) holds foreign Pokémon from mixed regions, changing every 12 weeks, that only the League's own targeted trips can catch; higher levels hold more and bring back better grades. All lapse while the League is in the red. When a post's steer wants a Pokémon the League can't reach, the Ranch page says where it lives.`],
     ['Youth academy', `A League-level purchase at the seat that takes no slot. Each of its three levels raises a young prospect a year who sets out on your circuit as one of your own: ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers and paid ${Math.round((1 - ACADEMY_PAY) * 100)}% less by you. Rival Leagues build academies too.`],
     ['Banlist', 'In your League the banlist is a paid rule set on the Meta page: any Pokémon seen on your circuit, in any week, for one to three years, priced by its meta rank. Up to three at once; a ban that runs out protects that Pokémon for two years. Other Leagues\' trainers still vote on bans at New Year.'],
@@ -17552,6 +17787,16 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 41, ver: '0.41.0', date: 'November 19, 2026', time: '11:30 AM ET', title: 'Four Leagues a region and a shared regional field', items: [
+    "A region can now hold up to four Leagues. Every region has three more towns with no gym (six in all, fourteen cities and towns) and two more League seats, so the Kanto region's third and fourth Leagues sit at Cerulean Cave and Trainer Tower, Johto's at the Bell Tower and the Battle Frontier, and so on. You can start a world with up to four Leagues in each region.",
+    "Founders now face a bar set by the region: a region's first or second League needs a founder with prestige 30, its third 50 and its fourth 70. A founder opens a League where their prestige clears the bar, your region first.",
+    "Challengers now belong to their region, not to one League. Before each run, a challenger draws which of the region's Leagues to take on: prestige counts (more for strong challengers), so does a League's standing in their hometown, and a League that holds their hometown keeps their loyalty for a few years even if its prestige dips. Weaker challengers favour Leagues where runs get further and quieter Leagues with fewer challengers, so a struggling League can win its share back. New challengers may even be drawn to a famous League from another region with renown in their hometown.",
+    "Smaller fields: a region's field aims at about 30 challengers for each League in it, growing a little as its cities grow. Newcomers stop coming while a region is well past that, and weak challengers give up sooner in a crowded field. A new League's founding field is 30.",
+    "You hire from the region's field: your own circuit plus the region's other challengers resting between runs. The Circuit page can show your League's challengers or the whole region's field with the League each is taking on, and the League table shows each League's challengers and its share of its region.",
+    "Rival Leagues drawing well under an even share of their region's challengers go into rebuild mode: they spend only in their strongest city, always try to have a contender out, and replace their costliest staff with cheaper hires each New Year, returning to their aim once their share recovers.",
+    "The region editor has six towns, four seats and four League names. Region files from 0.40.0 and earlier still load (the new places take default names).",
+    "Saves from earlier versions can't be loaded (the regions have new cities)."
+  ] },
   { id: 40, ver: '0.40.0', date: 'November 18, 2026', time: '9:50 PM ET', title: 'City control by tiers, renown and hometowns', items: [
     "Control of a city is now graded by how far the leading League is ahead of the second: Contested, Leaning, Held or Stronghold. The leader's share of the city's income grows with its tier (nothing extra when Contested, 40% Leaning, 50% Held, 60% Stronghold), Held and Stronghold cities earn prestige (more for a larger city), and a Stronghold gives your gym there a small crowd edge, makes trainers from that city cheaper to sign (less prestige needed) and gives you first refusal when a rival has to sell a building there at a distress price.",
     "Standing now comes from more than spending once. Each New Year it grows from your gym's record against the region, from your presence (buildings standing there count every year, by their value, and stop counting if they lapse or are sold), from your prestige (a share in every home city) and from local heroes (your staff from that city). A League far behind the leader gains standing half again as fast, so a lost city can be won back.",
@@ -18341,6 +18586,7 @@ document.addEventListener('click', ev => {
     case 'leaveask': leaveAsk = !leaveAsk; render(); break;
     case 'leavego': { const w = leaveLeague(leaveRegion, [...leaveTake]); leaveAsk = false; leaveTake = new Set(); save(); render(); window.scrollTo(0, 0); toast(w || 'Place your new League\'s staff.'); break; }
     case 'foundquit': clearSave(); S = null; view = 'circuit'; foundSel = null; render(); break;
+    case 'circscope': circScope = el.dataset.v === 'region' ? 'region' : 'lg'; render(); break;
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;

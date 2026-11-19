@@ -217,7 +217,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 18; // 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 19; // 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -234,22 +234,23 @@ function turnDate(turn) { const d = S.week + (turn - (S.turn || 0)), y = S.seaso
 // and reshuffle). (0.30.0) These are the built-in nine; a world keeps its own copy (S.regions, made by applyRegions
 // in 5-engine-4) and LEAGUE_SETS is always the bound world's list, so custom regions can join it later.
 const BUILTIN_REGIONS = [
-  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam'], seat: 'Indigo Plateau', seat2: 'Victory Road' },
-  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage'], seat: 'Mount Silver', seat2: "Dragon's Den" },
-  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor'], seat: 'Ever Grande', seat2: 'Sky Pillar' },
-  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic'], seat: 'Spear Pillar', seat2: 'Stark Mountain' },
+  { name: 'Kanto League', towns: ['Pewter','Cerulean','Vermilion','Celadon','Fuchsia','Saffron','Cinnabar','Viridian'], extra: ['Pallet','Lavender','Seafoam','One Island','Four Island','Seven Island'], seat: 'Indigo Plateau', seat2: 'Victory Road', seat3: 'Cerulean Cave', seat4: 'Trainer Tower' },
+  { name: 'Johto League', towns: ['Violet','Azalea','Goldenrod','Ecruteak','Cianwood','Olivine','Mahogany','Blackthorn'], extra: ['New Bark','Cherrygrove','Lake of Rage','Ruins of Alph','National Park','Whirl Islands'], seat: 'Mount Silver', seat2: "Dragon's Den", seat3: 'Bell Tower', seat4: 'Battle Frontier' },
+  { name: 'Hoenn League', towns: ['Rustboro','Dewford','Mauville','Lavaridge','Petalburg','Fortree','Mossdeep','Sootopolis'], extra: ['Slateport','Lilycove','Fallarbor','Oldale','Verdanturf','Pacifidlog'], seat: 'Ever Grande', seat2: 'Sky Pillar', seat3: 'Battle Resort', seat4: 'Mt. Pyre' },
+  { name: 'Sinnoh League', towns: ['Oreburgh','Eterna','Veilstone','Pastoria','Hearthome','Canalave','Snowpoint','Sunyshore'], extra: ['Jubilife','Solaceon','Celestic','Twinleaf','Sandgem','Floaroma'], seat: 'Spear Pillar', seat2: 'Stark Mountain', seat3: 'Battle Zone', seat4: 'Mt. Coronet' },
   // (0.28.0) the five later regions. Unova follows Black 2 and White 2's gyms; Galar's and Paldea's gyms fit as they are.
   // Alola has no gyms: its eight gym cities are the island challenge's stops (trial sites and the kahunas' towns, in
   // the challenge's order), its seat the League on Mount Lanakila, and its second League's seat the Battle Tree
-  { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm' },
-  { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette'], seat: 'Battle Château', seat2: 'Terminus Cave' },
-  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island'], seat: 'Mount Lanakila', seat2: 'Battle Tree', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain' } },
-  { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington'], seat: 'Wyndon', seat2: 'Crown Tundra' },
-  { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico'], seat: 'Mesagoza', seat2: 'Great Crater' },
+  { name: 'Unova League', towns: ['Aspertia','Virbank','Castelia','Nimbasa','Driftveil','Mistralton','Opelucid','Humilau'], extra: ['Nuvema','Striaton','Icirrus','Accumula','Nacrene','Lacunosa'], seat: 'Dragonspiral Tower', seat2: 'Giant Chasm', seat3: 'World Tournament', seat4: 'Abundant Shrine' },
+  { name: 'Kalos League', towns: ['Santalune','Cyllage','Shalour','Coumarine','Lumiose','Laverre','Anistar','Snowbelle'], extra: ['Vaniville','Camphrier','Ambrette','Aquacorde','Geosenge','Couriway'], seat: 'Battle Château', seat2: 'Terminus Cave', seat3: 'Battle Maison', seat4: 'Kiloude' },
+  { name: 'Alola League', towns: ["Hau'oli",'Iki Town','Paniola','Konikoni','Malie','Tapu Village','Po Town','Seafolk'], extra: ['Heahea','Aether Paradise','Exeggutor Island','Royal Avenue',"Kala'e Bay",'Poni Plains'], seat: 'Mount Lanakila', seat2: 'Battle Tree', seat3: 'Battle Royal Dome', seat4: 'Altar of the Sunne', posts: { leader: 'Kahuna', gymtrainer: 'Trial Captain' } },
+  { name: 'Galar League', towns: ['Turffield','Hulbury','Motostoke','Stow-on-Side','Ballonlea','Circhester','Spikemuth','Hammerlocke'], extra: ['Postwick','Wedgehurst','Freezington','Isle of Armor','Ballimere Lake','Slumbering Weald'], seat: 'Wyndon', seat2: 'Crown Tundra', seat3: 'Energy Plant', seat4: 'Master Dojo' },
+  { name: 'Paldea League', towns: ['Cortondo','Artazon','Levincia','Cascarrafa','Medali','Montenevera','Alfornada','Glaseado'], extra: ['Los Platos','Porto Marinada','Zapapico','Cabo Poco','Mossui Town','Terarium'], seat: 'Mesagoza', seat2: 'Great Crater', seat3: 'Blueberry Academy', seat4: 'Area Zero' },
 ];
 // the world's regions (S.regions once a world exists; the built-in nine before that): set by applyRegions
 let LEAGUE_SETS = BUILTIN_REGIONS;
 // (0.13.0) each region also has three cities with no gym at first (a gym can move to one), and a seat
+// (0.41.0, design doc 6.19) six towns with no gym and four seats, so a region holds up to four Leagues (32 gyms in 14 cities)
 // Cities are things of their own in the world (S.cities, by id), not part of a League: a gym sits in a city
 // (gym.city), and more than one League can come to have a gym in the same city. Each region's cities are made the
 // first time a League is founded there.
@@ -978,13 +979,13 @@ function fillGymTrainer(i, k, L) {
 // of those who fit is asked first, and must accept the place (acceptsOffer); none in the wall report's fixed tiers.
 const GT_CIRCUIT_CUT = 0.5;
 function gtCircuitCut() {
-  const o = S.challengers.map(T).filter(t => t && t.role === 'challenger').map(ovr).sort((a, b) => b - a);
+  const o = fieldPool().filter(t => t && t.role === 'challenger').map(ovr).sort((a, b) => b - a); // (0.41.0) the region's field
   return o.length ? o[Math.min(o.length - 1, Math.floor(o.length * GT_CIRCUIT_CUT))] : Infinity;
 }
 function circuitGymTrainer(L) {
   if (fixedStaff()) return null;
   const cut = gtCircuitCut();
-  return S.challengers.map(T).filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.spon && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
+  return fieldPool().filter(t => t && t.role === 'challenger' && t.age >= 16 && !t.leaving && !t.spon && gymFits(t, L) && !(t.rest == null && t.badges.length >= 8) && !(t.titleSeasons || []).length && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS) && ovr(t) <= cut)
     .sort((a, b) => S.fin && S.fin.money < 0 ? ovr(a) - ovr(b) : ovr(b) - ovr(a)).find(t => acceptsOffer(t, 'gymtrainer')) || null; // (0.15.0) in the red, the cheapest first
 }
 // a challenger leaves the circuit to become gym trainer k at gym i: they keep up to two of their best Pokémon of

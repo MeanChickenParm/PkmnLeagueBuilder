@@ -135,7 +135,18 @@ function leagueNewYear(changes) {
 // New Leagues open as the years go by. (0.15.0, stage 4) the next League opens in the player's region while it has
 // fewer than REGION_CAP, then in a region with none; (0.17.0, stage 5) then in any region with room, and openings are
 // driven by founders (below). (0.29.0) No cap on the world (it was 6, MAX_LEAGUES); only REGION_CAP a region.
-const REGION_CAP = 2, LEAGUE_MIN_GAP = 8;
+// (0.41.0, design doc 6.19 part 2) four Leagues a region: each region has four seats (seat, seat2, seat3, seat4)
+const REGION_CAP = 4, LEAGUE_MIN_GAP = 8;
+const SEAT_KEYS = ['seat', 'seat2', 'seat3', 'seat4'];
+const seatOf = (reg, k) => (reg && (reg[SEAT_KEYS[k]] || reg.seat)) || 'League Seat';
+// the first of region r's seats no live League holds (League `except` left out); with every seat taken, by count
+function freeSeat(r, except) {
+  const reg = LEAGUE_SETS[r]; if (!reg) return 0;
+  const held = [];
+  for (let i = 0; i < nLeagues(); i++) if (i !== except) inLeague(i, () => { if (S.region === r) held.push(S.seatName); });
+  const k = SEAT_KEYS.findIndex((_, j) => !held.includes(seatOf(reg, j)));
+  return k >= 0 ? k : Math.min(REGION_CAP - 1, held.length);
+}
 const regionsUsed = () => eachLeague(() => S.region);
 const regionOrder = () => S.regionOrder || LEAGUE_SETS.map((_, i) => i);
 const regionCount = r => regionsUsed().filter(x => x === r).length;
@@ -152,14 +163,16 @@ function nextRegion() {
   return r2 == null ? null : r2;
 }
 const regionWord = r => LEAGUE_SETS[r].name.replace(' League', '');
-// (0.33.0, design doc 6.10) League names: a region's first seat is `<Region> League` and its second `<seat2> League`,
-// unless the region (a custom one) names them in `lgNames`. Every League takes these defaults unless named at setup;
-// a name is unique in the world (folded Leagues included): a repeat becomes `New <name>`, then numbered.
+// (0.33.0, design doc 6.10) League names: a region's first seat is `<Region> League` and each other seat `<seat> League`
+// (0.41.0: four seats), unless the region (a custom one) names them in `lgNames`. Every League takes these defaults
+// unless named at setup; a name is unique in the world (folded Leagues included): a repeat becomes `New <name>`, then numbered.
 const LG_NAME_MAX = 30;
 const cleanLgName = s => String(s == null ? '' : s).replace(/[<>&"`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, LG_NAME_MAX);
-function seatLgName(r, second) {
+// k: the seat (0 to 3)
+function seatLgName(r, k) {
   const reg = LEAGUE_SETS[r]; if (!reg) return 'New League';
-  return cleanLgName((reg.lgNames || [])[second ? 1 : 0]) || (second ? `${reg.seat2} League` : reg.name);
+  k = k === true ? 1 : k || 0;
+  return cleanLgName((reg.lgNames || [])[k]) || (k ? `${seatOf(reg, k)} League` : reg.name);
 }
 function lgNamesTaken(except) {
   const a = [];
@@ -187,7 +200,7 @@ function renameLeague(i, name) {
   news(`The ${old} is now the ${n}.`, 'league');
   return null;
 }
-const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, regionsUsed().includes(r))); };
+const nextRegionName = () => { const r = nextRegion(); return r == null ? null : uniqueLgName(seatLgName(r, freeSeat(r))); };
 // (0.17.0, stage 5) prestige: one scale for trainers and Leagues. A trainer's comes from their career (titles, the
 // Hall of Fame, badges, years, World titles: the founder score of 0.15.0). A League's is earned each New Year from its
 // record (a perfect year, letting through fewer than the world's average, a World Championship, cities controlled, its
@@ -229,10 +242,10 @@ const founderChamp = t => !!t && t.founderUntil != null && S.season < t.founderU
 function openNewLeague(f, r) {
   if (r == null) r = nextRegion(); if (r == null || regionCount(r) >= REGION_CAP) return null;
   if (f === undefined) f = pickFounder();
-  const i = nLeagues(), reg = LEAGUE_SETS[r], second = regionsUsed().includes(r);
+  const i = nLeagues(), reg = LEAGUE_SETS[r], k = freeSeat(r);
   const champ = f && ((f.titleSeasons || []).length || f.career.titles) && f.retAge <= 55 && ovr(f) >= FOUNDER_CHAMP_OVR && rand() < FOUNDER_CHAMP_CHANCE ? f : null;
-  const lgName = uniqueLgName(seatLgName(r, second));
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: second ? reg.seat2 : reg.seat, founder: f ? f.id : null });
+  const lgName = uniqueLgName(seatLgName(r, k));
+  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: r, lgName, seatName: seatOf(reg, k), founder: f ? f.id : null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   if (champ) unretire(champ);
   inLeague(i, () => foundLeague({ champ }));
@@ -243,23 +256,36 @@ function openNewLeague(f, r) {
   }
   S.leagueOpened = { i, season: S.season }; S.lastOpen = S.season;
   // its founding field: a class of newcomers of its own, setting out over the first weeks
-  for (const id of makeNewcomers(CIRCUIT_SIZE)) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
+  // (0.41.0) made in its region, so their hometowns are there; they join the region's field at the new League
+  for (const id of inLeague(i, () => makeNewcomers(CIRCUIT_SIZE))) { const t = T(id); joinCircuit(t, i); t.rest = S.turn + ri(0, FOUNDING_STAGGER); }
   inLeague(i, () => news(`The ${lgName} opens in Year ${S.season}, with its own gyms, Elite Four and Champion.`, 'league'));
   return i;
 }
 // (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years have passed since the last
 // opening and there is room, the most prestigious recent retiree over PRESTIGE_BAR may found a League, likelier the
 // higher their prestige (FOUNDER_ODDS at the bar, rising to 0.9). No founder, no League.
-// (0.18.0) a founder's bar rises with the Leagues already open: FOUNDER_BAR_BASE for the second League, FOUNDER_BAR_STEP
-// more for each after (30, 40, 50, 60, 70). The player leaving still needs PRESTIGE_BAR.
-const FOUNDER_BAR_BASE = 30, FOUNDER_BAR_STEP = 10;
-const founderBar = () => FOUNDER_BAR_BASE + FOUNDER_BAR_STEP * Math.max(0, nLeagues() - 1);
+// (0.18.0) a founder's bar rose with the Leagues already open in the world. (0.41.0, design doc 6.19) it is per region
+// now: FOUNDER_BARS by the Leagues already in the region (a region's first or second League 30, its third 50, its fourth
+// 70). A founder opens where their prestige clears the bar, in the order nextRegion would choose. The player leaving
+// still needs PRESTIGE_BAR. Provisional.
+const FOUNDER_BARS = [30, 30, 50, 70];
+const founderBar = r => FOUNDER_BARS[Math.min(FOUNDER_BARS.length - 1, regionCount(r == null ? nextRegion() : r))];
+// regions with room for a rival League, in the order nextRegion prefers (yours, then empty ones, then any)
+function growthRegions() {
+  const home = regionsUsed()[ME()], ok = x => rivalOk(x) && regionCount(x) < REGION_CAP;
+  const out = ok(home) ? [home] : [];
+  for (const x of regionOrder()) if (!out.includes(x) && ok(x) && !regionCount(x)) out.push(x);
+  for (const x of regionOrder()) if (!out.includes(x) && ok(x)) out.push(x);
+  return out;
+}
 function worldGrowth() {
-  if (!S.cfg || !S.cfg.growth || nextRegion() == null) return;
+  if (!S.cfg || !S.cfg.growth) return;
   if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
-  const f = pickFounder(), p = trainerPrestige(f), bar = founderBar();
-  if (!f || p < bar) return;
-  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f);
+  const f = pickFounder(), p = trainerPrestige(f);
+  if (!f) return;
+  const r = growthRegions().find(x => p >= founderBar(x)); if (r == null) return;
+  const bar = founderBar(r);
+  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f, r);
 }
 // ---------- god mode: open a League by hand, and edit any trainer ----------
 const godOn = () => !!(S && S.cfg && S.cfg.god);

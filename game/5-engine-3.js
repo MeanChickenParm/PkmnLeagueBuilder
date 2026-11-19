@@ -923,12 +923,14 @@ function joinCircuit(t, i) {
   inLeague(i, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); if (!t.home) setHome(t); }); // (0.40.0) a hometown if they have none
   if (nLeagues() > 1) settleLegendClash(t);
 }
-// new trainers and free agents join a circuit, the emptiest first. A circuit has no cap (0.4.0). `stagger` spreads
+// new trainers and free agents join a circuit (0.41.0: by the regional field's draw; the emptiest before). A circuit has no cap (0.4.0). `stagger` spreads
 // a founding field's setting out over that many weeks; anyone else sets out within a few weeks.
 function fillCircuits(ids, stagger) {
   const pool = ids.map(T).filter(t => t && ['prospect', 'free'].includes(t.role)).sort((a, b) => circuitValue(b) - circuitValue(a));
   for (const t of pool) {
-    const room = eachLeague(i => ({ i, n: S.challengers.length })).sort((a, b) => a.n - b.n)[0];
+    // (0.41.0) the regional field: the region they belong with (fieldRegionFor), then the draw among its Leagues
+    const r = fieldRegionFor(t), drawn = r == null ? null : drawLeague(t, r);
+    const room = drawn != null ? { i: drawn } : eachLeague(i => ({ i, n: S.challengers.length })).sort((a, b) => a.n - b.n)[0];
     joinCircuit(t, room.i);
     t.rest = S.turn + (stagger != null ? ri(0, stagger) : ri(1, 3)); t.early = 0;
   }
@@ -1230,14 +1232,14 @@ function newWorld(cfg = {}) {
   if (LEAGUE_SETS[cfg.region]) S.regionOrder = [cfg.region, ...S.regionOrder.filter(r => r !== cfg.region)];
   const regions = startRegions(S.regionOrder, S.cfg.leagues, cfg.rivals || []);
   S.cfg.leagues = regions.length;
-  // a second League in a region at the start sits at its second seat and is named for it
-  const second = i => regions.slice(0, i).includes(regions[i]);
+  // a second (third, fourth) League in a region at the start sits at the next seat and is named for it
+  const seatK = i => regions.slice(0, i).filter(r => r === regions[i]).length;
   // (0.33.0) cfg.names[i]: a name given at setup (index 0 yours, then the rivals in order); blank takes the seat's default
   const names = Array.isArray(cfg.names) ? cfg.names : [];
-  const blank = i => { const reg = LEAGUE_SETS[regions[i]], two = second(i);
-    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], two)), seatName: two ? reg.seat2 : reg.seat }; };
+  const blank = i => { const reg = LEAGUE_SETS[regions[i]], k = seatK(i);
+    return { gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], k)), seatName: seatOf(reg, k) }; };
   S.leagues = [null]; S.lg = 0;
-  S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], false);
+  S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], 0);
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
   if (cfg.hand) { S.cfg.hand = true; initBooks(); }
@@ -1246,7 +1248,7 @@ function newWorld(cfg = {}) {
   foundingField(Array.from({ length: nLeagues() }, (_, i) => i));
   startWorld();
 }
-// (0.30.0) the most Leagues a world can start with: two a region (REGION_CAP)
+// (0.30.0) the most Leagues a world can start with: REGION_CAP a region (four since 0.41.0)
 // (0.31.0) a region closed to rival Leagues counts for one (yours)
 const maxStartLeagues = () => LEAGUE_SETS.reduce((a, r, i) => a + (rivalOk(i) ? REGION_CAP : 1), 0);
 // where the Leagues start: yours in order[0], then each rival where the player asked (picks[i]: a region index, or
@@ -2058,7 +2060,7 @@ function aimUpgrade() {
     const back = c.role === 'retired', away = STAFF_ROLES.includes(c.role), from = away ? leagueName(homeLeague(c)) : null;
     if (back) unretire(c);
     if (away) leaveForPost(c, S.lgName);
-    S.challengers = S.challengers.filter(x => x !== c.id);
+    dropFromCircuits(c.id);
     installElite(c, post, post === 'e4' ? w.k : w.i);
     if (post === 'leader') staffGym(w.i);
     const text = `The ${S.lgName} paid over the odds to bring in ${dn(c)}${away ? ` from the ${from}` : back ? ' out of retirement' : ''} as ${postName(c)}, replacing ${old.name}, who ${fate === 'retired' ? 'retired' : 'returns to the circuit'}.`;
@@ -2081,15 +2083,15 @@ function aimMonth() {
 function aimSpend(aim) {
   const f = S.fin, A = AIMS[aim], lg = S.lg || 0;
   if (f.money < 0) return;
-  const spare = f.money - A.reserve;
-  if (aim === 'wall' && paidBans().length < BAN_PAID_MAX && rand() < AIM_BAN_ODDS) {
+  const spare = f.money - A.reserve, focus = f.rebuild ? strongestGym() : null; // (0.41.0) rebuilding: its strongest city only
+  if (aim === 'wall' && focus == null && paidBans().length < BAN_PAID_MAX && rand() < AIM_BAN_ODDS) {
     const c = banCands().find(x => !x.banned && !x.prot && x.rank <= 3);
     if (c && spare >= c.price + UP_COST[0]) { payBan(c.sp, 1, lg); return; }
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (attractions pay their own way)
   const net = runningNet();
   for (const [w, k] of A.build) {
-    const spots = w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
+    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
     for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && (k === 'attract' || k === 'sanct' || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
   }
 }
@@ -2098,7 +2100,8 @@ function aimSpend(aim) {
 // when it goes back to its old aim (f.prevAim); a money-maker by choice keeps the old rule (rich after three years)
 function aimNewYear() {
   const f = S.fin; if (!f || !f.aim) return;
-  aimUpgrade();
+  rebuildNewYear(); // (0.41.0) rebuild mode when its share of the region's field is well under an even share
+  if (!f.rebuild) aimUpgrade();
   let to = null;
   if (f.money < 0 && f.aim !== 'money') { f.prevAim = f.aim; to = 'money'; }
   else if (f.prevAim && f.money >= AIMS.money.reserve) { to = f.prevAim; f.prevAim = null; }
@@ -2223,8 +2226,9 @@ function sponsorWeek() {
 // (rival Leagues) a League sends up to SPON_AIM[aim] contenders: its academy prospects first, then the best of its
 // circuit at OVR SPON_AIM_OVR or better, at a League where runs go further (richer ones first), with money to spare
 function aimSponsor() {
-  const f = S.fin, me = S.lg || 0, cap = SPON_AIM[f.aim] || 0;
-  if (contendersOf(me).length >= cap || rand() >= SPON_AIM_ODDS) return;
+  const f = S.fin, me = S.lg || 0, cap = Math.max(f.rebuild ? 1 : 0, SPON_AIM[f.aim] || 0);
+  // (0.41.0) a rebuilding League always tries to have a contender out
+  if (contendersOf(me).length >= cap || (!f.rebuild && rand() >= SPON_AIM_ODDS)) return;
   if (f.money - (AIMS[f.aim] ? AIMS[f.aim].reserve : 0) < SPON_AIM_SPARE) return;
   const c = sendCands().filter(t => t.rest != null && (ownAcademy(t) || ovr(t) >= SPON_AIM_OVR) && canOffer(t))[0];
   if (!c) return;
@@ -2270,8 +2274,8 @@ function leaveLeague(region, takeIds = [], name = null) {
   if (!chk.regions.includes(region)) return 'That region has no room.';
   const old = ME(), willing = new Set(leaveTakers().filter(x => x.willing).map(x => x.t.id));
   const take = takeIds.filter(id => willing.has(id)).slice(0, LEAVE_TAKE);
-  const second = regionsUsed().includes(region), reg = LEAGUE_SETS[region];
-  const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, second));
+  const seatK = freeSeat(region), reg = LEAGUE_SETS[region];
+  const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, seatK));
   inLeague(old, () => {
     book(-LEAVE_FEE, 'founding', `Paid ${money(LEAVE_FEE)} to leave the ${S.lgName} and found the ${lgName}.`);
     // settle what waits for the player: challenges go ahead, offers accepted are withdrawn, vacancies take an outsider
@@ -2287,7 +2291,7 @@ function leaveLeague(region, takeIds = [], name = null) {
   });
   S.vacancies = []; S.chalPending = []; S.distress = [];
   const i = nLeagues();
-  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: second ? reg.seat2 : reg.seat, founder: null });
+  S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
   // (0.27.0) someone a waiting challenge just moved out of their post stays behind
@@ -2495,9 +2499,9 @@ function foldLeague(k) {
   let neu = null;
   if (mine) {
     // the old region always has room once the folded League is gone
-    const region = info.region, second = regionCount(region) >= 2, reg = LEAGUE_SETS[region];
+    const region = info.region, seatK = freeSeat(region, k), reg = LEAGUE_SETS[region];
     neu = nLeagues();
-    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: uniqueLgName(seatLgName(region, second)), seatName: second ? reg.seat2 : reg.seat, founder: null });
+    S.leagues.push({ gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName: uniqueLgName(seatLgName(region, seatK)), seatName: seatOf(reg, seatK), founder: null });
   }
   removeLeague(k, info);
   if (mine) {
@@ -2516,7 +2520,9 @@ function foldLeague(k) {
     t.hired = null; t.hireDue = false;
     // nowhere else to go (the player's League was the only one): they wait and join the new League when it opens
     if (!homes.length) { t.role = 'free'; t.lg = ME(); (S.founding.after = S.founding.after || []).push(t.id); continue; }
-    const to = eachLeague(i => ({ i, n: S.challengers.length })).filter(x => homes.includes(x.i)).sort((a, b) => a.n - b.n)[0].i;
+    // (0.41.0) the folded League's region first (by the draw), else the region whose field is thinnest for its aim
+    const regs = [...new Set(homes.map(lgRegion))], r = regs.includes(info.region) ? info.region : regs.sort((a, b) => fieldCrowd(a) - fieldCrowd(b))[0];
+    const to = (() => { const d = drawLeague(t, r); return homes.includes(d) ? d : homes.find(i => lgRegion(i) === r); })();
     joinCircuit(t, to); t.rest = S.turn + ri(1, 4); t.early = 0;
   }
 }
@@ -2531,8 +2537,8 @@ function foldRegion(r) {
   if (!foldRegions().includes(r)) return 'No room there.';
   return inLeague(ME(), () => {
     if (S.region === r) return null;
-    const second = eachLeague(() => S.region).filter(x => x === r).length >= 1, reg = LEAGUE_SETS[r];
-    S.region = r; S.lgName = uniqueLgName(seatLgName(r, second), ME()); S.seatName = second ? reg.seat2 : reg.seat;
+    const k = freeSeat(r, ME()), reg = LEAGUE_SETS[r];
+    S.region = r; S.lgName = uniqueLgName(seatLgName(r, k), ME()); S.seatName = seatOf(reg, k);
     const cities = leagueCities();
     S.gyms.forEach((g, i) => { g.city = cities[i].id; });
     return null;
@@ -2555,6 +2561,7 @@ function removeLeague(k, info) {
     if (t.leftLg != null) t.leftLg = rm(t.leftLg);
     if (t.grudgeLg != null) t.grudgeLg = rm(t.grudgeLg); // (0.23.0)
     if (t.storedLg != null) t.storedLg = t.storedLg === k ? null : rm(t.storedLg); // (0.37.0)
+    if (t.loyal) t.loyal = t.loyal.lg === k ? null : { lg: rm(t.loyal.lg), until: t.loyal.until }; // (0.41.0)
     if (t.founded) t.founded.lg = rm(t.founded.lg);
     if (t.spon) { t.spon.lg = rm(t.spon.lg); t.spon.to = rm(t.spon.to); }
     if (t.titleLgs) t.titleLgs = t.titleLgs.map(rm);

@@ -9,18 +9,18 @@ g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
 // kept; and where Leagues start (startRegions): picks honoured within room, your region only by a pick or a full world
 { const S0 = g.S, R = S0.regions, nb = g.NEIGHBOURS, fail = m => { console.log('FAIL ' + m); process.exit(1); };
   if (!Array.isArray(R) || R.length !== 9 || g.LEAGUE_SETS !== R) fail('the world has no region list of its own');
-  if (R.some(r => r.towns.length !== 8 || r.extra.length !== 3 || !r.seat || !r.seat2 || r.base == null)) fail('a malformed region');
+  if (R.some(r => r.towns.length !== 8 || r.extra.length !== 6 || !r.seat || !r.seat2 || !r.seat3 || !r.seat4 || r.base == null)) fail('a malformed region');
   nb.forEach((a, i) => a.forEach(x => { if (!nb[x].includes(i) || x === i) fail('neighbours not two-way ' + i + '-' + x); }));
   if (Object.keys(g.LEGEND_HOME).length < 100 || R.reduce((a, r) => a + r.legends.length, 0) !== Object.keys(g.LEGEND_HOME).length) fail('legendary homes lost');
   if (R.reduce((a, r) => a + Object.keys(r.ports).length, 0) !== 28) fail('ports lost: ' + R.reduce((a, r) => a + Object.keys(r.ports).length, 0));
   if (R[6].posts.leader !== 'Kahuna' || R[0].posts) fail('post names');
   const ord = [...Array(9).keys()], cnt = (a, r) => a.filter(x => x === r).length;
-  const full = g.startRegions(ord, 18, []); if (full.length !== 18 || ord.some(r => cnt(full, r) !== 2)) fail('a full world does not fill every seat');
-  const most = g.startRegions(ord, 17, []); if (cnt(most, 0) !== 1 || most.length !== 17) fail('a rival took your region unasked');
+  const full = g.startRegions(ord, 36, []); if (full.length !== 36 || ord.some(r => cnt(full, r) !== 4)) fail('a full world does not fill every seat');
+  const most = g.startRegions(ord, 33, []); if (cnt(most, 0) !== 1 || most.length !== 33) fail('a rival took your region unasked');
   const pick = g.startRegions(ord, 4, [0, 5, 5]); if (pick.join() !== '0,0,5,5') fail('rival picks not honoured: ' + pick);
-  const over = g.startRegions(ord, 4, [3, 3, 3]); if (cnt(over, 3) !== 2 || over.length !== 4) fail('a pick past a region\'s room: ' + over);
-  if (g.maxStartLeagues() !== 18) fail('the most starting Leagues');
-  const regs = g.eachLeague(() => S0.region); if (regs.length !== (L || 1) || g.LEAGUE_SETS.some((_, r) => cnt(regs, r) > 2)) fail('starting Leagues ' + regs);
+  const over = g.startRegions(ord, 7, [3, 3, 3, 3, 3, 3]); if (cnt(over, 3) !== 4 || over.length !== 7) fail('a pick past a region\'s room: ' + over);
+  if (g.maxStartLeagues() !== 36) fail('the most starting Leagues');
+  const regs = g.eachLeague(() => S0.region); if (regs.length !== (L || 1) || g.LEAGUE_SETS.some((_, r) => cnt(regs, r) > g.REGION_CAP)) fail('starting Leagues ' + regs);
   const names = g.eachLeague(() => S0.lgName); if (new Set(names).size !== names.length) fail('two Leagues share a name: ' + names); }
 if (HAND) { if (!g.S.founding || g.foundPool().length < 60) { console.log('FAIL no founding pool'); process.exit(1); } g.foundPlace('gym', 3, g.foundPool()[0]); g.foundingFill(); if (g.foundPlaced().length !== 13) { console.log('FAIL fill left posts empty'); process.exit(1); }
   // (0.23.0) nobody placed is above a new League's prestige, and a blocked candidate can't be placed
@@ -54,6 +54,7 @@ const backupStat = { teams: 0, mons: 0, most: 0, stopgaps: 0 }; // (0.38.0) summ
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 const ctrlStats = { cities: 0, tiers: [0, 0, 0, 0], renown: 0, slice: 0, homed: 0 }; // (0.40.0)
+const fieldStats = { rebuildWeeks: 0, crowdMax: 0, regionMax: 0, minShare: 1, loyal: 0 }; // (0.41.0)
 function check(tag) {
   { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -245,14 +246,17 @@ function check(tag) {
     // (0.20.0, the owner's choice) 200 within five years of a League folding, when one circuit takes in a folded field
     { const lastFold = Math.max(-99, ...(z.folded || []).map(f => f.to || 0)), cap = z.season - lastFold <= 5 ? 200 : 160;
       if (z.challengers.length > cap) bad('field too big: ' + z.challengers.length); }
-    if (z.challengers.length < 8) bad('field too thin: ' + z.challengers.length);
+    // (0.41.0) challengers belong to the region's field, so one League's circuit may run thin: the region's may not
+    if (g.fieldSize(z.region) < 8) bad('region field too thin: ' + g.fieldSize(z.region));
+    if (z.fin && z.fin.rebuild && !z.fin.aim) bad('a League with no aim rebuilding');
+    if (z.fin && z.fin.rebuild) fieldStats.rebuildWeeks++;
     fieldSum += z.challengers.length; fieldN++; fieldMax = Math.max(fieldMax, z.challengers.length);
     for (const id of z.challengers) { const t = g.T(id);
       if (!t || t.role !== 'challenger') bad('circuit lists a non-challenger ' + id); else if (g.lgOf(t) !== i) bad('challenger tagged for another League ' + t.name);
       if (seen[id] != null) bad('trainer on two circuits ' + id); seen[id] = i;
       if (t && (!t.team.length || t.team.length > 6)) bad('team size ' + t.team.length + ' for ' + t.name); }
   });
-  if (Object.keys(s.cities).length % 11) bad('city count ' + Object.keys(s.cities).length);
+  if (Object.keys(s.cities).length % 14) bad('city count ' + Object.keys(s.cities).length);
   // (0.20.0) one of each legendary in the world, one of each Paradox Pokémon held; sanctuaries only in gym cities
   { const held = {}, px = {};
     for (const t of Object.values(s.trainers)) { if (['retired', 'prospect'].includes(t.role)) continue;
@@ -284,8 +288,8 @@ function check(tag) {
     for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat) || (g.UPGRADES[x.k].site && p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
   });
-  // (0.15.0) at most two Leagues a region; standing only for Leagues with a gym in the city; control by one of them
-  { const regs = g.eachLeague(() => S().region), gm = g.gymMap(); for (const r of new Set(regs)) if (regs.filter(x => x === r).length > 2) bad('three Leagues in one region');
+  // (0.15.0) at most REGION_CAP Leagues a region (four since 0.41.0); standing only for Leagues with a gym in the city; control by one of them
+  { const regs = g.eachLeague(() => S().region), gm = g.gymMap(); for (const r of new Set(regs)) if (regs.filter(x => x === r).length > g.REGION_CAP) bad('more than four Leagues in one region');
     for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || []; for (const k of Object.keys(c.st || {})) if (!lgs.includes(+k) && tag.startsWith('s')) {} if (lgs.length && !lgs.includes(g.cityCtrl(c, lgs))) bad('city controlled by a League with no gym there: ' + c.name); } 
     // (0.40.0) tiers, renown and hometowns
     for (const c of Object.values(s.cities)) { const lgs = gm[c.id] || [];
@@ -295,6 +299,11 @@ function check(tag) {
         const inc = g.CITY_INCOME[g.citySlots(c) - 1], tot = lgs.concat(st.rn.map(x => x.lg)).reduce((a, i) => a + g.cityShare(c, lgs, i), 0); if (Math.abs(tot - inc) > lgs.length + st.rn.length + 1) bad('city income shares add to ' + tot + ' of ' + inc + ' in ' + c.name);
         if (tag.startsWith('step') && s.week === 1) { ctrlStats.cities++; ctrlStats.tiers[st.tier]++; if (st.rn.length) ctrlStats.renown++; if (st.slice) ctrlStats.slice++; } } }
     for (const t of Object.values(s.trainers)) if (t.role !== 'retired' && t.home && !(t.home.r >= 0 && t.home.i >= 0)) bad('a bad hometown: ' + t.name);
+    // (0.41.0) the regional field: loyalty to a real League; how full each region is; the thinnest share of a field
+    for (const t of Object.values(s.trainers)) if (t.loyal && !(t.loyal.lg >= 0 && t.loyal.lg < g.nLeagues() && t.loyal.until >= 1)) bad('loyalty to no League: ' + t.name);
+    if (tag.startsWith('step') && s.week === 1) { for (const r of new Set(regs)) { const tg = g.fieldTarget(r), n = g.fieldSize(r); fieldStats.regionMax = Math.max(fieldStats.regionMax, n); if (tg) fieldStats.crowdMax = Math.max(fieldStats.crowdMax, Math.round(n / tg * 100) / 100);
+        const lgs = g.regionLgs(r); if (lgs.length > 1) for (const i of lgs) fieldStats.minShare = Math.min(fieldStats.minShare, Math.round(g.fieldShare(i) * 100) / 100); }
+      fieldStats.loyal = Object.values(s.trainers).filter(t => t.role === 'challenger' && t.loyal).length; }
     if (tag.startsWith('step') && s.week === 1) { let n = 0, h = 0; for (const t of Object.values(s.trainers)) if (t.role !== 'retired') { n++; if (g.homeCity(t) != null) h++; } ctrlStats.homed = Math.round(h / Math.max(1, n) * 100); } }
   for (const t of Object.values(s.trainers)) {
     if (t.role === 'challenger' && seen[t.id] == null) bad('challenger on no circuit ' + t.name);
@@ -585,6 +594,7 @@ console.log('backup types', JSON.stringify(backupStat));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.join('/'));
+console.log('regional field', JSON.stringify(fieldStats), 'draws', JSON.stringify(g.FIELD_LOG), 'rebuild', JSON.stringify(g.REBUILD_LOG), 'regions', [...new Set(g.eachLeague(() => g.S.region))].map(r => `${g.LEAGUE_SETS[r].name}: ${g.fieldSize(r)} of ${g.fieldTarget(r)} (${g.regionLgs(r).map(i => g.inLeague(i, () => g.S.challengers.length)).join('/')})`).join('; '));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
 console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'famous at founding', PG.famous, 'now: prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'Champion OVR', g.eachLeague(() => g.ovr(g.T(S().champion))).join('/'), 'senior OVR', g.eachLeague(() => { const ids = [S().champion, ...S().e4, ...S().gyms.map(x => x.leader)].filter(x => x != null); return Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length); }).join('/'));
