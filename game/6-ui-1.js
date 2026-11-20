@@ -349,7 +349,7 @@ let setupRivals = [];
 // (0.33.0) League names given at setup: [yours, rival 1, rival 2…]; blank takes the seat's default
 let setupNames = [];
 // (0.42.0) your League's posts at setup ({ theme, names }) and each rival's theme ('' = drawn by its aim and region)
-let setupPosts = { theme: 'region', names: {} }, setupRivalThemes = [];
+let setupPosts = { theme: 'region', names: {} }, setupRivalThemes = [], setupSeat = { k: 'protected', every: null }; // (0.43.0) setupSeat: your seat rule
 const POST_LABELS = { leader: 'Gym Leaders', gymtrainer: 'Gym trainers', e4: 'Elite Four', champion: 'Champion' };
 // (0.42.0) the post-name form: a theme picker that fills the four fields, each still editable. cls: the fields' class,
 // sel: the picker's id, r: the region (placeholders), ps: { theme, names }
@@ -1009,6 +1009,7 @@ function viewSetup() {
     ${speedNote(setupLeagues)}
     <label class="cf-field setup-name"><span class="eyebrow">Your League's name</span><input class="cf-in" id="setlgname" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[0] || '')}" placeholder="Left blank: named after its region (the Kanto League)" autocomplete="off"></label>
     <div class="setup-name"><div class="eyebrow">Your League's posts</div><p class="muted small">Pick a theme to fill the four names, or type your own over any of them. Region default uses the region's own names (Alola's Kahuna and Trial Captain, a custom region's), else the usual ones.</p>${postsForm('setposttheme', 'setpost', setupPosts, null)}</div>
+    <div class="setup-name"><div class="eyebrow">How your Champion is chosen</div><p class="muted small">The seat rule. Free to pick now; changing it later costs prestige. The less control a rule keeps, the more prestige, challengers and ambitious hires it brings.</p>${seatForm('setseatrule', 'setseatevery', setupSeat.k, setupSeat.every)}</div>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">

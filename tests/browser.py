@@ -88,6 +88,12 @@ async def run(path):
             else { sel.value = 'dojo'; sel.dispatchEvent(new Event('change', { bubbles: true }));
               const f = document.querySelector('.setpost[data-k="e4"]'); if (!f || f.value !== 'Grandmasters') log.push('FAIL the theme did not fill the fields: ' + (f && f.value));
               const c = document.querySelector('.setpost[data-k="champion"]'); if (c) { c.value = 'Grand Sensei'; c.dispatchEvent(new Event('input', { bubbles: true })); } } }
+          // 0.43.0: the seat rule picker: Term shows the timing field; back to Protected for the called-challenge steps
+          { let sel = document.querySelector('#setseatrule'); if (!sel) log.push('FAIL no seat rule picker at setup');
+            else { sel.value = 'term'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+              if (!document.querySelector('#setseatevery')) log.push('FAIL no timing field for a scheduled seat rule');
+              sel = document.querySelector('#setseatrule'); sel.value = 'protected'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+              if (document.querySelector('#setseatevery')) log.push('FAIL a timing field for Protected'); } }
           document.querySelectorAll('[data-act=newworld]')[2].click();
           // 0.6.0: founding by hand. Place one post by hand, clear and redo it, then fill the rest and open the League
           if (!S || !S.founding) { log.push('FAIL no founding screen'); return log; }
@@ -386,6 +392,20 @@ async def run(path):
                         if ((S.chalPending || []).length || !(S.league.chal || []).some(c => c.calledOff)) log.push('FAIL calling off a challenge');
                         if (S.calls.n !== 2) log.push('FAIL calls not counted'); }
                       log.push('called a challenge: ' + (rec && rec.won ? 'challenger won' : 'defended') + ', one called off'); } }
+                  // 0.43.0: change the seat rule on Your staff to a yearly Champion's Cup (prestige taken), find it on the
+                  // League table, and see a second change refused inside the cooldown; the call panel is gone
+                  { go('staff'); const p0 = S.prest || 0, rs = document.querySelector('#seatrulesel');
+                    if (!rs || !/How the .* is chosen: Protected/.test(txt())) log.push('FAIL no seat rule panel on Your staff');
+                    else { rs.value = 'cup'; rs.dispatchEvent(new Event('change', { bubbles: true }));
+                      const ev = document.querySelector('#seatevery'); if (!ev) log.push('FAIL no timing field on Your staff'); else { ev.value = '1'; ev.dispatchEvent(new Event('change', { bubbles: true })); }
+                      click('[data-act=seatset]');
+                      if (!S.seatRule || S.seatRule.k !== 'cup' || S.seatRule.every !== 1) log.push('FAIL the seat rule did not change: ' + JSON.stringify(S.seatRule));
+                      if ((S.prest || 0) > Math.max(0, p0 - 5) + 0.01) log.push('FAIL changing the seat rule cost no prestige');
+                      if (/Call a challenge/.test(txt())) log.push('FAIL the call panel shows under the Cup');
+                      const r2 = document.querySelector('#seatrulesel'); r2.value = 'merit'; r2.dispatchEvent(new Event('change', { bubbles: true }));
+                      if (!/can change again from year/.test(txt())) log.push('FAIL a second seat rule change was not blocked');
+                      go('table'); if (!/Seat rule: Champion's Cup/.test(txt())) log.push('FAIL the League table does not show the seat rule');
+                      log.push("seat rule set to a yearly Champion's Cup"); } }
                   go('circuit'); }
                 if (!seen.gymwatch && S.season >= 2) { go('gyms'); if (click('[data-act=watchgym]')) { seen.gymwatch = 1; if (!document.querySelector('.sheet-battle')) log.push('FAIL no gym battle replay'); else log.push('watched a badge conceded'); click('[data-act=bskip]'); click('[data-act=close]'); } go('circuit'); }
                 if (!seen.repyear && S.history.length >= 2) { go('history'); const ls = document.querySelectorAll('#main [data-act=repyear]'); const old = ls[ls.length - 1];

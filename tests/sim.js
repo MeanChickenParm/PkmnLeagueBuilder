@@ -32,7 +32,7 @@ const PG = { start: [], famous: 0 }, PGH = { blocked: 0 };
 g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x => x.leader)]; for (const id of ids) { const t = g.T(id); if (t.famous && !t.founded) PG.famous++; } PG.start.push(Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length)); });
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
-let renames = 0, postSets = 0;
+let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0;
 const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
@@ -469,6 +469,25 @@ for (let i = 0; i < N; i++) {
       if (!g.setPosts(me, th, { leader: 'Bad <b>' })) fail.push('a post name with < was taken');
       const other = g.eachLeague(i => i).find(i => i !== me); if (other != null && !g.setPosts(other, 'dojo', {})) fail.push('a rival\'s posts were set without the option');
       postSets++; }
+    // (0.43.0) seat rules: every League's rule well-formed; called challenges and claims only under Protected; a Term
+    // appointment only in your League and within its window. The player changes the rule now and then (refused inside
+    // the cooldown, prestige taken), changes its timing, lobbies the Council and answers appointments at random
+    g.eachLeague(i => { const sr = S().seatRule; if (sr == null) return;
+      if (!g.SEAT_RULES[sr.k]) fail.push('a bad seat rule: ' + JSON.stringify(sr));
+      if (g.seatSched(sr.k) && !(sr.every >= g.SEAT_EVERY_MIN && sr.every <= g.SEAT_EVERY_MAX)) fail.push('a seat rule timing out of range: ' + JSON.stringify(sr));
+      if (sr.pick && (i !== g.ME() || sr.k !== 'term' || sr.pick.due > S().turn + g.TERM_ANSWER)) fail.push('a bad Term appointment: ' + JSON.stringify(sr));
+      if (sr.lobby && (sr.k !== 'council' || sr.lobby.n > g.COUNCIL_LOBBY_MAX)) fail.push('a bad lobby: ' + JSON.stringify(sr));
+      if (S().fin && S().fin.aim && !g.SEAT_RULES[sr.k]) fail.push('a rival with no seat rule');
+      if (i === g.ME() && sr.k !== 'protected' && (S().chalPending || []).some(x => x.k === 'champ' && (x.called || x.from === 'claim'))) fail.push('a called challenge or claim waits under ' + sr.k); });
+    if (HAND && !S().founding && Math.random() < 0.01) { const me = g.ME(), k = rnd(g.RULE_KEYS), cur = g.inLeague(me, () => g.seatRuleKey()), blk = g.seatChangeBlock(), p0 = g.inLeague(me, () => S().prest || 0);
+      const every = g.SEAT_EVERY_MIN + Math.floor(Math.random() * (g.SEAT_EVERY_MAX - g.SEAT_EVERY_MIN + 1)), err = g.setSeatRule(k, every);
+      if (k !== cur && blk && !err) fail.push('a seat rule changed inside the cooldown');
+      if (!err && k !== cur) { seatSet++; const p1 = g.inLeague(me, () => S().prest || 0); if (Math.abs(p1 - Math.max(0, p0 - g.SEAT_CHANGE_PREST)) > 1e-9) fail.push('the seat rule change cost wrong'); if (g.inLeague(me, () => g.seatRuleKey()) !== k) fail.push('the seat rule did not change'); }
+      if (!err && g.seatSched(k) && g.inLeague(me, () => S().seatRule.every) !== every) fail.push('the seat rule timing not set');
+      if (!g.setSeatRule('nope', 2)) fail.push('a made-up seat rule was taken'); }
+    if (HAND && !S().founding && Math.random() < 0.05) g.inLeague(g.ME(), () => { const sr = S().seatRule; if (!sr) return;
+      if (sr.pick && Math.random() < 0.5) { const c = rnd(g.termCands()), err = g.termPick(c.id); if (err) fail.push('termPick refused: ' + err); else { seatPicks++; if (S().champion !== c.id) fail.push('the appointed Champion did not take the seat'); } }
+      if (sr.k === 'council' && Math.random() < 0.3) { const c = rnd(g.councilCands()); if (c) { const err = g.lobbySeat(c.id); if (!err) seatLobbies++; } } });
     if (HAND && S().week === 47 && ((S().season === 7 && g.nLeagues() > 1) || S().season === 9)) {
       const k = S().season === 7 ? [...Array(g.nLeagues()).keys()].find(i => i !== g.ME()) : g.ME();
       g.inLeague(k, () => { S().fin.money = -50000000; S().fin.redYears = g.FOLD_YEARS - 1; });
@@ -593,6 +612,7 @@ console.log(fail.length ? 'FAIL ' + [...new Set(fail)].slice(0, 8).join(' | ') :
   'ambitions', JSON.stringify(Object.values(S().trainers).filter(t => t.wish && ['leader', 'gymtrainer', 'e4'].includes(t.role)).reduce((a, t) => (a[t.wish.k] = (a[t.wish.k] || 0) + 1, a), {})),
   'notices', amb.quit.size, 'asked for a run', amb.asked.size, 'comebacks', Object.values(S().trainers).filter(t => (t.comebacks || []).length).length, 'grudges', Object.values(S().trainers).filter(t => t.grudge != null).length,
   'refused', amb.refusedSwap + '/' + amb.refusedMove, 'seat challenges', JSON.stringify(chal), 'calls', JSON.stringify(call), 'steers set', steersSet, 'steered posts', g.eachLeague(() => Object.keys((S().steer || {}).posts || {}).length).join('/'), 'off-type', g.eachLeague(() => g.staffIds().map(g.T).filter(t => t.team.some(m => m.offType)).length).join('/'), 'trend', (S().metaTrend || []).join(','), ...(HAND ? ['money', g.money(S().fin.money), 'wages/wk', g.wageBill(), JSON.stringify(money), 'ledger', JSON.stringify(S().fin.last || S().fin.yr)] : []));
+console.log('seat rules', g.eachLeague(i => `${S().lgName}: ${g.seatRuleName(g.seatRuleKey())}${S().seatRule && S().seatRule.every ? ' every ' + S().seatRule.every : ''}`).join('; '), JSON.stringify(g.SEAT_LOG), 'set by hand', seatSet, 'appointed', seatPicks, 'lobbied', seatLobbies);
 console.log('themes', g.eachLeague(i => `${S().lgName}: ${g.themeOf(i).name} (${Object.values(g.postWords(i)).join('/')})`).join('; '), 'drawn', g.THEME_LOG.picked, 'rebrands', g.THEME_LOG.rebrands, 'set by hand', postSets);
 console.log('world', 'founders', Object.values(S().trainers).filter(t => t.founded).map(t => t.name + (t.founded.champ ? ' (Champion)' : '')).join(', ') || 'none', 'Leagues', g.eachLeague(() => S().lgName).join(', '), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none', 'renames', renames, 'shared cities', Object.values(g.gymMap()).filter(x => x.length > 1).length);
 LEG.sanct = 0; g.eachLeague(() => { for (const p of g.myPlaces()) LEG.sanct += (p.b.find(x => x.k === 'sanct') || { lv: 0 }).lv; });

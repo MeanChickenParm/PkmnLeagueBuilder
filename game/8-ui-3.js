@@ -1,5 +1,13 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 43, ver: '0.43.0', date: 'November 19, 2026', time: '9:10 PM ET', title: 'Seat rules: how each League chooses its Champion', items: [
+    "Every League now has a seat rule: how its Champion's seat changes hands. Pick yours at setup (free), and change it on Your staff under How the Champion is chosen.",
+    "Nine rules. Protected: the seat changes only with your say, as before (called challenges, title claims, the Champion's own ambitions). Succession: when the Champion leaves, the top Elite Four seat moves up, so the Elite Four's order is the line of succession. Term: the Champion serves a set term, then you appoint the next one or keep them. Council vote: the Elite Four vote on a schedule and whenever the seat empties, and you can pay to lobby for a candidate. Merit: on a schedule, the seat goes to whoever stopped the largest share of runs. Gauntlet (the Grand Trial in island-trial Leagues): each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion. Champion's Cup: a tournament of the Champion, the Elite Four and the best Gym Leaders; the winner takes the seat. Open Cup: the Cup with title winners and the circuit's best invited. Conqueror: the year's strongest title winner who wants the seat takes it at New Year.",
+    "You set how often each scheduled rule comes round (every 1 to 6 years). Changing the rule itself costs 5 prestige and can't be done again for two years; changing the timing is free. Called challenges and title claims are only for Protected Leagues.",
+    "What a rule pays: the less control it keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. The Cups sell tickets (the Open Cup more, and a little prestige), and a Council vote keeps ambitious Elite Four members patient a little longer.",
+    "Rival Leagues pick a rule that suits their theme and aim, with some chance in it, and may change it when they rebrand. The League table shows each League's rule, and the year report lists what the rule did that year. A founding Champion's protected years still hold under every rule.",
+    "Old saves can't be loaded (save version 21).",
+  ] },
   { id: 42, ver: '0.42.0', date: 'November 19, 2026', time: '3:52 PM ET', title: 'Post names by League, and League themes', items: [
     "Each League now names its own posts, instead of the region naming them for every League in it. At setup, under your League's name, pick a theme to fill in the names of your Gym Leaders, gym trainers, Elite Four and Champion, then type over any of them. You can change them later from the League table's Posts button.",
     "Themes: Classic (Gym Leader, Gym trainer, Elite Four, Champion), Dojo (Sensei, Student, Grandmasters, Master), Court (Warden, Squire, High Council, Sovereign), Board (Branch Head, Associate, Board, Chair), Academy (Professor, Assistant, Faculty, Dean), Island trials (Kahuna, Trial Captain, Island Elders, Champion), and Region default, which uses the region's own names. A theme also changes a few lines in the news.",
@@ -650,6 +658,31 @@ function planOptions(t, key) {
   }
   return out;
 }
+// ---------- seat rules (0.43.0) ----------
+// the rule picker (setup and Your staff): a select of the nine rules and the timing in years for the scheduled ones
+let seatDraft = null;
+function seatForm(sel, ev, k, every) {
+  const sched = seatSched(k), ev0 = every || (sched ? SEAT_RULES[k].every : null);
+  return `<div class="confirm-row"><select id="${sel}" aria-label="Seat rule">${RULE_KEYS.map(x => `<option value="${x}"${x === k ? ' selected' : ''}>${esc(SEAT_RULES[x].name)}</option>`).join('')}</select>${sched ? `<label class="small">every <input id="${ev}" type="number" min="${SEAT_EVERY_MIN}" max="${SEAT_EVERY_MAX}" value="${ev0}" style="width:4em"> year${ev0 === 1 ? '' : 's'}</label>` : ''}</div><p class="muted small">${esc(SEAT_RULES[k].text)}</p>`;
+}
+const seatNext = r => r.k === 'term' ? (r.term != null ? `The term ends at New Year after year ${r.term}.` : '') : seatSched(r.k) && r.next != null ? `Next at New Year after year ${r.next}.` : '';
+function seatPanel() {
+  const r = seatRule(), k = r.k, d = seatDraft || { k, every: r.every }, block = seatChangeBlock(), cw = esc(postWord('champion'));
+  const pct = v => v == null ? '–' : `${Math.round(v * 100)}%`;
+  let extra = '';
+  if (r.pick) extra += `<div class="eyebrow">Appoint the next ${cw} by ${turnDate(r.pick.due)}</div><ul class="mini">${termCands().map(t => `<li><span>${tname(t.id)} <span class="small">(${t.id === S.champion ? 'keep the ' + cw : postName(t)})</span> ${ovrPill(t)}</span><button class="btn small primary" data-act="seatpick" data-id="${t.id}">${t.id === S.champion ? 'Keep' : 'Appoint'}</button></li>`).join('')}</ul>`;
+  if (k === 'council') { const lob = r.lobby;
+    extra += `<p class="small">Standing: ${councilCands().map(t => `${tname(t.id)}${lob && lob.id === t.id ? ` <span class="tag">lobbied ×${lob.n}</span>` : ''}`).join(', ')}. Voters: the ${esc(postWord('e4'))} who aren't standing vote for the strongest candidate, with an edge for the ${cw} and for anyone you lobby for (${money(COUNCIL_LOBBY)} a time, up to ${COUNCIL_LOBBY_MAX} before each vote).</p>
+      <div class="confirm-row">${councilCands().map(t => `<button class="btn small" data-act="seatlobby" data-id="${t.id}">Lobby for ${esc(t.name)}</button>`).join('')}</div>`; }
+  if (k === 'merit') extra += `<p class="small">Share of runs stopped over the last ${r.every} year${r.every === 1 ? '' : 's'} (the ${cw}'s counts ×${MERIT_CHAMP}): ${meritTable(r.every).map(x => `${tname(x.id)} ${pct(x.share)}`).join(', ')}.</p>`;
+  if (k === 'succession') { const ks = S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting); if (ks.length) extra += `<p class="small">Next in line: ${tname(S.e4[Math.max(...ks)])} (${esc(postWord('e4'))} #${Math.max(...ks) + 1}). Swap ${esc(postWord('e4'))} seats to change the order.</p>`; }
+  if (seatLocked()) extra += `<p class="muted small">${tname(S.champion)} is the founding ${cw}: the seat is protected until year ${T(S.champion).founderUntil}.</p>`;
+  const changing = d.k !== k;
+  return `<section class="panel"><div class="ph"><h3>How the ${cw} is chosen: ${esc(seatRuleName(k))}</h3><span class="muted">${esc(seatNext(r))}</span></div><p>${esc(SEAT_RULES[k].text)}</p>${extra}
+    <details${changing ? ' open' : ''}><summary class="small">Change the rule or its timing</summary>${seatForm('seatrulesel', 'seatevery', d.k, d.every)}
+    <p class="muted small">Changing the rule costs ${SEAT_CHANGE_PREST} prestige and it can't change again for ${SEAT_COOLDOWN} years; the timing alone is free. The less control a rule keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. Called challenges and title claims are only for the Protected rule.</p>
+    ${changing && block ? `<p class="muted small">${esc(block)}</p>` : `<button class="btn small primary" data-act="seatset">${changing ? `Change to ${esc(seatRuleName(d.k))}` : 'Set timing'}</button>`}</details></section>`;
+}
 function viewPlans() { return inLeague(ME(), viewPlans0); }
 function viewPlans0() {
   if (!ranchOn()) return '<section class="panel"><p class="muted">Only a League that keeps books has a ranch, and so team plans.</p></section>';
@@ -781,7 +814,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), seatRule: setupSeat, posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -866,6 +899,9 @@ document.addEventListener('click', ev => {
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'callopen': callOpen = !callOpen; render(); break;
+    case 'seatset': { const d = seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })); const w = setSeatRule(d.k, d.every); if (!w) seatDraft = null; save(); render(); toast(w || 'Seat rule set.'); break; }
+    case 'seatlobby': { const w = lobbySeat(+el.dataset.id); save(); render(); toast(w || 'You lobbied the Council.'); break; }
+    case 'seatpick': { const w = termPick(+el.dataset.id); save(); render(); toast(w || 'Appointed.'); break; }
     case 'callchal': { const err = callChallenge(+el.dataset.id); if (!err) callOpen = false; save(); render(); toast(err || 'Challenge called.'); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
@@ -944,6 +980,11 @@ document.addEventListener('change', e => {
     rd.onload = () => { rgImpText = String(rd.result || ''); rgImpMsg = `Read ${f.name}. Press Import this region.`; render(); }; rd.onerror = () => { rgImpMsg = "Couldn't read that file."; render(); }; rd.readAsText(f); return; }
   // (0.42.0) a theme picked fills the four fields (typed names are cleared)
   if (e.target && e.target.id === 'setposttheme') { setupPosts = { theme: e.target.value, names: {} }; render(); return; }
+  // (0.43.0) the seat rule pickers
+  if (e.target && e.target.id === 'setseatrule') { setupSeat = { k: e.target.value, every: null }; render(); return; }
+  if (e.target && e.target.id === 'setseatevery') { setupSeat.every = +e.target.value; render(); return; }
+  if (e.target && e.target.id === 'seatrulesel') { seatDraft = { k: e.target.value, every: null }; render(); return; }
+  if (e.target && e.target.id === 'seatevery') { seatDraft = Object.assign(seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })), { every: +e.target.value }); render(); return; }
   if (e.target && e.target.id === 'lgposttheme' && lgPostsDraft) { lgPostsDraft = { theme: e.target.value, names: {} }; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivaltheme')) { setupRivalThemes[+e.target.dataset.i] = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
