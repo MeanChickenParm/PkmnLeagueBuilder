@@ -1777,6 +1777,7 @@ function moveGym(i, cityId, lg = ME()) {
     from.b[cityLg()] = []; if (from.st) delete from.st[cityLg()]; from.tier = from.ctrl === cityLg() ? null : from.tier;
     if (S.fin && S.fin.ruins) delete S.fin.ruins[from.id];
     g.city = cityId;
+    safariTrim(); // (0.44.0) a safari left behind sends its stock back
     book(-MOVE_FEE, 'building', `Moved ${from.name} Gym to ${to.name}`);
     const text = `${from.name} Gym moved to ${to.name}${lost ? `; what the League had built in ${from.name} is lost` : ''}.`;
     news(text, 'league'); noteChange(text);
@@ -2344,6 +2345,7 @@ function dropLevel(pl, k) {
   const x = pl.b.find(y => y.k === k), cost = upCost(k, x.lv - 1);
   x.lv--; if (!x.lv) pl.b.splice(pl.b.indexOf(x), 1);
   if (lapsed()) addRuin(pl.c ? pl.c.id : 'seat', k, 1);
+  if (k === 'safari') safariTrim(); // (0.44.0) the stock past its room comes back
   return cost;
 }
 // (0.19.0) restoring: a building level a League lost while in the red (sold in the red, or lost to unpaid upkeep)

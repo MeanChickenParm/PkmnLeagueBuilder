@@ -252,11 +252,23 @@ async def run(path):
                   // 0.25.0: the ranch. Buy from the market, send an area trip and a targeted trip, reserve, lock and sell one,
                   // and build the Ranch at the seat
                   { const keep = S.fin.money; S.fin.money = 300000; go('ranch'); const txt = () => document.querySelector('#main').textContent, R = () => inLeague(0, () => S.ranch);
-                    if (!/Who fields what/.test(txt()) || !/The pool/.test(txt()) || !/The market/.test(txt())) log.push('FAIL the Ranch page');
+                    // 0.44.0: the page is in tabs
+                    const rtab = k => { const b = document.querySelector('[data-act=ranchtab][data-v="' + k + '"]'); if (!b) log.push('FAIL no ranch tab ' + k); else b.click(); };
+                    const rshow = v => { const sel = document.querySelector('select.ranchf[data-f=show]'); if (!sel) log.push('FAIL no pool show filter'); else { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); } };
+                    for (const [k] of RANCH_TABS) { rtab(k); if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined on tab ' + k); }
+                    rtab('teams'); if (!/Who fields what/.test(txt()) || !document.querySelector('#ranchteams')) log.push('FAIL the Teams tab');
+                    { const rows = document.querySelectorAll('#ranchteams tbody tr').length, n = seniorIds().map(T).reduce((a, t) => a + t.team.length, 0); if (rows !== n) log.push('FAIL the Teams tab should have a row a Pokémon (' + rows + ' of ' + n + ')'); }
                     if (S.gyms.some(g => T(g.leader) && T(g.leader).specialty) && !/backups/.test(txt())) log.push('FAIL the Ranch page shows no backup types'); // (0.38.0)
-                    if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined');
+                    rtab('pool'); if (!/The pool/.test(txt())) log.push('FAIL the Pool tab');
+                    { const n = document.querySelectorAll('#ranchpool tbody tr').length, free = R().mons.filter(e => e.at == null).length; if (free && n !== free) log.push('FAIL the pool should show only Pokémon not fielded by default (' + n + ' of ' + free + ')'); }
+                    { const sel = document.querySelector('select.ranchf[data-f=type]'), ty = R().mons.length ? inLeague(0, () => entryTypes(R().mons[0], R().mons[0].sp)[0]) : null;
+                      rshow('all'); if (!sel || !ty) log.push('FAIL no type filter'); else { const s2 = document.querySelector('select.ranchf[data-f=type]'); s2.value = ty; s2.dispatchEvent(new Event('change', { bubbles: true }));
+                        const want = R().mons.filter(e => inLeague(0, () => entryTypes(e, e.sp)).includes(ty)).length, got = document.querySelectorAll('#ranchpool tbody tr').length; if (want !== got) log.push('FAIL the type filter (' + got + ' of ' + want + ')'); else log.push('filtered the pool to ' + ty + ': ' + got); }
+                      document.querySelector('[data-act=ranchfreset]').click(); if (ranchF.show !== 'free' || ranchF.type) log.push('FAIL clearing the filters'); }
+                    rtab('market'); if (!/The market/.test(txt())) log.push('FAIL the Market tab');
                     { const b = document.querySelector('[data-act=ranchbuy]'), n0 = R().mons.length, m0 = S.fin.money, x = b && R().shop.find(y => y.uid === +b.dataset.id);
                       if (!b || !x) log.push('FAIL no market to buy from'); else if (!b.disabled) { b.click(); if (R().mons.length !== n0 + 1 || S.fin.money !== m0 - x.price) log.push('FAIL buying at the market'); else log.push('bought ' + x.b + ' at the market'); } else log.push('the ranch is full'); }
+                    rtab('trips');
                     { const b = document.querySelector('[data-act=rancharea]'), t0 = R().trips.length, m0 = S.fin.money; if (!b) log.push('FAIL no area trip button'); else if (!b.disabled) { b.click(); if (R().trips.length !== t0 + 1 || S.fin.money !== m0 - 2500) log.push('FAIL the area trip'); } }
                     { const sel = document.querySelector('select.ranchtypesel'); if (!sel) log.push('FAIL no type picker'); else { sel.value = 'Water'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
                       const b = document.querySelector('[data-act=ranchtrip]'), t0 = R().trips.length; if (!b) log.push('FAIL no targeted trip button'); else if (!b.disabled) { const sp = b.dataset.b; b.click(); if (R().trips.length !== t0 + 1 || !R().trips.some(x => x.b === sp)) log.push('FAIL the targeted trip'); else log.push('sent a trip for ' + sp); } }
@@ -269,7 +281,7 @@ async def run(path):
                       const sel2 = document.querySelector('select.ranchcondsel'); if (sel2) { sel2.value = ''; sel2.dispatchEvent(new Event('change', { bubbles: true })); }
                       inLeague(0, () => { const b0 = ranchSpecies().find(x => !SP[x].rare); S.outbreak = { sp: b0, town: townName(0), turn: S.turn, season: S.season, week: S.week, caught: 0, alpha: 0, shiny: 0 }; }); render();
                       const ob = document.querySelector('[data-act=ranchob]'), t0 = R().trips.length; if (!ob) log.push('FAIL no outbreak trip button'); else if (!ob.disabled) { ob.click(); if (R().trips.length !== t0 + 1 || !R().trips.some(x => x.k === 'outbreak')) log.push('FAIL the outbreak trip'); else if (document.querySelector('[data-act=ranchob]')) log.push('FAIL a second outbreak trip offered'); }
-                      inLeague(0, () => { S.outbreak = null; S.ranch.trips = []; const e = newEntry(ranchSpecies().find(x => SP[x].types.length === 1), 3, 'trip'); condEntry(e, ['delta']); ranchAdd(e); }); render();
+                      inLeague(0, () => { S.outbreak = null; S.ranch.trips = []; const e = newEntry(ranchSpecies().find(x => SP[x].types.length === 1), 3, 'trip'); condEntry(e, ['delta']); ranchAdd(e); }); rtab('pool');
                       if (!document.querySelector('#main .tag.delta')) log.push('FAIL no Delta tag on the Ranch page');
                       if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after conditions'); }
                     // 0.37.0: take from a new hire's storage, store a challenger's legendary in a Sanctuary (paying their fee) and
@@ -280,7 +292,7 @@ async def run(path):
                       const L = inLeague(0, () => { const own = ownedLegends(), pooled = new Set((S.wPool || []).map(m => m.sp)); const sp = LEGENDS.map(x => x.name || x).find(x => SP[x] && SP[x].legend && !SP[x].baby && !own.has(x) && !pooled.has(x) && !legendHeld(x));
                         const c = S.challengers.map(T).find(x => x && x.team.length >= 2 && !legendFull(x)); if (!sp || !c) return null;
                         const m = claimLegend(c, makeMon(sp, 50)); c.team.push(m); const city = S.cities[S.gyms[0].city]; city.site = { sp, from: S.season, sps: [sp] }; cityB(city).push({ k: 'sanct', lv: 1 }); S.fin.money = Math.max(S.fin.money, 400000); return { c, m }; });
-                      if (!L) log.push('no legendary to store'); else { render();
+                      if (!L) log.push('no legendary to store'); else { rtab('region');
                         if (!/Sanctuaries and the vault/.test(txt())) log.push('FAIL no Sanctuary panel');
                         const ab = document.querySelector('[data-act=vaultask][data-id="' + L.c.id + '"]'), fee = inLeague(0, () => vaultFee(L.m)), m0 = S.fin.money;
                         if (!ab) log.push('FAIL no store button'); else { ab.click(); const v = inLeague(0, () => S.vault || []); if (!v.some(e => e.m === L.m) || L.c.team.includes(L.m) || S.fin.money !== m0 - fee) log.push('FAIL storing a legendary ' + JSON.stringify({ dis: ab.disabled, n: v.length, team: L.c.team.includes(L.m), m0, now: S.fin.money, fee, toast: (document.querySelector('.toast') || {}).textContent })); else log.push('stored ' + L.m.sp + ' for ' + fee); }
@@ -288,6 +300,7 @@ async def run(path):
                         const gb = document.querySelector('[data-act=vaultgive]'), sel = document.querySelector('select.vaultsel');
                         if (!gb || !sel) log.push('FAIL no give button'); else { const to = T(+sel.value); gb.click(); if (!to.team.includes(L.m)) log.push('FAIL giving a stored legendary'); else log.push('gave ' + L.m.sp + ' to ' + to.name); }
                         if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the vault'); } }
+                    rtab('pool');
                     { const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at == null && !x.sale); });
                       if (!e) log.push('nothing free in the ranch');
                       else { const sel = document.querySelector('select.ranchressel[data-id="' + e.uid + '"]'); if (!sel) log.push('FAIL no reserve picker'); else { sel.value = 'gym:0'; sel.dispatchEvent(new Event('change', { bubbles: true })); if (e.res !== 'gym:0') log.push('FAIL reserving'); }
@@ -295,10 +308,10 @@ async def run(path):
                         const sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]'), v = inLeague(0, () => Math.round(entryValue(e) * SELL_BACK)), m0 = S.fin.money;
                         if (!sb) log.push('FAIL no sell button'); else { sb.click(); if (S.fin.money !== m0 + v || R().mons.includes(e)) log.push('FAIL selling back'); else log.push('sold back ' + e.sp); } } }
                     // 0.26.0: sell a fielded one straight from the pool; its holder swaps it out at once
-                    { go('ranch'); const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at != null); });
+                    { go('ranch'); rtab('pool'); rshow('fielded'); const e = inLeague(0, () => { ranchSync(); return S.ranch.mons.find(x => x.at != null); });
                       if (!e) log.push('nothing fielded from the ranch'); else { const t = T(e.at), n0 = t.team.length, sb = document.querySelector('[data-act=ranchsell][data-id="' + e.uid + '"]');
                         if (!sb || !/swaps it out/.test(sb.closest('tr').textContent)) log.push('FAIL no Sell button or note on a fielded ranch Pokémon');
-                        else { sb.click(); if (t.team.length !== n0 || t.team.some(m => m.rid === e.uid) || R().mons.includes(e)) log.push('FAIL selling a fielded ranch Pokémon'); else log.push('sold a fielded ' + e.sp); } } }
+                        else { sb.click(); if (t.team.length !== n0 || t.team.some(m => m.rid === e.uid) || R().mons.includes(e)) log.push('FAIL selling a fielded ranch Pokémon'); else log.push('sold a fielded ' + e.sp); } } rshow('free'); }
                     // 0.39.0: team plans. With the review open, plan a ranch Pokémon for gym 1 (built at once); with it closed and
                     // the holder seen, a plan for gym 2 waits for the review; clear it; the review-stop box
                     { inLeague(0, () => { ranchSync(); const P = plansState(); P.win = S.turn; }); go('plans'); const txt2 = () => document.querySelector('#main').textContent;
@@ -320,10 +333,10 @@ async def run(path):
                     go('cities'); const rb = document.querySelector('[data-act=build][data-w=seat][data-k=ranch]'), c0 = inLeague(0, () => ranchCap());
                     if (!rb) log.push('FAIL no Ranch to build'); else { rb.click(); if (inLeague(0, () => ranchCap()) <= c0) log.push('FAIL building the Ranch'); else log.push('built the Ranch'); }
                     // 0.27.0: the region panel, a charter, a lane in a port (moving a gym there if needed) and its route, the safari
-                    { S.fin.money = 400000; R().trips.length = 0; go('ranch'); const txt = () => document.querySelector('#main').textContent;
+                    { S.fin.money = 400000; R().trips.length = 0; go('ranch'); rtab('region'); const txt = () => document.querySelector('#main').textContent;
                       if (!/Pokémon/.test(txt()) || !/Charter from/.test(txt())) log.push('FAIL no region panel on the Ranch page');
                       { const b = document.querySelector('[data-act=ranchcharter]'), t0 = R().trips.length, m0 = S.fin.money; if (!b) log.push('FAIL no charter button'); else if (b.disabled) log.push('charter button disabled (trips out ' + R().trips.length + ')'); else { b.click(); if (R().trips.length !== t0 + 1 || S.fin.money !== m0 - 12000 || !R().trips.some(x => x.k === 'charter')) log.push('FAIL the charter'); else log.push('sent a charter'); } }
-                      const opts = [...document.querySelectorAll('select.ranchspsel option')].map(o => o.value);
+                      rtab('trips'); const opts = [...document.querySelectorAll('select.ranchspsel option')].map(o => o.value);
                       if (opts.some(b => !inLeague(0, () => tripOk(b)))) log.push('FAIL the trip list offers a line out of reach');
                       go('cities');
                       let li = inLeague(0, () => S.gyms.findIndex(g => isPort(S.cities[g.city])));
@@ -333,10 +346,28 @@ async def run(path):
                       if (li < 0) log.push('no port to build a lane in');
                       else if (!lb) { const why = inLeague(0, () => buildCheck(li, 'lane').why); if (/port/.test(why || '')) log.push('FAIL no lane to build in a port'); else log.push('no lane built: ' + why); }
                       else { const m0 = S.fin.money; lb.click(); const ln = inLeague(0, () => lanesOf()); if (!ln.length || S.fin.money !== m0 - 60000) log.push('FAIL building a lane'); else { log.push('built a lane in ' + ln[0].city.name);
-                        go('ranch'); const sel = document.querySelector('select.lanesel'); if (!sel) log.push('FAIL no route picker'); else { const to = [...sel.options].map(o => +o.value).find(v => v !== ln[0].src), m1 = S.fin.money; sel.value = String(to); sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => lanesOf()[0].src) !== to || S.fin.money !== m1 - 10000) log.push('FAIL changing the route'); else log.push('changed the lane route'); } } }
+                        go('ranch'); rtab('region'); const sel = document.querySelector('select.lanesel'); if (!sel) log.push('FAIL no route picker'); else { const to = [...sel.options].map(o => +o.value).find(v => v !== ln[0].src), m1 = S.fin.money; sel.value = String(to); sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => lanesOf()[0].src) !== to || S.fin.money !== m1 - 10000) log.push('FAIL changing the route'); else log.push('changed the lane route'); } } }
                       go('cities'); const sb = document.querySelector('[data-act=build][data-k=safari]');
                       if (!sb) log.push('no safari to build (no free slot)'); else { const w = sb.dataset.w; sb.click(); if ([...document.querySelectorAll('[data-act=build][data-k=safari]')].some(x => x.dataset.w !== w)) log.push('FAIL a second safari offered'); else log.push('built a safari'); }
-                      go('ranch'); if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the region steps'); }
+                      go('ranch'); if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the region steps');
+                      // 0.44.0: the Safari Zone panel: keep a line, send a trip from it (cheaper than a plain trip), stock a ranch
+                      // Pokémon from the pool and take it back, a quarterly find, and the log on the Trips tab
+                      if (inLeague(0, () => safariBuilt())) { R().trips.length = 0; inLeague(0, () => { S.ranch.safari = null; safariWeek(); }); go('ranch'); rtab('region');
+                        if (!/Safari Zone/.test(txt()) || !document.querySelector('#safarilines')) log.push('FAIL no Safari Zone panel with its lines');
+                        const kb = document.querySelector('[data-act=safarikeep][data-v="1"]');
+                        if (!kb) log.push('FAIL no keep button'); else { const b = kb.dataset.b; kb.click(); if (!inLeague(0, () => safariKept()).includes(b)) log.push('FAIL keeping a safari line'); else { inLeague(0, () => { S.ranch.safari.until = S.turn; safariWeek(); }); if (!inLeague(0, () => S.ranch.safari.lines.includes(b))) log.push('FAIL a kept line did not stay through the change'); else log.push('kept ' + b + ' through a change'); } }
+                        go('ranch'); rtab('region'); const tb = document.querySelector('#safarilines [data-act=ranchtrip]');
+                        if (!tb) log.push('FAIL no trip button in the safari panel'); else if (!tb.disabled) { const b = tb.dataset.b, m0 = S.fin.money, p = inLeague(0, () => tripPlan(b)); tb.click(); const tr = R().trips.find(x => x.b === b); if (!tr || !tr.safari || S.fin.money !== m0 - p.cost) log.push('FAIL a safari trip'); else log.push('sent a safari trip for ' + b + ' (' + p.cost + ', ' + Math.round(p.odds * 100) + '%)'); }
+                        R().trips.length = 0; rtab('pool');
+                        const sb2 = document.querySelector('[data-act=ranchstock]');
+                        if (!sb2) log.push('FAIL no stock button in the pool'); else { const id = +sb2.dataset.id, n0 = R().mons.length; sb2.click(); const st = inLeague(0, () => safariStock());
+                          if (!st.some(e => e.uid === id) || R().mons.length !== n0 - 1) log.push('FAIL stocking the safari'); else { log.push('stocked ' + st.find(e => e.uid === id).sp);
+                            const e = st.find(e => e.uid === id); if (!inLeague(0, () => safariSet().has(e.b))) log.push('FAIL a stocked line not in the safari');
+                            rtab('region'); if (!document.querySelector('#safaristock')) log.push('FAIL no stock table');
+                            const n1 = R().mons.length; inLeague(0, () => safariFind()); if (R().mons.length !== n1 + 1 && R().mons.length < inLeague(0, () => ranchCap())) log.push('FAIL the quarterly safari find'); else log.push('a young ' + R().mons[R().mons.length - 1].sp + ' turned up in the safari');
+                            go('ranch'); rtab('region'); const back = document.querySelector('[data-act=safaritake][data-id="' + id + '"]'); if (!back) log.push('FAIL no take-back button'); else if (!back.disabled) { back.click(); if (inLeague(0, () => safariStock()).some(x => x.uid === id) || !R().mons.some(x => x.uid === id)) log.push('FAIL taking a stocked Pokémon back'); } } } }
+                      go('ranch'); rtab('trips'); if (!/Recent history/.test(txt()) || !document.querySelectorAll('#ranchlog tbody tr').length) log.push('FAIL no ranch log'); else log.push('the ranch log has ' + document.querySelectorAll('#ranchlog tbody tr').length + ' rows');
+                      if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the safari steps'); rtab('pool'); }
                     S.fin.money = keep; go('ranch'); }
                   log.push('managed staff'); go('circuit'); }
                 // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at
