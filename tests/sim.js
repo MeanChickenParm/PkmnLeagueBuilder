@@ -46,6 +46,7 @@ const MEM = { n: 0 }; // (0.21.0) gym memories seen, summed over checks
 const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, listed: 0, unlisted: 0, locked: 0, reserved: 0, built: 0, stopMax: 0, soldFielded: 0, aiIdleMax: 0 };
 // (0.36.0) conditions in the ranch
 const CON = { hunts: 0, huntRefused: 0, obTrips: 0, held: 0, fielded: 0, shop: 0, kinds: {}, showMax: 0 };
+const SAF = { kept: 0, stocked: 0, taken: 0, stockMax: 0, logMax: 0, keptMax: 0 }; // (0.44.0)
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
@@ -118,6 +119,17 @@ function check(tag) {
       if (R.safari) for (const b of R.safari.lines) if (g.homeSet(z.region).has(b)) bad('a home line in the safari');
       for (const l of g.lanesOf()) { if (!g.isPort(l.city)) bad('a lane off a port'); if (l.src === z.region) bad('a lane from home'); }
       if (z.gyms.filter(gy => (g.myPlaces().find(p => p.c && p.c.id === gy.city) || { b: [] }).b.some(x => x.k === 'safari')).length > 1) bad('two safaris'); }
+    // (0.44.0) the safari's stock and kept lines, and the ranch log
+    { const st = R.stock || [], kp = R.keep || [], su = new Set(st.map(e => e.uid));
+      if (st.length > g.stockCap()) bad('a safari stocked past its room'); if (st.length && !g.safariBuilt()) bad('stock with no safari');
+      if (su.size !== st.length) bad('a Pokémon stocked twice');
+      for (const e of st) { if (R.mons.includes(e) || R.mons.some(x => x.uid === e.uid)) bad('a stocked Pokémon still in the ranch'); if (e.at != null || e.sale || e.res || e.lock) bad('a stocked Pokémon fielded, listed, reserved or locked');
+        if (!(e.g >= 1 && e.g <= 5) || !g.ranchable(e.b) || !g.SP[e.sp] || g.LINE[e.sp] !== g.LINE[e.b] || !e.iv) bad('a bad stocked entry ' + JSON.stringify(e)); }
+      for (const id of g.seniorIds()) for (const m of g.T(id).team) if (m.rid != null && su.has(m.rid)) bad('a stocked Pokémon on a team');
+      if (kp.length > g.keepCap()) bad('too many kept safari lines'); for (const b of kp) if (st.some(e => e.b === b)) bad('a kept line also stocked');
+      if (R.safari && g.safariLv() === R.safari.lv) for (const b of kp) if (!R.safari.lines.includes(b)) bad('a kept line not in the safari');
+      const L = R.log || []; if (L.length > g.RANCH_LOG) bad('the ranch log too long'); for (const x of L) if (typeof x.t !== 'number' || typeof x.text !== 'string' || !x.k) bad('a bad ranch log line ' + JSON.stringify(x));
+      SAF.stockMax = Math.max(SAF.stockMax, st.length); SAF.logMax = Math.max(SAF.logMax, L.length); SAF.keptMax = Math.max(SAF.keptMax, kp.length); }
     for (const tr of R.trips) if (tr.k === 'charter' && (tr.r === z.region || !(tr.r >= 0 && tr.r < g.nRegionsBuilt()))) bad('a bad charter');
     if (R.trips.length > g.TRIP_MAX + 3) bad('too many trips');
     const seen = new Set(); let stops = 0;
@@ -362,6 +374,18 @@ for (let i = 0; i < N; i++) {
         if (!w) { CON.hunts++; if (!ok) fail.push('a hunt out of reach: ' + b); if (z.fin.money !== m0 - p.cost) fail.push('hunt cost wrong'); if (p.cost <= g.tripPlan(b).cost) fail.push('a hunt no dearer than a trip'); }
         else { CON.huntRefused++; if (ok && z.ranch.trips.length < g.tripMax() && m0 >= p.cost) fail.push('hunt refused: ' + w); }
         const o = g.obTrip(); if (o && z.ranch.trips.length < g.tripMax() && z.fin.money >= g.OB_TRIP_COST) { const m1 = z.fin.money; if (g.startTrip('outbreak')) fail.push('outbreak trip refused'); else { CON.obTrips++; if (z.fin.money !== m1 - g.OB_TRIP_COST) fail.push('outbreak trip cost wrong'); if (!g.startTrip('outbreak')) fail.push('two trips to one outbreak'); } } } });
+    // (0.44.0) the safari: keep a line, stock a Pokémon (one not in a plan), take one back
+    if (HAND && S().season >= 2) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.founding || g.safariBuilt() || z.fin.money < 0) return; // build one as soon as it can
+      const i = [0, 1, 2, 3, 4, 5, 6, 7].find(k => !g.buildCheck(k, 'safari').why); if (i != null && z.fin.money >= g.buildCheck(i, 'safari').cost && !g.build(i, 'safari')) REG.safari++; });
+    if (HAND && Math.random() < 0.04) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || z.founding || !g.safariBuilt()) return; const R = z.ranch, r = Math.random();
+      if (r < 0.3) { if (!R.safari || !R.safari.lines.length) return; const b = rnd(R.safari.lines), was = g.safariKept().includes(b), w = g.keepLine(b, true);
+        if (!w) { if (!was) SAF.kept++; if (!g.safariKept().includes(b)) fail.push('keeping a line'); } else if (g.safariKept().length < g.keepCap() && !R.stock.some(e => e.b === b)) fail.push('keep refused: ' + w);
+        if (Math.random() < 0.3) { g.keepLine(b, false); if (g.safariKept().includes(b)) fail.push('unkeeping a line'); } }
+      else if (r < 0.75) { const P = g.plansState(), pl = new Set(Object.values(P.posts || {}).flatMap(p => (p.on || []).concat(p.next || [])).filter(x => x && x.r != null).map(x => x.r));
+        g.ranchSync(); const e = rnd(R.mons.filter(x => x.at == null && !pl.has(x.uid))); if (!e) return; const n0 = R.mons.length, s0 = R.stock.length, u0 = g.ranchUpkeep(), w = g.stockMon(e.uid);
+        if (!w) { SAF.stocked++; if (R.mons.length !== n0 - 1 || R.stock.length !== s0 + 1 || g.ranchUpkeep() !== u0) fail.push('stocking wrong ' + JSON.stringify({ n0, n: R.mons.length, s0, s: R.stock.length, u0, u: g.ranchUpkeep() })); if (!g.lapsed() && !g.safariSet().has(e.b)) fail.push('a stocked line not in the safari'); if (g.tripOk(e.b) && !g.lapsed() && g.tripPlan(e.b).floor !== Math.max(1, g.stockFloor(e.b) - 1)) fail.push('no grade floor for a stocked line'); }
+        else if (s0 < g.stockCap()) fail.push('stocking refused: ' + w); }
+      else { const e = rnd(R.stock); if (!e) return; const w = g.unstockMon(e.uid); if (!w) { SAF.taken++; if (R.stock.includes(e) || !R.mons.includes(e)) fail.push('taking back wrong'); } else if (g.ranchRoom() > 0) fail.push('take back refused: ' + w); } });
     // (0.25.0) the ranch: trips, the market, other Leagues' sales, selling, releasing, locks, reserves and listings
     if (HAND && Math.random() < 0.08) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const r = Math.random(), m0 = z.fin.money;
       if (r < 0.15) { const ok = g.tripOk, b = Math.random() < 0.3 ? rnd(g.ranchSpecies()) : rnd(g.ranchSpecies().filter(x => ok(x))), p = g.tripPlan(b), avail = ok(b), w = g.startTrip('target', b);
@@ -630,6 +654,7 @@ console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.S
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
 console.log('backup types', JSON.stringify(backupStat));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
+console.log('safari', JSON.stringify(SAF), JSON.stringify(g.SAFARI_LOG));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.join('/'));
 console.log('regional field', JSON.stringify(fieldStats), 'draws', JSON.stringify(g.FIELD_LOG), 'rebuild', JSON.stringify(g.REBUILD_LOG), 'regions', [...new Set(g.eachLeague(() => g.S.region))].map(r => `${g.LEAGUE_SETS[r].name}: ${g.fieldSize(r)} of ${g.fieldTarget(r)} (${g.regionLgs(r).map(i => g.inLeague(i, () => g.S.challengers.length)).join('/')})`).join('; '));

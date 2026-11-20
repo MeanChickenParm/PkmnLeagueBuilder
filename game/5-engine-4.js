@@ -71,7 +71,7 @@ function findSpecies(pool) {
 }
 
 // ---------- the ranch itself ----------
-const newRanch = () => ({ mons: [], trips: [], shop: [] });
+const newRanch = () => ({ mons: [], trips: [], shop: [], log: [], stock: [], keep: [] }); // (0.44.0) the ranch log, the safari's stock and kept lines
 const ranchOn = () => !!(S && S.ranch);
 // the ranch a trainer's team draws on: a Gym Leader, Elite Four member or Champion (not an acting holder) of a League
 // that keeps one (the bound League)
@@ -316,7 +316,12 @@ const tripMax = () => TRIP_MAX + scoutLv();
 // a targeted trip for line b: its cost, length and odds (fixed when it sets out)
 function tripPlan(b) {
   const top = lineTop(b), sc = ranchScout(), rare = !!(SP[b].rare || SP[b].starter);
-  return { cost: Math.round((1500 + 0.4 * monValue(b, 3)) / 50) * 50, weeks: clamp(2 + (rare ? 1 : 0) + Math.floor((top - 400) / 100), 2, 6), odds: Math.round(clamp(0.6 + (sc - 50) / 100 - (rare ? 0.2 : 0) - Math.max(0, (top - 500) / 500), 0.15, 0.95) * 100) / 100 };
+  // (0.44.0) through the safari: cheaper and likelier with each level, likelier still for a stocked line, whose finds
+  // are no worse than a grade below the best stocked one
+  const sl = safariSet().has(b) ? safariLv() : 0, st = sl ? stockFloor(b) : 0;
+  const cost = Math.round((1500 + 0.4 * monValue(b, 3)) * (1 - SAFARI_DISC * sl) / 50) * 50;
+  const odds = Math.round(clamp(0.6 + (sc - 50) / 100 - (rare ? 0.2 : 0) - Math.max(0, (top - 500) / 500) + SAFARI_ODDS * sl + (st ? SAFARI_STOCK_ODDS : 0), 0.15, 0.95) * 100) / 100;
+  return { cost, weeks: clamp(2 + (rare ? 1 : 0) + Math.floor((top - 400) / 100), 2, 6), odds, safari: sl > 0, floor: st ? Math.max(1, st - 1) : 0 };
 }
 // the bound League sends a trip: kind 'target' (line b) or 'area' (random finds); null, or why not
 // (0.27.0) kind 'charter' (b = a region): a shipment of two or three of that region's Pokémon; a targeted trip only for
@@ -333,7 +338,7 @@ function startTrip(kind, b, cond) {
   } else if (kind === 'outbreak') { // (0.36.0) a trip to a mass outbreak
     const o = obTrip(); if (!o) return 'There is no outbreak to reach.';
     tr = { id: uid(), k: 'outbreak', b: o.b, ob: o.ob.turn, cost: OB_TRIP_COST, due: S.turn + OB_TRIP_WEEKS, at: S.turn };
-  } else if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; if (!tripOk(b)) return `${b} isn't found in ${regionName(S.region)} now.`; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn, safari: lineSource(b) === 'safari' || undefined }; }
+  } else if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; if (!tripOk(b)) return `${b} isn't found in ${regionName(S.region)} now.`; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn, safari: p.safari || undefined, floor: p.floor || undefined }; }
   else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: CHARTER_COST, due: S.turn + CHARTER_WEEKS, at: S.turn }; }
   else tr = { id: uid(), k: 'area', cost: AREA_COST, due: S.turn + 2, at: S.turn };
   if (!canSpend(tr.cost)) return 'Not enough money.';
@@ -354,15 +359,16 @@ function tripsWeek() {
     // (0.36.0) every find rolls the wild odds for a condition (an outbreak's at outbreak odds); a hunt's find has its own
     const obMul = { alpha: OUTBREAK_ALPHA, delta: OUTBREAK_ALPHA, shiny: OUTBREAK_SHINY, radiant: OUTBREAK_SHINY };
     for (const b of finds) {
-      const e = newEntry(b, gradeRoll(gsc), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
+      const e = newEntry(b, Math.max(tr.floor || 1, gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
       const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : 1)))];
       if (ks.length) condEntry(e, ks);
       (ranchAdd(e) ? got : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
     }
-    const what = tr.cond ? `${COND_NAME[tr.cond].toLowerCase()} ${tr.b}` : tr.b;
+    const what = tr.cond ? `${COND_NAME[tr.cond].toLowerCase()} ${tr.b}` : tr.b, oddsW = tr.odds != null ? ` (${Math.round(tr.odds * 100)}% odds)` : '';
+    tripLog(tr, what, got, lost); // (0.44.0)
     if (mine && tr.k === 'charter') news(`The charter from ${regionName(tr.r)} came in${got.length ? ` with ${got.join(', ')}` : ' empty'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (mine && tr.k === 'outbreak') news(`The trip to the ${tr.b} outbreak came back with ${got.length ? got.join(', ') : 'nothing it could keep'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
-    else if (mine) news(tr.k === 'target' ? (got.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back with one (${got[0]}).` : lost.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} found one, but the ranch was full and it was let go.` : `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back empty-handed.`)
+    else if (mine) news(tr.k === 'target' ? (got.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back with one (${got[0]}).` : lost.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} found one, but the ranch was full and it was let go.` : `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back empty-handed${oddsW}.`)
       : `The area catching trip came back${got.length ? ` with ${got.join(', ')}` : ' empty-handed'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (got.some(x => /^(Alpha|Delta|Shiny|Radiant)/.test(x))) news(`The ${S.lgName}'s ranch took in ${got.filter(x => /^(Alpha|Delta|Shiny|Radiant)/.test(x)).join(', ')}.`, 'league');
   }
@@ -386,6 +392,7 @@ function buyShop(id) {
   if (ranchRoom() <= 0) return 'The ranch is full.';
   if (!canSpend(x.price)) return 'Not enough money.';
   book(-x.price, 'ranchbuy', `Bought ${x.c ? condWords(x.c) + ' ' : ''}${x.b} ${gradeStars(x.g)} at the market`);
+  ranchLog('buy', 'Bought at the market', { cost: x.price, got: [`${x.c ? condWords(x.c) + ' ' : ''}${x.b} ${gradeStars(x.g)}`] }); // (0.44.0)
   S.ranch.shop = S.ranch.shop.filter(s => s !== x);
   const e = { uid: uid(), b: x.b, sp: x.b, g: x.g, iv: x.iv, nat: null, from: 'market', got: S.turn, at: null, res: null, lock: false, of: null, sale: null };
   if (x.c) e.c = x.c;
@@ -431,8 +438,9 @@ function buyListing(k, id) {
   if (ranchRoom() <= 0) return 'The ranch is full.';
   const price = e.sale.price, buyer = S.lgName;
   if (!canSpend(price)) return 'Not enough money.';
-  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); });
+  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); ranchLog('sold', `Sold to the ${buyer}`, { cost: -Math.round(price * SALE_SHARE), got: [entryWords(e)] }); });
   book(-price, 'ranchbuy', `Bought ${e.sp} ${gradeStars(e.g)} from the ${leagueName(k)}`);
+  ranchLog('lbuy', `Bought from the ${leagueName(k)}`, { cost: price, got: [entryWords(e)] }); // (0.44.0)
   ranchAdd(Object.assign({}, e, { at: null, res: null, lock: false, of: null, sale: null, from: 'league', got: S.turn }));
   return null;
 }
@@ -443,13 +451,14 @@ function sellMon(id, release) {
   freeEntry(e); // (0.26.0) a fielded one is swapped out at once
   S.ranch.mons = S.ranch.mons.filter(x => x !== e);
   if (!release && booksOn()) book(Math.round(entryValue(e) * SELL_BACK), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} back`);
+  ranchLog(release ? 'rel' : 'sell', release ? 'Released' : 'Sold back', { cost: release ? 0 : -Math.round(entryValue(e) * SELL_BACK), got: [entryWords(e)] }); // (0.44.0)
   return null;
 }
 // lock away (nobody fields it) or reserve for a post (only that post fields it, first); a holder gives it back at the
 // next monthly swap
 function lockMon(id, on) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; e.lock = !!on; if (on) e.res = null; return null; }
 function reserveMon(id, key) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; if (key != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(key)) return 'No such post.'; e.res = key || null; if (key) e.lock = false; return null; }
-const ranchUpkeep = () => ranchOn() ? S.ranch.mons.reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) : 0;
+const ranchUpkeep = () => ranchOn() ? S.ranch.mons.concat(S.ranch.stock || []).reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) : 0; // (0.44.0) the safari's stock too
 // (0.26.0) a rival's spares it won't keep, cheapest first: everything unfielded (not reserved or locked) except the best
 // RANCH_KEEP of those some senior post could field on type at its level
 function ranchSpares(aim) {
@@ -483,6 +492,7 @@ function aimRanch(aim) {
   // (0.26.0) clearing out, in the red too: spares it won't keep are sold back once idle AI_IDLE weeks, and listed for
   // other Leagues before that (up to AI_CLEAR a month)
   let listed = 0;
+  aiStockSafari(aim); // (0.44.0) a wall-builder or star-maker stocks its safari with spares that fit its posts first
   for (const e of ranchSpares(aim)) {
     if (S.turn - (e.idle ?? S.turn) >= AI_IDLE[aim]) { e.sale = null; sellMon(e.uid); }
     else if (!e.sale && nLeagues() > 1 && listed < AI_CLEAR) { listMon(e.uid); listed++; }
@@ -504,9 +514,9 @@ function aimRanch(aim) {
   const L = p.slot.lvl, lines = new Set(p.worst.rest.map(m => LINE[m.sp]));
   const fits = b => { const sp = formAt(b, L, p.t.specialty); return (!p.ty.length || SP[sp].types.some(x => p.ty.includes(x))) && !lines.has(LINE[b]) && !bannedIn(sp, lg) ? sp : null; };
   const gain = (b, g) => { const sp = fits(b); return sp ? ranchVal(p.t, sp, g, p.worst.rest, 'bal', p.th) - p.worst.v : -99; };
-  const opts = R.shop.map(x => ({ shop: x, b: x.b, g: x.g, price: x.price })).concat(listings(lg).map(x => ({ list: x, b: x.e.b, g: x.e.g, price: x.e.sale.price })))
+  const opts = R.shop.map(x => ({ shop: x, b: x.b, g: x.g, price: x.price })).concat(listings(lg).map(x => ({ list: x, b: x.e.b, g: x.e.g, price: x.e.sale.price })), safariStock().map(e => ({ stock: e, b: e.b, g: e.g, price: 0 })))
     .filter(o => o.price <= budget).map(o => Object.assign(o, { gain: gain(o.b, o.g) })).filter(o => o.gain > (p.worst.m.stop || p.worst.m.backup ? 0 : STEER_EDGE)).sort((a, b) => b.gain - a.gain);
-  if (opts.length && ranchRoom() > 0) { const o = opts[0]; if (o.shop) buyShop(o.shop.uid); else buyListing(o.list.lg, o.list.e.uid); return; }
+  if (opts.length && ranchRoom() > 0) { const o = opts[0]; if (o.stock) { if (!unstockMon(o.stock.uid)) SAFARI_LOG.aiTake++; } else if (o.shop) buyShop(o.shop.uid); else buyListing(o.list.lg, o.list.e.uid); return; }
   aimVault(aim, budget); // (0.37.0)
   if (aimHunt(aim, fits, gain, budget)) return; // (0.36.0)
   if (R.trips.length >= tripMax()) return;
@@ -522,6 +532,18 @@ function aimRanch(aim) {
     if (r != null && has(r) && !ranchSpecies().some(b => fits(b) && tripOk(b))) { startTrip('charter', r); return; }
   }
   if (AREA_COST <= budget && ranchRoom() > 3) startTrip('area');
+}
+
+// (0.44.0) a rival with a safari stocks it with its most valuable spares whose type fits one of its senior posts (one of
+// a line, or a better grade of one already stocked), before it sells any; a money-maker doesn't
+function aiStockSafari(aim) {
+  if (aim === 'money' || !safariBuilt()) return;
+  const types = new Set(seniorIds().map(T).filter(Boolean).flatMap(t => specTypes(t)));
+  for (const e of ranchSpares(aim).slice().reverse()) {
+    if (safariStock().length >= stockCap()) break;
+    if (!entryTypes(e, e.sp).some(x => types.has(x)) || safariStock().some(x => x.b === e.b && x.g >= e.g)) continue;
+    if (!stockMon(e.uid)) SAFARI_LOG.aiStock++;
+  }
 }
 
 // ================= REGIONS (0.27.0, design doc 6.6: ranch part 2, regional) =================
@@ -754,18 +776,129 @@ const laneFee = () => lapsed() ? 0 : lanesOf().length * LANE_WEEK;
 // ---------- the safari ----------
 // A building in one of the League's gym cities: SAFARI_SIZE foreign lines from mixed regions, changing every
 // SAFARI_WEEKS, catchable only on the League's own targeted trips (each level adds lines and SAFARI_SCOUT to the grade).
+// (0.44.0, design doc 6.23) Kept lines: at each change the League keeps up to SAFARI_KEEP lines (by level) it chose.
+// Stock: up to SAFARI_STOCK of the League's ranch Pokémon live in the safari (out of the ranch, the same upkeep); their
+// lines stay in the safari while they do, trips for them are likelier and no worse than a grade below the best stocked
+// one, and once a quarter the safari turns up one young Pokémon of a stocked line on its own (a stand-in for breeding
+// until daycares). Safari trips are SAFARI_DISC cheaper and SAFARI_ODDS likelier a level. All numbers are provisional.
 const SAFARI_SIZE = [10, 13, 16], SAFARI_WEEKS = 12, SAFARI_SCOUT = 6;
-function safariLv() { if (!S.gyms || lapsed()) return 0; return Math.max(0, ...S.gyms.map(g => S.cities[g.city] ? upLevel(cityB(S.cities[g.city]), 'safari') : 0)); }
+const SAFARI_KEEP = [1, 2, 3], SAFARI_STOCK = [4, 8, 12], SAFARI_DISC = 0.1, SAFARI_ODDS = 0.05, SAFARI_STOCK_ODDS = 0.15, SAFARI_FIND_WEEK = 6;
+const SAFARI_LOG = { kept: 0, stocked: 0, unstocked: 0, finds: 0, lost: 0, returned: 0, aiStock: 0, aiTake: 0, aiKeep: 0 };
+// the safari's level: 0 while in the red; safariBuilt ignores the red (the stock waits out the red, and goes back to
+// the ranch only when the building is gone)
+function safariBuilt() { if (!S.gyms || !S.cities) return 0; return Math.max(0, ...S.gyms.map(g => S.cities[g.city] ? upLevel(cityB(S.cities[g.city]), 'safari') : 0)); }
+function safariLv() { return lapsed() ? 0 : safariBuilt(); }
+const safariStock = () => (S.ranch && S.ranch.stock) || [];
+const stockCap = () => { const lv = safariBuilt(); return lv ? SAFARI_STOCK[lv - 1] : 0; };
+const keepCap = () => { const lv = safariBuilt(); return lv ? SAFARI_KEEP[lv - 1] : 0; };
+const safariKept = () => (S.ranch && S.ranch.keep) || [];
+// the best stocked grade of line b (0 if none is stocked)
+const stockFloor = b => safariStock().filter(e => e.b === b).reduce((a, e) => Math.max(a, e.g), 0);
+const entryWords = e => `${e.c ? condWords(e.c) + ' ' : ''}${e.sp} ${gradeStars(e.g)}`;
 function safariWeek() {
-  const R = S.ranch, lv = safariLv();
+  const R = S.ranch; if (!R.stock) R.stock = [];
+  safariTrim();
+  const lv = safariLv();
+  if (lv && S.week % QUARTER_WEEKS === SAFARI_FIND_WEEK) safariFind();
   if (!lv || !homeSet(S.region)) { if (R.safari && !lv) R.safari = null; return; }
   if (R.safari && R.safari.until > S.turn && R.safari.lv === lv) return;
   const home = homeSet(S.region), pool = ranchSpecies().filter(b => !home.has(b) && homeOnly(b) == null);
-  const lines = []; let p = pool.slice();
+  if (!playerLeague()) aiSafariKeep();
+  R.keep = (R.keep || []).filter(b => pool.includes(b) && !R.stock.some(e => e.b === b)).slice(0, SAFARI_KEEP[lv - 1]);
+  const lines = R.keep.slice(); let p = pool.filter(b => !lines.includes(b));
   while (lines.length < SAFARI_SIZE[lv - 1] && p.length) { const b = pick(p); lines.push(b); p = p.filter(x => x !== b); }
+  const changed = !R.safari || R.safari.until <= S.turn;
   R.safari = { lines, until: R.safari && R.safari.lv !== lv && R.safari.until > S.turn ? R.safari.until : S.turn + SAFARI_WEEKS, lv };
+  if (changed && playerLeague() && S.turn > 0) news(`The Safari Zone has new Pokémon${R.keep.length ? ` (kept: ${R.keep.join(', ')})` : ''}, until ${turnDate(R.safari.until)}.`, 'league');
 }
-const safariSet = () => new Set(S.ranch && S.ranch.safari && safariLv() ? S.ranch.safari.lines : []);
+// the safari lost a level or is gone (sold, lost in the red, a gym moved away): stock past its room comes back to the
+// ranch (the lowest grades first; let go if the ranch is full) and kept lines past their room are dropped. Called
+// weekly and as soon as a safari level is lost (dropLevel, moveGym).
+function safariTrim() {
+  const R = S.ranch; if (!R) return; if (!R.stock) R.stock = [];
+  const cap = stockCap(), built = safariBuilt();
+  if (R.stock.length > cap) {
+    const back = [], gone = [], out = R.stock.slice().sort((a, b) => a.g - b.g || entryValue(a) - entryValue(b)).slice(0, R.stock.length - cap);
+    for (const e of out) { delete e.stocked; e.idle = S.turn; R.stock = R.stock.filter(x => x !== e); (ranchAdd(e) ? back : gone).push(entryWords(e)); SAFARI_LOG.returned++; }
+    ranchLog('safari', built ? 'The Safari Zone shrank: some of its stock came back' : 'The Safari Zone closed: its stock came back', { got: back, lost: gone });
+    if (playerLeague()) news(`${built ? 'The Safari Zone lost a level' : 'With the Safari Zone gone'}, ${back.length ? `${back.join(', ')} came back to the ranch` : 'its stock had to go'}${gone.length && back.length ? `; there was no room for ${gone.join(', ')}, let go` : gone.length ? ` (no room in the ranch for ${gone.join(', ')}, let go)` : ''}.`, 'league');
+  }
+  if ((R.keep || []).length > keepCap()) R.keep = R.keep.slice(0, keepCap());
+  if (!built && R.safari) R.safari = null;
+}
+// the safari's catchable lines: its own lines plus the stocked ones (none while in the red)
+const safariSet = () => { if (!S.ranch || !safariLv()) return new Set(); return new Set((S.ranch.safari ? S.ranch.safari.lines : []).concat(safariStock().map(e => e.b))); };
+// keep line b at the next change (on) or not; the bound League's. Returns an error or null.
+function keepLine(b, on) {
+  const R = S.ranch; if (!R || !safariBuilt()) return 'You have no Safari Zone.';
+  const kept = safariKept();
+  if (!on) { R.keep = kept.filter(x => x !== b); return null; }
+  if (kept.includes(b)) return null;
+  if (!R.safari || !R.safari.lines.includes(b)) return `${b} isn't in the safari now.`;
+  if (R.stock.some(e => e.b === b)) return `${b} is stocked, so it stays anyway.`;
+  if (kept.length >= keepCap()) return `At this level the safari keeps at most ${keepCap()} line${keepCap() === 1 ? '' : 's'}.`;
+  R.keep = kept.concat(b); SAFARI_LOG.kept++;
+  return null;
+}
+// move ranch Pokémon id into the safari's stock (a fielded one is swapped out first). Returns an error or null.
+function stockMon(id) {
+  ranchSync();
+  const R = S.ranch, e = ranchEntry(id); if (!e) return 'Not in the ranch.';
+  if (!safariBuilt()) return 'You have no Safari Zone.';
+  if (!R.stock) R.stock = [];
+  if (R.stock.length >= stockCap()) return `At this level the safari holds at most ${stockCap()} stocked Pokémon.`;
+  freeEntry(e);
+  e.sale = null; e.res = null; e.lock = false; e.stocked = S.turn;
+  R.mons = R.mons.filter(x => x !== e); R.stock.push(e); SAFARI_LOG.stocked++;
+  R.keep = safariKept().filter(b => b !== e.b); // a stocked line stays anyway
+  ranchLog('stock', 'Stocked in the Safari Zone', { got: [entryWords(e)] });
+  return null;
+}
+// take stocked Pokémon id back into the ranch. Returns an error or null.
+function unstockMon(id) {
+  const R = S.ranch, e = safariStock().find(x => x.uid === id); if (!e) return 'Not in the safari.';
+  if (ranchRoom() <= 0) return 'The ranch is full.';
+  R.stock = R.stock.filter(x => x !== e); delete e.stocked; e.idle = S.turn; R.mons.push(e); SAFARI_LOG.unstocked++;
+  ranchLog('unstock', 'Taken back from the Safari Zone', { got: [entryWords(e)] });
+  return null;
+}
+// once a quarter: one young Pokémon of a stocked line (lines stocked twice or more likelier), no worse than a grade
+// below the best stocked one of its line, with the wild odds for a condition
+function safariFind() {
+  const st = safariStock(); if (!st.length) return;
+  const by = {}; for (const e of st) by[e.b] = (by[e.b] || 0) + 1;
+  const ls = Object.keys(by), w = ls.map(b => by[b] >= 2 ? by[b] * 2 : 1);
+  let r = rand() * w.reduce((a, x) => a + x, 0), b = ls[ls.length - 1];
+  for (let i = 0; i < ls.length; i++) { r -= w[i]; if (r <= 0) { b = ls[i]; break; } }
+  const sc = ranchScout(), e = newEntry(b, Math.max(Math.max(1, stockFloor(b) - 1), gradeRoll(sc)), 'safari');
+  const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
+  const ok = ranchAdd(e), wd = entryWords(e);
+  if (ok) SAFARI_LOG.finds++; else SAFARI_LOG.lost++;
+  ranchLog('safari', 'Turned up in the Safari Zone', ok ? { got: [wd] } : { lost: [wd] });
+  if (playerLeague()) news(ok ? `A young ${wd} turned up in the Safari Zone and joined the ranch.` : `A young ${wd} turned up in the Safari Zone, but the ranch was full.`, 'league');
+}
+// a rival keeps, at each change, the safari lines that fit its posts' types best
+function aiSafariKeep() {
+  const R = S.ranch, cap = keepCap(); if (!R.safari || !cap) return;
+  const types = new Set(seniorIds().map(T).filter(Boolean).flatMap(t => specTypes(t)));
+  R.keep = R.safari.lines.filter(b => !R.stock.some(e => e.b === b) && SP[formAt(b, 100)].types.some(x => types.has(x))).sort((a, c) => lineTop(c) - lineTop(a)).slice(0, cap);
+  SAFARI_LOG.aiKeep += R.keep.length;
+}
+// ---------- the ranch log (0.44.0) ----------
+// Every trip, hunt, charter and outbreak trip as it comes back, every buy, sale, release, storage pick and safari
+// move, newest first, the last RANCH_LOG: { t (turn), k, text, cost (negative: money in), odds, at (set out), got, lost }
+const RANCH_LOG = 40;
+function ranchLog(k, text, o) {
+  const R = S.ranch; if (!R) return;
+  if (!R.log) R.log = [];
+  R.log.unshift(Object.assign({ t: S.turn || 0, k, text }, o || {}));
+  if (R.log.length > RANCH_LOG) R.log.length = RANCH_LOG;
+}
+function tripLog(tr, what, got, lost) {
+  const k = tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k;
+  const text = tr.k === 'target' ? `${tr.cond ? 'Hunt' : 'Catching trip'} for ${what}${tr.safari ? ' in the Safari Zone' : ''}` : tr.k === 'charter' ? `Charter from ${regionName(tr.r)}` : tr.k === 'outbreak' ? `Trip to the ${tr.b} outbreak` : 'Area catching trip';
+  ranchLog(k, text, { cost: tr.cost, odds: tr.odds, at: tr.at, got, lost });
+}
 
 // ---------- what the bound League can get ----------
 // wild finds here (area trips): the region's lines plus a migration; the market: those plus lanes; targeted trips:
@@ -1260,6 +1393,7 @@ function pickStore(id, sUid) {
   if (ranchRoom() <= 0) return 'The ranch is full.';
   const e = storeEntry(t, s); if (!e) return "That one can't go in the ranch.";
   ranchAdd(e); t.store = t.store.filter(x => x !== s); t.storePick.n--; STORE_LOG.picks++;
+  ranchLog('store', `Taken from ${t.name}'s storage`, { got: [entryWords(e)] }); // (0.44.0)
   if (t.storePick.n <= 0 || !t.store.length) t.storePick = null;
   return null;
 }
@@ -1777,4 +1911,4 @@ function aimTrim() {
   news(text, 'move', c.id); noteChange(text);
 }
 
-if (typeof module !== 'undefined') module.exports = { SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, safariBuilt, safariStock, stockCap, keepCap, safariKept, stockFloor, keepLine, safariTrim, stockMon, unstockMon, safariFind, SAFARI_LOG, SAFARI_KEEP, SAFARI_STOCK, SAFARI_DISC, SAFARI_ODDS, SAFARI_STOCK_ODDS, ranchLog, RANCH_LOG, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };

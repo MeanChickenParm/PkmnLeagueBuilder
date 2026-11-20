@@ -1,5 +1,15 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 44, ver: '0.44.0', date: 'November 20, 2026', time: '6:40 PM ET', title: 'The ranch reorganized, the Safari Zone you can shape, and a ranch log', items: [
+    "The Ranch page is in tabs: Pool, Teams, Trips & log, Market, and Region & safari. A dot on Pool means a new hire's storage is open to you.",
+    "The pool shows only the Pokémon nobody is fielding by default. Filter it by fielded or not, listed, locked or reserved, type, grade, condition and where it came from, and sort it by value, grade, name, newest or type. Each row now says where it came from and when.",
+    "Teams is a table with one row a Pokémon: post, trainer, Pokémon, type, grade, held item, and whether it is their own, from the ranch, a backup type, a stopgap or planned. Filter it to ranch Pokémon, trainers' own, or stopgaps and backups.",
+    "The Safari Zone has its own panel. Every line in it is listed with its type, strength and home regions, and a Send button for a trip. Safari trips are now 10% cheaper and 5 points likelier for each level of the Safari Zone.",
+    "Keep lines: choose 1, 2 or 3 lines (by level) that stay in the safari when it changes every 12 weeks.",
+    "Stock the safari with your own Pokémon: up to 4, 8 or 12 (by level) from the Pool tab. They leave the ranch (freeing a place, at the same upkeep), their lines stay catchable in the safari for as long as they're there, and trips for a stocked line are 15 points likelier and no worse than a grade below the best stocked one. Once a quarter a young Pokémon of a stocked line turns up in the safari and joins the ranch (two or more of one line make that line likelier). Take any of them back to the ranch at any time. While you're in the red the safari is closed and the stock waits; if the safari is sold or lost, the stock comes back to the ranch.",
+    "Rival Leagues use the safari too: wall-builders and star-makers keep the lines that fit their posts, stock spares that fit, and take stocked Pokémon back when a post needs them.",
+    "Recent history, on the Trips & log tab: the last 40 things your ranch did, with the date, the cost, the odds and the result. Every trip, hunt, charter and outbreak trip shows what it came back with, whether it came back empty-handed, or whether a find was let go because the ranch was full. Market and League buys, sales, releases, storage picks and safari moves are there too. News of an empty trip now says what its odds were.",
+  ] },
   { id: 43, ver: '0.43.0', date: 'November 19, 2026', time: '9:10 PM ET', title: 'Seat rules: how each League chooses its Champion', items: [
     "Every League now has a seat rule: how its Champion's seat changes hands. Pick yours at setup (free), and change it on Your staff under How the Champion is chosen.",
     "Nine rules. Protected: the seat changes only with your say, as before (called challenges, title claims, the Champion's own ambitions). Succession: when the Champion leaves, the top Elite Four seat moves up, so the Elite Four's order is the line of succession. Term: the Champion serves a set term, then you appoint the next one or keep them. Council vote: the Elite Four vote on a schedule and whenever the seat empties, and you can pay to lobby for a candidate. Merit: on a schedule, the seat goes to whoever stopped the largest share of runs. Gauntlet (the Grand Trial in island-trial Leagues): each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion. Champion's Cup: a tournament of the Champion, the Elite Four and the best Gym Leaders; the winner takes the seat. Open Cup: the Cup with title winners and the circuit's best invited. Conqueror: the year's strongest title winner who wants the seat takes it at New Year.",
@@ -821,6 +831,12 @@ document.addEventListener('click', ev => {
     case 'foundclear': foundPlace(el.dataset.k, +el.dataset.v, null); foundSel = { post: el.dataset.k, slot: +el.dataset.v }; save(); render(); break;
     case 'foundfill': foundingFill(); foundSel = null; save(); render(); break;
     case 'foundgo': { const mid = !!S.founding.mid; finishFounding(); view = 'circuit'; viewLg = ME(); save(); render(); window.scrollTo(0, 0); toast(mid ? `The ${S.lgName} is open.` : `The ${S.lgName} is open. Year 1 is underway.`); break; }
+    case 'ranchtab': ranchTab = el.dataset.v; render(); break; // (0.44.0)
+    case 'ranchteams': teamShow = el.dataset.v; render(); break;
+    case 'ranchfreset': ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }; render(); break;
+    case 'ranchstock': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => stockMon(+el.dataset.id)); save(); render(); toast(w || 'Stocked in the Safari Zone.' + (who ? ` ${who} swapped it out.` : '')); break; }
+    case 'safaritake': { const w = inLeague(ME(), () => unstockMon(+el.dataset.id)); save(); render(); toast(w || 'Back in the ranch.'); break; }
+    case 'safarikeep': { const on = el.dataset.v === '1', w = inLeague(ME(), () => keepLine(el.dataset.b, on)); save(); render(); toast(w || (on ? `${el.dataset.b} stays through the next change.` : `${el.dataset.b} is no longer kept.`)); break; }
     case 'ranchob': { const w = inLeague(ME(), () => startTrip('outbreak')); save(); render(); toast(w || 'The trip has set out for the outbreak.'); break; }
     case 'ranchtrip': case 'rancharea': { const w = inLeague(ME(), () => startTrip(a === 'ranchtrip' ? 'target' : 'area', el.dataset.b, el.dataset.c || undefined)); save(); render(); toast(w || 'The trip has set out.'); break; }
     case 'storepick': { const w = inLeague(ME(), () => pickStore(+el.dataset.id, +el.dataset.u)); save(); render(); toast(w || 'Taken into the ranch.'); break; }
@@ -965,6 +981,7 @@ document.addEventListener('input', e => {
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
+  if (e.target && e.target.classList && e.target.classList.contains('ranchf')) { const f = e.target.dataset.f; ranchF[f] = f === 'g' ? +e.target.value : e.target.value; render(); return; } // (0.44.0)
   if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchspsel')) { ranchSp = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchcondsel')) { ranchCond = e.target.value; render(); return; }
