@@ -274,3 +274,10 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The economy retune** for smaller fields (entry fees, the wall prize, city income) is next; `econ.js` keeps one rival beside the player and two elsewhere.
 - **The field alarm (160 a circuit)** still applies per League; the hand-placed sim's forced folds pile everything onto the one League left (Johto 80 against an aim of 31 in this chat's run).
 - **Fixed in 0.40.0 (found by the hand-placed sim):** a team plan could name a ranch Pokémon reserved for another post (the monthly swap then sent it there) or one of the same line as a Pokémon the holder always keeps (a special or the Mega holder; the plan could never field it). `planResolve` now treats both as gaps (the steer fills the place); planning still overrides a reservation elsewhere when the plan is set.
+
+## Seat rules (0.43.0)
+- Every number is provisional: the rules' openness scale, `SEAT_PREST`, `DRAW_SEAT`, `SEAT_HUNGRY`, the change cost and cooldown, Cup gates, Council sway and calm, Merit's weighting and edge, Term's answer window, `CONQ_WANT`, rivals' leanings and redraw odds.
+- Not built: a Champion's ambitions working around a Term's end date (e.g. stepping down at the term's end rather than giving notice mid-term).
+- Not built: watching Cup and Gauntlet battles from the year report (the Cup final and a Gauntlet's last battle are kept in `S.seatLogs`, but the year report lists the seat rule's events as text only).
+- Open: whether rival Leagues should be able to pick their rule at setup (Advanced → Where rival Leagues start), as with themes.
+

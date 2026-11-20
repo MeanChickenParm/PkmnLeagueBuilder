@@ -4929,7 +4929,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 20; // 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 21; // 21: seat rules (0.43.0); 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -8054,7 +8054,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans', 'postSet'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans', 'postSet', 'seatRule'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -8496,6 +8496,7 @@ function simWeek() {
   hireArrivals();
   eachLeague(ambitionWeek);
   challengeWeek();
+  seatWeek(); // (0.43.0) a Term appointment left unanswered
   birthdays();
   arrivals();
   S.week++; S.turn = (S.turn || 0) + 1;
@@ -8755,8 +8756,9 @@ function seatChallenges(changes) {
   if (fixedStaff() || S.founding) return;
   // (0.34.0) in the player's League the Champion's seat is challenged only when the player calls a challenge
   // (callChallenge) or allows a title claim; a rival League's manager calls its New Year challenge by aim (CALL_AI)
-  const mine = playerLeague(), callAi = !mine && rand() < (CALL_AI[S.fin && S.fin.aim] || 0.6);
-  const out = [], cl = claimant(), c = cl || !callAi ? null : champChallenger();
+  // (0.43.0) called challenges, claims and rivals' challenges for the Champion's seat only under the Protected rule
+  const mine = playerLeague(), prot = seatRuleKey() === 'protected', callAi = prot && !mine && rand() < (CALL_AI[S.fin && S.fin.aim] || 0.6);
+  const out = [], cl = prot ? claimant() : null, c = cl || !callAi ? null : champChallenger();
   // (0.22.0) a title claim takes the year's one challenge for the Champion's seat
   if (cl) out.push({ k: 'champ', cand: cl.id, inc: S.champion, slot: null, from: 'claim', gym: null });
   else if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
@@ -8774,6 +8776,7 @@ function seatChallenges(changes) {
       news(msg, 'move', x.cand); changes.push(msg); stopFor('challenge', msg);
     }
   } else for (const x of out) changes.push(x.from === 'claim' && rand() >= (CLAIM_AI_YES[S.fin && S.fin.aim] || 0.5) ? claimRefused(x, 'refused') : runChallenge(x));
+  seatRuleNewYear(changes); // (0.43.0) the League's seat rule
 }
 // ---- title claims (0.22.0) ----
 // A challenger who beat the Champion for the title this year and wants a seat (most would rather keep travelling)
@@ -8959,7 +8962,7 @@ function challengeWeek() {
 }
 // the multi-year sim: nobody is there to answer, so every waiting challenge goes ahead, except title claims, which
 // are turned down (no roster move without the player)
-function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); }
+function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); seatWeek(true); }
 
 // ---- called challenges (0.34.0) ----
 // The manager of a League decides when its Champion's seat is fought for: up to CALL_MAX times a calendar year, the
@@ -8982,6 +8985,7 @@ function callBlock() {
     if (!handOn() || !ch) return 'Your League has no Champion.';
     if (S.founding) return 'Your League is still being founded.';
     if (founderChamp(ch)) return `${ch.name} is the League's founding Champion and can't be challenged until year ${ch.founderUntil}.`;
+    if (seatRuleKey() !== 'protected') return `Your League's seat rule is ${seatRuleName(seatRuleKey())}: called challenges are only for the Protected rule.`;
     if ((S.chalPending || []).some(x => x.k === 'champ')) return "A challenge for the Champion's seat is already waiting.";
     if (callsUsed() >= CALL_MAX) return `You have called ${CALL_MAX} challenges this year.`;
     return null;
@@ -9344,7 +9348,7 @@ function staffRetires(t) {
   } else if (t.role === 'champion') {
     // the Champion's seat is never empty: the strongest Elite Four member moves up at once, and their seat is filled
     // (in the player's League, an acting member holds it until the player chooses)
-    const seat = S.e4.map((id, i) => i).filter(i => !T(S.e4[i]).acting).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0];
+    const seat = champHeirSeat(); // (0.43.0) by the seat rule
     const at = seat != null ? seat : 0, m = T(S.e4[at]);
     t.role = 'exchamp'; retire(t, `as Champion of the ${S.lgName}`);
     S.e4[at] = null; m.acting = false; installElite(m, 'champion');
@@ -9700,7 +9704,7 @@ function prestMin(t, lg) {
   if (!t || !t.r) return 0;
   if (lg == null) lg = S.lg || 0;
   let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
-  if (hungry(t)) m *= PM_HUNGRY;
+  if (hungry(t)) m *= PM_HUNGRY * (1 - SEAT_HUNGRY * seatOpen(lg)); // (0.43.0) a seat they could win
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
   const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
   return Math.round(m);
@@ -10126,7 +10130,7 @@ function leaveUnhappy(t, was) {
 // Champion stepping down retires if they are CHAMP_STEP_AGE or older (or past the career rule), else takes that Elite
 // Four seat themselves; one who wants a bigger League's seat goes to the circuit of the most prestigious other League;
 // one who wants another run goes on it.
-function champHeirSeat() { return S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0]; }
+function champHeirSeat() { const ks = S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting), r = ks.length ? ruleHeirSeat(ks) : null; return r != null ? r : ks.sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0]; } // (0.43.0) Succession, Council
 function champHeir() { const k = champHeirSeat(); return k != null ? `${T(S.e4[k]).name} (Elite Four #${k + 1})` : 'An Elite Four member'; }
 function champQuits(t) {
   const k = t.quit ? t.quit.k : t.wish ? t.wish.k : 'step', was = postName(t), mine = playerLeague();
@@ -10301,7 +10305,7 @@ function leagueNewYear(changes) {
     season: S.season, name: S.lgName, posts: postWords(), champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}),
+    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}), ...(L.seatEv ? { seatEv: L.seatEv.slice() } : {}), seatRule: seatRuleKey(),
   });
   // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
@@ -10526,7 +10530,7 @@ function prestigeNewYear() {
     const cities = cityPrestige(i); // (0.40.0) Held and Stronghold cities, by size
     const rank = nLeagues() > 1 ? PRESTIGE_RANK[order.indexOf(i)] || 0 : 0;
     const gain = (h.titles === 0 ? PRESTIGE_PERFECT : 0) + (nLeagues() > 1 ? Math.min(PRESTIGE_LET_MAX, Math.max(0, avg - lets[i]) * PRESTIGE_LET) : 0)
-      + (wl === i ? PRESTIGE_WORLD : 0) + cities + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0);
+      + (wl === i ? PRESTIGE_WORLD : 0) + cities + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0) + SEAT_PREST * seatOpen(); // (0.43.0) an open seat
     S.prest = Math.round(((S.prest || 0) * (1 - PRESTIGE_FADE) + gain) * 10) / 10;
     h.prest = S.prest; h.prestGain = Math.round(gain * 10) / 10;
   });
@@ -10601,6 +10605,344 @@ function godEdit(id, field, v) {
   if (field === 'pot') { const n = num(1, 99); if (n == null) return 'Not a number.'; t.pot = Math.max(n, ovr(t)); return null; }
   if (RK.includes(field)) { const n = num(1, 99); if (n == null) return 'Not a number.'; t.r[field] = n; if (t.pot < ovr(t)) t.pot = ovr(t); return null; }
   return 'Unknown field.';
+}
+// ================= SEAT RULES (0.43.0) =================
+// Design doc 6.21. Each League has a rule for how its Champion's seat changes hands (the League field seatRule =
+// { k, every, next, at, term, lobby, pick }): Protected (the rules of 0.34.0: called challenges, title claims, the
+// Champion's own ambitions), Succession (the top-ranked Elite Four member, the highest seat, moves up when the seat
+// empties), Champion's Cup and Open Cup (a tournament every few years; the Open Cup invites title winners and the
+// circuit's best), Gauntlet (each New Year the strongest willing candidate may try to beat the Elite Four in a row and
+// then the Champion), Merit (every few years the seat goes to whoever stopped the largest share of runs), Council vote
+// (every few years, and whenever the seat empties, the Elite Four vote; the manager can lobby), Term (the Champion
+// serves a set number of years, then the manager appoints from the contenders) and Conqueror (the year's strongest title
+// winner who wants it takes the seat at New Year). Called challenges and title claims are only for Protected Leagues.
+// The manager sets each scheduled rule's timing (SEAT_EVERY years). Changing the rule costs SEAT_CHANGE_PREST prestige
+// and can't be done again for SEAT_COOLDOWN years (free while founding). The less control a rule keeps (`open`), the
+// more prestige a year, the more challengers it draws and the readier ambitious trainers are to sign; the two Cups sell
+// tickets and the Council calms the Elite Four's ambitions. Rivals draw a rule by theme and aim, and may redraw it when
+// they rebrand. A founding Champion's window protects the seat from every rule. All numbers provisional.
+const SEAT_RULES = {
+  protected: { name: 'Protected', open: 0, text: "The seat changes only with your say: you can call challenges against your Champion and answer title claims." },
+  succession: { name: 'Succession', open: 0.15, text: 'When the Champion leaves, the highest-ranked Elite Four member (the top seat) moves up. Your control is the Elite Four\'s order.' },
+  term: { name: 'Term', open: 0.3, every: 4, text: 'The Champion serves a set term; at its end you appoint the next one from the Elite Four and Gym Leaders (or keep the Champion).' },
+  council: { name: 'Council vote', open: 0.45, every: 3, text: 'The Elite Four vote for the Champion on a schedule and whenever the seat empties. You can lobby for a candidate.' },
+  merit: { name: 'Merit', open: 0.5, every: 3, text: 'On a schedule, the seat goes to whoever stopped the largest share of runs over that time (the Champion\'s share counts more).' },
+  gauntlet: { name: 'Gauntlet', open: 0.6, text: 'Each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion.' },
+  cup: { name: "Champion's Cup", open: 0.6, every: 2, text: 'On a schedule, the Champion, the Elite Four and the best Gym Leaders play a tournament; the winner takes the seat. Sells tickets.' },
+  opencup: { name: 'Open Cup', open: 0.85, every: 2, text: 'The Cup, open to title winners and the circuit\'s best. Bigger gate and prestige; an outsider can win the seat.' },
+  conqueror: { name: 'Conqueror', open: 1, text: 'The year\'s strongest title winner who wants the seat takes it at New Year, as in the main games.' },
+};
+const RULE_KEYS = Object.keys(SEAT_RULES);
+const SEAT_EVERY_MIN = 1, SEAT_EVERY_MAX = 6, SEAT_CHANGE_PREST = 5, SEAT_COOLDOWN = 2;
+const SEAT_PREST = 3, SEAT_HUNGRY = 0.25, DRAW_SEAT = 0.5;
+const CUP_GATE = { cup: 40000, opencup: 80000 }, CUP_OPEN_PREST = 1, CUP_LEADERS = 3, CUP_INVITES = 2;
+const COUNCIL_LOBBY = 20000, COUNCIL_LOBBY_MAX = 3, COUNCIL_SWAY = 4, COUNCIL_INC = 3, COUNCIL_CALM = 24;
+const MERIT_MIN = 4, MERIT_CHAMP = 1.5, MERIT_EDGE = 0.05, TERM_ANSWER = 8, TERM_INC = 3, CONQ_WANT = 0.25;
+// rivals: a theme or an aim leans to some rules (SEAT_LEAN each), every rule keeps a share
+const THEME_SEATS = { dojo: ['gauntlet'], court: ['succession'], board: ['council'], academy: ['merit'], classic: ['conqueror', 'cup'], island: ['gauntlet'] };
+const AIM_SEATS = { wall: ['protected', 'merit'], star: ['cup', 'opencup', 'conqueror'], money: ['opencup', 'cup', 'council'] };
+const SEAT_LEAN = 2, SEAT_REDRAW = 0.5;
+const SEAT_LOG = { drawn: 0, changed: 0, redrawn: 0, cups: 0, gauntlets: 0, gauntletWon: 0, merit: 0, votes: 0, terms: 0, conquer: 0, handovers: 0, lobbies: 0, heirs: 0 };
+const seatSched = k => !!(SEAT_RULES[k] && SEAT_RULES[k].every);
+function normSeatRule(sr) {
+  const k = sr && SEAT_RULES[sr.k] ? sr.k : 'protected';
+  const every = seatSched(k) ? clamp(Math.round(+(sr && sr.every) || SEAT_RULES[k].every), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
+  return { k, every };
+}
+// the bound League's rule (made on first use)
+function seatRule() {
+  if (!S.seatRule || !SEAT_RULES[S.seatRule.k]) S.seatRule = Object.assign(normSeatRule(S.seatRule), { at: null, next: null });
+  const r = S.seatRule;
+  if (seatSched(r.k) && r.next == null) r.next = (S.season || 1) + r.every;
+  return r;
+}
+const seatRuleKey = () => seatRule().k;
+const seatRuleOf = i => { const L = lgState(i); return normSeatRule(L && L.seatRule); };
+const seatOpen = i => SEAT_RULES[seatRuleOf(i).k].open;
+// a rule's name (in an island-trial League the Gauntlet is the Grand Trial)
+function seatRuleName(k, lg) { return k === 'gauntlet' && themeOf(lg) === THEMES.island ? 'Grand Trial' : (SEAT_RULES[k] || SEAT_RULES.protected).name; }
+const seatLocked = () => founderChamp(T(S.champion));
+function seatRec(rec) {
+  const h = S.history.find(e => e.season === rec.season);
+  if (h) (h.seatEv = h.seatEv || []).push(rec); else (yearLeague().seatEv = yearLeague().seatEv || []).push(rec);
+}
+function pickSeatRule(not) {
+  const th = Object.keys(THEMES).find(k => THEMES[k] === themeOf()), lean = [...(THEME_SEATS[th] || []), ...(AIM_SEATS[S.fin && S.fin.aim] || [])];
+  const ws = RULE_KEYS.filter(k => k !== not).map(k => ({ k, w: 1 + lean.filter(x => x === k).length * SEAT_LEAN }));
+  let v = rand() * ws.reduce((a, x) => a + x.w, 0);
+  for (const x of ws) { v -= x.w; if (v <= 0) return x.k; }
+  return ws[ws.length - 1].k;
+}
+// a rival's rule, drawn by its theme and aim with its own timing (unless set at setup)
+function drawSeatRule() {
+  if (S.seatRule && SEAT_RULES[S.seatRule.k]) return;
+  const k = pickSeatRule(), every = seatSched(k) ? clamp(SEAT_RULES[k].every + ri(-1, 1), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
+  S.seatRule = { k, every, at: null, next: every ? (S.season || 1) + every : null }; SEAT_LOG.drawn++;
+}
+// a rival may take a new rule when it rebrands (rebuild mode, a lasting change of aim, new management)
+function maybeRedrawSeat(why) {
+  if (!S.fin || !S.fin.aim || fixedStaff() || rand() >= SEAT_REDRAW) return false;
+  const was = seatRuleKey(); S.seatRule = null; drawSeatRule(); SEAT_LOG.drawn--;
+  if (seatRuleKey() === was) return false;
+  SEAT_LOG.redrawn++;
+  const text = `The ${S.lgName} changes how its ${postWord('champion')} is chosen ${why}: ${seatRuleName(was)} gives way to ${seatRuleName(seatRuleKey())}.`;
+  news(text, 'league'); noteChange(text);
+  return true;
+}
+// why the player can't change their rule now, or null (the timing alone can always be changed)
+function seatChangeBlock() {
+  return inLeague(ME(), () => {
+    if (!handOn()) return 'No League of yours.';
+    if (S.founding) return null;
+    const r = seatRule();
+    if (r.at != null && S.season - r.at < SEAT_COOLDOWN) return `You changed the rule in year ${r.at}; it can change again from year ${r.at + SEAT_COOLDOWN}.`;
+    return null;
+  });
+}
+// the player sets their rule (k) and its timing (every, in years); returns an error or null
+function setSeatRule(k, every) {
+  if (!SEAT_RULES[k]) return 'No such rule.';
+  return inLeague(ME(), () => {
+    const r = seatRule(), same = r.k === k, n = normSeatRule({ k, every });
+    if (!same) {
+      const b = seatChangeBlock(); if (b) return b;
+      const was = r.k, free = !!S.founding;
+      if (!free) S.prest = Math.max(0, (S.prest || 0) - SEAT_CHANGE_PREST);
+      S.seatRule = { k, every: n.every, at: free ? null : S.season, next: n.every ? S.season + n.every : null, term: k === 'term' ? S.season + n.every : null };
+      (S.chalPending || []).filter(x => x.k === 'champ' && (x.called || x.from === 'claim')).forEach(x => { S.chalPending.splice(S.chalPending.indexOf(x), 1); const c = T(x.cand); if (c) { c.claimOn = null; c.chalAt = null; } chalRecord(x, { lapsed: true }); });
+      SEAT_LOG.changed++;
+      if (!free) { const text = `The ${S.lgName} changed how its ${postWord('champion')} is chosen: ${seatRuleName(was)} gives way to ${seatRuleName(k)} (${SEAT_CHANGE_PREST} prestige).`; news(text, 'league'); noteChange(text); }
+      return null;
+    }
+    if (n.every && n.every !== r.every) { r.every = n.every; r.next = S.season + n.every; if (k === 'term' && r.term != null) r.term = Math.min(r.term, S.season + n.every); }
+    return null;
+  });
+}
+// ---- handing the seat over ----
+// cand takes the Champion's seat: the old Champion takes their Elite Four seat or gym, or (cand from the circuit) leaves
+// the post as after a claim. Returns the words, or null
+function seatHandOver(c, how) {
+  const inc = T(S.champion); if (!inc || !c || c.id === inc.id) return null;
+  c.claimOn = null; SEAT_LOG.handovers++;
+  const e4k = S.e4.indexOf(c.id), gi = S.gyms.findIndex(g => g.leader === c.id && !g.acting), cw = postWord('champion');
+  let fate;
+  if (e4k >= 0) { S.e4[e4k] = null; S.champion = null; inc.e4Poor = 0; installElite(c, 'champion'); installElite(inc, 'e4', e4k); fate = `takes ${c.name}'s ${postWord('e4')} seat (#${e4k + 1})`; }
+  else if (gi >= 0) { S.gyms[gi].leader = null; S.champion = null; installElite(c, 'champion'); installElite(inc, 'leader', gi); staffGym(gi); fate = `takes over ${townName(gi)} ${gymWord()} (${typeLabel(inc)})`; }
+  else {
+    S.champion = null; inc.role = 'exchamp'; inc.letGoAt = S.turn; inc.deposedBy = c.id;
+    retireOrReturn(inc, `lost the ${cw}'s seat to ${c.name}`);
+    let away = null;
+    if (inc.role !== 'retired' && nLeagues() > 1) { away = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()))); if (away != null) shiftLeague(inc, away); }
+    installElite(c, 'champion');
+    fate = inc.role === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit';
+  }
+  return `${c.name} ${how} and is the new ${cw} of the ${S.lgName}. ${inc.name} ${fate}.`;
+}
+// a temporary team for a seat battle: a Gym Leader topped up to six, a challenger at the level; returns the undo
+function seatTeam(t, lvl) {
+  const keep = t.team;
+  if (t.role === 'leader') {
+    t.team = t.team.slice();
+    if (t.team.length < E4_SIZE) staffPicks(t, lvl, E4_SIZE - t.team.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed: !t.specialty }).forEach(m => t.team.push(stamp(m, 'assigned')));
+    return () => { t.team = keep; };
+  }
+  if (t.role === 'challenger') { setTeamLevel(t, lvl); return () => setTeamLevel(t, challengerLevel(t)); }
+  return () => {};
+}
+// one seat battle between a and b at lvl; returns the winner (kept in S.seatLogs when keep)
+function seatBattle(a, b, lvl, title, keep) {
+  const ua = seatTeam(a, lvl), ub = seatTeam(b, lvl);
+  const res = setBattle(a, b, lvl, 'league', title);
+  ua(); ub();
+  if (keep) { res.at = S.turn; res.cand = a.id; res.when = { season: S.season, week: S.week }; (S.seatLogs = S.seatLogs || []).push(res); if (S.seatLogs.length > SEAT_LOGS) S.seatLogs.shift(); }
+  return res.winner === 0 ? a : b;
+}
+const seatCands = () => S.e4.map(T).filter(t => t && !t.acting);
+const leaderCands = () => S.gyms.map((g, i) => ({ t: T(g.leader), i, g })).filter(x => x.t && !x.g.acting);
+// ---- the rules at New Year (from seatChallenges) ----
+function seatRuleNewYear(changes) {
+  const r = seatRule(), ch = T(S.champion);
+  if (!ch || seatLocked() || r.k === 'protected' || r.k === 'succession') return;
+  const due = seatSched(r.k) && S.season >= r.next, say = t => { if (!t) return; changes.push(t); news(t, 'title', S.champion); noteChange(t); if (playerLeague()) stopFor('challenge', t); };
+  if (due) r.next = S.season + r.every;
+  if ((r.k === 'cup' || r.k === 'opencup') && due) say(seatCup(r.k === 'opencup'));
+  else if (r.k === 'merit' && due) say(seatMerit(r.every));
+  else if (r.k === 'council' && due) say(seatVote());
+  else if (r.k === 'term' && S.season >= (r.term != null ? r.term : (r.term = S.season + r.every))) say(seatTermEnds());
+  else if (r.k === 'gauntlet' && !champGrace()) say(seatGauntlet());
+  else if (r.k === 'conqueror' && !champGrace()) say(seatConquer());
+}
+// the Cup: the Champion, the Elite Four and the best Gym Leaders (the Open Cup: one Gym Leader and invited outsiders)
+function seatCup(open) {
+  SEAT_LOG.cups++;
+  const ch = T(S.champion), field = [ch, ...seatCands()];
+  const year = yearLeague(), gyms = leaderCands().sort((a, b) => (b.g.w - b.g.l) - (a.g.w - a.g.l) || ovr(b.t) - ovr(a.t));
+  if (open) {
+    const winners = [...new Set(year.conceded || [])].map(T).filter(t => claimFree(t)), deep = [...new Set((year.entries || []).map(e => e.id))].map(T).filter(t => claimFree(t) && !winners.includes(t));
+    [...winners.sort((a, b) => ovr(b) - ovr(a)), ...deep.sort((a, b) => ovr(b) - ovr(a))].slice(0, CUP_INVITES).forEach(t => field.push(t));
+  }
+  for (const x of gyms.slice(0, open ? Math.max(1, 8 - field.length) : CUP_LEADERS)) { if (field.length >= 8) break; field.push(x.t); }
+  // seeded bracket: the Champion first, then by OVR
+  const seeds = [field[0], ...field.slice(1).sort((a, b) => ovr(b) - ovr(a))];
+  const order = [0, 7, 3, 4, 1, 6, 2, 5].filter(i => i < seeds.length);
+  let round = order.map(i => seeds[i]);
+  const name = open ? 'Open Cup' : "Champion's Cup";
+  while (round.length > 1) {
+    const next = [];
+    for (let i = 0; i < round.length; i += 2) next.push(round[i + 1] ? seatBattle(round[i + 1], round[i], CHAMP_LV, `${name} · ${round.length === 2 ? 'Final' : round.length <= 4 ? 'Semi-final' : 'Quarter-final'}`, round.length === 2) : round[i]);
+    round = next;
+  }
+  const w = round[0], gate = CUP_GATE[open ? 'opencup' : 'cup'];
+  if (S.fin) book(gate, 'seatcup', `${name} ticket sales: ${money(gate)}.`);
+  if (open) S.prest = (S.prest || 0) + CUP_OPEN_PREST;
+  const kept = w.id === ch.id;
+  const text = kept ? `${postWord('champion')} ${ch.name} won the ${name} (${seeds.length} entrants) and keeps the seat.` : seatHandOver(w, `won the ${name} (${seeds.length} entrants)`);
+  seatRec({ season: S.season, k: open ? 'opencup' : 'cup', win: w.id, inc: ch.id, kept, n: seeds.length, text });
+  return text;
+}
+// the strongest willing candidate runs the Gauntlet: each Elite Four member in a row, then the Champion
+function seatGauntlet() {
+  const ch = T(S.champion), out = [];
+  leaderCands().forEach(x => { if (canChallenge(x.t) && wantsUp(x.t)) out.push(x.t); });
+  seatCands().forEach(t => { if (canChallenge(t) && wantsUp(t) && seatYears(t) >= CHAL_SEAT_YEARS) out.push(t); });
+  [...new Set(yearLeague().conceded || [])].map(T).forEach(t => { if (claimFree(t) && canChallenge(t) && wantsSeat(t)) out.push(t); });
+  const c = out.sort((a, b) => ovr(b) - ovr(a))[0]; if (!c) return null;
+  SEAT_LOG.gauntlets++; c.chalAt = S.season;
+  const nm = seatRuleName('gauntlet');
+  let beaten = 0;
+  for (let k = 0; k < S.e4.length; k++) {
+    const e = T(S.e4[k]); if (!e || e.id === c.id) continue;
+    if (seatBattle(c, e, E4_LV[k], `${nm} · ${postWord('e4')} #${k + 1}`, false) !== c) {
+      chalRestless(c);
+      const text = `${c.name} ran the ${nm} and fell to ${e.name} (${postWord('e4')} #${k + 1}) after ${beaten} win${beaten === 1 ? '' : 's'}.`;
+      seatRec({ season: S.season, k: 'gauntlet', cand: c.id, inc: ch.id, at: k, text }); return text;
+    }
+    beaten++;
+  }
+  const won = seatBattle(c, ch, CHAMP_LV, `${nm} · ${postWord('champion')}`, true) === c;
+  let text;
+  if (won) { SEAT_LOG.gauntletWon++; text = seatHandOver(c, `ran the ${nm}, beating all ${beaten} of the ${postWord('e4')} and then ${postWord('champion')} ${ch.name},`); }
+  else { chalRestless(c); text = `${c.name} beat all ${beaten} of the ${postWord('e4')} in the ${nm}, but ${postWord('champion')} ${ch.name} held the seat.`; }
+  seatRec({ season: S.season, k: 'gauntlet', cand: c.id, inc: ch.id, won, text });
+  return text;
+}
+// Merit: over the last `years` years, the share of runs each holder stopped (the Champion's counts MERIT_CHAMP times)
+function meritTable(years) {
+  const tally = {};
+  for (const h of S.history.slice(-years)) (h.seats || []).forEach((s, k) => {
+    if (!s || s.id == null) return; const x = tally[s.id] = tally[s.id] || { faced: 0, stopped: 0 };
+    x.faced += s.faced || 0; x.stopped += (s.stopped || 0) * (k === 4 ? MERIT_CHAMP : 1);
+  });
+  return [S.champion, ...seatCands().map(t => t.id)].map(id => ({ id, ...(tally[id] || { faced: 0, stopped: 0 }) }))
+    .map(x => ({ ...x, share: x.faced >= MERIT_MIN ? x.stopped / x.faced : null }));
+}
+function seatMerit(years) {
+  SEAT_LOG.merit++;
+  const ch = T(S.champion), tab = meritTable(years), mine = tab.find(x => x.id === ch.id), mShare = mine.share == null ? 0 : mine.share;
+  const best = tab.filter(x => x.id !== ch.id && x.share != null).sort((a, b) => b.share - a.share)[0];
+  const pct = v => `${Math.round(v * 100)}%`;
+  let text, kept = true;
+  if (best && best.share > mShare + MERIT_EDGE) { kept = false; text = seatHandOver(T(best.id), `stopped the largest share of runs over ${years} year${years === 1 ? '' : 's'} (${pct(best.share)} against ${pct(mShare)})`); }
+  else text = `The ${S.lgName}'s merit review over ${years} year${years === 1 ? '' : 's'} keeps ${postWord('champion')} ${ch.name} in the seat${mine.share != null ? ` (${pct(mShare)} of runs stopped, weighted)` : ''}.`;
+  seatRec({ season: S.season, k: 'merit', win: kept ? ch.id : best.id, inc: ch.id, kept, text });
+  return text;
+}
+// a council vote: voters vote for themselves if they want the seat, else for the best other candidate (OVR, the
+// incumbent's edge, the manager's lobbying, a little chance); most votes wins, a tie to the incumbent, then OVR
+function councilVote(cands, voters, incId) {
+  const lob = (S.seatRule && S.seatRule.lobby) || {}, tally = {};
+  for (const v of voters) {
+    let pickId;
+    if (cands.includes(v) && wantsUp(v)) pickId = v.id;
+    else pickId = cands.filter(c => c !== v).map(c => ({ c, s: ovr(c) + (c.id === incId ? COUNCIL_INC : 0) + (lob.id === c.id ? lob.n * COUNCIL_SWAY : 0) + rand() * 6 - (v.grudge != null ? 1 : 0) }))
+      .sort((a, b) => b.s - a.s).map(x => x.c.id)[0];
+    if (pickId != null) tally[pickId] = (tally[pickId] || 0) + 1;
+  }
+  const win = cands.slice().sort((a, b) => (tally[b.id] || 0) - (tally[a.id] || 0) || (b.id === incId) - (a.id === incId) || ovr(b) - ovr(a))[0];
+  return { win, tally };
+}
+const councilCands = () => { const ch = T(S.champion), lead = leaderCands().filter(x => wantsUp(x.t) && canChallenge(x.t)).sort((a, b) => ovr(b.t) - ovr(a.t))[0];
+  return [ch, ...seatCands().filter(t => wantsUp(t) && canChallenge(t)), ...(lead ? [lead.t] : [])].filter(Boolean); };
+function seatVote() {
+  SEAT_LOG.votes++;
+  const ch = T(S.champion), cands = councilCands(), voters = seatCands();
+  if (!voters.length) return null;
+  const { win, tally } = councilVote(cands, voters, ch.id), votes = tally[win.id] || 0;
+  // the Council calms ambition: Elite Four members who wanted the seat wait a little longer before turning restless
+  for (const t of voters) if (t !== win && wantsUp(t) && t.wish) t.wish.since = Math.min(S.turn, t.wish.since + COUNCIL_CALM);
+  if (S.seatRule) S.seatRule.lobby = null;
+  const kept = win.id === ch.id;
+  const text = kept ? `The ${postWord('e4')} voted to keep ${postWord('champion')} ${ch.name} (${votes} of ${voters.length} votes).` : seatHandOver(win, `won the Council vote (${votes} of ${voters.length} votes)`);
+  seatRec({ season: S.season, k: 'council', win: win.id, inc: ch.id, kept, votes, of: voters.length, text });
+  return text;
+}
+// the seat empties under Succession or Council: which Elite Four seat moves up (null: the usual strongest)
+function ruleHeirSeat(ks) {
+  const k = seatRuleKey();
+  if (k === 'succession') { SEAT_LOG.heirs++; return Math.max(...ks); }
+  if (k === 'council' && ks.length > 1) { SEAT_LOG.heirs++; const cands = ks.map(i => T(S.e4[i])); const { win } = councilVote(cands, cands, null); if (S.seatRule) S.seatRule.lobby = null; return S.e4.indexOf(win.id); }
+  return null;
+}
+// the player lobbies the Council for a candidate (each lobby costs COUNCIL_LOBBY; up to COUNCIL_LOBBY_MAX before a vote)
+function lobbySeat(id) {
+  return inLeague(ME(), () => {
+    if (seatRuleKey() !== 'council') return 'Your League doesn\'t choose its Champion by Council vote.';
+    const t = T(id); if (!t || ![S.champion, ...S.e4].includes(id) && !S.gyms.some(g => g.leader === id && !g.acting)) return 'They can\'t stand for the seat.';
+    const r = seatRule(), lob = r.lobby && r.lobby.id === id ? r.lobby : { id, n: 0 };
+    if (r.lobby && r.lobby.id !== id && r.lobby.n) return `You are already lobbying for ${T(r.lobby.id) ? T(r.lobby.id).name : 'someone else'}.`;
+    if (lob.n >= COUNCIL_LOBBY_MAX) return `You have lobbied ${COUNCIL_LOBBY_MAX} times before this vote.`;
+    if (!canSpend(COUNCIL_LOBBY)) return `Lobbying costs ${money(COUNCIL_LOBBY)}.`;
+    book(-COUNCIL_LOBBY, 'seatlobby', `Lobbied the ${postWord('e4')} for ${t.name}.`);
+    lob.n++; r.lobby = lob; SEAT_LOG.lobbies++;
+    return null;
+  });
+}
+// Term: the term ends; the player appoints (TERM_ANSWER weeks, unanswered: the Champion stays), a rival at once
+const termCands = () => [T(S.champion), ...seatCands(), ...leaderCands().map(x => x.t)].filter(Boolean);
+function seatTermEnds() {
+  SEAT_LOG.terms++;
+  const r = seatRule(), ch = T(S.champion);
+  if (playerLeague()) {
+    r.pick = { due: S.turn + TERM_ANSWER, season: S.season };
+    return `${postWord('champion')} ${ch.name}'s term is over. Appoint the next ${postWord('champion')} (or keep ${ch.name}) by ${turnDate(r.pick.due)}; unanswered, ${ch.name} serves another term.`;
+  }
+  const w = termCands().map(t => ({ t, s: ovr(t) + (t.id === ch.id ? TERM_INC : 0) + rand() * 2 })).sort((a, b) => b.s - a.s)[0].t;
+  r.term = S.season + r.every;
+  const kept = w.id === ch.id;
+  const text = kept ? `The ${S.lgName} kept ${postWord('champion')} ${ch.name} for another term.` : seatHandOver(w, `was appointed at the end of ${ch.name}'s term`);
+  seatRec({ season: S.season, k: 'term', win: w.id, inc: ch.id, kept, text });
+  return text;
+}
+// the player's appointment (id: the next Champion, the current one to keep them); returns an error or null
+function termPick(id) {
+  return inLeague(ME(), () => {
+    const r = seatRule(); if (!r.pick) return 'No term is waiting for an appointment.';
+    const ch = T(S.champion), t = termCands().find(x => x.id === id); if (!t) return 'They can\'t be appointed.';
+    const season = r.pick.season; r.pick = null; r.term = S.season + r.every;
+    const kept = t.id === ch.id;
+    const text = kept ? `You kept ${postWord('champion')} ${ch.name} for another term.` : seatHandOver(t, `was appointed by you at the end of ${ch.name}'s term`);
+    seatRec({ season, k: 'term', win: t.id, inc: ch.id, kept, text });
+    news(text, 'title', S.champion); noteChange(text);
+    return null;
+  });
+}
+// every week: an appointment left unanswered keeps the Champion (the multi-year sim settles it at once)
+function seatWeek(now) {
+  inLeague(ME(), () => {
+    const r = S.seatRule; if (!r || !r.pick || (!now && S.turn < r.pick.due)) return;
+    const ch = T(S.champion); if (!ch) { r.pick = null; return; }
+    termPick(ch.id);
+  });
+}
+// Conqueror: the year's strongest title winner still on the circuit who wants the seat takes it
+function seatConquer() {
+  const ch = T(S.champion);
+  const c = [...new Set(yearLeague().conceded || [])].map(T).filter(t => claimFree(t) && (wantsSeat(t) || rand() < CONQ_WANT)).sort((a, b) => ovr(b) - ovr(a))[0];
+  if (!c) return null;
+  SEAT_LOG.conquer++;
+  const text = seatHandOver(c, `beat ${ch.name} for the title and, under the Conqueror rule, takes the seat`);
+  seatRec({ season: S.season, k: 'conqueror', win: c.id, inc: ch.id, text });
+  return text;
 }
 // ================= FAMOUS TRAINERS =================
 // Rarely, a newcomer or a founding Elite Four member is a trainer from the games or anime.
@@ -11846,6 +12188,7 @@ function newWorld(cfg = {}) {
     return { postSet: postSetAt(i), gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], k)), seatName: seatOf(reg, k) }; };
   S.leagues = [null]; S.lg = 0;
   S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], 0); S.postSet = postSetAt(0) || (cfg.hand ? normPostSet(null) : undefined);
+  if (cfg.seatRule) S.seatRule = normSeatRule(cfg.seatRule); // (0.43.0) your seat rule, picked at setup
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
   if (cfg.hand) { S.cfg.hand = true; initBooks(); }
@@ -12206,7 +12549,7 @@ function initBooks() {
   const mine = !!(S.cfg && S.cfg.hand) && (S.lg || 0) === ME();
   S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0, aim: mine ? null : pickAim(), aimAt: S.season || 0, redAt: null };
   S.ranch = newRanch(); // (0.25.0) every League with books keeps a ranch
-  if (S.fin.aim) drawTheme(); // (0.42.0) a rival's theme, by its aim and region (unless set at setup)
+  if (S.fin.aim) { drawTheme(); drawSeatRule(); } // (0.42.0) a rival's theme, by its aim and region (unless set at setup); (0.43.0) its seat rule
   finYear();
 }
 // a member of staff takes a post: their pay is set, and someone new to the staff costs a signing fee
@@ -12717,7 +13060,7 @@ function aimNewYear() {
   f.aim = to; f.aimAt = S.season;
   const text = `The ${S.lgName} has a new aim: ${AIMS[to].name.toLowerCase()}.`;
   news(text, 'league'); noteChange(text);
-  if (!f.prevAim && to !== 'money') maybeRebrand('with its new aim'); // (0.42.0) a lasting change, not the red's
+  if (!f.prevAim && to !== 'money') { maybeRebrand('with its new aim'); maybeRedrawSeat('with its new aim'); } // (0.42.0) a lasting change, not the red's
 }
 // ================= STAGE 5: SPONSORED CONTENDERS AND LEAVING YOUR LEAGUE (0.17.0) =================
 // Design doc 5.8. A League can send challengers at another League as its contenders: its own academy prospects, or a
@@ -12884,7 +13227,7 @@ function leaveLeague(region, takeIds = [], name = null) {
   const take = takeIds.filter(id => willing.has(id)).slice(0, LEAVE_TAKE);
   const seatK = freeSeat(region), reg = LEAGUE_SETS[region];
   const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, seatK));
-  const myPosts = postSetOf(old); // (0.42.0) your post names and theme go with you to the new League
+  const myPosts = postSetOf(old), mySeat = seatRuleOf(old); // (0.42.0) your post names and theme go with you to the new League; (0.43.0) and your seat rule
   inLeague(old, () => {
     book(-LEAVE_FEE, 'founding', `Paid ${money(LEAVE_FEE)} to leave the ${S.lgName} and found the ${lgName}.`);
     // settle what waits for the player: challenges go ahead, offers accepted are withdrawn, vacancies take an outsider
@@ -12897,11 +13240,12 @@ function leaveLeague(region, takeIds = [], name = null) {
     S.gyms.forEach((g, i) => { if (g.outs) flushGymOutsiders(i); });
     S.fin.aim = pickAim(); S.fin.aimAt = S.season; S.fin.prevAim = null; S.plans = undefined; // (0.39.0) team plans are the player's
     news(`The ${S.lgName} carries on without its founder at the helm, now run as a ${AIMS[S.fin.aim].name.toLowerCase()}.`, 'league');
+    S.seatRule = null; drawSeatRule(); // (0.43.0) the new management picks its own seat rule
     maybeRebrand('under new management'); // (0.42.0)
   });
   S.vacancies = []; S.chalPending = []; S.distress = [];
   const i = nLeagues();
-  S.leagues.push({ postSet: myPosts, gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
+  S.leagues.push({ postSet: myPosts, seatRule: mySeat, gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
   // (0.27.0) someone a waiting challenge just moved out of their post stays behind
@@ -14849,7 +15193,7 @@ function drawWeights(t, r, opts = {}) {
   const ease = leagueEase(), sizes = lgs.map(i => (lgObj(i).challengers || []).length);
   const avgN = sizes.reduce((a, b) => a + b, 0) / lgs.length, eAvg = lgs.reduce((a, i) => a + (ease[i] || 0), 0) / lgs.length;
   const out = lgs.map((i, k) => {
-    let w = 1 + DRAW_PREST * (strong ? DRAW_STAR : 1) * Math.max(0, prestOf(i)) / 100;
+    let w = 1 + DRAW_PREST * (strong ? DRAW_STAR : 1) * Math.max(0, prestOf(i)) / 100 + DRAW_SEAT * seatOpen(i); // (0.43.0) a seat a challenger could win
     if (c && tot > 0 && there.includes(i)) w += DRAW_HOME * Math.max(0, standing(c, i)) / tot;
     if (t.loyal && t.loyal.lg === i && S.season <= t.loyal.until) w += DRAW_LOYAL;
     if (!strong) {
@@ -14942,7 +15286,7 @@ function rebuildNewYear() {
     f.rebuild = { since: S.season }; REBUILD_LOG.into++;
     const text = `The ${S.lgName} is rebuilding: it draws only ${Math.round(sh * 100)}% of the region's challengers.`;
     news(text, 'league'); noteChange(text);
-    maybeRebrand('as it rebuilds'); // (0.42.0)
+    maybeRebrand('as it rebuilds'); maybeRedrawSeat('as it rebuilds'); // (0.42.0, 0.43.0)
   } else if (f.rebuild && sh >= REBUILD_BACK * even) {
     f.rebuild = null; REBUILD_LOG.out++;
     const text = `The ${S.lgName} has finished rebuilding and returns to its aim as a ${AIMS[f.aim].name.toLowerCase()}.`;
@@ -14979,7 +15323,7 @@ function aimTrim() {
   news(text, 'move', c.id); noteChange(text);
 }
 
-if (typeof module !== 'undefined') module.exports = { THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') module.exports = { SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -15333,7 +15677,7 @@ let setupRivals = [];
 // (0.33.0) League names given at setup: [yours, rival 1, rival 2…]; blank takes the seat's default
 let setupNames = [];
 // (0.42.0) your League's posts at setup ({ theme, names }) and each rival's theme ('' = drawn by its aim and region)
-let setupPosts = { theme: 'region', names: {} }, setupRivalThemes = [];
+let setupPosts = { theme: 'region', names: {} }, setupRivalThemes = [], setupSeat = { k: 'protected', every: null }; // (0.43.0) setupSeat: your seat rule
 const POST_LABELS = { leader: 'Gym Leaders', gymtrainer: 'Gym trainers', e4: 'Elite Four', champion: 'Champion' };
 // (0.42.0) the post-name form: a theme picker that fills the four fields, each still editable. cls: the fields' class,
 // sel: the picker's id, r: the region (placeholders), ps: { theme, names }
@@ -15993,6 +16337,7 @@ function viewSetup() {
     ${speedNote(setupLeagues)}
     <label class="cf-field setup-name"><span class="eyebrow">Your League's name</span><input class="cf-in" id="setlgname" maxlength="${LG_NAME_MAX}" value="${esc(setupNames[0] || '')}" placeholder="Left blank: named after its region (the Kanto League)" autocomplete="off"></label>
     <div class="setup-name"><div class="eyebrow">Your League's posts</div><p class="muted small">Pick a theme to fill the four names, or type your own over any of them. Region default uses the region's own names (Alola's Kahuna and Trial Captain, a custom region's), else the usual ones.</p>${postsForm('setposttheme', 'setpost', setupPosts, null)}</div>
+    <div class="setup-name"><div class="eyebrow">How your Champion is chosen</div><p class="muted small">The seat rule. Free to pick now; changing it later costs prestige. The less control a rule keeps, the more prestige, challengers and ambitious hires it brings.</p>${seatForm('setseatrule', 'setseatevery', setupSeat.k, setupSeat.every)}</div>
     <div class="confirm-row"><button class="btn" data-act="setuppage" data-v="advanced">Advanced options</button>${advOn.length ? advOn.map(x => `<span class="tag gold">${x}</span>`).join(' ') : '<span class="muted small">None selected</span>'}</div></section>
     <div class="ph pick-h"><h2>Choose a region</h2><span class="muted">Its eight cities hold the League's gyms.</span></div>
     <div class="org-pick">${LEAGUE_SETS.map((r, i) => `<button class="org-card" data-act="newworld" data-v="${i}" style="--oc:var(--red)">
@@ -16612,7 +16957,7 @@ function viewStaff() {
     <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes when they step down or leave, or lose a seat challenge. <b>Calling a challenge:</b> you decide when your Champion's seat is fought for: up to ${CALL_MAX} times a year, name an Elite Four member, a Gym Leader or a recent title winner to challenge the Champion, ${CALL_WEEKS} weeks later. A Champion called against may come to want to leave. <b>Seat challenges:</b> at New Year a Gym Leader who wants promotion (or a challenger after a run to the Elite Four) may challenge an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger; the Champion may also want a bigger League's seat, or to step down. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last); then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves unless promoted, and a gym trainer just goes. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
   ${steersPanel()}
   <section class="panel champ"><div class="ph"><h2>${esc(postWord('champion'))}</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>${esc(postWord('champion'))}</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
-  ${callPanel()}
+  ${seatPanel()}${seatRuleKey() === 'protected' ? callPanel() : ''}
   <section class="panel"><div class="ph"><h2>${esc(postWord('e4'))}</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `${postWord('e4')} #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">A gym's type is its leader's class; gym trainers share a type with the leader</span></div><div class="scroll"><table class="tbl">${head}<tbody>${gymRows}</tbody></table></div></section>`;
 }
@@ -16655,7 +17000,7 @@ function viewMeta() {
 }
 // ---------- money and cities (0.13.0) ----------
 // the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
-const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase' };
+const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying' };
 function finTable(y) {
   if (!y) return '<p class="muted">Nothing yet.</p>';
   const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
@@ -16696,7 +17041,7 @@ let lgPostsAt = null, lgPostsDraft = null, lgPostsMsg = '';
 function lgNameCell(r) {
   const fy = r.founder && r.founder.founded && r.founder.founded.lg === r.i ? `, Year ${r.founder.founded.season}` : '';
   const sub = (r.founder ? `<div class="small muted">Founded by ${tname(r.founder.id)}${fy}</div>` : '') + (r.old.length ? `<div class="small muted">Formerly the ${r.old.slice().reverse().map(esc).join(', the ')}</div>` : '');
-  const pw = r.posts, postLine = `<div class="small muted">${esc(r.theme)}${r.custom ? ' (custom)' : ''}: ${[pw.leader, pw.gymtrainer, pw.e4, pw.champion].map(esc).join(' · ')}</div>`;
+  const pw = r.posts, postLine = `<div class="small muted">${esc(r.theme)}${r.custom ? ' (custom)' : ''}: ${[pw.leader, pw.gymtrainer, pw.e4, pw.champion].map(esc).join(' · ')}</div><div class="small muted">Seat rule: ${esc(seatRuleName(seatRuleOf(r.i).k, r.i))}</div>`; // (0.43.0)
   if (lgPostsAt === r.i && lgPostsDraft) return `<b>${esc(r.name)}</b>${postsForm('lgposttheme', 'lgpostin', lgPostsDraft, r.region)}<div class="confirm-row"><button class="btn small primary" data-act="lgpostsgo" data-i="${r.i}">Save posts</button><button class="btn small" data-act="lgpostscancel">Cancel</button></div>${lgPostsMsg ? `<div class="small bad">${esc(lgPostsMsg)}</div>` : ''}${sub}`;
   if (lgRenameAt === r.i) return `<label class="cf-field"><input class="cf-in" id="lgrenamein" maxlength="${LG_NAME_MAX}" value="${esc(lgRenameText)}" autocomplete="off" aria-label="New name"></label><div class="confirm-row"><button class="btn small primary" data-act="lgrenamego" data-i="${r.i}">Rename</button><button class="btn small" data-act="lgrenamecancel">Cancel</button></div>${lgRenameMsg ? `<div class="small bad">${esc(lgRenameMsg)}</div>` : ''}${sub}`;
   return `<b>${esc(r.name)}</b>${handOn() && canRename(r.i) ? ` <button class="btn small" data-act="lgrename" data-i="${r.i}">Rename</button> <button class="btn small" data-act="lgposts" data-i="${r.i}">Posts</button>` : ''}${postLine}${sub}`;
@@ -17556,7 +17901,8 @@ function viewRecap() {
       <div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Held by</th><th>Type</th><th>Runs faced</th><th>Stopped</th><th>Got past</th></tr></thead><tbody>${seatRows}</tbody></table></div></section>
     ${latest && chalPend.length && (S.lg || 0) === ME() ? `<section class="panel callout warnbox">${chalNotice()}</section>` : ''}
     <section class="panel"><div class="ph"><h3>Seat challenges</h3><span class="muted">At New Year: at most one for an Elite Four seat (and a title claim); in your League the Champion's seat is challenged when you call it</span></div>
-      ${chalRows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Challenger</th><th>Holder</th><th>Result</th><th></th></tr></thead><tbody>${chalRows}</tbody></table></div>` : '<p class="muted">No seat challenges.</p>'}</section>
+      ${chalRows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Seat</th><th>Challenger</th><th>Holder</th><th>Result</th><th></th></tr></thead><tbody>${chalRows}</tbody></table></div>` : '<p class="muted">No seat challenges.</p>'}
+      ${(h.seatEv || []).length ? `<div class="eyebrow">Seat rule${h.seatRule ? `: ${esc(seatRuleName(h.seatRule))}` : ''}</div><ul class="changes">${h.seatEv.map(e => `<li>${esc(e.text || '')}</li>`).join('')}</ul>` : ''}</section>
   <div class="grid-office"><div class="col">
     <section class="panel"><div class="ph"><h3>Runs at the Elite Four</h3></div>${(h.runsE4 || []).length ? `<div class="scroll"><table class="tbl"><thead><tr><th>When</th><th>Trainer</th><th>E4 #1</th><th>#2</th><th>#3</th><th>#4</th><th>Final</th></tr></thead><tbody>
       ${h.runsE4.map(r => `<tr><td class="small">${weekShort(r[1])}</td><td>${tname(r[0])}</td>${stageCells(r[2])}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nobody completed the badge circuit.</p>'}</section>
@@ -17815,6 +18161,7 @@ const GLOSS_TERMS = {
     ['Steers', 'A standing instruction for how a post\'s team is built: Balanced, Counter the trend, Counter the year\'s meta, Favour bulk, Hit hard, Cover weaknesses or Keep their own Pokémon. Set on Your staff for each Gym Leader\'s gym (its gym trainers follow it), each Elite Four seat and the Champion, plus a League line for posts with none. It belongs to the post, so a new holder follows it. Everyone follows a steer, as closely as their Strategy allows; it trades some raw strength for what it asks. A team moves one Pokémon closer each month, and someone new to a post builds to it at once. A countering trainer may field one Pokémon off their type. Rival Leagues steer themselves: posts that can answer the meta on their type counter it.'],
     ['The meta', 'The circuit\'s top performers, read at the start of every month: the trend (the last 12 weeks) and the year (last year plus this year so far). Only challengers\' Pokémon count. The Meta page shows both, the types that answer them and which of your posts can answer them on their own type. The sim stops when the trend shifts. Newcomers still lean toward types that counter the year\'s top performers.'],
     ['Seat challenges', 'At New Year a League holds at most one challenge for an Elite Four seat, and a rival League\'s manager may call one for its Champion\'s seat (an Elite Four member who wants promotion, has held the seat a year and didn\'t have the worst record of the four). In your League the Champion\'s seat is challenged only when you call a challenge (see Calling a challenge) or allow a title claim. A Gym Leader who wants promotion and whose gym was one of the three best-holding of the year, or a challenger who reached the Elite Four this year when the seat\'s holder is 50 or older, can challenge the weakest Elite Four seat. It is one battle at the seat\'s level, the challenger with a team built for the seat. A beaten Champion takes the winner\'s Elite Four seat; a beaten Elite Four member takes the winning Gym Leader\'s gym, or returns to the circuit if a challenger beat them. In your League you approve or refuse each challenge within four weeks (unanswered, it goes ahead). A member of staff whose challenge is refused or lost turns restless, and anyone who challenged waits two years to try again. Rival Leagues hold their challenges at once. A new Champion can\'t be challenged for the seat by a claim or another League in their first calendar year.'],
+    ['Seat rules', 'Each League has a rule for how its Champion is chosen, set on Your staff (and at setup, free). Protected: the seat changes only with your say (called challenges, title claims, the Champion\'s own ambitions). Succession: when the Champion leaves, the top Elite Four seat moves up. Term: the Champion serves a set term, then you appoint the next one (or keep them); unanswered, they serve another. Council vote: on a schedule and whenever the seat empties, the Elite Four vote; you can lobby for a candidate, and the vote keeps ambitious members patient a little longer. Merit: on a schedule, the seat goes to whoever stopped the largest share of runs (the Champion\'s counts more). Gauntlet (the Grand Trial in island-trial Leagues): each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion. Champion\'s Cup: on a schedule, the Champion, the Elite Four and the best Gym Leaders play a tournament, and the winner takes the seat; it sells tickets. Open Cup: the Cup with title winners and the circuit\'s best invited, a bigger gate and a little prestige. Conqueror: at New Year the year\'s strongest title winner who wants the seat takes it. You set how often each scheduled rule comes round. Called challenges and title claims are only for the Protected rule. Changing the rule costs prestige and can\'t be done again for two years. The less control a rule keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. Rival Leagues pick by their theme and aim, and may change rule when they rebrand. A founding Champion\'s window protects the seat from every rule.'],
     ['Calling a challenge', 'You decide when your Champion\'s seat is fought for. Up to three times a calendar year, on Your staff, call a challenge and name the challenger: one of your Elite Four members or Gym Leaders, or a title winner of this year or last still on your circuit (not anyone who challenged in the last two years). It is one battle at the Champion\'s level, four weeks later; you can fight it sooner or call it off. If the challenger wins they take the seat: a beaten Champion takes the winner\'s Elite Four seat or gym, or, beaten by a title winner, leaves the post. A Champion called against is put out by it, more so with each call in a year, and may come to want a bigger League\'s seat or to step down. Rival Leagues call theirs by their aim.'],
     ['Champion ambitions', 'The Champion has an ambition like the rest of the staff: most stay put, but one may want a bigger League\'s seat (with another League in the world; three years, then twelve weeks\' notice, and a raise holds them a year), another run as a challenger, or to step down after a run in the seat (three years, then notice: they retire at 40 or older, else take an Elite Four seat). When a Champion leaves, the strongest Elite Four member moves up at once and their seat waits for you. A League\'s founding Champion stays put through their window.'],
     ['Title claims', 'Beating the Champion wins the title, not the seat. At New Year the strongest of the year\'s title winners who wants a seat (about half of them) can claim the Champion\'s seat. In your League nothing changes without you: allow the claim battle (one battle at the Champion\'s level, your Champion with their full team and a little more than the seat\'s usual edge; a Champion who loses leaves the post, for another League\'s circuit or retirement), turn it down, or offer the claimant a post through the hiring pages, which they are glad to take. Turned down, or unanswered for eight weeks, the claim costs your League 2 prestige and the claimant leaves unhappy, often for another League that may sign them as a contender against you. Rival Leagues allow or turn down claims by their aim. The multi-year sim turns every claim down.'],
@@ -17917,6 +18264,14 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 43, ver: '0.43.0', date: 'November 19, 2026', time: '9:10 PM ET', title: 'Seat rules: how each League chooses its Champion', items: [
+    "Every League now has a seat rule: how its Champion's seat changes hands. Pick yours at setup (free), and change it on Your staff under How the Champion is chosen.",
+    "Nine rules. Protected: the seat changes only with your say, as before (called challenges, title claims, the Champion's own ambitions). Succession: when the Champion leaves, the top Elite Four seat moves up, so the Elite Four's order is the line of succession. Term: the Champion serves a set term, then you appoint the next one or keep them. Council vote: the Elite Four vote on a schedule and whenever the seat empties, and you can pay to lobby for a candidate. Merit: on a schedule, the seat goes to whoever stopped the largest share of runs. Gauntlet (the Grand Trial in island-trial Leagues): each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion. Champion's Cup: a tournament of the Champion, the Elite Four and the best Gym Leaders; the winner takes the seat. Open Cup: the Cup with title winners and the circuit's best invited. Conqueror: the year's strongest title winner who wants the seat takes it at New Year.",
+    "You set how often each scheduled rule comes round (every 1 to 6 years). Changing the rule itself costs 5 prestige and can't be done again for two years; changing the timing is free. Called challenges and title claims are only for Protected Leagues.",
+    "What a rule pays: the less control it keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. The Cups sell tickets (the Open Cup more, and a little prestige), and a Council vote keeps ambitious Elite Four members patient a little longer.",
+    "Rival Leagues pick a rule that suits their theme and aim, with some chance in it, and may change it when they rebrand. The League table shows each League's rule, and the year report lists what the rule did that year. A founding Champion's protected years still hold under every rule.",
+    "Old saves can't be loaded (save version 21).",
+  ] },
   { id: 42, ver: '0.42.0', date: 'November 19, 2026', time: '3:52 PM ET', title: 'Post names by League, and League themes', items: [
     "Each League now names its own posts, instead of the region naming them for every League in it. At setup, under your League's name, pick a theme to fill in the names of your Gym Leaders, gym trainers, Elite Four and Champion, then type over any of them. You can change them later from the League table's Posts button.",
     "Themes: Classic (Gym Leader, Gym trainer, Elite Four, Champion), Dojo (Sensei, Student, Grandmasters, Master), Court (Warden, Squire, High Council, Sovereign), Board (Branch Head, Associate, Board, Chair), Academy (Professor, Assistant, Faculty, Dean), Island trials (Kahuna, Trial Captain, Island Elders, Champion), and Region default, which uses the region's own names. A theme also changes a few lines in the news.",
@@ -18567,6 +18922,31 @@ function planOptions(t, key) {
   }
   return out;
 }
+// ---------- seat rules (0.43.0) ----------
+// the rule picker (setup and Your staff): a select of the nine rules and the timing in years for the scheduled ones
+let seatDraft = null;
+function seatForm(sel, ev, k, every) {
+  const sched = seatSched(k), ev0 = every || (sched ? SEAT_RULES[k].every : null);
+  return `<div class="confirm-row"><select id="${sel}" aria-label="Seat rule">${RULE_KEYS.map(x => `<option value="${x}"${x === k ? ' selected' : ''}>${esc(SEAT_RULES[x].name)}</option>`).join('')}</select>${sched ? `<label class="small">every <input id="${ev}" type="number" min="${SEAT_EVERY_MIN}" max="${SEAT_EVERY_MAX}" value="${ev0}" style="width:4em"> year${ev0 === 1 ? '' : 's'}</label>` : ''}</div><p class="muted small">${esc(SEAT_RULES[k].text)}</p>`;
+}
+const seatNext = r => r.k === 'term' ? (r.term != null ? `The term ends at New Year after year ${r.term}.` : '') : seatSched(r.k) && r.next != null ? `Next at New Year after year ${r.next}.` : '';
+function seatPanel() {
+  const r = seatRule(), k = r.k, d = seatDraft || { k, every: r.every }, block = seatChangeBlock(), cw = esc(postWord('champion'));
+  const pct = v => v == null ? '–' : `${Math.round(v * 100)}%`;
+  let extra = '';
+  if (r.pick) extra += `<div class="eyebrow">Appoint the next ${cw} by ${turnDate(r.pick.due)}</div><ul class="mini">${termCands().map(t => `<li><span>${tname(t.id)} <span class="small">(${t.id === S.champion ? 'keep the ' + cw : postName(t)})</span> ${ovrPill(t)}</span><button class="btn small primary" data-act="seatpick" data-id="${t.id}">${t.id === S.champion ? 'Keep' : 'Appoint'}</button></li>`).join('')}</ul>`;
+  if (k === 'council') { const lob = r.lobby;
+    extra += `<p class="small">Standing: ${councilCands().map(t => `${tname(t.id)}${lob && lob.id === t.id ? ` <span class="tag">lobbied ×${lob.n}</span>` : ''}`).join(', ')}. Voters: the ${esc(postWord('e4'))} who aren't standing vote for the strongest candidate, with an edge for the ${cw} and for anyone you lobby for (${money(COUNCIL_LOBBY)} a time, up to ${COUNCIL_LOBBY_MAX} before each vote).</p>
+      <div class="confirm-row">${councilCands().map(t => `<button class="btn small" data-act="seatlobby" data-id="${t.id}">Lobby for ${esc(t.name)}</button>`).join('')}</div>`; }
+  if (k === 'merit') extra += `<p class="small">Share of runs stopped over the last ${r.every} year${r.every === 1 ? '' : 's'} (the ${cw}'s counts ×${MERIT_CHAMP}): ${meritTable(r.every).map(x => `${tname(x.id)} ${pct(x.share)}`).join(', ')}.</p>`;
+  if (k === 'succession') { const ks = S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting); if (ks.length) extra += `<p class="small">Next in line: ${tname(S.e4[Math.max(...ks)])} (${esc(postWord('e4'))} #${Math.max(...ks) + 1}). Swap ${esc(postWord('e4'))} seats to change the order.</p>`; }
+  if (seatLocked()) extra += `<p class="muted small">${tname(S.champion)} is the founding ${cw}: the seat is protected until year ${T(S.champion).founderUntil}.</p>`;
+  const changing = d.k !== k;
+  return `<section class="panel"><div class="ph"><h3>How the ${cw} is chosen: ${esc(seatRuleName(k))}</h3><span class="muted">${esc(seatNext(r))}</span></div><p>${esc(SEAT_RULES[k].text)}</p>${extra}
+    <details${changing ? ' open' : ''}><summary class="small">Change the rule or its timing</summary>${seatForm('seatrulesel', 'seatevery', d.k, d.every)}
+    <p class="muted small">Changing the rule costs ${SEAT_CHANGE_PREST} prestige and it can't change again for ${SEAT_COOLDOWN} years; the timing alone is free. The less control a rule keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. Called challenges and title claims are only for the Protected rule.</p>
+    ${changing && block ? `<p class="muted small">${esc(block)}</p>` : `<button class="btn small primary" data-act="seatset">${changing ? `Change to ${esc(seatRuleName(d.k))}` : 'Set timing'}</button>`}</details></section>`;
+}
 function viewPlans() { return inLeague(ME(), viewPlans0); }
 function viewPlans0() {
   if (!ranchOn()) return '<section class="panel"><p class="muted">Only a League that keeps books has a ranch, and so team plans.</p></section>';
@@ -18698,7 +19078,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), seatRule: setupSeat, posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;
@@ -18783,6 +19163,9 @@ document.addEventListener('click', ev => {
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'callopen': callOpen = !callOpen; render(); break;
+    case 'seatset': { const d = seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })); const w = setSeatRule(d.k, d.every); if (!w) seatDraft = null; save(); render(); toast(w || 'Seat rule set.'); break; }
+    case 'seatlobby': { const w = lobbySeat(+el.dataset.id); save(); render(); toast(w || 'You lobbied the Council.'); break; }
+    case 'seatpick': { const w = termPick(+el.dataset.id); save(); render(); toast(w || 'Appointed.'); break; }
     case 'callchal': { const err = callChallenge(+el.dataset.id); if (!err) callOpen = false; save(); render(); toast(err || 'Challenge called.'); break; }
     case 'chalyes': case 'chalno': { const msg = answerChallenge(+el.dataset.v, a === 'chalyes'); if (msg) { save(); render(); toast(msg); } break; }
     case 'watch': { const L = el.dataset.y === 'last' ? S.lastLeague : S.league, r = L && L.logs[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
@@ -18861,6 +19244,11 @@ document.addEventListener('change', e => {
     rd.onload = () => { rgImpText = String(rd.result || ''); rgImpMsg = `Read ${f.name}. Press Import this region.`; render(); }; rd.onerror = () => { rgImpMsg = "Couldn't read that file."; render(); }; rd.readAsText(f); return; }
   // (0.42.0) a theme picked fills the four fields (typed names are cleared)
   if (e.target && e.target.id === 'setposttheme') { setupPosts = { theme: e.target.value, names: {} }; render(); return; }
+  // (0.43.0) the seat rule pickers
+  if (e.target && e.target.id === 'setseatrule') { setupSeat = { k: e.target.value, every: null }; render(); return; }
+  if (e.target && e.target.id === 'setseatevery') { setupSeat.every = +e.target.value; render(); return; }
+  if (e.target && e.target.id === 'seatrulesel') { seatDraft = { k: e.target.value, every: null }; render(); return; }
+  if (e.target && e.target.id === 'seatevery') { seatDraft = Object.assign(seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })), { every: +e.target.value }); render(); return; }
   if (e.target && e.target.id === 'lgposttheme' && lgPostsDraft) { lgPostsDraft = { theme: e.target.value, names: {} }; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivaltheme')) { setupRivalThemes[+e.target.dataset.i] = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }

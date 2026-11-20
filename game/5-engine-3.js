@@ -1242,6 +1242,7 @@ function newWorld(cfg = {}) {
     return { postSet: postSetAt(i), gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region: regions[i], lgName: uniqueLgName(cleanLgName(names[i]) || seatLgName(regions[i], k)), seatName: seatOf(reg, k) }; };
   S.leagues = [null]; S.lg = 0;
   S.region = regions[0]; S.lgName = cleanLgName(names[0]) || seatLgName(regions[0], 0); S.postSet = postSetAt(0) || (cfg.hand ? normPostSet(null) : undefined);
+  if (cfg.seatRule) S.seatRule = normSeatRule(cfg.seatRule); // (0.43.0) your seat rule, picked at setup
   for (let i = 1; i < S.cfg.leagues; i++) S.leagues.push(blank(i));
   // cfg.hand: the player staffs League 0 by hand (0.6.0). The world waits in S.founding until finishFounding()
   if (cfg.hand) { S.cfg.hand = true; initBooks(); }
@@ -1602,7 +1603,7 @@ function initBooks() {
   const mine = !!(S.cfg && S.cfg.hand) && (S.lg || 0) === ME();
   S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0, aim: mine ? null : pickAim(), aimAt: S.season || 0, redAt: null };
   S.ranch = newRanch(); // (0.25.0) every League with books keeps a ranch
-  if (S.fin.aim) drawTheme(); // (0.42.0) a rival's theme, by its aim and region (unless set at setup)
+  if (S.fin.aim) { drawTheme(); drawSeatRule(); } // (0.42.0) a rival's theme, by its aim and region (unless set at setup); (0.43.0) its seat rule
   finYear();
 }
 // a member of staff takes a post: their pay is set, and someone new to the staff costs a signing fee
@@ -2113,7 +2114,7 @@ function aimNewYear() {
   f.aim = to; f.aimAt = S.season;
   const text = `The ${S.lgName} has a new aim: ${AIMS[to].name.toLowerCase()}.`;
   news(text, 'league'); noteChange(text);
-  if (!f.prevAim && to !== 'money') maybeRebrand('with its new aim'); // (0.42.0) a lasting change, not the red's
+  if (!f.prevAim && to !== 'money') { maybeRebrand('with its new aim'); maybeRedrawSeat('with its new aim'); } // (0.42.0) a lasting change, not the red's
 }
 // ================= STAGE 5: SPONSORED CONTENDERS AND LEAVING YOUR LEAGUE (0.17.0) =================
 // Design doc 5.8. A League can send challengers at another League as its contenders: its own academy prospects, or a
@@ -2280,7 +2281,7 @@ function leaveLeague(region, takeIds = [], name = null) {
   const take = takeIds.filter(id => willing.has(id)).slice(0, LEAVE_TAKE);
   const seatK = freeSeat(region), reg = LEAGUE_SETS[region];
   const lgName = uniqueLgName(cleanLgName(name) || seatLgName(region, seatK));
-  const myPosts = postSetOf(old); // (0.42.0) your post names and theme go with you to the new League
+  const myPosts = postSetOf(old), mySeat = seatRuleOf(old); // (0.42.0) your post names and theme go with you to the new League; (0.43.0) and your seat rule
   inLeague(old, () => {
     book(-LEAVE_FEE, 'founding', `Paid ${money(LEAVE_FEE)} to leave the ${S.lgName} and found the ${lgName}.`);
     // settle what waits for the player: challenges go ahead, offers accepted are withdrawn, vacancies take an outsider
@@ -2293,11 +2294,12 @@ function leaveLeague(region, takeIds = [], name = null) {
     S.gyms.forEach((g, i) => { if (g.outs) flushGymOutsiders(i); });
     S.fin.aim = pickAim(); S.fin.aimAt = S.season; S.fin.prevAim = null; S.plans = undefined; // (0.39.0) team plans are the player's
     news(`The ${S.lgName} carries on without its founder at the helm, now run as a ${AIMS[S.fin.aim].name.toLowerCase()}.`, 'league');
+    S.seatRule = null; drawSeatRule(); // (0.43.0) the new management picks its own seat rule
     maybeRebrand('under new management'); // (0.42.0)
   });
   S.vacancies = []; S.chalPending = []; S.distress = [];
   const i = nLeagues();
-  S.leagues.push({ postSet: myPosts, gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
+  S.leagues.push({ postSet: myPosts, seatRule: mySeat, gyms: [], e4: [], champion: null, challengers: [], history: [], stats: { ko: {}, use: {} }, meta: null, region, lgName, seatName: seatOf(reg, seatK), founder: null });
   if (S.cfg) S.cfg.leagues = nLeagues();
   S.me = i;
   // (0.27.0) someone a waiting challenge just moved out of their post stays behind

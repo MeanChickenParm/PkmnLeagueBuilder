@@ -68,7 +68,7 @@ function leagueNewYear(changes) {
     season: S.season, name: S.lgName, posts: postWords(), champ: S.champion, champWasNew: !!S.history.length && S.history[S.history.length - 1].champ !== S.champion,
     titles: L.report.titles, badges: L.report.badges, best: L.report.best, bestId: L.report.bestId, out: L.report.out, runs: L.report.runs, field: L.report.field, winners: L.conceded.slice(),
     runner: deepest ? deepest.id : null, runnerStage: deepest ? deepest.stage : null,
-    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}),
+    qualifiers: L.entries.length, metaMons: meta, steers: JSON.parse(JSON.stringify(steerState())), metaTrend: (S.metaTrend || []).slice(), ...yearDetail(L), ...(L.chal ? { chal: L.chal.slice() } : {}), ...(L.seatEv ? { seatEv: L.seatEv.slice() } : {}), seatRule: seatRuleKey(),
   });
   // every challenger's year: the best they did in any run of it
   const ran = new Set([...S.challengers, ...L.entries.map(e => e.id)]);
@@ -293,7 +293,7 @@ function prestigeNewYear() {
     const cities = cityPrestige(i); // (0.40.0) Held and Stronghold cities, by size
     const rank = nLeagues() > 1 ? PRESTIGE_RANK[order.indexOf(i)] || 0 : 0;
     const gain = (h.titles === 0 ? PRESTIGE_PERFECT : 0) + (nLeagues() > 1 ? Math.min(PRESTIGE_LET_MAX, Math.max(0, avg - lets[i]) * PRESTIGE_LET) : 0)
-      + (wl === i ? PRESTIGE_WORLD : 0) + cities + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0);
+      + (wl === i ? PRESTIGE_WORLD : 0) + cities + rank + (S.fin && !lapsed() ? sanctLevels() * SANCT_PRESTIGE : 0) + (S.ranch ? showcase().prest : 0) + SEAT_PREST * seatOpen(); // (0.43.0) an open seat
     S.prest = Math.round(((S.prest || 0) * (1 - PRESTIGE_FADE) + gain) * 10) / 10;
     h.prest = S.prest; h.prestGain = Math.round(gain * 10) / 10;
   });
@@ -368,4 +368,342 @@ function godEdit(id, field, v) {
   if (field === 'pot') { const n = num(1, 99); if (n == null) return 'Not a number.'; t.pot = Math.max(n, ovr(t)); return null; }
   if (RK.includes(field)) { const n = num(1, 99); if (n == null) return 'Not a number.'; t.r[field] = n; if (t.pot < ovr(t)) t.pot = ovr(t); return null; }
   return 'Unknown field.';
+}
+// ================= SEAT RULES (0.43.0) =================
+// Design doc 6.21. Each League has a rule for how its Champion's seat changes hands (the League field seatRule =
+// { k, every, next, at, term, lobby, pick }): Protected (the rules of 0.34.0: called challenges, title claims, the
+// Champion's own ambitions), Succession (the top-ranked Elite Four member, the highest seat, moves up when the seat
+// empties), Champion's Cup and Open Cup (a tournament every few years; the Open Cup invites title winners and the
+// circuit's best), Gauntlet (each New Year the strongest willing candidate may try to beat the Elite Four in a row and
+// then the Champion), Merit (every few years the seat goes to whoever stopped the largest share of runs), Council vote
+// (every few years, and whenever the seat empties, the Elite Four vote; the manager can lobby), Term (the Champion
+// serves a set number of years, then the manager appoints from the contenders) and Conqueror (the year's strongest title
+// winner who wants it takes the seat at New Year). Called challenges and title claims are only for Protected Leagues.
+// The manager sets each scheduled rule's timing (SEAT_EVERY years). Changing the rule costs SEAT_CHANGE_PREST prestige
+// and can't be done again for SEAT_COOLDOWN years (free while founding). The less control a rule keeps (`open`), the
+// more prestige a year, the more challengers it draws and the readier ambitious trainers are to sign; the two Cups sell
+// tickets and the Council calms the Elite Four's ambitions. Rivals draw a rule by theme and aim, and may redraw it when
+// they rebrand. A founding Champion's window protects the seat from every rule. All numbers provisional.
+const SEAT_RULES = {
+  protected: { name: 'Protected', open: 0, text: "The seat changes only with your say: you can call challenges against your Champion and answer title claims." },
+  succession: { name: 'Succession', open: 0.15, text: 'When the Champion leaves, the highest-ranked Elite Four member (the top seat) moves up. Your control is the Elite Four\'s order.' },
+  term: { name: 'Term', open: 0.3, every: 4, text: 'The Champion serves a set term; at its end you appoint the next one from the Elite Four and Gym Leaders (or keep the Champion).' },
+  council: { name: 'Council vote', open: 0.45, every: 3, text: 'The Elite Four vote for the Champion on a schedule and whenever the seat empties. You can lobby for a candidate.' },
+  merit: { name: 'Merit', open: 0.5, every: 3, text: 'On a schedule, the seat goes to whoever stopped the largest share of runs over that time (the Champion\'s share counts more).' },
+  gauntlet: { name: 'Gauntlet', open: 0.6, text: 'Each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion.' },
+  cup: { name: "Champion's Cup", open: 0.6, every: 2, text: 'On a schedule, the Champion, the Elite Four and the best Gym Leaders play a tournament; the winner takes the seat. Sells tickets.' },
+  opencup: { name: 'Open Cup', open: 0.85, every: 2, text: 'The Cup, open to title winners and the circuit\'s best. Bigger gate and prestige; an outsider can win the seat.' },
+  conqueror: { name: 'Conqueror', open: 1, text: 'The year\'s strongest title winner who wants the seat takes it at New Year, as in the main games.' },
+};
+const RULE_KEYS = Object.keys(SEAT_RULES);
+const SEAT_EVERY_MIN = 1, SEAT_EVERY_MAX = 6, SEAT_CHANGE_PREST = 5, SEAT_COOLDOWN = 2;
+const SEAT_PREST = 3, SEAT_HUNGRY = 0.25, DRAW_SEAT = 0.5;
+const CUP_GATE = { cup: 40000, opencup: 80000 }, CUP_OPEN_PREST = 1, CUP_LEADERS = 3, CUP_INVITES = 2;
+const COUNCIL_LOBBY = 20000, COUNCIL_LOBBY_MAX = 3, COUNCIL_SWAY = 4, COUNCIL_INC = 3, COUNCIL_CALM = 24;
+const MERIT_MIN = 4, MERIT_CHAMP = 1.5, MERIT_EDGE = 0.05, TERM_ANSWER = 8, TERM_INC = 3, CONQ_WANT = 0.25;
+// rivals: a theme or an aim leans to some rules (SEAT_LEAN each), every rule keeps a share
+const THEME_SEATS = { dojo: ['gauntlet'], court: ['succession'], board: ['council'], academy: ['merit'], classic: ['conqueror', 'cup'], island: ['gauntlet'] };
+const AIM_SEATS = { wall: ['protected', 'merit'], star: ['cup', 'opencup', 'conqueror'], money: ['opencup', 'cup', 'council'] };
+const SEAT_LEAN = 2, SEAT_REDRAW = 0.5;
+const SEAT_LOG = { drawn: 0, changed: 0, redrawn: 0, cups: 0, gauntlets: 0, gauntletWon: 0, merit: 0, votes: 0, terms: 0, conquer: 0, handovers: 0, lobbies: 0, heirs: 0 };
+const seatSched = k => !!(SEAT_RULES[k] && SEAT_RULES[k].every);
+function normSeatRule(sr) {
+  const k = sr && SEAT_RULES[sr.k] ? sr.k : 'protected';
+  const every = seatSched(k) ? clamp(Math.round(+(sr && sr.every) || SEAT_RULES[k].every), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
+  return { k, every };
+}
+// the bound League's rule (made on first use)
+function seatRule() {
+  if (!S.seatRule || !SEAT_RULES[S.seatRule.k]) S.seatRule = Object.assign(normSeatRule(S.seatRule), { at: null, next: null });
+  const r = S.seatRule;
+  if (seatSched(r.k) && r.next == null) r.next = (S.season || 1) + r.every;
+  return r;
+}
+const seatRuleKey = () => seatRule().k;
+const seatRuleOf = i => { const L = lgState(i); return normSeatRule(L && L.seatRule); };
+const seatOpen = i => SEAT_RULES[seatRuleOf(i).k].open;
+// a rule's name (in an island-trial League the Gauntlet is the Grand Trial)
+function seatRuleName(k, lg) { return k === 'gauntlet' && themeOf(lg) === THEMES.island ? 'Grand Trial' : (SEAT_RULES[k] || SEAT_RULES.protected).name; }
+const seatLocked = () => founderChamp(T(S.champion));
+function seatRec(rec) {
+  const h = S.history.find(e => e.season === rec.season);
+  if (h) (h.seatEv = h.seatEv || []).push(rec); else (yearLeague().seatEv = yearLeague().seatEv || []).push(rec);
+}
+function pickSeatRule(not) {
+  const th = Object.keys(THEMES).find(k => THEMES[k] === themeOf()), lean = [...(THEME_SEATS[th] || []), ...(AIM_SEATS[S.fin && S.fin.aim] || [])];
+  const ws = RULE_KEYS.filter(k => k !== not).map(k => ({ k, w: 1 + lean.filter(x => x === k).length * SEAT_LEAN }));
+  let v = rand() * ws.reduce((a, x) => a + x.w, 0);
+  for (const x of ws) { v -= x.w; if (v <= 0) return x.k; }
+  return ws[ws.length - 1].k;
+}
+// a rival's rule, drawn by its theme and aim with its own timing (unless set at setup)
+function drawSeatRule() {
+  if (S.seatRule && SEAT_RULES[S.seatRule.k]) return;
+  const k = pickSeatRule(), every = seatSched(k) ? clamp(SEAT_RULES[k].every + ri(-1, 1), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
+  S.seatRule = { k, every, at: null, next: every ? (S.season || 1) + every : null }; SEAT_LOG.drawn++;
+}
+// a rival may take a new rule when it rebrands (rebuild mode, a lasting change of aim, new management)
+function maybeRedrawSeat(why) {
+  if (!S.fin || !S.fin.aim || fixedStaff() || rand() >= SEAT_REDRAW) return false;
+  const was = seatRuleKey(); S.seatRule = null; drawSeatRule(); SEAT_LOG.drawn--;
+  if (seatRuleKey() === was) return false;
+  SEAT_LOG.redrawn++;
+  const text = `The ${S.lgName} changes how its ${postWord('champion')} is chosen ${why}: ${seatRuleName(was)} gives way to ${seatRuleName(seatRuleKey())}.`;
+  news(text, 'league'); noteChange(text);
+  return true;
+}
+// why the player can't change their rule now, or null (the timing alone can always be changed)
+function seatChangeBlock() {
+  return inLeague(ME(), () => {
+    if (!handOn()) return 'No League of yours.';
+    if (S.founding) return null;
+    const r = seatRule();
+    if (r.at != null && S.season - r.at < SEAT_COOLDOWN) return `You changed the rule in year ${r.at}; it can change again from year ${r.at + SEAT_COOLDOWN}.`;
+    return null;
+  });
+}
+// the player sets their rule (k) and its timing (every, in years); returns an error or null
+function setSeatRule(k, every) {
+  if (!SEAT_RULES[k]) return 'No such rule.';
+  return inLeague(ME(), () => {
+    const r = seatRule(), same = r.k === k, n = normSeatRule({ k, every });
+    if (!same) {
+      const b = seatChangeBlock(); if (b) return b;
+      const was = r.k, free = !!S.founding;
+      if (!free) S.prest = Math.max(0, (S.prest || 0) - SEAT_CHANGE_PREST);
+      S.seatRule = { k, every: n.every, at: free ? null : S.season, next: n.every ? S.season + n.every : null, term: k === 'term' ? S.season + n.every : null };
+      (S.chalPending || []).filter(x => x.k === 'champ' && (x.called || x.from === 'claim')).forEach(x => { S.chalPending.splice(S.chalPending.indexOf(x), 1); const c = T(x.cand); if (c) { c.claimOn = null; c.chalAt = null; } chalRecord(x, { lapsed: true }); });
+      SEAT_LOG.changed++;
+      if (!free) { const text = `The ${S.lgName} changed how its ${postWord('champion')} is chosen: ${seatRuleName(was)} gives way to ${seatRuleName(k)} (${SEAT_CHANGE_PREST} prestige).`; news(text, 'league'); noteChange(text); }
+      return null;
+    }
+    if (n.every && n.every !== r.every) { r.every = n.every; r.next = S.season + n.every; if (k === 'term' && r.term != null) r.term = Math.min(r.term, S.season + n.every); }
+    return null;
+  });
+}
+// ---- handing the seat over ----
+// cand takes the Champion's seat: the old Champion takes their Elite Four seat or gym, or (cand from the circuit) leaves
+// the post as after a claim. Returns the words, or null
+function seatHandOver(c, how) {
+  const inc = T(S.champion); if (!inc || !c || c.id === inc.id) return null;
+  c.claimOn = null; SEAT_LOG.handovers++;
+  const e4k = S.e4.indexOf(c.id), gi = S.gyms.findIndex(g => g.leader === c.id && !g.acting), cw = postWord('champion');
+  let fate;
+  if (e4k >= 0) { S.e4[e4k] = null; S.champion = null; inc.e4Poor = 0; installElite(c, 'champion'); installElite(inc, 'e4', e4k); fate = `takes ${c.name}'s ${postWord('e4')} seat (#${e4k + 1})`; }
+  else if (gi >= 0) { S.gyms[gi].leader = null; S.champion = null; installElite(c, 'champion'); installElite(inc, 'leader', gi); staffGym(gi); fate = `takes over ${townName(gi)} ${gymWord()} (${typeLabel(inc)})`; }
+  else {
+    S.champion = null; inc.role = 'exchamp'; inc.letGoAt = S.turn; inc.deposedBy = c.id;
+    retireOrReturn(inc, `lost the ${cw}'s seat to ${c.name}`);
+    let away = null;
+    if (inc.role !== 'retired' && nLeagues() > 1) { away = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()))); if (away != null) shiftLeague(inc, away); }
+    installElite(c, 'champion');
+    fate = inc.role === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit';
+  }
+  return `${c.name} ${how} and is the new ${cw} of the ${S.lgName}. ${inc.name} ${fate}.`;
+}
+// a temporary team for a seat battle: a Gym Leader topped up to six, a challenger at the level; returns the undo
+function seatTeam(t, lvl) {
+  const keep = t.team;
+  if (t.role === 'leader') {
+    t.team = t.team.slice();
+    if (t.team.length < E4_SIZE) staffPicks(t, lvl, E4_SIZE - t.team.length, { lines: t.team.map(m => LINE[m.sp]), team: t.team, mixed: !t.specialty }).forEach(m => t.team.push(stamp(m, 'assigned')));
+    return () => { t.team = keep; };
+  }
+  if (t.role === 'challenger') { setTeamLevel(t, lvl); return () => setTeamLevel(t, challengerLevel(t)); }
+  return () => {};
+}
+// one seat battle between a and b at lvl; returns the winner (kept in S.seatLogs when keep)
+function seatBattle(a, b, lvl, title, keep) {
+  const ua = seatTeam(a, lvl), ub = seatTeam(b, lvl);
+  const res = setBattle(a, b, lvl, 'league', title);
+  ua(); ub();
+  if (keep) { res.at = S.turn; res.cand = a.id; res.when = { season: S.season, week: S.week }; (S.seatLogs = S.seatLogs || []).push(res); if (S.seatLogs.length > SEAT_LOGS) S.seatLogs.shift(); }
+  return res.winner === 0 ? a : b;
+}
+const seatCands = () => S.e4.map(T).filter(t => t && !t.acting);
+const leaderCands = () => S.gyms.map((g, i) => ({ t: T(g.leader), i, g })).filter(x => x.t && !x.g.acting);
+// ---- the rules at New Year (from seatChallenges) ----
+function seatRuleNewYear(changes) {
+  const r = seatRule(), ch = T(S.champion);
+  if (!ch || seatLocked() || r.k === 'protected' || r.k === 'succession') return;
+  const due = seatSched(r.k) && S.season >= r.next, say = t => { if (!t) return; changes.push(t); news(t, 'title', S.champion); noteChange(t); if (playerLeague()) stopFor('challenge', t); };
+  if (due) r.next = S.season + r.every;
+  if ((r.k === 'cup' || r.k === 'opencup') && due) say(seatCup(r.k === 'opencup'));
+  else if (r.k === 'merit' && due) say(seatMerit(r.every));
+  else if (r.k === 'council' && due) say(seatVote());
+  else if (r.k === 'term' && S.season >= (r.term != null ? r.term : (r.term = S.season + r.every))) say(seatTermEnds());
+  else if (r.k === 'gauntlet' && !champGrace()) say(seatGauntlet());
+  else if (r.k === 'conqueror' && !champGrace()) say(seatConquer());
+}
+// the Cup: the Champion, the Elite Four and the best Gym Leaders (the Open Cup: one Gym Leader and invited outsiders)
+function seatCup(open) {
+  SEAT_LOG.cups++;
+  const ch = T(S.champion), field = [ch, ...seatCands()];
+  const year = yearLeague(), gyms = leaderCands().sort((a, b) => (b.g.w - b.g.l) - (a.g.w - a.g.l) || ovr(b.t) - ovr(a.t));
+  if (open) {
+    const winners = [...new Set(year.conceded || [])].map(T).filter(t => claimFree(t)), deep = [...new Set((year.entries || []).map(e => e.id))].map(T).filter(t => claimFree(t) && !winners.includes(t));
+    [...winners.sort((a, b) => ovr(b) - ovr(a)), ...deep.sort((a, b) => ovr(b) - ovr(a))].slice(0, CUP_INVITES).forEach(t => field.push(t));
+  }
+  for (const x of gyms.slice(0, open ? Math.max(1, 8 - field.length) : CUP_LEADERS)) { if (field.length >= 8) break; field.push(x.t); }
+  // seeded bracket: the Champion first, then by OVR
+  const seeds = [field[0], ...field.slice(1).sort((a, b) => ovr(b) - ovr(a))];
+  const order = [0, 7, 3, 4, 1, 6, 2, 5].filter(i => i < seeds.length);
+  let round = order.map(i => seeds[i]);
+  const name = open ? 'Open Cup' : "Champion's Cup";
+  while (round.length > 1) {
+    const next = [];
+    for (let i = 0; i < round.length; i += 2) next.push(round[i + 1] ? seatBattle(round[i + 1], round[i], CHAMP_LV, `${name} · ${round.length === 2 ? 'Final' : round.length <= 4 ? 'Semi-final' : 'Quarter-final'}`, round.length === 2) : round[i]);
+    round = next;
+  }
+  const w = round[0], gate = CUP_GATE[open ? 'opencup' : 'cup'];
+  if (S.fin) book(gate, 'seatcup', `${name} ticket sales: ${money(gate)}.`);
+  if (open) S.prest = (S.prest || 0) + CUP_OPEN_PREST;
+  const kept = w.id === ch.id;
+  const text = kept ? `${postWord('champion')} ${ch.name} won the ${name} (${seeds.length} entrants) and keeps the seat.` : seatHandOver(w, `won the ${name} (${seeds.length} entrants)`);
+  seatRec({ season: S.season, k: open ? 'opencup' : 'cup', win: w.id, inc: ch.id, kept, n: seeds.length, text });
+  return text;
+}
+// the strongest willing candidate runs the Gauntlet: each Elite Four member in a row, then the Champion
+function seatGauntlet() {
+  const ch = T(S.champion), out = [];
+  leaderCands().forEach(x => { if (canChallenge(x.t) && wantsUp(x.t)) out.push(x.t); });
+  seatCands().forEach(t => { if (canChallenge(t) && wantsUp(t) && seatYears(t) >= CHAL_SEAT_YEARS) out.push(t); });
+  [...new Set(yearLeague().conceded || [])].map(T).forEach(t => { if (claimFree(t) && canChallenge(t) && wantsSeat(t)) out.push(t); });
+  const c = out.sort((a, b) => ovr(b) - ovr(a))[0]; if (!c) return null;
+  SEAT_LOG.gauntlets++; c.chalAt = S.season;
+  const nm = seatRuleName('gauntlet');
+  let beaten = 0;
+  for (let k = 0; k < S.e4.length; k++) {
+    const e = T(S.e4[k]); if (!e || e.id === c.id) continue;
+    if (seatBattle(c, e, E4_LV[k], `${nm} · ${postWord('e4')} #${k + 1}`, false) !== c) {
+      chalRestless(c);
+      const text = `${c.name} ran the ${nm} and fell to ${e.name} (${postWord('e4')} #${k + 1}) after ${beaten} win${beaten === 1 ? '' : 's'}.`;
+      seatRec({ season: S.season, k: 'gauntlet', cand: c.id, inc: ch.id, at: k, text }); return text;
+    }
+    beaten++;
+  }
+  const won = seatBattle(c, ch, CHAMP_LV, `${nm} · ${postWord('champion')}`, true) === c;
+  let text;
+  if (won) { SEAT_LOG.gauntletWon++; text = seatHandOver(c, `ran the ${nm}, beating all ${beaten} of the ${postWord('e4')} and then ${postWord('champion')} ${ch.name},`); }
+  else { chalRestless(c); text = `${c.name} beat all ${beaten} of the ${postWord('e4')} in the ${nm}, but ${postWord('champion')} ${ch.name} held the seat.`; }
+  seatRec({ season: S.season, k: 'gauntlet', cand: c.id, inc: ch.id, won, text });
+  return text;
+}
+// Merit: over the last `years` years, the share of runs each holder stopped (the Champion's counts MERIT_CHAMP times)
+function meritTable(years) {
+  const tally = {};
+  for (const h of S.history.slice(-years)) (h.seats || []).forEach((s, k) => {
+    if (!s || s.id == null) return; const x = tally[s.id] = tally[s.id] || { faced: 0, stopped: 0 };
+    x.faced += s.faced || 0; x.stopped += (s.stopped || 0) * (k === 4 ? MERIT_CHAMP : 1);
+  });
+  return [S.champion, ...seatCands().map(t => t.id)].map(id => ({ id, ...(tally[id] || { faced: 0, stopped: 0 }) }))
+    .map(x => ({ ...x, share: x.faced >= MERIT_MIN ? x.stopped / x.faced : null }));
+}
+function seatMerit(years) {
+  SEAT_LOG.merit++;
+  const ch = T(S.champion), tab = meritTable(years), mine = tab.find(x => x.id === ch.id), mShare = mine.share == null ? 0 : mine.share;
+  const best = tab.filter(x => x.id !== ch.id && x.share != null).sort((a, b) => b.share - a.share)[0];
+  const pct = v => `${Math.round(v * 100)}%`;
+  let text, kept = true;
+  if (best && best.share > mShare + MERIT_EDGE) { kept = false; text = seatHandOver(T(best.id), `stopped the largest share of runs over ${years} year${years === 1 ? '' : 's'} (${pct(best.share)} against ${pct(mShare)})`); }
+  else text = `The ${S.lgName}'s merit review over ${years} year${years === 1 ? '' : 's'} keeps ${postWord('champion')} ${ch.name} in the seat${mine.share != null ? ` (${pct(mShare)} of runs stopped, weighted)` : ''}.`;
+  seatRec({ season: S.season, k: 'merit', win: kept ? ch.id : best.id, inc: ch.id, kept, text });
+  return text;
+}
+// a council vote: voters vote for themselves if they want the seat, else for the best other candidate (OVR, the
+// incumbent's edge, the manager's lobbying, a little chance); most votes wins, a tie to the incumbent, then OVR
+function councilVote(cands, voters, incId) {
+  const lob = (S.seatRule && S.seatRule.lobby) || {}, tally = {};
+  for (const v of voters) {
+    let pickId;
+    if (cands.includes(v) && wantsUp(v)) pickId = v.id;
+    else pickId = cands.filter(c => c !== v).map(c => ({ c, s: ovr(c) + (c.id === incId ? COUNCIL_INC : 0) + (lob.id === c.id ? lob.n * COUNCIL_SWAY : 0) + rand() * 6 - (v.grudge != null ? 1 : 0) }))
+      .sort((a, b) => b.s - a.s).map(x => x.c.id)[0];
+    if (pickId != null) tally[pickId] = (tally[pickId] || 0) + 1;
+  }
+  const win = cands.slice().sort((a, b) => (tally[b.id] || 0) - (tally[a.id] || 0) || (b.id === incId) - (a.id === incId) || ovr(b) - ovr(a))[0];
+  return { win, tally };
+}
+const councilCands = () => { const ch = T(S.champion), lead = leaderCands().filter(x => wantsUp(x.t) && canChallenge(x.t)).sort((a, b) => ovr(b.t) - ovr(a.t))[0];
+  return [ch, ...seatCands().filter(t => wantsUp(t) && canChallenge(t)), ...(lead ? [lead.t] : [])].filter(Boolean); };
+function seatVote() {
+  SEAT_LOG.votes++;
+  const ch = T(S.champion), cands = councilCands(), voters = seatCands();
+  if (!voters.length) return null;
+  const { win, tally } = councilVote(cands, voters, ch.id), votes = tally[win.id] || 0;
+  // the Council calms ambition: Elite Four members who wanted the seat wait a little longer before turning restless
+  for (const t of voters) if (t !== win && wantsUp(t) && t.wish) t.wish.since = Math.min(S.turn, t.wish.since + COUNCIL_CALM);
+  if (S.seatRule) S.seatRule.lobby = null;
+  const kept = win.id === ch.id;
+  const text = kept ? `The ${postWord('e4')} voted to keep ${postWord('champion')} ${ch.name} (${votes} of ${voters.length} votes).` : seatHandOver(win, `won the Council vote (${votes} of ${voters.length} votes)`);
+  seatRec({ season: S.season, k: 'council', win: win.id, inc: ch.id, kept, votes, of: voters.length, text });
+  return text;
+}
+// the seat empties under Succession or Council: which Elite Four seat moves up (null: the usual strongest)
+function ruleHeirSeat(ks) {
+  const k = seatRuleKey();
+  if (k === 'succession') { SEAT_LOG.heirs++; return Math.max(...ks); }
+  if (k === 'council' && ks.length > 1) { SEAT_LOG.heirs++; const cands = ks.map(i => T(S.e4[i])); const { win } = councilVote(cands, cands, null); if (S.seatRule) S.seatRule.lobby = null; return S.e4.indexOf(win.id); }
+  return null;
+}
+// the player lobbies the Council for a candidate (each lobby costs COUNCIL_LOBBY; up to COUNCIL_LOBBY_MAX before a vote)
+function lobbySeat(id) {
+  return inLeague(ME(), () => {
+    if (seatRuleKey() !== 'council') return 'Your League doesn\'t choose its Champion by Council vote.';
+    const t = T(id); if (!t || ![S.champion, ...S.e4].includes(id) && !S.gyms.some(g => g.leader === id && !g.acting)) return 'They can\'t stand for the seat.';
+    const r = seatRule(), lob = r.lobby && r.lobby.id === id ? r.lobby : { id, n: 0 };
+    if (r.lobby && r.lobby.id !== id && r.lobby.n) return `You are already lobbying for ${T(r.lobby.id) ? T(r.lobby.id).name : 'someone else'}.`;
+    if (lob.n >= COUNCIL_LOBBY_MAX) return `You have lobbied ${COUNCIL_LOBBY_MAX} times before this vote.`;
+    if (!canSpend(COUNCIL_LOBBY)) return `Lobbying costs ${money(COUNCIL_LOBBY)}.`;
+    book(-COUNCIL_LOBBY, 'seatlobby', `Lobbied the ${postWord('e4')} for ${t.name}.`);
+    lob.n++; r.lobby = lob; SEAT_LOG.lobbies++;
+    return null;
+  });
+}
+// Term: the term ends; the player appoints (TERM_ANSWER weeks, unanswered: the Champion stays), a rival at once
+const termCands = () => [T(S.champion), ...seatCands(), ...leaderCands().map(x => x.t)].filter(Boolean);
+function seatTermEnds() {
+  SEAT_LOG.terms++;
+  const r = seatRule(), ch = T(S.champion);
+  if (playerLeague()) {
+    r.pick = { due: S.turn + TERM_ANSWER, season: S.season };
+    return `${postWord('champion')} ${ch.name}'s term is over. Appoint the next ${postWord('champion')} (or keep ${ch.name}) by ${turnDate(r.pick.due)}; unanswered, ${ch.name} serves another term.`;
+  }
+  const w = termCands().map(t => ({ t, s: ovr(t) + (t.id === ch.id ? TERM_INC : 0) + rand() * 2 })).sort((a, b) => b.s - a.s)[0].t;
+  r.term = S.season + r.every;
+  const kept = w.id === ch.id;
+  const text = kept ? `The ${S.lgName} kept ${postWord('champion')} ${ch.name} for another term.` : seatHandOver(w, `was appointed at the end of ${ch.name}'s term`);
+  seatRec({ season: S.season, k: 'term', win: w.id, inc: ch.id, kept, text });
+  return text;
+}
+// the player's appointment (id: the next Champion, the current one to keep them); returns an error or null
+function termPick(id) {
+  return inLeague(ME(), () => {
+    const r = seatRule(); if (!r.pick) return 'No term is waiting for an appointment.';
+    const ch = T(S.champion), t = termCands().find(x => x.id === id); if (!t) return 'They can\'t be appointed.';
+    const season = r.pick.season; r.pick = null; r.term = S.season + r.every;
+    const kept = t.id === ch.id;
+    const text = kept ? `You kept ${postWord('champion')} ${ch.name} for another term.` : seatHandOver(t, `was appointed by you at the end of ${ch.name}'s term`);
+    seatRec({ season, k: 'term', win: t.id, inc: ch.id, kept, text });
+    news(text, 'title', S.champion); noteChange(text);
+    return null;
+  });
+}
+// every week: an appointment left unanswered keeps the Champion (the multi-year sim settles it at once)
+function seatWeek(now) {
+  inLeague(ME(), () => {
+    const r = S.seatRule; if (!r || !r.pick || (!now && S.turn < r.pick.due)) return;
+    const ch = T(S.champion); if (!ch) { r.pick = null; return; }
+    termPick(ch.id);
+  });
+}
+// Conqueror: the year's strongest title winner still on the circuit who wants the seat takes it
+function seatConquer() {
+  const ch = T(S.champion);
+  const c = [...new Set(yearLeague().conceded || [])].map(T).filter(t => claimFree(t) && (wantsSeat(t) || rand() < CONQ_WANT)).sort((a, b) => ovr(b) - ovr(a))[0];
+  if (!c) return null;
+  SEAT_LOG.conquer++;
+  const text = seatHandOver(c, `beat ${ch.name} for the title and, under the Conqueror rule, takes the seat`);
+  seatRec({ season: S.season, k: 'conqueror', win: c.id, inc: ch.id, text });
+  return text;
 }

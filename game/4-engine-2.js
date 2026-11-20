@@ -967,7 +967,7 @@ function applyCfg() {
 // ---------- several Leagues ----------
 // Each League keeps its own gyms, Elite Four, Champion, circuit, events and history. The bound League's state sits
 // directly on S (so S.gyms is always "this League's gyms"); the others wait in S.leagues until bound.
-const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans', 'postSet'];
+const LEAGUE_FIELDS = ['vault', 'gyms', 'e4', 'champion', 'challengers', 'legend', 'legendSeason', 'legendGifts', 'greatCaught', 'rayquazaDue', 'wealdSeason', 'outbreak', 'outbreakLog', 'wormhole', 'metaMons', 'meta', 'league', 'history', 'stats', 'region', 'lgName', 'areaZero', 'roamer', 'roamSeason', 'storm', 'stormSeason', 'forcesStorm', 'landorusSeason', 'skyLog', 'roamPlan', 'stormPlan', 'bans', 'banBallot', 'banLog', 'banCount', 'lastLeague', 'runAvg', 'lastTitle', 'seatLogs', 'steer', 'metaNow', 'metaLog', 'metaTrend', 'metaYear', 'metaAt', 'seatB', 'banProt', 'fin', 'seatName', 'founder', 'prest', 'gmem', 'ranch', 'oldNames', 'plans', 'postSet', 'seatRule'];
 const nLeagues = () => (S && S.leagues ? S.leagues.length : 1);
 const lgOf = t => (t && t.lg) || 0;
 // (0.17.0, stage 5) the League the player runs: League 0 until they leave it to found their own (S.me)
@@ -1409,6 +1409,7 @@ function simWeek() {
   hireArrivals();
   eachLeague(ambitionWeek);
   challengeWeek();
+  seatWeek(); // (0.43.0) a Term appointment left unanswered
   birthdays();
   arrivals();
   S.week++; S.turn = (S.turn || 0) + 1;
@@ -1668,8 +1669,9 @@ function seatChallenges(changes) {
   if (fixedStaff() || S.founding) return;
   // (0.34.0) in the player's League the Champion's seat is challenged only when the player calls a challenge
   // (callChallenge) or allows a title claim; a rival League's manager calls its New Year challenge by aim (CALL_AI)
-  const mine = playerLeague(), callAi = !mine && rand() < (CALL_AI[S.fin && S.fin.aim] || 0.6);
-  const out = [], cl = claimant(), c = cl || !callAi ? null : champChallenger();
+  // (0.43.0) called challenges, claims and rivals' challenges for the Champion's seat only under the Protected rule
+  const mine = playerLeague(), prot = seatRuleKey() === 'protected', callAi = prot && !mine && rand() < (CALL_AI[S.fin && S.fin.aim] || 0.6);
+  const out = [], cl = prot ? claimant() : null, c = cl || !callAi ? null : champChallenger();
   // (0.22.0) a title claim takes the year's one challenge for the Champion's seat
   if (cl) out.push({ k: 'champ', cand: cl.id, inc: S.champion, slot: null, from: 'claim', gym: null });
   else if (c) out.push({ k: 'champ', cand: c.id, inc: S.champion, slot: S.e4.indexOf(c.id), from: 'e4', gym: null });
@@ -1687,6 +1689,7 @@ function seatChallenges(changes) {
       news(msg, 'move', x.cand); changes.push(msg); stopFor('challenge', msg);
     }
   } else for (const x of out) changes.push(x.from === 'claim' && rand() >= (CLAIM_AI_YES[S.fin && S.fin.aim] || 0.5) ? claimRefused(x, 'refused') : runChallenge(x));
+  seatRuleNewYear(changes); // (0.43.0) the League's seat rule
 }
 // ---- title claims (0.22.0) ----
 // A challenger who beat the Champion for the title this year and wants a seat (most would rather keep travelling)
@@ -1872,7 +1875,7 @@ function challengeWeek() {
 }
 // the multi-year sim: nobody is there to answer, so every waiting challenge goes ahead, except title claims, which
 // are turned down (no roster move without the player)
-function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); }
+function approveAllChallenges() { while ((S.chalPending || []).length) answerChallenge(0, S.chalPending[0].from !== 'claim'); seatWeek(true); }
 
 // ---- called challenges (0.34.0) ----
 // The manager of a League decides when its Champion's seat is fought for: up to CALL_MAX times a calendar year, the
@@ -1895,6 +1898,7 @@ function callBlock() {
     if (!handOn() || !ch) return 'Your League has no Champion.';
     if (S.founding) return 'Your League is still being founded.';
     if (founderChamp(ch)) return `${ch.name} is the League's founding Champion and can't be challenged until year ${ch.founderUntil}.`;
+    if (seatRuleKey() !== 'protected') return `Your League's seat rule is ${seatRuleName(seatRuleKey())}: called challenges are only for the Protected rule.`;
     if ((S.chalPending || []).some(x => x.k === 'champ')) return "A challenge for the Champion's seat is already waiting.";
     if (callsUsed() >= CALL_MAX) return `You have called ${CALL_MAX} challenges this year.`;
     return null;
@@ -2257,7 +2261,7 @@ function staffRetires(t) {
   } else if (t.role === 'champion') {
     // the Champion's seat is never empty: the strongest Elite Four member moves up at once, and their seat is filled
     // (in the player's League, an acting member holds it until the player chooses)
-    const seat = S.e4.map((id, i) => i).filter(i => !T(S.e4[i]).acting).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0];
+    const seat = champHeirSeat(); // (0.43.0) by the seat rule
     const at = seat != null ? seat : 0, m = T(S.e4[at]);
     t.role = 'exchamp'; retire(t, `as Champion of the ${S.lgName}`);
     S.e4[at] = null; m.acting = false; installElite(m, 'champion');
@@ -2613,7 +2617,7 @@ function prestMin(t, lg) {
   if (!t || !t.r) return 0;
   if (lg == null) lg = S.lg || 0;
   let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
-  if (hungry(t)) m *= PM_HUNGRY;
+  if (hungry(t)) m *= PM_HUNGRY * (1 - SEAT_HUNGRY * seatOpen(lg)); // (0.43.0) a seat they could win
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
   const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
   return Math.round(m);
@@ -3039,7 +3043,7 @@ function leaveUnhappy(t, was) {
 // Champion stepping down retires if they are CHAMP_STEP_AGE or older (or past the career rule), else takes that Elite
 // Four seat themselves; one who wants a bigger League's seat goes to the circuit of the most prestigious other League;
 // one who wants another run goes on it.
-function champHeirSeat() { return S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting).sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0]; }
+function champHeirSeat() { const ks = S.e4.map((id, i) => i).filter(i => T(S.e4[i]) && !T(S.e4[i]).acting), r = ks.length ? ruleHeirSeat(ks) : null; return r != null ? r : ks.sort((a, b) => ovr(T(S.e4[b])) - ovr(T(S.e4[a])))[0]; } // (0.43.0) Succession, Council
 function champHeir() { const k = champHeirSeat(); return k != null ? `${T(S.e4[k]).name} (Elite Four #${k + 1})` : 'An Elite Four member'; }
 function champQuits(t) {
   const k = t.quit ? t.quit.k : t.wish ? t.wish.k : 'step', was = postName(t), mine = playerLeague();
