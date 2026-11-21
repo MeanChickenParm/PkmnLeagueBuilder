@@ -71,7 +71,7 @@ function findSpecies(pool) {
 }
 
 // ---------- the ranch itself ----------
-const newRanch = () => ({ mons: [], trips: [], shop: [], log: [], stock: [], keep: [] }); // (0.44.0) the ranch log, the safari's stock and kept lines
+const newRanch = () => ({ mons: [], trips: [], shop: [], log: [], stock: [], keep: [], dc: { pool: [], pairs: [], wait: [] } }); // (0.44.0) the ranch log, the safari's stock and kept lines
 const ranchOn = () => !!(S && S.ranch);
 // the ranch a trainer's team draws on: a Gym Leader, Elite Four member or Champion (not an acting holder) of a League
 // that keeps one (the bound League)
@@ -458,7 +458,7 @@ function sellMon(id, release) {
 // next monthly swap
 function lockMon(id, on) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; e.lock = !!on; if (on) e.res = null; return null; }
 function reserveMon(id, key) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; if (key != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(key)) return 'No such post.'; e.res = key || null; if (key) e.lock = false; return null; }
-const ranchUpkeep = () => ranchOn() ? S.ranch.mons.concat(S.ranch.stock || []).reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) : 0; // (0.44.0) the safari's stock too
+const ranchUpkeep = () => ranchOn() ? S.ranch.mons.concat(S.ranch.stock || []).reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) + dcUpkeep() : 0; // (0.44.0) the safari's stock too; (0.45.0) the breeding pool at half
 // (0.26.0) a rival's spares it won't keep, cheapest first: everything unfielded (not reserved or locked) except the best
 // RANCH_KEEP of those some senior post could field on type at its level
 function ranchSpares(aim) {
@@ -476,6 +476,7 @@ function ranchWeek() {
   const u = ranchUpkeep(); if (u && booksOn()) book(-u, 'ranch');
   const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
   safariWeek(); tripsWeek(); shopWeek(); vaultWeek(); // (0.37.0)
+  breedWeek(); // (0.45.0)
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -497,6 +498,7 @@ function aimRanch(aim) {
     if (S.turn - (e.idle ?? S.turn) >= AI_IDLE[aim]) { e.sale = null; sellMon(e.uid); }
     else if (!e.sale && nLeagues() > 1 && listed < AI_CLEAR) { listMon(e.uid); listed++; }
   }
+  aimBreed(aim); // (0.45.0) in the red too: the pool and its pairs carry on
   if (f.money < 0) return;
   const spare = f.money - AIMS[aim].reserve, budget = spare * RANCH_AIM[aim], lg = S.lg || 0;
   const free = () => R.mons.filter(e => e.at == null && !e.res && !e.lock && !e.sale).sort((a, b) => entryValue(a) - entryValue(b));
@@ -1911,4 +1913,196 @@ function aimTrim() {
   news(text, 'move', c.id); noteChange(text);
 }
 
+// ================= BREEDING (0.45.0, design doc 6.15) =================
+// The Day Care (a seat building with levels, like the Ranch) breeds from a League's breeding pool. A ranch Pokémon put
+// in to breed leaves the ranch and every team for good: it stays in the pool, takes no ranch space and costs half its
+// upkeep, for BREED_YEARS, then it is sold automatically (a retiree's price, BREED_SELL of its value). The pool holds
+// one parent per line per condition (a shiny and a plain one of a line can both stay); a better-graded one going in
+// bumps the old one out, which is sold the same way. Pairs share an egg group (the real ones, EGG_RAW in the data;
+// custom species by their egg field, else their type), or one parent is Ditto; Undiscovered lines can't breed. A pair
+// lays an egg every few weeks until it is ended; Ditto can be in as many pairs as the Day Care allows, every other
+// parent in one. The young one takes the non-Ditto parent's line, else one parent's at random; each IV comes from one
+// parent (the better one more often) plus a small bump, so it usually comes out a grade above the parents' average.
+// Conditions come at double the wild odds, ×5 for one a parent has (a Delta passes the Delta gene: the young one rolls
+// its own unusual type, whichever line it takes); a bred condition brings at least its wild IVs. A young one hatched
+// into a full ranch waits HATCH_WAIT weeks at the Day Care, then is let go. The Safari Zone stays reversible and
+// passes nothing on (design doc 6.15, Nov 20). In the red the Day Care lapses: eggs pause, the pool's upkeep is still
+// due. Rivals breed by aim. All numbers are provisional (item 50).
+// Data: the ranch field dc = { pool: [parent], pairs: [{ id, a, b (parent uids), due, at, n }], wait: [{ e, until }] }.
+//   parent = a ranch entry (at, res, lock, sale cleared) plus bin (the turn it went in) and until (the turn it leaves).
+const DC_PAIRS = [0, 1, 2, 3, 4, 5];              // pairs at once, by Day Care level
+const DC_WEEKS = [0, 10, 9, 8, 7, 6];             // weeks an egg, by level
+const DC_LUCK = 0.1;                              // condition odds × (1 + DC_LUCK a level above the first)
+const BREED_YEARS = 5, BREED_UPKEEP = 0.5, BREED_SELL = 0.5, BREED_WARN = 8, HATCH_WAIT = 8;
+const BREED_BETTER = 0.7, BREED_BUMP = [1, 4];    // the better parent's IV this often; then + 1 to 4
+const BREED_PUT = 2;                              // the most a rival puts in to breed a month
+const BREED_LOG = { put: 0, bumped: 0, pairs: 0, eggs: 0, waited: 0, lost: 0, expired: 0, conds: 0, gradeUp: 0, aiPut: 0, aiPairs: 0 };
+const EGG_NAMES = { Mon: 'Monster', W1: 'Water 1', W2: 'Water 2', W3: 'Water 3', Bug: 'Bug', Fly: 'Flying', Fld: 'Field', Fai: 'Fairy', Grs: 'Grass', HL: 'Human-Like', Min: 'Mineral', Amo: 'Amorphous', Drg: 'Dragon', Dit: 'Ditto', Und: 'Undiscovered' };
+const EGG_KEYS = Object.keys(EGG_NAMES).filter(k => k !== 'Dit');
+// a custom species with no egg group takes one from its main type
+const TYPE_EGG = { Normal: 'Fld', Fire: 'Fld', Water: 'W1', Grass: 'Grs', Electric: 'Fld', Ice: 'Fld', Fighting: 'HL', Poison: 'Amo', Ground: 'Fld', Flying: 'Fly', Psychic: 'HL', Bug: 'Bug', Rock: 'Min', Ghost: 'Amo', Dragon: 'Drg', Dark: 'Fld', Steel: 'Min', Fairy: 'Fai' };
+const EGG = {}; for (const l of EGG_RAW.split('\n')) { const [n, ...gs] = l.split('|'); EGG[n] = gs.filter(Boolean); }
+// a line's egg groups (a regional form shares its species')
+function eggOf(b) {
+  if (EGG[b]) return EGG[b];
+  const bare = String(b).replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
+  if (EGG[bare]) return EGG[bare];
+  const s = SP[b]; if (s && Array.isArray(s.egg) && s.egg.length) return s.egg;
+  return [TYPE_EGG[s ? s.types[0] : 'Normal'] || 'Fld'];
+}
+const eggWords = b => eggOf(b).map(k => EGG_NAMES[k] || k).join(' / ');
+const isDitto = b => eggOf(b).includes('Dit');
+const canBreed = b => ranchable(b) && !eggOf(b).includes('Und');
+// can these two lines pair?
+function eggMatch(a, b) {
+  if (!canBreed(a) || !canBreed(b)) return false;
+  const da = isDitto(a), db = isDitto(b);
+  if (da && db) return false;
+  if (da || db) return true;
+  const ga = eggOf(a); return eggOf(b).some(k => ga.includes(k));
+}
+function dcState() { const R = S.ranch; if (!R) return null; return R.dc || (R.dc = { pool: [], pairs: [], wait: [] }); }
+const dcBuilt = () => S.ranch ? upLevel(seatB(), 'daycare') : 0;   // the building, in the red too
+const dcLv = () => lapsed() ? 0 : dcBuilt();                         // what works (nothing in the red)
+const dcPairs = () => DC_PAIRS[clamp(dcBuilt(), 0, DC_PAIRS.length - 1)];
+const dcWeeks = () => DC_WEEKS[clamp(Math.max(1, dcBuilt()), 1, DC_WEEKS.length - 1)];
+const dcPool = () => (S.ranch && S.ranch.dc ? S.ranch.dc.pool : []);
+const dcKey = e => e.b + '|' + condKeys(e.c).join('+');
+const dcUpkeep = () => dcPool().reduce((a, e) => a + Math.round(RANCH_UPKEEP[e.g - 1] * BREED_UPKEEP), 0);
+const parentOf = uid => dcPool().find(e => e.uid === uid) || null;
+const inPair = uid => !!(S.ranch && S.ranch.dc && S.ranch.dc.pairs.some(p => p.a === uid || p.b === uid));
+const betterParent = (a, b) => a.g !== b.g ? a.g > b.g : ivTotal(a) > ivTotal(b);
+const retirePrice = e => Math.round(entryValue(e) * BREED_SELL);
+// the player's plans that name an entry (an entry in a plan asks first, as a reserved one does)
+function plannedRefs(uid) {
+  if (!plansOn()) return [];
+  const P = plansState(), out = [];
+  for (const [k, p] of Object.entries(P.posts || {})) for (const w of ['on', 'next']) if ((p[w] || []).some(x => x && x.r === uid)) out.push(k);
+  return out;
+}
+// what stops ranch Pokémon id going in to breed: an error, { ask } (reserved or planned: the player confirms), or null
+function breedCheck(id) {
+  const e = ranchEntry(id); if (!e) return 'Not in the ranch.';
+  if (!dcBuilt()) return 'Build the Day Care at the seat first.';
+  if (!canBreed(e.b)) return `The ${e.b} line can't breed.`;
+  if (e.lock) return 'It is locked away. Unlock it first.';
+  const old = dcPool().find(x => dcKey(x) === dcKey(e));
+  if (old && !betterParent(e, old)) return `The breeding pool already has a ${entryWords(old)} of that line and condition, as good or better.`;
+  const pl = plannedRefs(id);
+  if (e.res || pl.length) return { ask: `${e.res ? 'It is reserved' : 'It is in a team plan'}; putting it in to breed clears that.`, old };
+  return old ? { old } : null;
+}
+// put ranch Pokémon id in to breed (force: past a reservation or a plan). Returns an error or null.
+function breedIn(id, force) {
+  ranchSync();
+  const ck = breedCheck(id); if (typeof ck === 'string') return ck;
+  if (ck && ck.ask && !force) return ck.ask;
+  const D = dcState(), e = ranchEntry(id);
+  if (ck && ck.old) { retireParent(ck.old, 'bumped'); BREED_LOG.bumped++; }
+  for (const k of plannedRefs(id)) { const p = plansState().posts[k]; for (const w of ['on', 'next']) if (p[w]) p[w] = p[w].filter(x => !(x && x.r === id)); }
+  freeEntry(e);
+  S.ranch.mons = S.ranch.mons.filter(x => x !== e);
+  e.at = null; e.res = null; e.lock = false; e.sale = null; delete e.bench; delete e.idle;
+  e.bin = S.turn; e.until = S.turn + BREED_YEARS * YEAR_WEEKS;
+  D.pool.push(e); BREED_LOG.put++;
+  ranchLog('breed', 'Put in to breed at the Day Care', { got: [entryWords(e)] });
+  return null;
+}
+// a parent leaves the pool (expired, bumped by a better one, or the League lost its ranch): sold at a retiree's price
+function retireParent(e, why) {
+  const D = dcState(); if (!D) return;
+  D.pool = D.pool.filter(x => x !== e);
+  D.pairs = D.pairs.filter(p => p.a !== e.uid && p.b !== e.uid);
+  const price = retirePrice(e);
+  if (booksOn()) book(price, 'ranchsale', `Retired ${e.sp} ${gradeStars(e.g)} from breeding`);
+  ranchLog('retire', why === 'bumped' ? 'Bumped from the breeding pool by a better one and sold' : 'Retired from the breeding pool and sold', { cost: -price, got: [entryWords(e)] });
+  if (why === 'expired') BREED_LOG.expired++;
+  if (playerLeague()) news(`${entryWords(e)} ${why === 'bumped' ? 'was bumped from the breeding pool by a better one of its line' : `finished its ${BREED_YEARS} years in the breeding pool`} and was sold for ${money(price)}.`, 'league');
+}
+// can parents ua and ub start a pair now? an error or null
+function pairCheck(ua, ub) {
+  const D = dcState(), a = parentOf(ua), b = parentOf(ub);
+  if (!a || !b || ua === ub) return 'Pick two Pokémon from the breeding pool.';
+  if (!dcBuilt()) return 'Build the Day Care at the seat first.';
+  if (D.pairs.length >= dcPairs()) return `At this level the Day Care takes ${dcPairs()} pair${dcPairs() === 1 ? '' : 's'} at once.`;
+  if (!eggMatch(a.b, b.b)) return `${a.sp} and ${b.sp} don't share an egg group${isDitto(a.b) && isDitto(b.b) ? ' (two Ditto can\'t breed)' : ''}.`;
+  for (const x of [a, b]) if (!isDitto(x.b) && inPair(x.uid)) return `${x.sp} is already in a pair.`;
+  if (D.pairs.some(p => (p.a === ua && p.b === ub) || (p.a === ub && p.b === ua))) return 'Those two are already a pair.';
+  return null;
+}
+function startPair(ua, ub) {
+  const w = pairCheck(ua, ub); if (w) return w;
+  const D = dcState(); D.n = (D.n || 0) + 1;
+  D.pairs.push({ id: D.n, a: ua, b: ub, at: S.turn, due: S.turn + dcWeeks(), n: 0 }); BREED_LOG.pairs++;
+  return null;
+}
+function endPair(id) { const D = dcState(); if (!D || !D.pairs.some(p => p.id === id)) return 'No such pair.'; D.pairs = D.pairs.filter(p => p.id !== id); return null; }
+// the young one of a pair: its line, inherited and nudged IVs, a nature from the better parent, and conditions
+function breedYoung(a, b) {
+  const line = isDitto(a.b) ? b.b : isDitto(b.b) ? a.b : pick([a.b, b.b]);
+  const best = betterParent(a, b) ? a : b, lv = dcBuilt();
+  const iv = {}; for (const k of STAT_KEYS) { const x = (a.iv || {})[k] ?? 15, y = (b.iv || {})[k] ?? 15, hi = Math.max(x, y), lo = Math.min(x, y);
+    iv[k] = clamp((rand() < BREED_BETTER ? hi : lo) + ri(BREED_BUMP[0], BREED_BUMP[1]) + (rand() < 0.1 * (lv - 1) ? 1 : 0), 0, 31); }
+  const e = newEntry(line, 1, 'bred'); e.iv = iv; e.nat = best.nat || null; e.par = [a.sp, b.sp];
+  // conditions: double the wild odds, ×5 for one a parent has (the Delta gene passes to any line); a bit more with each level
+  const luck = 1 + DC_LUCK * Math.max(0, lv - 1), mul = {};
+  for (const k of COND_KINDS) mul[k] = ((a.c && a.c[k]) || (b.c && b.c[k]) ? 5 : 2) * luck;
+  const ks = condRoll(line, ranchScout(), mul);
+  if (ks.length) { condEntry(e, ks); for (const k of STAT_KEYS) e.iv[k] = Math.max(e.iv[k], iv[k]); BREED_LOG.conds++; }
+  e.g = monGrade({ iv: e.iv });
+  if (e.g > Math.round((a.g + b.g) / 2)) BREED_LOG.gradeUp++;
+  return e;
+}
+function hatch(p) {
+  const D = dcState(), a = parentOf(p.a), b = parentOf(p.b); if (!a || !b) return;
+  const e = breedYoung(a, b), wd = entryWords(e); p.n++; BREED_LOG.eggs++;
+  if (ranchAdd(e)) { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
+  else { D.wait.push({ e, until: S.turn + HATCH_WAIT }); BREED_LOG.waited++; if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, but the ranch is full. It waits ${HATCH_WAIT} weeks for room.`, 'league'); }
+}
+// once a week (from ranchWeek): parents whose years are up are sold, pairs lay eggs, young ones waiting for room join
+function breedWeek() {
+  const D = dcState(); if (!D) return;
+  for (const e of D.pool.slice()) {
+    if (e.until <= S.turn) retireParent(e, 'expired');
+    else if (playerLeague() && e.until - S.turn === BREED_WARN) news(`${entryWords(e)} leaves the breeding pool in ${BREED_WARN} weeks (it will be sold for about ${money(retirePrice(e))}).`, 'league');
+  }
+  if (D.pairs.length > dcPairs()) D.pairs = D.pairs.slice(0, dcPairs());
+  if (!dcLv()) { for (const p of D.pairs) p.due++; }
+  else for (const p of D.pairs.slice()) if (p.due <= S.turn) { hatch(p); p.due = S.turn + dcWeeks(); }
+  for (const w of D.wait.slice()) {
+    if (ranchAdd(w.e)) { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
+    else if (w.until <= S.turn) { D.wait = D.wait.filter(x => x !== w); BREED_LOG.lost++; ranchLog('bred', 'Let go from the Day Care: the ranch stayed full', { lost: [entryWords(w.e)] }); if (playerLeague()) news(`${entryWords(w.e)} waited at the Day Care, but the ranch stayed full: it was let go.`, 'league'); }
+  }
+}
+// ---------- rivals breed by aim ----------
+// Once a month (from aimRanch): a wall-builder breeds lines its posts can field, a star-maker the best grades, a
+// money-maker rarities to sell. It puts up to BREED_PUT spares in (a line's first, or a better one) and fills its pairs.
+function aimBreed(aim) {
+  if (!dcBuilt()) return;
+  const D = dcState(), types = new Set(seniorIds().map(T).filter(Boolean).flatMap(t => specTypes(t)));
+  const fits = b => !types.size || SP[formAt(b, 100)].types.some(x => types.has(x));
+  const want = e => aim === 'money' ? entryValue(e) : aim === 'star' ? e.g * 10 + (e.c ? 15 : 0) : (fits(e.b) ? 30 : 0) + e.g * 5 + (e.c ? 5 : 0);
+  let put = 0;
+  for (const e of ranchSpares(aim).slice().sort((x, y) => want(y) - want(x))) {
+    if (put >= BREED_PUT) break;
+    if (aim === 'wall' && !fits(e.b) && !isDitto(e.b)) continue;
+    if (aim === 'money' && !e.c && e.g < 4) continue;
+    if (aim === 'star' && e.g < 3 && !isDitto(e.b)) continue;
+    const ck = breedCheck(e.uid); if (typeof ck === 'string' || (ck && ck.ask)) continue;
+    if (!breedIn(e.uid)) { put++; BREED_LOG.aiPut++; }
+  }
+  while (D.pairs.length < dcPairs()) {
+    const P = D.pool, best = { v: -1 };
+    for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+      if (pairCheck(P[i].uid, P[j].uid)) continue;
+      const lines = [P[i], P[j]].filter(x => !isDitto(x.b));
+      const v = lines.reduce((a, x) => Math.max(a, want(x)), 0) + (P[i].g + P[j].g);
+      if (v > best.v) Object.assign(best, { v, a: P[i].uid, b: P[j].uid });
+    }
+    if (best.v < 0 || startPair(best.a, best.b)) break;
+    BREED_LOG.aiPairs++;
+  }
+}
+
 if (typeof module !== 'undefined') module.exports = { SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, safariBuilt, safariStock, stockCap, keepCap, safariKept, stockFloor, keepLine, safariTrim, stockMon, unstockMon, safariFind, SAFARI_LOG, SAFARI_KEEP, SAFARI_STOCK, SAFARI_DISC, SAFARI_ODDS, SAFARI_STOCK_ODDS, ranchLog, RANCH_LOG, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') Object.assign(module.exports, { EGG, EGG_NAMES, EGG_KEYS, TYPE_EGG, eggOf, eggWords, isDitto, canBreed, eggMatch, dcState, dcBuilt, dcLv, dcPairs, dcWeeks, dcPool, dcKey, dcUpkeep, parentOf, inPair, betterParent, retirePrice, plannedRefs, breedCheck, breedIn, retireParent, pairCheck, startPair, endPair, breedYoung, breedWeek, aimBreed, BREED_LOG, BREED_YEARS, BREED_UPKEEP, BREED_SELL, HATCH_WAIT, DC_PAIRS, DC_WEEKS });

@@ -618,10 +618,16 @@ function dxLoad(n) {
     : { name: n, types: [b.types[0], b.types[1] || ''], stats: dexBaseStats(n), ab: [A[0] || '', A[1] || '', A.H || ''], isNew: false };
   dxMode = 'edit'; dxWas = null; dxErrs = []; dxMsg = '';
 }
+// (0.45.0) a new Pokémon's egg groups for breeding: none chosen takes one from its main type
+function eggFields(pre, egg, field) {
+  const e = egg || [], opts = (cur, none) => `<option value="">${none}</option>` + EGG_KEYS.map(k => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(EGG_NAMES[k])}</option>`).join('');
+  return field('Egg group', `<select id="${pre}-egg0">${opts(e[0], 'From its type')}</select>`) + field('Second egg group', `<select id="${pre}-egg1">${opts(e[1], 'None')}</select>`);
+}
+const eggRead = pre => [(($('#' + pre + '-egg0') || {}).value || ''), (($('#' + pre + '-egg1') || {}).value || '')].filter(Boolean);
 function dxRead() {
   if (!dxDraft || !$('#dx-t1')) return;
   const v = id => ($('#' + id) || {}).value || '';
-  if (dxDraft.isNew) { dxDraft.name = v('dx-name'); dxDraft.from = v('dx-from').trim(); dxDraft.lvl = Math.round(Number(v('dx-lvl'))); dxDraft.rare = !!($('#dx-rare') || {}).checked; dxDraft.starter = !!($('#dx-starter') || {}).checked; dxDraft.legend = !!($('#dx-legend') || {}).checked; }
+  if (dxDraft.isNew) { dxDraft.name = v('dx-name'); dxDraft.from = v('dx-from').trim(); dxDraft.lvl = Math.round(Number(v('dx-lvl'))); dxDraft.rare = !!($('#dx-rare') || {}).checked; dxDraft.starter = !!($('#dx-starter') || {}).checked; dxDraft.legend = !!($('#dx-legend') || {}).checked; dxDraft.egg = eggRead('dx'); }
   dxDraft.types = [v('dx-t1'), v('dx-t2')];
   dxDraft.stats = [0, 1, 2, 3, 4, 5].map(i => { const x = v('dx-st' + i).trim(); return x === '' ? NaN : Number(x); });
   dxDraft.ab = [0, 1, 2].map(i => v('dx-ab' + i));
@@ -655,7 +661,7 @@ const dxStatLine = st => st.map((x, i) => `${DEX_STAT_SHORT[i]} ${x}`).join(' ·
 function dxSave() {
   dxRead();
   const d = dxDraft, isNew = d.isNew;
-  const e = dexNorm({ name: d.name, types: d.types, stats: d.stats, ab: d.ab, from: isNew ? d.from : '', lvl: d.lvl, rare: isNew && !d.from && d.rare, starter: isNew && !d.from && d.starter, legend: isNew && d.legend });
+  const e = dexNorm({ name: d.name, types: d.types, stats: d.stats, ab: d.ab, from: isNew ? d.from : '', lvl: d.lvl, rare: isNew && !d.from && d.rare, starter: isNew && !d.from && d.starter, legend: isNew && d.legend, egg: isNew ? d.egg : null });
   dxErrs = checkDexEntry(e, isNew, dxWas);
   if (dxErrs.length) return;
   if (isNew) {
@@ -724,6 +730,7 @@ function viewDexEditor() {
       ${d.isNew ? `<div class="cf-grid">
         ${field('Evolves from', `<input id="dx-from" class="cf-in" list="dx-parents" value="${esc(d.from || '')}" placeholder="Nothing: it's found in the wild" autocomplete="off">`, 'wide')}
         ${field('At level', `<input id="dx-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl)}">`)}
+        ${eggFields('dx', d.egg, field)}
       </div>
       <p class="muted small">Leave "Evolves from" empty for a first-stage Pokémon: it's caught in the wild like any other, and anything you add can evolve from it. Something that evolves from a game Pokémon becomes another branch of that line, picked like Eevee's.</p>
       <div class="adv-list">
@@ -782,7 +789,7 @@ function dexAction(a, el) {
       return true; }
     case 'dxedit': dxMsg = ''; dxLoad(k); return true;
     case 'dxnew': dxMsg = ''; dxErrs = []; dxDraft = dxBlank(true); dxDraft.ab[0] = dexAbilities()[0]; dxMode = 'new'; dxWas = null; return true;
-    case 'dxeditnew': { const e = dexLib.added.find(x => x.name === k); if (!e) return true; dxMsg = ''; dxErrs = []; dxDraft = { name: e.name, types: [e.types[0], e.types[1] || ''], stats: e.stats.slice(), ab: e.ab.slice(), from: e.from || '', lvl: e.lvl || 30, rare: !!e.rare, starter: !!e.starter, legend: !!e.legend, isNew: true }; dxMode = 'new'; dxWas = e.name; return true; }
+    case 'dxeditnew': { const e = dexLib.added.find(x => x.name === k); if (!e) return true; dxMsg = ''; dxErrs = []; dxDraft = { name: e.name, types: [e.types[0], e.types[1] || ''], stats: e.stats.slice(), ab: e.ab.slice(), from: e.from || '', lvl: e.lvl || 30, rare: !!e.rare, starter: !!e.starter, legend: !!e.legend, egg: (e.egg || []).slice(), isNew: true }; dxMode = 'new'; dxWas = e.name; return true; }
     case 'dxsave': dxSave(); return true;
     case 'dxcancel': dxMode = null; dxDraft = null; dxWas = null; dxErrs = []; return true;
     case 'dxreset': delete dexLib.edits[k]; saveDexLib(); if (dxDraft && !dxDraft.isNew && dxDraft.name === k) { dxDraft = null; dxMode = null; } dxMsg = `${k} is back to the game's own.`; return true;
@@ -838,10 +845,10 @@ function rgOpen(rec) { rgDraft = JSON.parse(JSON.stringify(rec)); rgPorts = rgDr
 function rgRec() { const d = rgDraft, names = d.towns.concat(d.extra); return Object.assign({}, d, { ports: Object.fromEntries(names.map((n, i) => [n.trim(), rgPorts[i]]).filter(([n, k]) => n && k)) }); }
 function rgSet(path, v) { const ks = path.split('.'); let o = rgDraft; for (const k of ks.slice(0, -1)) { if (o[k] == null) o[k] = {}; o = o[k]; } o[ks[ks.length - 1]] = v; }
 const rgField = (label, path, val, max = REGION_NAME_MAX, ph = '') => `<label class="cf-field"><span class="eyebrow">${label}</span><input class="cf-in rg-f" data-f="${path}" maxlength="${max}" value="${esc(val || '')}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off"></label>`;
-function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false }; }
+function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false, egg: [] }; }
 function rgSpRead() {
   const v = id => (($(id) || {}).value || '').trim(), ck = id => !!($(id) || {}).checked;
-  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend') });
+  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend'), egg: eggRead('rgs') });
 }
 // the new Pokémon of every other region in the library, and My Pokédex's, for name and evolution checks
 const rgOthers = () => dexLib.added.concat(regionLib.regions.filter(r => r.id !== rgDraft.id).flatMap(r => r.added));
@@ -873,6 +880,7 @@ function rgSpForm() {
     <div class="cf-grid six">${d.stats.map((x, i) => field(DEX_STAT_LABEL[i], `<input id="rgs-st${i}" class="cf-in" type="number" min="1" max="255" step="1" inputmode="numeric" value="${Number.isFinite(x) ? x : ''}">`)).join('')}</div>
     <div class="cf-grid">${field('Ability', sel('rgs-ab0', d.ab[0], abOpts('Choose…')))}${field('Second ability', sel('rgs-ab1', d.ab[1], abOpts('None')))}${field('Hidden ability', sel('rgs-ab2', d.ab[2], abOpts('None')))}</div>
     <div class="cf-grid">${field('Evolves from', `<input id="rgs-from" class="cf-in" list="rgs-parents" value="${esc(d.from || '')}" placeholder="Nothing: found in the wild" autocomplete="off">`)}${field('At level', `<input id="rgs-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl || 30)}">`)}</div>
+    <div class="cf-grid">${eggFields('rgs', d.egg, field)}</div>
     <datalist id="rgs-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     <div class="adv-list"><label class="cf-imp-row"><input id="rgs-legend" type="checkbox"${d.legend ? ' checked' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Only for a base stat total over ${DEX_LEGEND_BST}, with nothing it evolves from and nothing evolving from it. Never found in the wild: it appears as a very rare legendary encounter, three times likelier in this region (only here if its new Pokémon are kept here), and one trainer holds it at a time. Rare and Starter don't apply to it.</span></span></label>
       <label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>

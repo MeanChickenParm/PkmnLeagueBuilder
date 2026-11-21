@@ -4711,6 +4711,435 @@ Phione|Hydration||
 Bloodmoon Ursaluna|Mind's Eye||
 Eternal Flower Floette|Flower Veil||Symbiosis
 Calyrex|Unnerve||`;
+
+// (0.45.0) egg groups for breeding, one line per evolution line's first stage (regional forms share their species'):
+// name|group|group. Mon Monster, W1 W2 W3 Water 1 to 3, Bug, Fly Flying, Fld Field, Fai Fairy, Grs Grass, HL Human-Like,
+// Min Mineral, Amo Amorphous, Drg Dragon, Dit Ditto, Und Undiscovered (can't breed). Lines whose first stage is a baby
+// take the grown-up's groups. A species missing here (custom ones) takes its egg field, else a group from its type.
+const EGG_RAW = `Rattata|Fld
+Pidgey|Fly
+Spearow|Fly
+Eevee|Fld
+Porygon|Min
+Tauros|Fld
+Kangaskhan|Mon
+Charmander|Mon|Drg
+Cyndaquil|Fld
+Growlithe|Fld
+Vulpix|Fld
+Ponyta|Fld
+Houndour|Fld
+Squirtle|Mon|W1
+Totodile|Mon|W1
+Psyduck|W1|Fld
+Poliwag|W1
+Magikarp|W2|Drg
+Staryu|W3
+Seel|W1|Fld
+Lapras|Mon|W1
+Omanyte|W1|W3
+Bulbasaur|Mon|Grs
+Chikorita|Mon|Grs
+Oddish|Grs
+Bellsprout|Grs
+Exeggcute|Grs
+Tangela|Grs
+Magnemite|Min
+Voltorb|Min
+Mareep|Mon|Fld
+Swinub|Fld
+Sneasel|Fld
+Snorunt|Fai|Min
+Machop|HL
+Mankey|Fld
+Riolu|Fld|HL
+Heracross|Bug
+Ekans|Fld|Drg
+Grimer|Amo
+Koffing|Amo
+Venonat|Bug
+Sandshrew|Fld
+Diglett|Fld
+Cubone|Mon
+Rhyhorn|Mon|Fld
+Gible|Mon|Drg
+Aerodactyl|Fly
+Skarmory|Fly
+Murkrow|Fly
+Abra|HL
+Drowzee|HL
+Ralts|HL|Amo
+Scyther|Bug
+Pinsir|Bug
+Geodude|Min
+Onix|Min
+Larvitar|Mon
+Gastly|Amo
+Misdreavus|Amo
+Shuppet|Amo
+Duskull|Amo
+Swablu|Fly|Drg
+Horsea|W1|Drg
+Trapinch|Bug|Drg
+Axew|Mon|Drg
+Dratini|W1|Drg
+Bagon|Drg
+Absol|Fld
+Bronzor|Min
+Aron|Mon
+Beldum|Min
+Mawile|Fld|Fai
+Snubbull|Fld|Fai
+Pichu|Fld|Fai
+Cleffa|Fai
+Azurill|W1|Fai
+Smoochum|HL
+Elekid|HL
+Magby|HL
+Tyrogue|HL
+Munchlax|Mon
+Snivy|Fld|Grs
+Tepig|Fld
+Oshawott|Fld
+Patrat|Fld
+Lillipup|Fld
+Purrloin|Fld
+Pansage|Fld
+Pansear|Fld
+Panpour|Fld
+Munna|Fld
+Pidove|Fly
+Blitzle|Fld
+Roggenrola|Min
+Woobat|Fly|Fld
+Drilbur|Fld
+Audino|Fai
+Timburr|HL
+Tympole|W1
+Throh|HL
+Sawk|HL
+Sewaddle|Bug
+Venipede|Bug
+Cottonee|Grs|Fai
+Petilil|Grs
+Basculin|W2
+Sandile|Fld
+Darumaka|Fld
+Maractus|Grs
+Dwebble|Bug|Min
+Scraggy|Fld|Drg
+Sigilyph|Fly
+Yamask|Min|Amo
+Tirtouga|W1|W3
+Archen|Fly|W3
+Trubbish|Min
+Zorua|Fld
+Minccino|Fld
+Gothita|HL
+Solosis|Amo
+Ducklett|W1|Fly
+Vanillite|Min
+Deerling|Fld
+Emolga|Fld
+Karrablast|Bug
+Foongus|Grs
+Frillish|Amo
+Alomomola|W1|W2
+Joltik|Bug
+Ferroseed|Grs|Min
+Klink|Min
+Tynamo|Amo
+Elgyem|HL
+Litwick|Amo
+Cubchoo|Fld
+Cryogonal|Min
+Shelmet|Bug
+Stunfisk|W1|Amo
+Mienfoo|Fld|HL
+Druddigon|Drg|Mon
+Golett|Min
+Pawniard|HL
+Bouffalant|Fld
+Rufflet|Fly
+Vullaby|Fly
+Heatmor|Fld
+Durant|Bug
+Deino|Drg
+Larvesta|Bug
+Caterpie|Bug
+Weedle|Bug
+Krabby|W3
+Hoothoot|Fly
+Phanpy|Fld
+Treecko|Mon|Drg
+Torchic|Fld
+Mudkip|Mon|W1
+Taillow|Fly
+Corphish|W1|W3
+Torkoal|Fld
+Zubat|Fly
+Pineco|Bug
+Lotad|W1|Grs
+Bonsly|Min
+Croagunk|HL
+Goldeen|W2
+Togepi|Fly|Fai
+Corsola|W1|W3
+Luvdisc|W2
+Hoppip|Fai|Grs
+Spinarak|Bug
+Mime Jr.|HL
+Slugma|Amo
+Nidoran♀|Mon|Fld
+Nidoran♂|Mon|Fld
+Meowth|Fld
+Doduo|Fly
+Miltank|Fld
+Nosepass|Min
+Makuhita|HL
+Meditite|HL
+Electrike|Fld
+Numel|Fld
+Slakoth|Fld
+Spinda|Fld|HL
+Zigzagoon|Fld
+Wingull|W1|Fly
+Tropius|Mon|Grs
+Lunatone|Min
+Solrock|Min
+Baltoy|Min
+Natu|Fly
+Feebas|W1|Drg
+Wailmer|Fld|W2
+Carvanha|W2
+Barboach|W2
+Tentacool|W3
+Spheal|W1|Fld
+Igglybuff|Fai
+Paras|Bug|Grs
+Slowpoke|Mon|W1
+Farfetch'd|Fly|Fld
+Shellder|W3
+Lickitung|Mon
+Happiny|Fai
+Ditto|Dit
+Kabuto|W1|W3
+Sentret|Fld
+Ledyba|Bug
+Chinchou|W2
+Aipom|Fld
+Sunkern|Grs
+Yanma|Bug
+Wooper|W1|Fld
+Unown|Und
+Wynaut|Amo
+Girafarig|Fld
+Dunsparce|Fld
+Gligar|Bug
+Qwilfish|W2
+Shuckle|Bug
+Teddiursa|Fld
+Remoraid|W1|W2
+Delibird|W1|Fld
+Mantyke|W1
+Stantler|Fld
+Smeargle|Fld
+Poochyena|Fld
+Wurmple|Bug
+Seedot|Fld|Grs
+Surskit|W1|Bug
+Shroomish|Fai|Grs
+Nincada|Bug
+Shedinja|Min
+Whismur|Mon|Fld
+Skitty|Fld|Fai
+Sableye|HL
+Plusle|Fai
+Minun|Fai
+Volbeat|Bug|HL
+Illumise|Bug|HL
+Budew|Fai|Grs
+Gulpin|Amo
+Spoink|Fld
+Cacnea|Grs|HL
+Zangoose|Fld
+Seviper|Fld|Drg
+Lileep|W3
+Anorith|W3
+Castform|Fai|Amo
+Kecleon|Fld
+Chingling|Amo
+Clamperl|W1
+Relicanth|W1|W2
+Turtwig|Mon|Grs
+Chimchar|Fld|HL
+Piplup|W1|Fld
+Starly|Fly
+Bidoof|W1|Fld
+Kricketot|Bug
+Shinx|Fld
+Cranidos|Mon
+Shieldon|Mon
+Burmy|Bug
+Combee|Bug
+Pachirisu|Fld|Fai
+Buizel|W1|Fld
+Cherubi|Fai|Grs
+Shellos|W1|Amo
+Drifloon|Amo
+Buneary|Fld|HL
+Glameow|Fld
+Stunky|Fld
+Chatot|Fly
+Spiritomb|Amo
+Hippopotas|Fld
+Skorupi|Bug|W3
+Carnivine|Grs
+Finneon|W2
+Snover|Mon|Grs
+Rotom|Amo
+Goomy|Drg
+Noibat|Fly|Drg
+Tyrunt|Mon|Drg
+Skrelp|W1|Drg
+Jangmo-o|Drg
+Turtonator|Mon|Drg
+Drampa|Mon|Drg
+Applin|Grs|Drg
+Dracozolt|Und
+Arctozolt|Und
+Dracovish|Und
+Arctovish|Und
+Duraludon|Min|Drg
+Dreepy|Amo|Drg
+Cyclizar|Fld
+Tatsugiri|W2
+Frigibax|Drg|Min
+Chespin|Fld
+Fennekin|Fld
+Froakie|W1
+Bunnelby|Fld
+Fletchling|Fly
+Scatterbug|Bug
+Litleo|Fld
+Flabébé|Fai
+Skiddo|Fld
+Pancham|Fld|HL
+Furfrou|Fld
+Espurr|Fld
+Honedge|Min
+Spritzee|Fai
+Swirlix|Fai
+Inkay|W1|W2
+Binacle|W3
+Clauncher|W1|W3
+Helioptile|Mon|Drg
+Amaura|Mon
+Hawlucha|HL
+Dedenne|Fld|Fai
+Carbink|Fai|Min
+Klefki|Min
+Phantump|Grs|Amo
+Pumpkaboo|Amo
+Bergmite|Mon|Min
+Rowlet|Fly
+Litten|Fld
+Popplio|W1|Fld
+Pikipek|Fly
+Yungoos|Fld
+Grubbin|Bug
+Crabrawler|W3
+Oricorio|Fly
+Cutiefly|Bug|Fai
+Rockruff|Fld
+Wishiwashi|W2
+Mareanie|W1
+Mudbray|Fld
+Dewpider|W1|Bug
+Fomantis|Grs
+Morelull|Grs
+Salandit|Mon|Drg
+Stufful|Fld
+Bounsweet|Grs
+Comfey|Grs
+Oranguru|Fld
+Passimian|Fld
+Wimpod|Bug|W3
+Sandygast|Amo
+Pyukumuku|W1
+Minior|Min
+Komala|Fld
+Togedemaru|Fld|Fai
+Mimikyu|Amo
+Bruxish|W2
+Dhelmise|Min
+Grookey|Fld|Grs
+Scorbunny|Fld|HL
+Sobble|W1|Fld
+Skwovet|Fld
+Rookidee|Fly
+Blipbug|Bug
+Nickit|Fld
+Gossifleur|Grs
+Wooloo|Fld
+Chewtle|Mon|W1
+Yamper|Fld
+Rolycoly|Min
+Silicobra|Fld|Drg
+Cramorant|W1|Fly
+Arrokuda|W2
+Toxel|HL
+Sizzlipede|Bug
+Clobbopus|W1|HL
+Sinistea|Min|Amo
+Hatenna|Fai
+Impidimp|Fai|HL
+Milcery|Fai|Amo
+Falinks|Fai|Min
+Pincurchin|W1|Amo
+Snom|Bug
+Stonjourner|Min
+Eiscue|W1|Fld
+Indeedee|Fai
+Morpeko|Fld|Fai
+Cufant|Fld|Min
+Sprigatito|Fld|Grs
+Fuecoco|Fld
+Quaxly|Fly|W1
+Lechonk|Fld
+Tarountula|Bug
+Nymble|Bug
+Pawmi|Fld
+Tandemaus|Fld|Fai
+Fidough|Fld|Min
+Smoliv|Grs
+Squawkabilly|Fly
+Nacli|Min
+Charcadet|HL
+Tadbulb|W1
+Wattrel|W1|Fly
+Maschiff|Fld
+Shroodle|Fld
+Bramblin|Grs
+Toedscool|Grs
+Klawf|W3
+Capsakid|Grs
+Rellor|Bug
+Flittle|Fly
+Tinkatink|Fai
+Wiglett|W3
+Bombirdier|Fly
+Finizen|Fld|W2
+Varoom|Min
+Orthworm|Fld
+Glimmet|Min
+Greavard|Fld
+Flamigo|Fly
+Cetoddle|Fld
+Veluza|W2
+Dondozo|W2
+Gimmighoul|Und
+Poltchageist|Min|Amo`;
 </script>
 <script>
 // ================= HALCYON LEAGUE ENGINE =================
@@ -11616,6 +12045,7 @@ function applyDex(d) {
         // (0.31.0) a custom region's own Pokémon: e.reg names the region; e.home (a region index) keeps it there (locked)
         if (e.reg) SP[e.name].regionSp = e.reg;
         if (Number.isInteger(e.home)) SP[e.name].homeOnly = e.home;
+        if (Array.isArray(e.egg) && e.egg.length) SP[e.name].egg = e.egg.slice(); // (0.45.0)
         BASE_STATS[e.name] = e.stats.slice(); SPECIES_AB[e.name] = abOf(e); DEX_ADDED.push(e.name);
         if (e.from) { const p = SP[e.from]; p.evos = (p.evos || []).concat({ to: e.name, lvl: e.lvl }); p.evo = p.evos[0]; }
         left.splice(i--, 1); moved = true;
@@ -11721,6 +12151,8 @@ function dexNorm(e) {
   const out = { name: String(e.name || '').trim(), types, stats, ab };
   if (e.from) { out.from = String(e.from).trim(); out.lvl = Number(e.lvl); }
   if (e.legend) out.legend = true; else { if (e.rare) out.rare = true; if (e.starter) out.starter = true; }
+  // (0.45.0) egg groups for breeding: one or two known groups, else none (it takes one from its type)
+  if (Array.isArray(e.egg)) { const eg = [...new Set(e.egg.map(String).filter(k => EGG_NAMES[k] && k !== 'Dit'))].slice(0, 2); if (eg.length && !(eg.includes('Und') && eg.length > 1)) out.egg = eg; }
   return out;
 }
 const dexStrip = e => ({ types: e.types, stats: e.stats, ab: e.ab });
@@ -12658,6 +13090,8 @@ const UPGRADES = {
   lane:    { name: 'Shipping lane',   text: 'Only in a port city (Goldenrod: the railway). Choose a region on the Ranch page: its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 400 a week on top of upkeep; changing the route costs 10,000.', port: true, max: 1, cost: [60000] },
   // (0.27.0) the safari: one per League, in a gym city; foreign Pokémon for its own trips, changing every few months
   safari:  { name: 'Safari Zone',     text: 'One per League, in a gym city. Holds 10 Pokémon from other regions (13, 16 at levels 2 and 3), changing every 12 weeks, that only your targeted trips can catch; each level also makes those finds better.', one: true },
+  // (0.45.0) the Day Care: breeds from the League's breeding pool (the Ranch page's Day Care tab)
+  daycare: { name: 'Day Care',        text: 'Seat only, takes no slot. Breeds Pokémon from your breeding pool (Ranch page, Day Care tab): 1 pair at once, then 2, 3, 4, 5, with an egg every 10 weeks, down to 6 at level 5, and slightly better odds of a condition each level.', seat: true, slotless: true, max: 5, cost: [40000, 80000, 160000, 320000, 640000] },
   academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
 };
 const upMax = k => UPGRADES[k].max || 3;
@@ -12977,9 +13411,9 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -13622,7 +14056,7 @@ function findSpecies(pool) {
 }
 
 // ---------- the ranch itself ----------
-const newRanch = () => ({ mons: [], trips: [], shop: [], log: [], stock: [], keep: [] }); // (0.44.0) the ranch log, the safari's stock and kept lines
+const newRanch = () => ({ mons: [], trips: [], shop: [], log: [], stock: [], keep: [], dc: { pool: [], pairs: [], wait: [] } }); // (0.44.0) the ranch log, the safari's stock and kept lines
 const ranchOn = () => !!(S && S.ranch);
 // the ranch a trainer's team draws on: a Gym Leader, Elite Four member or Champion (not an acting holder) of a League
 // that keeps one (the bound League)
@@ -14009,7 +14443,7 @@ function sellMon(id, release) {
 // next monthly swap
 function lockMon(id, on) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; e.lock = !!on; if (on) e.res = null; return null; }
 function reserveMon(id, key) { const e = ranchEntry(id); if (!e) return 'Not in the ranch.'; if (key != null && !/^(champion|e4:[0-3]|gym:[0-7])$/.test(key)) return 'No such post.'; e.res = key || null; if (key) e.lock = false; return null; }
-const ranchUpkeep = () => ranchOn() ? S.ranch.mons.concat(S.ranch.stock || []).reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) : 0; // (0.44.0) the safari's stock too
+const ranchUpkeep = () => ranchOn() ? S.ranch.mons.concat(S.ranch.stock || []).reduce((a, e) => a + RANCH_UPKEEP[e.g - 1], 0) + dcUpkeep() : 0; // (0.44.0) the safari's stock too; (0.45.0) the breeding pool at half
 // (0.26.0) a rival's spares it won't keep, cheapest first: everything unfielded (not reserved or locked) except the best
 // RANCH_KEEP of those some senior post could field on type at its level
 function ranchSpares(aim) {
@@ -14027,6 +14461,7 @@ function ranchWeek() {
   const u = ranchUpkeep(); if (u && booksOn()) book(-u, 'ranch');
   const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
   safariWeek(); tripsWeek(); shopWeek(); vaultWeek(); // (0.37.0)
+  breedWeek(); // (0.45.0)
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -14048,6 +14483,7 @@ function aimRanch(aim) {
     if (S.turn - (e.idle ?? S.turn) >= AI_IDLE[aim]) { e.sale = null; sellMon(e.uid); }
     else if (!e.sale && nLeagues() > 1 && listed < AI_CLEAR) { listMon(e.uid); listed++; }
   }
+  aimBreed(aim); // (0.45.0) in the red too: the pool and its pairs carry on
   if (f.money < 0) return;
   const spare = f.money - AIMS[aim].reserve, budget = spare * RANCH_AIM[aim], lg = S.lg || 0;
   const free = () => R.mons.filter(e => e.at == null && !e.res && !e.lock && !e.sale).sort((a, b) => entryValue(a) - entryValue(b));
@@ -15462,7 +15898,199 @@ function aimTrim() {
   news(text, 'move', c.id); noteChange(text);
 }
 
+// ================= BREEDING (0.45.0, design doc 6.15) =================
+// The Day Care (a seat building with levels, like the Ranch) breeds from a League's breeding pool. A ranch Pokémon put
+// in to breed leaves the ranch and every team for good: it stays in the pool, takes no ranch space and costs half its
+// upkeep, for BREED_YEARS, then it is sold automatically (a retiree's price, BREED_SELL of its value). The pool holds
+// one parent per line per condition (a shiny and a plain one of a line can both stay); a better-graded one going in
+// bumps the old one out, which is sold the same way. Pairs share an egg group (the real ones, EGG_RAW in the data;
+// custom species by their egg field, else their type), or one parent is Ditto; Undiscovered lines can't breed. A pair
+// lays an egg every few weeks until it is ended; Ditto can be in as many pairs as the Day Care allows, every other
+// parent in one. The young one takes the non-Ditto parent's line, else one parent's at random; each IV comes from one
+// parent (the better one more often) plus a small bump, so it usually comes out a grade above the parents' average.
+// Conditions come at double the wild odds, ×5 for one a parent has (a Delta passes the Delta gene: the young one rolls
+// its own unusual type, whichever line it takes); a bred condition brings at least its wild IVs. A young one hatched
+// into a full ranch waits HATCH_WAIT weeks at the Day Care, then is let go. The Safari Zone stays reversible and
+// passes nothing on (design doc 6.15, Nov 20). In the red the Day Care lapses: eggs pause, the pool's upkeep is still
+// due. Rivals breed by aim. All numbers are provisional (item 50).
+// Data: the ranch field dc = { pool: [parent], pairs: [{ id, a, b (parent uids), due, at, n }], wait: [{ e, until }] }.
+//   parent = a ranch entry (at, res, lock, sale cleared) plus bin (the turn it went in) and until (the turn it leaves).
+const DC_PAIRS = [0, 1, 2, 3, 4, 5];              // pairs at once, by Day Care level
+const DC_WEEKS = [0, 10, 9, 8, 7, 6];             // weeks an egg, by level
+const DC_LUCK = 0.1;                              // condition odds × (1 + DC_LUCK a level above the first)
+const BREED_YEARS = 5, BREED_UPKEEP = 0.5, BREED_SELL = 0.5, BREED_WARN = 8, HATCH_WAIT = 8;
+const BREED_BETTER = 0.7, BREED_BUMP = [1, 4];    // the better parent's IV this often; then + 1 to 4
+const BREED_PUT = 2;                              // the most a rival puts in to breed a month
+const BREED_LOG = { put: 0, bumped: 0, pairs: 0, eggs: 0, waited: 0, lost: 0, expired: 0, conds: 0, gradeUp: 0, aiPut: 0, aiPairs: 0 };
+const EGG_NAMES = { Mon: 'Monster', W1: 'Water 1', W2: 'Water 2', W3: 'Water 3', Bug: 'Bug', Fly: 'Flying', Fld: 'Field', Fai: 'Fairy', Grs: 'Grass', HL: 'Human-Like', Min: 'Mineral', Amo: 'Amorphous', Drg: 'Dragon', Dit: 'Ditto', Und: 'Undiscovered' };
+const EGG_KEYS = Object.keys(EGG_NAMES).filter(k => k !== 'Dit');
+// a custom species with no egg group takes one from its main type
+const TYPE_EGG = { Normal: 'Fld', Fire: 'Fld', Water: 'W1', Grass: 'Grs', Electric: 'Fld', Ice: 'Fld', Fighting: 'HL', Poison: 'Amo', Ground: 'Fld', Flying: 'Fly', Psychic: 'HL', Bug: 'Bug', Rock: 'Min', Ghost: 'Amo', Dragon: 'Drg', Dark: 'Fld', Steel: 'Min', Fairy: 'Fai' };
+const EGG = {}; for (const l of EGG_RAW.split('\n')) { const [n, ...gs] = l.split('|'); EGG[n] = gs.filter(Boolean); }
+// a line's egg groups (a regional form shares its species')
+function eggOf(b) {
+  if (EGG[b]) return EGG[b];
+  const bare = String(b).replace(/^(Alolan|Galarian|Hisuian|Paldean|White-Striped) /, '').replace(/ \(.*\)$/, '');
+  if (EGG[bare]) return EGG[bare];
+  const s = SP[b]; if (s && Array.isArray(s.egg) && s.egg.length) return s.egg;
+  return [TYPE_EGG[s ? s.types[0] : 'Normal'] || 'Fld'];
+}
+const eggWords = b => eggOf(b).map(k => EGG_NAMES[k] || k).join(' / ');
+const isDitto = b => eggOf(b).includes('Dit');
+const canBreed = b => ranchable(b) && !eggOf(b).includes('Und');
+// can these two lines pair?
+function eggMatch(a, b) {
+  if (!canBreed(a) || !canBreed(b)) return false;
+  const da = isDitto(a), db = isDitto(b);
+  if (da && db) return false;
+  if (da || db) return true;
+  const ga = eggOf(a); return eggOf(b).some(k => ga.includes(k));
+}
+function dcState() { const R = S.ranch; if (!R) return null; return R.dc || (R.dc = { pool: [], pairs: [], wait: [] }); }
+const dcBuilt = () => S.ranch ? upLevel(seatB(), 'daycare') : 0;   // the building, in the red too
+const dcLv = () => lapsed() ? 0 : dcBuilt();                         // what works (nothing in the red)
+const dcPairs = () => DC_PAIRS[clamp(dcBuilt(), 0, DC_PAIRS.length - 1)];
+const dcWeeks = () => DC_WEEKS[clamp(Math.max(1, dcBuilt()), 1, DC_WEEKS.length - 1)];
+const dcPool = () => (S.ranch && S.ranch.dc ? S.ranch.dc.pool : []);
+const dcKey = e => e.b + '|' + condKeys(e.c).join('+');
+const dcUpkeep = () => dcPool().reduce((a, e) => a + Math.round(RANCH_UPKEEP[e.g - 1] * BREED_UPKEEP), 0);
+const parentOf = uid => dcPool().find(e => e.uid === uid) || null;
+const inPair = uid => !!(S.ranch && S.ranch.dc && S.ranch.dc.pairs.some(p => p.a === uid || p.b === uid));
+const betterParent = (a, b) => a.g !== b.g ? a.g > b.g : ivTotal(a) > ivTotal(b);
+const retirePrice = e => Math.round(entryValue(e) * BREED_SELL);
+// the player's plans that name an entry (an entry in a plan asks first, as a reserved one does)
+function plannedRefs(uid) {
+  if (!plansOn()) return [];
+  const P = plansState(), out = [];
+  for (const [k, p] of Object.entries(P.posts || {})) for (const w of ['on', 'next']) if ((p[w] || []).some(x => x && x.r === uid)) out.push(k);
+  return out;
+}
+// what stops ranch Pokémon id going in to breed: an error, { ask } (reserved or planned: the player confirms), or null
+function breedCheck(id) {
+  const e = ranchEntry(id); if (!e) return 'Not in the ranch.';
+  if (!dcBuilt()) return 'Build the Day Care at the seat first.';
+  if (!canBreed(e.b)) return `The ${e.b} line can't breed.`;
+  if (e.lock) return 'It is locked away. Unlock it first.';
+  const old = dcPool().find(x => dcKey(x) === dcKey(e));
+  if (old && !betterParent(e, old)) return `The breeding pool already has a ${entryWords(old)} of that line and condition, as good or better.`;
+  const pl = plannedRefs(id);
+  if (e.res || pl.length) return { ask: `${e.res ? 'It is reserved' : 'It is in a team plan'}; putting it in to breed clears that.`, old };
+  return old ? { old } : null;
+}
+// put ranch Pokémon id in to breed (force: past a reservation or a plan). Returns an error or null.
+function breedIn(id, force) {
+  ranchSync();
+  const ck = breedCheck(id); if (typeof ck === 'string') return ck;
+  if (ck && ck.ask && !force) return ck.ask;
+  const D = dcState(), e = ranchEntry(id);
+  if (ck && ck.old) { retireParent(ck.old, 'bumped'); BREED_LOG.bumped++; }
+  for (const k of plannedRefs(id)) { const p = plansState().posts[k]; for (const w of ['on', 'next']) if (p[w]) p[w] = p[w].filter(x => !(x && x.r === id)); }
+  freeEntry(e);
+  S.ranch.mons = S.ranch.mons.filter(x => x !== e);
+  e.at = null; e.res = null; e.lock = false; e.sale = null; delete e.bench; delete e.idle;
+  e.bin = S.turn; e.until = S.turn + BREED_YEARS * YEAR_WEEKS;
+  D.pool.push(e); BREED_LOG.put++;
+  ranchLog('breed', 'Put in to breed at the Day Care', { got: [entryWords(e)] });
+  return null;
+}
+// a parent leaves the pool (expired, bumped by a better one, or the League lost its ranch): sold at a retiree's price
+function retireParent(e, why) {
+  const D = dcState(); if (!D) return;
+  D.pool = D.pool.filter(x => x !== e);
+  D.pairs = D.pairs.filter(p => p.a !== e.uid && p.b !== e.uid);
+  const price = retirePrice(e);
+  if (booksOn()) book(price, 'ranchsale', `Retired ${e.sp} ${gradeStars(e.g)} from breeding`);
+  ranchLog('retire', why === 'bumped' ? 'Bumped from the breeding pool by a better one and sold' : 'Retired from the breeding pool and sold', { cost: -price, got: [entryWords(e)] });
+  if (why === 'expired') BREED_LOG.expired++;
+  if (playerLeague()) news(`${entryWords(e)} ${why === 'bumped' ? 'was bumped from the breeding pool by a better one of its line' : `finished its ${BREED_YEARS} years in the breeding pool`} and was sold for ${money(price)}.`, 'league');
+}
+// can parents ua and ub start a pair now? an error or null
+function pairCheck(ua, ub) {
+  const D = dcState(), a = parentOf(ua), b = parentOf(ub);
+  if (!a || !b || ua === ub) return 'Pick two Pokémon from the breeding pool.';
+  if (!dcBuilt()) return 'Build the Day Care at the seat first.';
+  if (D.pairs.length >= dcPairs()) return `At this level the Day Care takes ${dcPairs()} pair${dcPairs() === 1 ? '' : 's'} at once.`;
+  if (!eggMatch(a.b, b.b)) return `${a.sp} and ${b.sp} don't share an egg group${isDitto(a.b) && isDitto(b.b) ? ' (two Ditto can\'t breed)' : ''}.`;
+  for (const x of [a, b]) if (!isDitto(x.b) && inPair(x.uid)) return `${x.sp} is already in a pair.`;
+  if (D.pairs.some(p => (p.a === ua && p.b === ub) || (p.a === ub && p.b === ua))) return 'Those two are already a pair.';
+  return null;
+}
+function startPair(ua, ub) {
+  const w = pairCheck(ua, ub); if (w) return w;
+  const D = dcState(); D.n = (D.n || 0) + 1;
+  D.pairs.push({ id: D.n, a: ua, b: ub, at: S.turn, due: S.turn + dcWeeks(), n: 0 }); BREED_LOG.pairs++;
+  return null;
+}
+function endPair(id) { const D = dcState(); if (!D || !D.pairs.some(p => p.id === id)) return 'No such pair.'; D.pairs = D.pairs.filter(p => p.id !== id); return null; }
+// the young one of a pair: its line, inherited and nudged IVs, a nature from the better parent, and conditions
+function breedYoung(a, b) {
+  const line = isDitto(a.b) ? b.b : isDitto(b.b) ? a.b : pick([a.b, b.b]);
+  const best = betterParent(a, b) ? a : b, lv = dcBuilt();
+  const iv = {}; for (const k of STAT_KEYS) { const x = (a.iv || {})[k] ?? 15, y = (b.iv || {})[k] ?? 15, hi = Math.max(x, y), lo = Math.min(x, y);
+    iv[k] = clamp((rand() < BREED_BETTER ? hi : lo) + ri(BREED_BUMP[0], BREED_BUMP[1]) + (rand() < 0.1 * (lv - 1) ? 1 : 0), 0, 31); }
+  const e = newEntry(line, 1, 'bred'); e.iv = iv; e.nat = best.nat || null; e.par = [a.sp, b.sp];
+  // conditions: double the wild odds, ×5 for one a parent has (the Delta gene passes to any line); a bit more with each level
+  const luck = 1 + DC_LUCK * Math.max(0, lv - 1), mul = {};
+  for (const k of COND_KINDS) mul[k] = ((a.c && a.c[k]) || (b.c && b.c[k]) ? 5 : 2) * luck;
+  const ks = condRoll(line, ranchScout(), mul);
+  if (ks.length) { condEntry(e, ks); for (const k of STAT_KEYS) e.iv[k] = Math.max(e.iv[k], iv[k]); BREED_LOG.conds++; }
+  e.g = monGrade({ iv: e.iv });
+  if (e.g > Math.round((a.g + b.g) / 2)) BREED_LOG.gradeUp++;
+  return e;
+}
+function hatch(p) {
+  const D = dcState(), a = parentOf(p.a), b = parentOf(p.b); if (!a || !b) return;
+  const e = breedYoung(a, b), wd = entryWords(e); p.n++; BREED_LOG.eggs++;
+  if (ranchAdd(e)) { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
+  else { D.wait.push({ e, until: S.turn + HATCH_WAIT }); BREED_LOG.waited++; if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, but the ranch is full. It waits ${HATCH_WAIT} weeks for room.`, 'league'); }
+}
+// once a week (from ranchWeek): parents whose years are up are sold, pairs lay eggs, young ones waiting for room join
+function breedWeek() {
+  const D = dcState(); if (!D) return;
+  for (const e of D.pool.slice()) {
+    if (e.until <= S.turn) retireParent(e, 'expired');
+    else if (playerLeague() && e.until - S.turn === BREED_WARN) news(`${entryWords(e)} leaves the breeding pool in ${BREED_WARN} weeks (it will be sold for about ${money(retirePrice(e))}).`, 'league');
+  }
+  if (D.pairs.length > dcPairs()) D.pairs = D.pairs.slice(0, dcPairs());
+  if (!dcLv()) { for (const p of D.pairs) p.due++; }
+  else for (const p of D.pairs.slice()) if (p.due <= S.turn) { hatch(p); p.due = S.turn + dcWeeks(); }
+  for (const w of D.wait.slice()) {
+    if (ranchAdd(w.e)) { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
+    else if (w.until <= S.turn) { D.wait = D.wait.filter(x => x !== w); BREED_LOG.lost++; ranchLog('bred', 'Let go from the Day Care: the ranch stayed full', { lost: [entryWords(w.e)] }); if (playerLeague()) news(`${entryWords(w.e)} waited at the Day Care, but the ranch stayed full: it was let go.`, 'league'); }
+  }
+}
+// ---------- rivals breed by aim ----------
+// Once a month (from aimRanch): a wall-builder breeds lines its posts can field, a star-maker the best grades, a
+// money-maker rarities to sell. It puts up to BREED_PUT spares in (a line's first, or a better one) and fills its pairs.
+function aimBreed(aim) {
+  if (!dcBuilt()) return;
+  const D = dcState(), types = new Set(seniorIds().map(T).filter(Boolean).flatMap(t => specTypes(t)));
+  const fits = b => !types.size || SP[formAt(b, 100)].types.some(x => types.has(x));
+  const want = e => aim === 'money' ? entryValue(e) : aim === 'star' ? e.g * 10 + (e.c ? 15 : 0) : (fits(e.b) ? 30 : 0) + e.g * 5 + (e.c ? 5 : 0);
+  let put = 0;
+  for (const e of ranchSpares(aim).slice().sort((x, y) => want(y) - want(x))) {
+    if (put >= BREED_PUT) break;
+    if (aim === 'wall' && !fits(e.b) && !isDitto(e.b)) continue;
+    if (aim === 'money' && !e.c && e.g < 4) continue;
+    if (aim === 'star' && e.g < 3 && !isDitto(e.b)) continue;
+    const ck = breedCheck(e.uid); if (typeof ck === 'string' || (ck && ck.ask)) continue;
+    if (!breedIn(e.uid)) { put++; BREED_LOG.aiPut++; }
+  }
+  while (D.pairs.length < dcPairs()) {
+    const P = D.pool, best = { v: -1 };
+    for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+      if (pairCheck(P[i].uid, P[j].uid)) continue;
+      const lines = [P[i], P[j]].filter(x => !isDitto(x.b));
+      const v = lines.reduce((a, x) => Math.max(a, want(x)), 0) + (P[i].g + P[j].g);
+      if (v > best.v) Object.assign(best, { v, a: P[i].uid, b: P[j].uid });
+    }
+    if (best.v < 0 || startPair(best.a, best.b)) break;
+    BREED_LOG.aiPairs++;
+  }
+}
+
 if (typeof module !== 'undefined') module.exports = { SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, safariBuilt, safariStock, stockCap, keepCap, safariKept, stockFloor, keepLine, safariTrim, stockMon, unstockMon, safariFind, SAFARI_LOG, SAFARI_KEEP, SAFARI_STOCK, SAFARI_DISC, SAFARI_ODDS, SAFARI_STOCK_ODDS, ranchLog, RANCH_LOG, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
+if (typeof module !== 'undefined') Object.assign(module.exports, { EGG, EGG_NAMES, EGG_KEYS, TYPE_EGG, eggOf, eggWords, isDitto, canBreed, eggMatch, dcState, dcBuilt, dcLv, dcPairs, dcWeeks, dcPool, dcKey, dcUpkeep, parentOf, inPair, betterParent, retirePrice, plannedRefs, breedCheck, breedIn, retireParent, pairCheck, startPair, endPair, breedYoung, breedWeek, aimBreed, BREED_LOG, BREED_YEARS, BREED_UPKEEP, BREED_SELL, HATCH_WAIT, DC_PAIRS, DC_WEEKS });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -16085,10 +16713,16 @@ function dxLoad(n) {
     : { name: n, types: [b.types[0], b.types[1] || ''], stats: dexBaseStats(n), ab: [A[0] || '', A[1] || '', A.H || ''], isNew: false };
   dxMode = 'edit'; dxWas = null; dxErrs = []; dxMsg = '';
 }
+// (0.45.0) a new Pokémon's egg groups for breeding: none chosen takes one from its main type
+function eggFields(pre, egg, field) {
+  const e = egg || [], opts = (cur, none) => `<option value="">${none}</option>` + EGG_KEYS.map(k => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(EGG_NAMES[k])}</option>`).join('');
+  return field('Egg group', `<select id="${pre}-egg0">${opts(e[0], 'From its type')}</select>`) + field('Second egg group', `<select id="${pre}-egg1">${opts(e[1], 'None')}</select>`);
+}
+const eggRead = pre => [(($('#' + pre + '-egg0') || {}).value || ''), (($('#' + pre + '-egg1') || {}).value || '')].filter(Boolean);
 function dxRead() {
   if (!dxDraft || !$('#dx-t1')) return;
   const v = id => ($('#' + id) || {}).value || '';
-  if (dxDraft.isNew) { dxDraft.name = v('dx-name'); dxDraft.from = v('dx-from').trim(); dxDraft.lvl = Math.round(Number(v('dx-lvl'))); dxDraft.rare = !!($('#dx-rare') || {}).checked; dxDraft.starter = !!($('#dx-starter') || {}).checked; dxDraft.legend = !!($('#dx-legend') || {}).checked; }
+  if (dxDraft.isNew) { dxDraft.name = v('dx-name'); dxDraft.from = v('dx-from').trim(); dxDraft.lvl = Math.round(Number(v('dx-lvl'))); dxDraft.rare = !!($('#dx-rare') || {}).checked; dxDraft.starter = !!($('#dx-starter') || {}).checked; dxDraft.legend = !!($('#dx-legend') || {}).checked; dxDraft.egg = eggRead('dx'); }
   dxDraft.types = [v('dx-t1'), v('dx-t2')];
   dxDraft.stats = [0, 1, 2, 3, 4, 5].map(i => { const x = v('dx-st' + i).trim(); return x === '' ? NaN : Number(x); });
   dxDraft.ab = [0, 1, 2].map(i => v('dx-ab' + i));
@@ -16122,7 +16756,7 @@ const dxStatLine = st => st.map((x, i) => `${DEX_STAT_SHORT[i]} ${x}`).join(' ·
 function dxSave() {
   dxRead();
   const d = dxDraft, isNew = d.isNew;
-  const e = dexNorm({ name: d.name, types: d.types, stats: d.stats, ab: d.ab, from: isNew ? d.from : '', lvl: d.lvl, rare: isNew && !d.from && d.rare, starter: isNew && !d.from && d.starter, legend: isNew && d.legend });
+  const e = dexNorm({ name: d.name, types: d.types, stats: d.stats, ab: d.ab, from: isNew ? d.from : '', lvl: d.lvl, rare: isNew && !d.from && d.rare, starter: isNew && !d.from && d.starter, legend: isNew && d.legend, egg: isNew ? d.egg : null });
   dxErrs = checkDexEntry(e, isNew, dxWas);
   if (dxErrs.length) return;
   if (isNew) {
@@ -16191,6 +16825,7 @@ function viewDexEditor() {
       ${d.isNew ? `<div class="cf-grid">
         ${field('Evolves from', `<input id="dx-from" class="cf-in" list="dx-parents" value="${esc(d.from || '')}" placeholder="Nothing: it's found in the wild" autocomplete="off">`, 'wide')}
         ${field('At level', `<input id="dx-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl)}">`)}
+        ${eggFields('dx', d.egg, field)}
       </div>
       <p class="muted small">Leave "Evolves from" empty for a first-stage Pokémon: it's caught in the wild like any other, and anything you add can evolve from it. Something that evolves from a game Pokémon becomes another branch of that line, picked like Eevee's.</p>
       <div class="adv-list">
@@ -16249,7 +16884,7 @@ function dexAction(a, el) {
       return true; }
     case 'dxedit': dxMsg = ''; dxLoad(k); return true;
     case 'dxnew': dxMsg = ''; dxErrs = []; dxDraft = dxBlank(true); dxDraft.ab[0] = dexAbilities()[0]; dxMode = 'new'; dxWas = null; return true;
-    case 'dxeditnew': { const e = dexLib.added.find(x => x.name === k); if (!e) return true; dxMsg = ''; dxErrs = []; dxDraft = { name: e.name, types: [e.types[0], e.types[1] || ''], stats: e.stats.slice(), ab: e.ab.slice(), from: e.from || '', lvl: e.lvl || 30, rare: !!e.rare, starter: !!e.starter, legend: !!e.legend, isNew: true }; dxMode = 'new'; dxWas = e.name; return true; }
+    case 'dxeditnew': { const e = dexLib.added.find(x => x.name === k); if (!e) return true; dxMsg = ''; dxErrs = []; dxDraft = { name: e.name, types: [e.types[0], e.types[1] || ''], stats: e.stats.slice(), ab: e.ab.slice(), from: e.from || '', lvl: e.lvl || 30, rare: !!e.rare, starter: !!e.starter, legend: !!e.legend, egg: (e.egg || []).slice(), isNew: true }; dxMode = 'new'; dxWas = e.name; return true; }
     case 'dxsave': dxSave(); return true;
     case 'dxcancel': dxMode = null; dxDraft = null; dxWas = null; dxErrs = []; return true;
     case 'dxreset': delete dexLib.edits[k]; saveDexLib(); if (dxDraft && !dxDraft.isNew && dxDraft.name === k) { dxDraft = null; dxMode = null; } dxMsg = `${k} is back to the game's own.`; return true;
@@ -16305,10 +16940,10 @@ function rgOpen(rec) { rgDraft = JSON.parse(JSON.stringify(rec)); rgPorts = rgDr
 function rgRec() { const d = rgDraft, names = d.towns.concat(d.extra); return Object.assign({}, d, { ports: Object.fromEntries(names.map((n, i) => [n.trim(), rgPorts[i]]).filter(([n, k]) => n && k)) }); }
 function rgSet(path, v) { const ks = path.split('.'); let o = rgDraft; for (const k of ks.slice(0, -1)) { if (o[k] == null) o[k] = {}; o = o[k]; } o[ks[ks.length - 1]] = v; }
 const rgField = (label, path, val, max = REGION_NAME_MAX, ph = '') => `<label class="cf-field"><span class="eyebrow">${label}</span><input class="cf-in rg-f" data-f="${path}" maxlength="${max}" value="${esc(val || '')}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off"></label>`;
-function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false }; }
+function rgSpBlank() { return { name: '', types: ['Normal', ''], stats: [50, 50, 50, 50, 50, 50], ab: [dexAbilities()[0], '', ''], from: '', lvl: 30, rare: false, starter: false, legend: false, egg: [] }; }
 function rgSpRead() {
   const v = id => (($(id) || {}).value || '').trim(), ck = id => !!($(id) || {}).checked;
-  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend') });
+  return dexNorm({ name: v('#rgs-name'), types: [v('#rgs-t1'), v('#rgs-t2')], stats: [0, 1, 2, 3, 4, 5].map(i => Number(v('#rgs-st' + i))), ab: [v('#rgs-ab0'), v('#rgs-ab1'), v('#rgs-ab2')], from: v('#rgs-from'), lvl: Number(v('#rgs-lvl')), rare: ck('#rgs-rare'), starter: ck('#rgs-starter'), legend: ck('#rgs-legend'), egg: eggRead('rgs') });
 }
 // the new Pokémon of every other region in the library, and My Pokédex's, for name and evolution checks
 const rgOthers = () => dexLib.added.concat(regionLib.regions.filter(r => r.id !== rgDraft.id).flatMap(r => r.added));
@@ -16340,6 +16975,7 @@ function rgSpForm() {
     <div class="cf-grid six">${d.stats.map((x, i) => field(DEX_STAT_LABEL[i], `<input id="rgs-st${i}" class="cf-in" type="number" min="1" max="255" step="1" inputmode="numeric" value="${Number.isFinite(x) ? x : ''}">`)).join('')}</div>
     <div class="cf-grid">${field('Ability', sel('rgs-ab0', d.ab[0], abOpts('Choose…')))}${field('Second ability', sel('rgs-ab1', d.ab[1], abOpts('None')))}${field('Hidden ability', sel('rgs-ab2', d.ab[2], abOpts('None')))}</div>
     <div class="cf-grid">${field('Evolves from', `<input id="rgs-from" class="cf-in" list="rgs-parents" value="${esc(d.from || '')}" placeholder="Nothing: found in the wild" autocomplete="off">`)}${field('At level', `<input id="rgs-lvl" class="cf-in" type="number" min="2" max="100" step="1" inputmode="numeric" value="${esc(d.lvl || 30)}">`)}</div>
+    <div class="cf-grid">${eggFields('rgs', d.egg, field)}</div>
     <datalist id="rgs-parents">${parents.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
     <div class="adv-list"><label class="cf-imp-row"><input id="rgs-legend" type="checkbox"${d.legend ? ' checked' : ''}><span><b>Legendary encounter</b><span class="muted small cf-imp-team">Only for a base stat total over ${DEX_LEGEND_BST}, with nothing it evolves from and nothing evolving from it. Never found in the wild: it appears as a very rare legendary encounter, three times likelier in this region (only here if its new Pokémon are kept here), and one trainer holds it at a time. Rare and Starter don't apply to it.</span></span></label>
       <label class="cf-imp-row"><input id="rgs-rare" type="checkbox"${d.rare ? ' checked' : ''}><span><b>Rare in the wild</b></span></label><label class="cf-imp-row"><input id="rgs-starter" type="checkbox"${d.starter ? ' checked' : ''}><span><b>Starter</b></span></label></div>
@@ -17269,8 +17905,8 @@ function ranchPostOpts() {
 function viewRanch() { return inLeague(ME(), viewRanch0); }
 // (0.44.0) the Ranch page in tabs; the pool's filters; the teams as one row a Pokémon
 let ranchTab = 'pool', ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }, teamShow = 'all';
-const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['region', 'Region & safari']];
-const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone' };
+const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['daycare', 'Day Care'], ['region', 'Region & safari']];
+const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care' };
 const RANCH_SHOW = [['free', 'Not fielded'], ['fielded', 'Fielded'], ['all', 'Everything'], ['sale', 'Listed for sale'], ['held', 'Locked or reserved']];
 const RANCH_SORT = [['value', 'Value'], ['grade', 'Grade'], ['name', 'Name'], ['new', 'Newest'], ['type', 'Type']];
 const ranchShows = (e, k) => k === 'free' ? e.at == null : k === 'fielded' ? e.at != null : k === 'sale' ? !!e.sale : k === 'held' ? !!(e.lock || e.res) : true;
@@ -17289,7 +17925,7 @@ function viewRanch0() {
   const backs = sen.filter(t => t.team.some(m => m.backup));
   const stored = seniorIds().map(T).filter(storePickOk).length, fielded = R.mons.filter(e => e.at != null).length;
   if (!RANCH_TABS.some(([k]) => k === ranchTab)) ranchTab = 'pool';
-  const tabNote = { pool: stored ? ' ●' : '', trips: R.trips.length ? ` (${R.trips.length})` : '' };
+  const tabNote = { pool: stored ? ' ●' : '', trips: R.trips.length ? ` (${R.trips.length})` : '', daycare: R.dc && R.dc.pairs.length ? ` (${R.dc.pairs.length})` : '' };
   const tabs = `<div class="segs ranchtabs">${RANCH_TABS.map(([k, n]) => `<button class="seg${ranchTab === k ? ' on' : ''}" data-act="ranchtab" data-v="${k}" aria-pressed="${ranchTab === k}">${n}${tabNote[k] || ''}</button>`).join('')}</div>`;
   const head = `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Ranch</h2>
     <p>The ranch holds <b>${R.mons.length} of ${ranchCap()}</b> (${fielded} fielded, ${R.mons.length - fielded} not)${safariStock().length ? ` and the Safari Zone <b>${safariStock().length}</b> more` : ''}. Upkeep <b>${money(ranchUpkeep())}</b> a week. Scouting for finds <b>${sc}</b>. ${R.trips.length} of ${tripMax()} trips out.</p>
@@ -17297,11 +17933,11 @@ function viewRanch0() {
     ${stops.length ? `<p class="warn">Fielding stopgaps (weak stand-ins, because nothing in the ranch fits): ${stops.map(t => `${esc(postName(t))} (${t.team.filter(m => m.stop).length})`).join(', ')}. Catch or buy Pokémon of their type.</p>` : ''}
     ${backs.length ? `<p class="small">Filling with backup types (used only where the ranch has none of their own type left): ${backs.map(t => `${esc(postName(t))} (${t.team.filter(m => m.backup).length})`).join(', ')}. They swap one back as soon as the ranch has one of their type.</p>` : ''}
     ${tabs}</section>${planGapNote()}`;
-  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + ranchPool(R);
+  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'daycare' ? dayCarePanel(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + ranchPool(R);
   return head + body;
 }
 function ranchPool(R) {
-  const posts = ranchPostOpts(), rows = ranchPoolRows(R), saf = safariBuilt(), sroom = saf && safariStock().length < stockCap();
+  const posts = ranchPostOpts(), rows = ranchPoolRows(R), saf = safariBuilt(), sroom = saf && safariStock().length < stockCap(), dc = dcBuilt();
   const holder = id => { const t = T(id); return t ? `${tname(id)} <span class="small muted">${esc(postName(t))}</span>` : '—'; };
   const row = e => {
     const free = e.at == null, v = entryValue(e);
@@ -17310,6 +17946,7 @@ function ranchPool(R) {
     if (!e.sale) acts.push(`<button class="btn small ghost" data-act="ranchsell" data-id="${e.uid}">Sell (+${money(Math.round(v * SELL_BACK))})</button>`, `<button class="btn small ghost" data-act="ranchrel" data-id="${e.uid}">Release</button>`);
     if (nLeagues() > 1) acts.push(e.sale ? `<button class="btn small ghost" data-act="ranchunlist" data-id="${e.uid}">Withdraw (${money(e.sale.price)})</button>` : `<button class="btn small ghost" data-act="ranchlist" data-id="${e.uid}">List for ${money(v)}</button>`);
     if (saf) acts.push(`<button class="btn small ghost" data-act="ranchstock" data-id="${e.uid}"${sroom ? '' : ' disabled'}>Stock in the safari</button>`);
+    if (dc && canBreed(e.b) && !e.lock) { const ck = breedCheck(e.uid); acts.push(typeof ck === 'string' ? `<button class="btn small ghost" disabled title="${esc(ck)}">Breed</button>` : `<button class="btn small ghost" data-act="ranchbreed" data-id="${e.uid}"${ck && ck.ask ? ' data-ask="1"' : ''} title="Leaves the ranch for good: it breeds in your breeding pool for ${BREED_YEARS} years, then is sold">${ck && ck.ask ? 'Breed (clears reservation/plan)' : ck && ck.old ? 'Breed (replaces a worse one)' : 'Breed'}</button>`); }
     return `<tr><td>${esc(e.sp)}${condTag(e.c)}${e.sp !== e.b ? ` <span class="small muted">(${esc(e.b)} line)</span>` : ''}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${gradeStars(e.g)}</td><td class="num">${money(v)}</td><td class="small">${e.at != null ? holder(e.at) : e.sale ? '<span class="tag small">listed</span>' : e.lock ? '<span class="tag small">locked</span>' : 'in the ranch'}${e.of != null && T(e.of) ? `<br><span class="muted">from ${esc(T(e.of).name)}</span>` : ''}</td><td class="small muted">${esc(FROM_NAMES[e.from] || e.from || '')}<br>${turnDate(e.got || 0)}</td><td>${res}</td><td>${acts.join(' ')}${free ? '' : `<br><span class="small muted">Fielded by ${esc(T(e.at).name)}: selling, releasing, listing or stocking it swaps it out now for the best left in the ranch (or a stopgap). Lock it to take it back at the next monthly swap instead.</span>`}</td></tr>`;
   };
   const froms = [...new Set(R.mons.map(e => e.from))].filter(Boolean).sort();
@@ -17384,6 +18021,30 @@ function safariPanel() {
     ${saf ? `<div class="scroll"><table class="tbl" id="safarilines"><thead><tr><th>Line</th><th>Type</th><th>Top</th><th>Home regions</th><th>Next change</th><th>Trip</th></tr></thead><tbody>${lines.map(lineRow).join('')}</tbody></table></div>` : `<p class="muted small">${lapsed() ? 'Closed while you are in the red: nothing can be caught here, and the stock waits.' : 'No lines (National Dex rules: every species is everywhere).'}</p>`}
     <h3>Stock (${stock.length} of ${stockCap()})</h3>
     ${stock.length ? `<div class="scroll"><table class="tbl" id="safaristock"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Since</th><th></th></tr></thead><tbody>${stock.map(e => `<tr><td>${esc(e.sp)}${condTag(e.c)}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${gradeStars(e.g)}</td><td class="small muted">${turnDate(e.stocked || 0)}</td><td><button class="btn small ghost" data-act="safaritake" data-id="${e.uid}"${ranchRoom() > 0 ? '' : ' disabled'}>Back to the ranch</button></td></tr>`).join('')}</tbody></table></div><p class="small muted">Next young find: ${lv ? nextFind() : 'when the safari reopens'}.</p>` : '<p class="small muted">Nothing stocked. Stock Pokémon from the Pool tab.</p>'}</section>`;
+}
+// (0.45.0) the Day Care: the breeding pool, pairs under way, young ones waiting for room
+let dcPick = { a: null, b: null };
+function dayCarePanel(R) {
+  const lv = dcBuilt(), D = dcState(), P = D.pool;
+  const intro = `<p class="small">Put a ranch Pokémon in to breed with <b>Breed</b> on the Pool tab: it leaves the ranch and every team for good and stays in the <b>breeding pool</b> for ${BREED_YEARS} years at half its upkeep, taking no ranch space; then it is sold automatically for ${Math.round(BREED_SELL * 100)}% of its value. The pool holds one of each line and condition (a shiny and a plain one of a line can both stay); a better one going in bumps the old one out, which is sold the same way. Two parents sharing an egg group make a <b>pair</b>, or one parent can be Ditto (Ditto can be in several pairs; everyone else in one). A pair lays an egg every ${dcWeeks()} weeks until you end it: the young one takes the non-Ditto parent's line (else either parent's), each IV from one parent (the better one more often) plus a small bump, so it usually comes out a grade above its parents. Conditions come at twice the wild odds, five times for one a parent has; a Delta parent passes on the Delta gene (the young one rolls its own unusual type, whichever line it takes). A young one hatched into a full ranch waits ${HATCH_WAIT} weeks, then is let go. In the red the Day Care closes: eggs wait, the pool's upkeep is still paid.</p>`;
+  if (!lv && !P.length) return `<section class="panel"><div class="ph"><h2>Day Care</h2><span class="muted">Not built</span></div>${intro}<p class="small">Build the Day Care at the seat on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page (${money(upCost('daycare', 0))}; ${DC_PAIRS.slice(1).join(', ')} pairs at once by level).</p></section>`;
+  const nm = e => `${esc(e.sp)}${condTag(e.c)}${e.sp !== e.b ? ` <span class="small muted">(${esc(e.b)} line)</span>` : ''}`;
+  const pairOf = uid => D.pairs.find(p => p.a === uid || p.b === uid);
+  const poolRows = P.slice().sort((a, b) => a.b.localeCompare(b.b)).map(e => `<tr><td>${nm(e)}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${esc(eggWords(e.b))}</td><td class="small">${gradeStars(e.g)}</td><td class="small">${turnDate(e.until)}${e.until - S.turn <= BREED_WARN ? ' <span class="tag notice small">soon</span>' : ''}<br><span class="muted">then sold for ${money(retirePrice(e))}</span></td><td class="small">${isDitto(e.b) ? `${D.pairs.filter(p => p.a === e.uid || p.b === e.uid).length} pair(s)` : pairOf(e.uid) ? 'in a pair' : '<span class="muted">free</span>'}</td></tr>`).join('');
+  const pairRows = D.pairs.map(p => { const a = parentOf(p.a), b = parentOf(p.b); return a && b ? `<tr><td>${nm(a)} × ${nm(b)}</td><td class="small">${dcLv() ? turnDate(p.due) : 'waiting (closed in the red)'}</td><td class="num small">${p.n}</td><td><button class="btn small ghost" data-act="dcend" data-id="${p.id}">End pair</button></td></tr>` : ''; }).join('');
+  const free = P.filter(e => isDitto(e.b) || !inPair(e.uid));
+  if (!free.some(e => e.uid === dcPick.a)) dcPick.a = free[0] ? free[0].uid : null;
+  const pa = parentOf(dcPick.a), mates = pa ? free.filter(e => e.uid !== pa.uid && !pairCheck(pa.uid, e.uid)) : [];
+  if (!mates.some(e => e.uid === dcPick.b)) dcPick.b = mates[0] ? mates[0].uid : null;
+  const opt = (e, cur) => `<option value="${e.uid}"${e.uid === cur ? ' selected' : ''}>${esc(entryWords(e))} (${esc(eggWords(e.b))})</option>`;
+  const room = D.pairs.length < dcPairs();
+  const form = free.length >= 2 ? `<div class="confirm-row"><select class="dcsel" data-k="a" aria-label="First parent">${free.map(e => opt(e, dcPick.a)).join('')}</select><span>×</span><select class="dcsel" data-k="b" aria-label="Second parent">${mates.length ? mates.map(e => opt(e, dcPick.b)).join('') : '<option value="">No partner shares an egg group</option>'}</select><button class="btn small" data-act="dcpair"${room && dcPick.b != null && lv ? '' : ' disabled'}>Start the pair</button></div>` : '<p class="muted small">Put at least two Pokémon in to breed to start a pair.</p>';
+  const wait = D.wait.map(w => `<li>${esc(entryWords(w.e))}: waits for room until ${turnDate(w.until)}</li>`).join('');
+  return `<section class="panel"><div class="ph"><h2>Day Care</h2><span class="muted">${lv ? `Level ${lv}${lapsed() ? ' · closed while in the red' : ''} · ${D.pairs.length} of ${dcPairs()} pairs · an egg every ${dcWeeks()} weeks` : 'Not built (the pool stays; no pairs)'} · pool upkeep ${money(dcUpkeep())} a week</span></div>${intro}
+    <h3>Pairs</h3>${pairRows ? `<div class="scroll"><table class="tbl" id="dcpairs"><thead><tr><th>Parents</th><th>Next egg</th><th>Eggs so far</th><th></th></tr></thead><tbody>${pairRows}</tbody></table></div>` : '<p class="muted small">No pairs.</p>'}
+    ${form}
+    ${wait ? `<h3>Waiting for room in the ranch</h3><ul>${wait}</ul>` : ''}
+    <h3>Breeding pool (${P.length})</h3>${poolRows ? `<div class="scroll"><table class="tbl" id="dcpool"><thead><tr><th>Pokémon</th><th>Type</th><th>Egg groups</th><th>Grade</th><th>Leaves</th><th>Now</th></tr></thead><tbody>${poolRows}</tbody></table></div>` : '<p class="muted small">Empty. Use Breed on the Pool tab.</p>'}</section>`;
 }
 // (0.37.0) new hires' storage: take up to the number shown into the ranch
 function storagePanel() {
@@ -18468,6 +19129,15 @@ function viewGod() {
 }
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 45, ver: '0.45.0', date: 'November 20, 2026', time: '9:30 PM ET', title: 'Breeding and the Day Care', items: [
+    "A new seat building, the Day Care (5 levels, no slot), breeds Pokémon from your breeding pool. Find it on the Ranch page's new Day Care tab.",
+    "Breed on the Pool tab puts a ranch Pokémon in the breeding pool for good: it leaves the ranch and every team, takes no ranch space, costs half its upkeep, and after 5 years is sold automatically for half its value (you get a warning 8 weeks before). The pool holds one of each line and condition; putting in a better one bumps the old one out and sells it. Locked Pokémon can't go in; reserved or planned ones ask first.",
+    "Pairs follow the games' egg groups, or pair anything with Ditto. Undiscovered lines can't breed. Ditto can be in several pairs at once; everyone else in one. The Day Care's level sets how many pairs run at once (1 to 5) and how often they lay (every 10 weeks, down to 6).",
+    "Young ones usually come out a grade above their parents: each IV comes from one parent, the better one more often, plus a small bump. Conditions come at twice the wild odds, five times if a parent has one. A Delta parent passes on the Delta gene, so the young one rolls its own unusual type, whichever line it takes. A bred shiny, alpha or Delta has at least a wild one's IVs.",
+    "A young one hatched into a full ranch waits 8 weeks at the Day Care for room, then is let go. In the red the Day Care closes: eggs wait, and the pool's upkeep is still paid. Everything shows in the ranch log.",
+    "My Pokédex and the region editor have egg group fields for your own Pokémon (left empty, one comes from the main type).",
+    "Rival Leagues build Day Cares and breed by aim: wall-builders for their posts' types, star-makers the best grades, money-makers rarities to sell.",
+  ] },
   { id: 44, ver: '0.44.0', date: 'November 20, 2026', time: '6:40 PM ET', title: 'The ranch reorganized, the Safari Zone you can shape, and a ranch log', items: [
     "The Ranch page is in tabs: Pool, Teams, Trips & log, Market, and Region & safari. A dot on Pool means a new hire's storage is open to you.",
     "The pool shows only the Pokémon nobody is fielding by default. Filter it by fielded or not, listed, locked or reserved, type, grade, condition and where it came from, and sort it by value, grade, name, newest or type. Each row now says where it came from and when.",
@@ -19197,6 +19867,7 @@ function planGapNote() {
   const g = plansOn() ? planGaps() : [];
   return g.length ? `<section class="panel"><p class="warn small">Team plans with places that can't be filled (the steer fills them): ${g.map(x => `${esc(x.sp || 'a Pokémon')} for ${esc(planHolder(x.key) ? postName(planHolder(x.key)) : x.key)} (${esc(x.why)})`).join(', ')}. See <button class="tlink" data-act="nav" data-v="plans">Team plans</button>.</p></section>` : '';
 }
+GLOSS_TERMS.league.push(['Breeding and the Day Care', `The Day Care is a seat building (no slot, ${DC_PAIRS.length - 1} levels) that breeds from your breeding pool, on the Ranch page's Day Care tab. Breed on the Pool tab moves a ranch Pokémon there for good: it leaves the ranch and every team, takes no ranch space, costs half its upkeep and stays ${BREED_YEARS} years, then is sold automatically for ${Math.round(BREED_SELL * 100)}% of its value. The pool holds one of each line and condition; a better one bumps the old one out (sold the same way). A locked Pokémon can't go in; a reserved or planned one asks first. Pairs share an egg group (the games' own; your own Pokémon take one from My Pokédex or the region editor, else from their type), or one parent is Ditto; Undiscovered lines can't breed. Ditto can be in several pairs, everyone else in one. A pair lays an egg every ${DC_WEEKS[1]} weeks at level 1, down to ${DC_WEEKS[DC_WEEKS.length - 1]} at the top level, until you end it. The young one takes the non-Ditto parent's line (else either's), each IV from one parent (the better more often) plus a small bump, so it usually comes out a grade above its parents. Conditions come at twice the wild odds and five times for one a parent has; a Delta parent passes on the Delta gene, so the young one rolls its own unusual type, whichever line it takes. A bred shiny, alpha or Delta has at least the IVs a wild one would. A young one hatched into a full ranch waits ${HATCH_WAIT} weeks, then is let go. In the red the Day Care closes: eggs wait, the pool's upkeep is still paid. The Safari Zone's quarterly finds stay plain: only the Day Care passes anything on. Rival Leagues breed too: wall-builders for their posts' types, star-makers the best grades, money-makers rarities to sell.`]); // (0.45.0)
 GLOSS_TERMS.league.push(['Team plans', `The Team plans page: up to ${PLAN_MAX} named Pokémon for a Gym Leader, Elite Four member or your Champion, from their own team or your ranch, with the steer filling the rest. A plan belongs to the post. It takes effect at the quarterly team review (every ${QUARTER_WEEKS} weeks, when the game suggests a team for each post), or at once when set in the review's week, for a post whose holder is new since the review, or for a vacant post. Planned Pokémon are never swapped out by the monthly swap or a Gym Leader's losing-streak shake-up. Staff always follow a plan, but one whose own Pokémon it keeps benched for ${BENCH_QUARTERS} reviews running grows restless (promotion's clock moves on a quarter; a stay-put member may start wanting more). A planned Pokémon sold, locked, listed or banned leaves a gap, flagged on the Ranch page, that the steer fills.`]);
 
 // Move time on by up to n weeks. A step of more than a week stops early when something needs you: a title
@@ -19303,6 +19974,9 @@ document.addEventListener('click', ev => {
     case 'ranchteams': teamShow = el.dataset.v; render(); break;
     case 'ranchfreset': ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }; render(); break;
     case 'ranchstock': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => stockMon(+el.dataset.id)); save(); render(); toast(w || 'Stocked in the Safari Zone.' + (who ? ` ${who} swapped it out.` : '')); break; }
+    case 'ranchbreed': { const w = inLeague(ME(), () => breedIn(+el.dataset.id, !!el.dataset.ask)); save(); render(); toast(w || 'In the breeding pool. Pair it on the Day Care tab.'); break; } // (0.45.0)
+    case 'dcpair': { const w = inLeague(ME(), () => startPair(dcPick.a, dcPick.b)); save(); render(); toast(w || 'The pair has started.'); break; }
+    case 'dcend': { const w = inLeague(ME(), () => endPair(+el.dataset.id)); save(); render(); if (w) toast(w); break; }
     case 'safaritake': { const w = inLeague(ME(), () => unstockMon(+el.dataset.id)); save(); render(); toast(w || 'Back in the ranch.'); break; }
     case 'safarikeep': { const on = el.dataset.v === '1', w = inLeague(ME(), () => keepLine(el.dataset.b, on)); save(); render(); toast(w || (on ? `${el.dataset.b} stays through the next change.` : `${el.dataset.b} is no longer kept.`)); break; }
     case 'ranchob': { const w = inLeague(ME(), () => startTrip('outbreak')); save(); render(); toast(w || 'The trip has set out for the outbreak.'); break; }
@@ -19457,6 +20131,7 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('lanesel')) { const w = setLane(+e.target.dataset.g, +e.target.value); save(); render(); toast(w || 'The route has changed.'); return; }
   if (e.target && e.target.classList && e.target.classList.contains('plansel')) { const k = e.target.dataset.k; (planDraft[k] = planDraft[k] || Array(PLAN_MAX).fill(''))[+e.target.dataset.i] = e.target.value; return; }
   if (e.target && e.target.classList && e.target.classList.contains('planstop')) { inLeague(ME(), () => { plansState().off = !e.target.checked; }); save(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('dcsel')) { dcPick[e.target.dataset.k] = e.target.value === '' ? null : +e.target.value; render(); return; } // (0.45.0)
   if (e.target && e.target.classList && e.target.classList.contains('ranchressel')) { const w = inLeague(ME(), () => reserveMon(+e.target.dataset.id, e.target.value || null)); save(); render(); if (w) toast(w); return; }
   if (e.target && e.target.classList && e.target.classList.contains('foundregsel')) { const w = foldRegion(+e.target.value); if (w) toast(w); save(); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rg-port')) { rgPorts[+e.target.dataset.i] = e.target.value; return; }
