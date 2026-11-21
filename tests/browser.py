@@ -92,6 +92,10 @@ async def run(path):
           { let sel = document.querySelector('#setseatrule'); if (!sel) log.push('FAIL no seat rule picker at setup');
             else { sel.value = 'term'; sel.dispatchEvent(new Event('change', { bubbles: true }));
               if (!document.querySelector('#setseatevery')) log.push('FAIL no timing field for a scheduled seat rule');
+              // 0.46.0: the Conqueror shows its timing (Instant or At New Year)
+              sel = document.querySelector('#setseatrule'); sel.value = 'conqueror'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+              let cn = document.querySelector('#setseatevery-now'); if (!cn) log.push('FAIL no timing for the Conqueror');
+              else { cn.value = '1'; cn.dispatchEvent(new Event('change', { bubbles: true })); cn = document.querySelector('#setseatevery-now'); if (!cn || cn.value !== '1') log.push('FAIL the Conqueror timing did not take Instant'); }
               sel = document.querySelector('#setseatrule'); sel.value = 'protected'; sel.dispatchEvent(new Event('change', { bubbles: true }));
               if (document.querySelector('#setseatevery')) log.push('FAIL a timing field for Protected'); } }
           document.querySelectorAll('[data-act=newworld]')[2].click();

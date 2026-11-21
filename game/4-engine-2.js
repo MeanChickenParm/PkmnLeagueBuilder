@@ -1111,6 +1111,7 @@ function endRun(t, entry, stage) {
     stopFor('ambition', `${dn(t)} won the title and backed out of becoming ${hireTarget(h)}.`);
   }
   if (t.hired) { t.hireDue = true; t.leaving = null; t.rest = S.turn + 1; return; }
+  if (t.conq) { t.rest = S.turn + 1; return; } // (0.46.0) an Instant Conqueror takes the seat once the run is over
   // retiring with age or after a long dry spell was decided on their birthday and waited for the run to end
   if (t.leaving) { const why = t.leaving; t.leaving = null; retire(t, why); if (t.role !== 'challenger') return; }
   // weak challengers give up: several early runs in a row, and they retire or try their luck at another League
@@ -1358,7 +1359,7 @@ function leagueRun(q, entry) {
   if (hasMega(q) && !megaHolder(q)) assignMegaStone(q);
   q.career.leagueApps++; y.pts += 3;
   const e = { id: q.id, stage: 0, lostTo: null, week: S.week, route: (q.badges || []).map(townName) };
-  let ok = true;
+  let ok = true, conq = false;
   for (let i = 0; i < 4; i++) {
     const foe = T(S.e4[i]);
     setTeamLevel(q, E4_LV[i]);
@@ -1382,8 +1383,9 @@ function leagueRun(q, entry) {
       champ.career.conceded = (champ.career.conceded || 0) + 1;
       L.conceded.push(q.id); S.lastTitle = S.turn;
       hofEnter(q, champ, r);
-      const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${champ.name} keeps the ${postWord('champion')}'s seat; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
-      news(msg, 'title', q.id); stopFor('title', msg);
+      conq = conquerNow(q); if (conq) q.conq = true; // (0.46.0) an Instant Conqueror: the seat changes hands after the run ends
+      const msg = `${dn(q)} defeated ${dn(champ)} and won the ${S.lgName} title! ${conq ? `Under the Conqueror rule, ${q.name} takes the ${postWord('champion')}'s seat` : `${champ.name} keeps the ${postWord('champion')}'s seat`}; the League has conceded ${L.conceded.length === 1 ? 'a title' : L.conceded.length + ' titles'} this year.`;
+      news(msg, 'title', q.id); if (!conq) stopFor('title', msg);
     } else {
       e.lostTo = champ.id; champ.career.defenses++;
       const th = themeOf(); news(th.defend ? th.defend(dn(champ), dn(q)) : `${dn(champ)} defended the title against ${dn(q)}.`, 'title', champ.id); // (0.42.0) the theme's wording
@@ -1398,6 +1400,7 @@ function leagueRun(q, entry) {
   }
   entry.league = e.stage; if (e.lostTo) entry.opp = e.lostTo;
   endRun(q, entry, e.stage);
+  if (conq) { q.conq = null; seatConquerNow(q); }
 }
 // one week of the whole world
 function simWeek() {

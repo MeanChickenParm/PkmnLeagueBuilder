@@ -1,5 +1,12 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 46, ver: '0.46.0', date: 'November 20, 2026', time: '9:50 PM ET', title: 'An Instant Conqueror', items: [
+    "The Conqueror seat rule now has a timing: Instant or At New Year. Pick it beside the rule on Your staff or at setup; changing only the timing is free.",
+    "Instant: whoever beats your Champion takes the seat as soon as their run is over, any week of the year, as in the main games. There is no grace for a new Champion, so the seat can change hands several times in a year.",
+    "The beaten Champion drops into an empty Elite Four seat if one is waiting for you to fill. Otherwise they go back to the circuit (or retire) with a grudge against the League.",
+    "At New Year works as before: the year's strongest title winner who wants the seat takes it, and a new Champion has their first year in the seat.",
+    "Rival Leagues that use the Conqueror rule pick Instant or At New Year about half the time each. The League table shows (Instant) beside the rule.",
+  ] },
   { id: 45, ver: '0.45.0', date: 'November 20, 2026', time: '9:30 PM ET', title: 'Breeding and the Day Care', items: [
     "A new seat building, the Day Care (5 levels, no slot), breeds Pokémon from your breeding pool. Find it on the Ranch page's new Day Care tab.",
     "Breed on the Pool tab puts a ranch Pokémon in the breeding pool for good: it leaves the ranch and every team, takes no ranch space, costs half its upkeep, and after 5 years is sold automatically for half its value (you get a warning 8 weeks before). The pool holds one of each line and condition; putting in a better one bumps the old one out and sells it. Locked Pokémon can't go in; reserved or planned ones ask first.",
@@ -680,13 +687,15 @@ function planOptions(t, key) {
 // ---------- seat rules (0.43.0) ----------
 // the rule picker (setup and Your staff): a select of the nine rules and the timing in years for the scheduled ones
 let seatDraft = null;
-function seatForm(sel, ev, k, every) {
+// (0.46.0) the Conqueror's timing: Instant (now) or At New Year, a select with id ev + '-now'
+function seatForm(sel, ev, k, every, now) {
   const sched = seatSched(k), ev0 = every || (sched ? SEAT_RULES[k].every : null);
-  return `<div class="confirm-row"><select id="${sel}" aria-label="Seat rule">${RULE_KEYS.map(x => `<option value="${x}"${x === k ? ' selected' : ''}>${esc(SEAT_RULES[x].name)}</option>`).join('')}</select>${sched ? `<label class="small">every <input id="${ev}" type="number" min="${SEAT_EVERY_MIN}" max="${SEAT_EVERY_MAX}" value="${ev0}" style="width:4em"> year${ev0 === 1 ? '' : 's'}</label>` : ''}</div><p class="muted small">${esc(SEAT_RULES[k].text)}</p>`;
+  const conq = k === 'conqueror' ? `<label class="small">hand-over <select id="${ev}-now" aria-label="Conqueror timing"><option value="1"${now ? ' selected' : ''}>Instant</option><option value="0"${now ? '' : ' selected'}>At New Year</option></select></label>` : '';
+  return `<div class="confirm-row"><select id="${sel}" aria-label="Seat rule">${RULE_KEYS.map(x => `<option value="${x}"${x === k ? ' selected' : ''}>${esc(SEAT_RULES[x].name)}</option>`).join('')}</select>${sched ? `<label class="small">every <input id="${ev}" type="number" min="${SEAT_EVERY_MIN}" max="${SEAT_EVERY_MAX}" value="${ev0}" style="width:4em"> year${ev0 === 1 ? '' : 's'}</label>` : ''}${conq}</div><p class="muted small">${esc(SEAT_RULES[k].text)}</p>`;
 }
-const seatNext = r => r.k === 'term' ? (r.term != null ? `The term ends at New Year after year ${r.term}.` : '') : seatSched(r.k) && r.next != null ? `Next at New Year after year ${r.next}.` : '';
+const seatNext = r => r.k === 'conqueror' ? (r.now ? 'Instant: whoever beats the Champion takes the seat.' : 'The hand-over waits for New Year.') : r.k === 'term' ? (r.term != null ? `The term ends at New Year after year ${r.term}.` : '') : seatSched(r.k) && r.next != null ? `Next at New Year after year ${r.next}.` : '';
 function seatPanel() {
-  const r = seatRule(), k = r.k, d = seatDraft || { k, every: r.every }, block = seatChangeBlock(), cw = esc(postWord('champion'));
+  const r = seatRule(), k = r.k, d = seatDraft || { k, every: r.every, now: !!r.now }, block = seatChangeBlock(), cw = esc(postWord('champion'));
   const pct = v => v == null ? '–' : `${Math.round(v * 100)}%`;
   let extra = '';
   if (r.pick) extra += `<div class="eyebrow">Appoint the next ${cw} by ${turnDate(r.pick.due)}</div><ul class="mini">${termCands().map(t => `<li><span>${tname(t.id)} <span class="small">(${t.id === S.champion ? 'keep the ' + cw : postName(t)})</span> ${ovrPill(t)}</span><button class="btn small primary" data-act="seatpick" data-id="${t.id}">${t.id === S.champion ? 'Keep' : 'Appoint'}</button></li>`).join('')}</ul>`;
@@ -698,7 +707,7 @@ function seatPanel() {
   if (seatLocked()) extra += `<p class="muted small">${tname(S.champion)} is the founding ${cw}: the seat is protected until year ${T(S.champion).founderUntil}.</p>`;
   const changing = d.k !== k;
   return `<section class="panel"><div class="ph"><h3>How the ${cw} is chosen: ${esc(seatRuleName(k))}</h3><span class="muted">${esc(seatNext(r))}</span></div><p>${esc(SEAT_RULES[k].text)}</p>${extra}
-    <details${changing ? ' open' : ''}><summary class="small">Change the rule or its timing</summary>${seatForm('seatrulesel', 'seatevery', d.k, d.every)}
+    <details${changing ? ' open' : ''}><summary class="small">Change the rule or its timing</summary>${seatForm('seatrulesel', 'seatevery', d.k, d.every, d.now)}
     <p class="muted small">Changing the rule costs ${SEAT_CHANGE_PREST} prestige and it can't change again for ${SEAT_COOLDOWN} years; the timing alone is free. The less control a rule keeps, the more prestige a year it earns, the more challengers it draws and the readier ambitious trainers are to sign. Called challenges and title claims are only for the Protected rule.</p>
     ${changing && block ? `<p class="muted small">${esc(block)}</p>` : `<button class="btn small primary" data-act="seatset">${changing ? `Change to ${esc(seatRuleName(d.k))}` : 'Set timing'}</button>`}</details></section>`;
 }
@@ -928,7 +937,7 @@ document.addEventListener('click', ev => {
     case 'watchseat': { const r = (S.seatLogs || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'steerall': { const st = el.dataset.v; let n = 0; inLeague(ME(), () => { for (const p of steerPosts()) if (answersOnType(p.t, st)) { setSteer(p.key, st); n++; } }); save(); render(); toast(`${steerName(st)} set on ${n} post${n === 1 ? '' : 's'}`); break; }
     case 'callopen': callOpen = !callOpen; render(); break;
-    case 'seatset': { const d = seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })); const w = setSeatRule(d.k, d.every); if (!w) seatDraft = null; save(); render(); toast(w || 'Seat rule set.'); break; }
+    case 'seatset': { const d = seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every, now: !!seatRule().now })); const w = setSeatRule(d.k, d.every, d.now); if (!w) seatDraft = null; save(); render(); toast(w || 'Seat rule set.'); break; }
     case 'seatlobby': { const w = lobbySeat(+el.dataset.id); save(); render(); toast(w || 'You lobbied the Council.'); break; }
     case 'seatpick': { const w = termPick(+el.dataset.id); save(); render(); toast(w || 'Appointed.'); break; }
     case 'callchal': { const err = callChallenge(+el.dataset.id); if (!err) callOpen = false; save(); render(); toast(err || 'Challenge called.'); break; }
@@ -1012,10 +1021,12 @@ document.addEventListener('change', e => {
   // (0.42.0) a theme picked fills the four fields (typed names are cleared)
   if (e.target && e.target.id === 'setposttheme') { setupPosts = { theme: e.target.value, names: {} }; render(); return; }
   // (0.43.0) the seat rule pickers
-  if (e.target && e.target.id === 'setseatrule') { setupSeat = { k: e.target.value, every: null }; render(); return; }
+  if (e.target && e.target.id === 'setseatrule') { setupSeat = { k: e.target.value, every: null, now: false }; render(); return; }
+  if (e.target && e.target.id === 'setseatevery-now') { setupSeat.now = e.target.value === '1'; render(); return; }
+  if (e.target && e.target.id === 'seatevery-now') { seatDraft = Object.assign(seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every, now: !!seatRule().now })), { now: e.target.value === '1' }); render(); return; }
   if (e.target && e.target.id === 'setseatevery') { setupSeat.every = +e.target.value; render(); return; }
-  if (e.target && e.target.id === 'seatrulesel') { seatDraft = { k: e.target.value, every: null }; render(); return; }
-  if (e.target && e.target.id === 'seatevery') { seatDraft = Object.assign(seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every })), { every: +e.target.value }); render(); return; }
+  if (e.target && e.target.id === 'seatrulesel') { seatDraft = { k: e.target.value, every: null, now: false }; render(); return; }
+  if (e.target && e.target.id === 'seatevery') { seatDraft = Object.assign(seatDraft || inLeague(ME(), () => ({ k: seatRuleKey(), every: seatRule().every, now: !!seatRule().now })), { every: +e.target.value }); render(); return; }
   if (e.target && e.target.id === 'lgposttheme' && lgPostsDraft) { lgPostsDraft = { theme: e.target.value, names: {} }; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivaltheme')) { setupRivalThemes[+e.target.dataset.i] = e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
