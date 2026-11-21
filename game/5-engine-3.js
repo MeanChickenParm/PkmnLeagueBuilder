@@ -285,24 +285,77 @@ const FAMOUS = [
   { name: 'Greevil', cls: 'Cipher Grand Master', spec: null, age: 60, g: 'm', team: ['Rhyhorn', ['Exeggcute', 'Tauros']] },
   { name: 'Exol', cls: 'Cipher Cmdr', spec: null, age: 30, g: 'm', team: ['Whismur', ['Girafarig', 'Mawile', 'Pikachu']] },
   { name: 'Zook', cls: 'Street Thug', spec: 'Normal', age: 22, g: 'm', team: ['Zangoose'] },
+  // Orre: Pokémon Colosseum (0.47.0)
+  { name: 'Wes', cls: 'Snagger', spec: null, age: 17, g: 'm', team: ['Espeon', ['Umbreon']] },
+  { name: 'Rui', cls: 'Pokémon Trainer', spec: null, age: 15, g: 'f', team: ['Plusle', ['Minun', 'Togepi', 'Teddiursa']] },
+  { name: 'Evice', cls: 'Cipher Head', spec: null, age: 55, g: 'm', team: ['Rhyhorn', ['Slowpoke', 'Tauros', 'Gligar']] },
+  { name: 'Nascour', cls: 'Cipher Admin', spec: null, age: 40, g: 'm', team: ['Psyduck', ['Smoochum', 'Horsea', 'Natu']] },
+  { name: 'Dakim', cls: 'Cipher Admin', spec: null, age: 35, g: 'm', team: ['Cubone', ['Mudkip', 'Sandshrew', 'Makuhita']] },
+  { name: 'Venus', cls: 'Cipher Admin', spec: null, age: 25, g: 'f', team: ['Skitty', ['Oddish', 'Seel', 'Snubbull']] },
+  { name: 'Ein', cls: 'Cipher Admin', spec: null, age: 30, g: 'm', team: ['Ralts', ['Spinda', 'Rhyhorn', 'Sneasel']] },
+  // Legends: Arceus (0.47.0)
+  { name: 'Adaman', cls: 'Diamond Clan Leader', spec: 'Grass', age: 18, g: 'm', team: ['Leafeon', ['Budew', 'Eevee', 'Bonsly']] },
+  { name: 'Irida', cls: 'Pearl Clan Leader', spec: 'Ice', age: 16, g: 'f', team: ['Glaceon', ['Snorunt', 'Sneasel', 'Eevee']] },
+  { name: 'Kamado', cls: 'Galaxy Team Commander', spec: null, age: 45, g: 'm', team: ['Heracross', ['Munchlax', 'Growlithe', 'Stantler']] },
+  { name: 'Laventon', cls: 'Pokémon Professor', spec: null, age: 30, g: 'm', team: ['Bidoof', ['Starly', 'Shinx', 'Rowlet']] },
+  // Legends: Z-A (0.47.0)
+  { name: 'AZ', cls: 'Hotel Z Owner', spec: null, age: 80, g: 'm', team: ['Floette', ['Golett', 'Sigilyph', 'Torkoal']] },
+  { name: 'Urbain', cls: 'Rival', spec: null, age: 16, g: 'm', team: ['Tepig', ['Chikorita', 'Totodile', 'Fletchling']] },
+  { name: 'Taunie', cls: 'Rival', spec: null, age: 16, g: 'f', team: ['Totodile', ['Chikorita', 'Tepig', 'Flabébé']] },
+  { name: 'Lida', cls: 'Team MZ Member', spec: null, age: 15, g: 'f', team: ['Staryu', ['Shellder', 'Psyduck', 'Skrelp']] },
+  { name: 'Mable', cls: 'Pokémon Professor', spec: null, age: 30, g: 'f', team: ['Pichu', ['Fletchling', 'Flabébé', 'Bunnelby']] },
+  { name: 'Corbeau', cls: 'Rust Syndicate Boss', spec: null, age: 40, g: 'm', team: ['Ekans', ['Houndour', 'Larvitar', 'Koffing']] },
+  // Kalos Battle Maison (0.47.0)
+  { name: 'Evelyn', cls: 'Battle Chatelaine', spec: null, age: 20, g: 'f', team: ['Litleo', ['Fennekin', 'Ponyta']] },
+  { name: 'Dana', cls: 'Battle Chatelaine', spec: null, age: 20, g: 'f', team: ['Eevee', ['Flabébé', 'Snorunt']] },
+  { name: 'Morgan', cls: 'Battle Chatelaine', spec: null, age: 20, g: 'f', team: ['Honedge', ['Charmander', 'Froakie']] },
+  { name: 'Nita', cls: 'Battle Chatelaine', spec: null, age: 20, g: 'f', team: ['Lapras', ['Chespin', 'Skiddo']] },
+  // More villains (0.47.0)
+  { name: 'Proton', cls: 'Rocket Executive', spec: 'Poison', age: 28, g: 'm', team: ['Koffing', ['Zubat', 'Grimer']] },
+  { name: 'Petrel', cls: 'Rocket Executive', spec: 'Poison', age: 32, g: 'm', team: ['Koffing', ['Zubat', 'Ekans']] },
+  { name: 'Tabitha', cls: 'Magma Admin', spec: 'Fire', age: 30, g: 'm', team: ['Numel', ['Slugma', 'Torkoal']] },
+  { name: 'Charon', cls: 'Galactic Commander', spec: 'Electric', age: 60, g: 'm', team: ['Rotom', ['Magnemite', 'Voltorb']] },
+  { name: 'Zinzolin', cls: 'Plasma Sage', spec: 'Ice', age: 55, g: 'm', team: ['Sneasel', ['Cryogonal', 'Vanillite']] },
+  { name: 'Xerosic', cls: 'Flare Scientist', spec: null, age: 45, g: 'm', team: ['Corphish', ['Inkay', 'Purrloin', 'Zubat']] },
+  { name: 'Faba', cls: 'Aether Branch Chief', spec: 'Psychic', age: 35, g: 'm', team: ['Drowzee', ['Slowpoke', 'Bruxish']] },
+  { name: 'Sierra', cls: 'GO Rocket Leader', spec: null, age: 25, g: 'f', team: ['Sneasel', ['Beldum', 'Houndour', 'Lapras']] },
+  { name: 'Arlo', cls: 'GO Rocket Leader', spec: null, age: 30, g: 'm', team: ['Scyther', ['Mawile', 'Bulbasaur', 'Magnemite']] },
+  { name: 'Cliff', cls: 'GO Rocket Leader', spec: null, age: 35, g: 'm', team: ['Cubone', ['Onix', 'Omanyte', 'Pinsir']] },
+  // Story trainers (0.47.0)
+  { name: 'Zinnia', cls: 'Lorekeeper', spec: 'Dragon', age: 20, g: 'f', team: ['Bagon', ['Swablu', 'Goomy', 'Noibat']] },
+  { name: 'Eusine', cls: 'Mystic', spec: null, age: 25, g: 'm', team: ['Gastly', ['Drowzee', 'Voltorb']] },
+  { name: 'Looker', cls: 'International Police', spec: null, age: 45, g: 'm', team: ['Croagunk', ['Snorunt', 'Luvdisc']] },
+  { name: 'Cheryl', cls: 'Pokémon Trainer', spec: null, age: 25, g: 'f', team: ['Happiny', ['Burmy', 'Combee']] },
+  { name: 'Mira', cls: 'Pokémon Trainer', spec: 'Psychic', age: 12, g: 'f', team: ['Abra', ['Bronzor', 'Chingling']] },
+  { name: 'Riley', cls: 'Pokémon Trainer', spec: 'Steel', age: 25, g: 'm', team: ['Riolu', ['Onix', 'Magnemite']] },
+  { name: 'Buck', cls: 'Pokémon Trainer', spec: null, age: 18, g: 'm', team: ['Baltoy', ['Bonsly', 'Swinub']] },
+  { name: 'Marley', cls: 'Pokémon Trainer', spec: null, age: 14, g: 'f', team: ['Growlithe', ['Shuckle', 'Ambipom']] },
+  // More from the anime (0.47.0)
+  { name: 'Jessie', cls: 'Team Rocket Agent', spec: null, age: 25, g: 'f', team: ['Ekans', ['Wobbuffet', 'Seviper', 'Dustox']] },
+  { name: 'James', cls: 'Team Rocket Agent', spec: null, age: 25, g: 'm', team: ['Koffing', ['Bellsprout', 'Mime Jr.', 'Carnivine']] },
+  { name: 'Solidad', cls: 'Coordinator', spec: null, age: 20, g: 'f', team: ['Slowpoke', ['Lapras', 'Caterpie', 'Pidgey']] },
+  { name: 'Harley', cls: 'Coordinator', spec: null, age: 22, g: 'm', team: ['Cacnea', ['Wurmple', 'Spinarak', 'Banette']] },
+  { name: 'Nando', cls: 'Coordinator', spec: null, age: 15, g: 'm', team: ['Kricketot', ['Budew', 'Sunkern']] },
+  { name: 'Amethio', cls: 'Explorers Commander', spec: null, age: 17, g: 'm', team: ['Charcadet', ['Sneasel', 'Houndour']] },
+  { name: 'Spinel', cls: 'Explorers Commander', spec: null, age: 25, g: 'm', team: ['Eevee', ['Zorua', 'Murkrow']] },
 ];
 // What each famous trainer is known as in the games and anime. A trainer can hold several.
 const FAMOUS_TAG_LABELS = { hero: 'Player Character', orre: 'Orre', brain: 'Frontier Brain', leader: 'Gym Leader', kahuna: 'Island Kahuna', captain: 'Trial Captain', e4: 'Elite Four', champ: 'Champion', anime: 'Anime', rival: 'Rival', boss: 'Villain', prof: 'Professor', go: 'Pokémon GO' };
-const FAMOUS_TAG_PLURAL = { hero: 'Player characters', orre: 'Orre (XD)', brain: 'Frontier Brains', leader: 'Gym Leaders', kahuna: 'Island Kahunas', captain: 'Trial Captains', e4: 'Elite Four', champ: 'Champions', anime: 'Anime characters', rival: 'Rivals', boss: 'Villains', prof: 'Professors', go: 'Pokémon GO' };
+const FAMOUS_TAG_PLURAL = { hero: 'Player characters', orre: 'Orre', brain: 'Frontier Brains', leader: 'Gym Leaders', kahuna: 'Island Kahunas', captain: 'Trial Captains', e4: 'Elite Four', champ: 'Champions', anime: 'Anime characters', rival: 'Rivals', boss: 'Villains', prof: 'Professors', go: 'Pokémon GO' };
 const FAMOUS_TAG_LIST = {
   leader: ['Brock', 'Misty', 'Lt. Surge', 'Erika', 'Koga', 'Sabrina', 'Blaine', 'Giovanni', 'Blue', 'Falkner', 'Bugsy', 'Whitney', 'Morty', 'Chuck', 'Jasmine', 'Pryce', 'Clair', 'Janine', 'Roxanne', 'Brawly', 'Wattson', 'Flannery', 'Norman', 'Winona', 'Tate & Liza', 'Wallace', 'Juan', 'Roark', 'Gardenia', 'Maylene', 'Crasher Wake', 'Fantina', 'Byron', 'Candice', 'Volkner', 'Cilan', 'Chili', 'Cress', 'Lenora', 'Burgh', 'Elesa', 'Clay', 'Skyla', 'Brycen', 'Drayden', 'Iris', 'Cheren', 'Roxie', 'Marlon', 'Viola', 'Grant', 'Korrina', 'Ramos', 'Clemont', 'Valerie', 'Olympia', 'Wulfric', 'Milo', 'Nessa', 'Kabu', 'Bea', 'Allister', 'Opal', 'Gordie', 'Melony', 'Piers', 'Raihan', 'Bede', 'Marnie', 'Katy', 'Brassius', 'Iono', 'Kofu', 'Larry', 'Ryme', 'Tulip', 'Grusha'],
-  brain: ['Noland', 'Greta', 'Tucker', 'Lucy', 'Spenser', 'Brandon', 'Anabel', 'Palmer', 'Thorton', 'Dahlia', 'Darach', 'Argenta', 'Ingo', 'Emmet'],
+  brain: ['Noland', 'Greta', 'Tucker', 'Lucy', 'Spenser', 'Brandon', 'Anabel', 'Palmer', 'Thorton', 'Dahlia', 'Darach', 'Argenta', 'Ingo', 'Emmet', 'Evelyn', 'Dana', 'Morgan', 'Nita'],
   kahuna: ['Hala', 'Olivia', 'Nanu', 'Hapu'],
   captain: ['Ilima', 'Lana', 'Kiawe', 'Mallow', 'Sophocles', 'Acerola', 'Mina'],
-  prof: ['Oak', 'Elm', 'Birch', 'Rowan', 'Juniper', 'Sycamore', 'Kukui', 'Magnolia', 'Sonia', 'Sada', 'Turo', 'Krane', 'Willow'],
-  go: ['Candela', 'Blanche', 'Spark', 'Willow'],
-  hero: ['Red', 'Leaf', 'Ethan', 'Lyra', 'Kris', 'Brendan', 'May', 'Lucas', 'Dawn', 'Hilbert', 'Hilda', 'Nate', 'Rosa', 'Calem', 'Serena', 'Elio', 'Selene', 'Victor', 'Gloria', 'Florian', 'Juliana', 'Rei', 'Akari', 'Michael'],
-  orre: ['Michael', 'Jovi', 'Krane', 'Duking', 'Gonzap', 'Miror B.', 'Lovrina', 'Snattle', 'Gorigan', 'Ardos', 'Eldes', 'Greevil', 'Exol', 'Zook'],
-  boss: ['Mela', 'Atticus', 'Ortega', 'Eri', 'Giacomo', 'Greevil', 'Ardos', 'Eldes', 'Lovrina', 'Snattle', 'Gorigan', 'Exol', 'Gonzap', 'Miror B.', 'Giovanni', 'Guzma', 'Plumeria', 'Lusamine', 'Rose', 'Penny', 'Maxie', 'Archie', 'Cyrus', 'Ghetsis', 'Lysandre', 'Volo', 'Archer', 'Ariana', 'Courtney', 'Matt', 'Shelly', 'Mars', 'Jupiter', 'Saturn', 'Colress'],
+  prof: ['Oak', 'Elm', 'Birch', 'Rowan', 'Juniper', 'Sycamore', 'Kukui', 'Magnolia', 'Sonia', 'Sada', 'Turo', 'Krane', 'Willow', 'Laventon', 'Mable'],
+  go: ['Candela', 'Blanche', 'Spark', 'Willow', 'Sierra', 'Arlo', 'Cliff'],
+  hero: ['Red', 'Leaf', 'Ethan', 'Lyra', 'Kris', 'Brendan', 'May', 'Lucas', 'Dawn', 'Hilbert', 'Hilda', 'Nate', 'Rosa', 'Calem', 'Serena', 'Elio', 'Selene', 'Victor', 'Gloria', 'Florian', 'Juliana', 'Rei', 'Akari', 'Michael', 'Wes', 'Urbain', 'Taunie'],
+  orre: ['Michael', 'Jovi', 'Krane', 'Duking', 'Gonzap', 'Miror B.', 'Lovrina', 'Snattle', 'Gorigan', 'Ardos', 'Eldes', 'Greevil', 'Exol', 'Zook', 'Wes', 'Rui', 'Evice', 'Nascour', 'Dakim', 'Venus', 'Ein'],
+  boss: ['Mela', 'Atticus', 'Ortega', 'Eri', 'Giacomo', 'Greevil', 'Ardos', 'Eldes', 'Lovrina', 'Snattle', 'Gorigan', 'Exol', 'Gonzap', 'Miror B.', 'Giovanni', 'Guzma', 'Plumeria', 'Lusamine', 'Rose', 'Penny', 'Maxie', 'Archie', 'Cyrus', 'Ghetsis', 'Lysandre', 'Volo', 'Archer', 'Ariana', 'Courtney', 'Matt', 'Shelly', 'Mars', 'Jupiter', 'Saturn', 'Colress', 'Evice', 'Nascour', 'Dakim', 'Venus', 'Ein', 'Corbeau', 'Kamado', 'Proton', 'Petrel', 'Tabitha', 'Charon', 'Zinzolin', 'Xerosic', 'Faba', 'Sierra', 'Arlo', 'Cliff', 'Jessie', 'James', 'Amethio', 'Spinel'],
   e4: ['Lacey', 'Drayton', 'Crispin', 'Amarys', 'Rika', 'Poppy', 'Larry', 'Hassel', 'Hala', 'Olivia', 'Acerola', 'Kahili', 'Molayne', 'Lorelei', 'Bruno', 'Agatha', 'Lance', 'Koga', 'Will', 'Karen', 'Sidney', 'Phoebe', 'Glacia', 'Drake', 'Aaron', 'Bertha', 'Flint', 'Lucian', 'Shauntal', 'Grimsley', 'Caitlin', 'Marshal', 'Malva', 'Siebold', 'Wikstrom', 'Drasna'],
   champ: ['Blue', 'Red', 'Lance', 'Steven', 'Wallace', 'Cynthia', 'Alder', 'Iris', 'Diantha', 'Kukui', 'Leon', 'Geeta', 'Nemona', 'Kieran'],
-  anime: ['Drew', 'Zoey', 'Ursula', 'Kenny', 'Ash', 'Misty', 'Brock', 'Gary', 'Tracey', 'May', 'Max', 'Dawn', 'Iris', 'Cilan', 'Clemont', 'Serena', 'Lana', 'Kiawe', 'Mallow', 'Sophocles', 'Lillie', 'Kukui', 'Gladion', 'Hau', 'Oak', 'Juniper', 'Leon', 'Goh', 'Chloe', 'Raihan', 'Liko', 'Roy', 'Dot', 'Friede', 'Paul', 'Trip', 'Alain', 'Tobias', 'Sawyer', 'Ritchie', 'Harrison', 'Morrison', 'Cameron'],
-  rival: ['Hugh', 'Shauna', 'Tierno', 'Trevor', 'Carmine', 'Klara', 'Avery', 'Drew', 'Zoey', 'Ursula', 'Kenny', 'Blue', 'Gary', 'Silver', 'Brendan', 'Wally', 'Barry', 'Cheren', 'Bianca', 'N', 'Calem', 'Hau', 'Gladion', 'Hop', 'Marnie', 'Bede', 'Nemona', 'Arven', 'Kieran', 'Paul', 'Trip', 'Alain', 'Tobias', 'Sawyer', 'Ritchie', 'Harrison', 'Morrison', 'Cameron'],
+  anime: ['Drew', 'Zoey', 'Ursula', 'Kenny', 'Ash', 'Misty', 'Brock', 'Gary', 'Tracey', 'May', 'Max', 'Dawn', 'Iris', 'Cilan', 'Clemont', 'Serena', 'Lana', 'Kiawe', 'Mallow', 'Sophocles', 'Lillie', 'Kukui', 'Gladion', 'Hau', 'Oak', 'Juniper', 'Leon', 'Goh', 'Chloe', 'Raihan', 'Liko', 'Roy', 'Dot', 'Friede', 'Paul', 'Trip', 'Alain', 'Tobias', 'Sawyer', 'Ritchie', 'Harrison', 'Morrison', 'Cameron', 'Jessie', 'James', 'Solidad', 'Harley', 'Nando', 'Amethio', 'Spinel', 'Looker'],
+  rival: ['Hugh', 'Shauna', 'Tierno', 'Trevor', 'Carmine', 'Klara', 'Avery', 'Drew', 'Zoey', 'Ursula', 'Kenny', 'Blue', 'Gary', 'Silver', 'Brendan', 'Wally', 'Barry', 'Cheren', 'Bianca', 'N', 'Calem', 'Hau', 'Gladion', 'Hop', 'Marnie', 'Bede', 'Nemona', 'Arven', 'Kieran', 'Paul', 'Trip', 'Alain', 'Tobias', 'Sawyer', 'Ritchie', 'Harrison', 'Morrison', 'Cameron', 'Urbain', 'Taunie', 'Adaman', 'Irida', 'Solidad', 'Harley', 'Nando'],
 };
 for (const f of FAMOUS) f.tags = Object.keys(FAMOUS_TAG_LIST).filter(k => FAMOUS_TAG_LIST[k].includes(f.name));
 // Optional packs of famous trainers from outside Pokémon, switched on in Advanced options when a league is created.
@@ -531,6 +584,7 @@ Object.assign(FAMOUS_TRAITS, { 'Shai Gilgeous-Alexander': 'clutch', 'Nikola Joki
   'Rhea Ripley': 'competitor', Naomi: 'streaky', 'Stephanie Vaquer': 'clutch', 'Chelsea Green': 'streaky',
   'Randy Orton': 'clutch', 'AJ Styles': 'lateBloomer', 'LA Knight': 'streaky', 'Logan Paul': 'streaky', 'Kevin Owens': 'hothead', 'Dominik Mysterio': 'streaky', 'Bronson Reed': 'hothead', 'Chad Gable': 'grinder', 'Alexa Bliss': 'streaky', 'Raquel Rodriguez': 'hothead', 'The Undertaker': 'steady', 'Steve Austin': 'hothead', 'The Rock': 'competitor', 'Triple H': 'mentor', 'Shawn Michaels': 'clutch', 'Cade Cunningham': 'competitor', 'Donovan Mitchell': 'streaky', 'Tyrese Maxey': 'steady', 'Karl-Anthony Towns': 'streaky', 'Ja Morant': 'hothead', 'Devin Booker': 'steady', 'Kyrie Irving': 'streaky', 'Damian Lillard': 'clutch', 'Anthony Davis': 'streaky', 'Tyrese Haliburton': 'clutch', 'Chet Holmgren': 'lateBloomer', 'Cooper Flagg': 'lateBloomer', 'Bill Russell': 'mentor', 'Wilt Chamberlain': 'competitor', 'Kevin Garnett': 'hothead', 'Allen Iverson': 'streaky', 'Dwyane Wade': 'clutch', 'Dennis Rodman': 'hothead', 'Scottie Pippen': 'steady', 'Charles Barkley': 'hothead', 'Karl Malone': 'steady', 'Chris Paul': 'mentor', 'Russell Westbrook': 'hothead', 'Steve Nash': 'mentor', 'Julius Erving': 'steady', 'Isiah Thomas': 'competitor',
   'Freddy Krueger': 'streaky', 'Kratos': 'hothead', 'Jason Voorhees': 'steady', 'Predator': 'competitor', 'Alien': 'hothead', 'Leatherface': 'streaky', 'T-800': 'steady', 'Spawn': 'clutch', 'RoboCop': 'grinder', 'Rambo': 'grinder', 'Omni-Man': 'competitor', 'Homelander': 'hothead', 'Peacemaker': 'streaky', 'Ghostface': 'streaky', 'T-1000': 'steady', 'Conan': 'grinder' });
+Object.assign(FAMOUS_TRAITS, { Wes: 'clutch', Rui: 'collector', Evice: 'competitor', Nascour: 'steady', Dakim: 'hothead', Venus: 'streaky', Ein: 'collector', Adaman: 'hothead', Irida: 'steady', Kamado: 'grinder', Laventon: 'collector', AZ: 'steady', Urbain: 'competitor', Taunie: 'competitor', Lida: 'streaky', Mable: 'collector', Corbeau: 'hothead', Evelyn: 'streaky', Dana: 'steady', Morgan: 'competitor', Nita: 'clutch', Proton: 'hothead', Petrel: 'streaky', Tabitha: 'grinder', Charon: 'collector', Zinzolin: 'steady', Xerosic: 'collector', Faba: 'hothead', Sierra: 'clutch', Arlo: 'steady', Cliff: 'grinder', Zinnia: 'clutch', Eusine: 'collector', Looker: 'steady', Cheryl: 'steady', Mira: 'lateBloomer', Riley: 'steady', Buck: 'hothead', Marley: 'lateBloomer', Jessie: 'hothead', James: 'streaky', Solidad: 'steady', Harley: 'hothead', Nando: 'lateBloomer', Amethio: 'competitor', Spinel: 'clutch' });
 const BASE_FAMOUS = FAMOUS.filter(f => !f.pack).length;
 const packOn = k => !!(S && S.cfg && (S.cfg.packs || []).includes(k));
 // v176: the game's own famous trainers can be switched off too (S.cfg.baseOff); older leagues keep them on

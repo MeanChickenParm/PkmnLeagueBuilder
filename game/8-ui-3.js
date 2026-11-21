@@ -1,5 +1,10 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 47, ver: '0.47.0', date: 'November 21, 2026', time: '12:05 PM ET', title: 'More famous trainers', items: [
+    "46 new famous trainers can turn up on the circuit and as hires: the Colosseum cast (Wes, Rui and Cipher's Evice, Nascour, Dakim, Venus and Ein), Legends: Arceus (Adaman, Irida, Kamado, Professor Laventon) and Legends: Z-A (AZ, Urbain, Taunie, Lida, Professor Mable, Corbeau).",
+    "Also new: Kalos's Battle Chatelaines (Evelyn, Dana, Morgan, Nita), more villains (Proton, Petrel, Tabitha, Charon, Zinzolin, Xerosic, Faba, and GO Rocket's Sierra, Arlo and Cliff), story trainers (Zinnia, Eusine, Looker, and Platinum's Cheryl, Mira, Riley, Buck and Marley) and anime favourites (Jessie, James, Solidad, Harley, Nando, Amethio, Spinel).",
+    "The Orre group in the famous trainer filters now covers both Colosseum and XD.",
+  ] },
   { id: 46, ver: '0.46.0', date: 'November 20, 2026', time: '9:50 PM ET', title: 'An Instant Conqueror', items: [
     "The Conqueror seat rule now has a timing: Instant or At New Year. Pick it beside the rule on Your staff or at setup; changing only the timing is free.",
     "Instant: whoever beats your Champion takes the seat as soon as their run is over, any week of the year, as in the main games. There is no grace for a new Champion, so the seat can change hands several times in a year.",
