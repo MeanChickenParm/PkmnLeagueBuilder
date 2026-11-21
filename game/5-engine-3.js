@@ -667,6 +667,7 @@ function applyDex(d) {
         // (0.31.0) a custom region's own Pokémon: e.reg names the region; e.home (a region index) keeps it there (locked)
         if (e.reg) SP[e.name].regionSp = e.reg;
         if (Number.isInteger(e.home)) SP[e.name].homeOnly = e.home;
+        if (Array.isArray(e.egg) && e.egg.length) SP[e.name].egg = e.egg.slice(); // (0.45.0)
         BASE_STATS[e.name] = e.stats.slice(); SPECIES_AB[e.name] = abOf(e); DEX_ADDED.push(e.name);
         if (e.from) { const p = SP[e.from]; p.evos = (p.evos || []).concat({ to: e.name, lvl: e.lvl }); p.evo = p.evos[0]; }
         left.splice(i--, 1); moved = true;
@@ -772,6 +773,8 @@ function dexNorm(e) {
   const out = { name: String(e.name || '').trim(), types, stats, ab };
   if (e.from) { out.from = String(e.from).trim(); out.lvl = Number(e.lvl); }
   if (e.legend) out.legend = true; else { if (e.rare) out.rare = true; if (e.starter) out.starter = true; }
+  // (0.45.0) egg groups for breeding: one or two known groups, else none (it takes one from its type)
+  if (Array.isArray(e.egg)) { const eg = [...new Set(e.egg.map(String).filter(k => EGG_NAMES[k] && k !== 'Dit'))].slice(0, 2); if (eg.length && !(eg.includes('Und') && eg.length > 1)) out.egg = eg; }
   return out;
 }
 const dexStrip = e => ({ types: e.types, stats: e.stats, ab: e.ab });
@@ -1709,6 +1712,8 @@ const UPGRADES = {
   lane:    { name: 'Shipping lane',   text: 'Only in a port city (Goldenrod: the railway). Choose a region on the Ranch page: its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 400 a week on top of upkeep; changing the route costs 10,000.', port: true, max: 1, cost: [60000] },
   // (0.27.0) the safari: one per League, in a gym city; foreign Pokémon for its own trips, changing every few months
   safari:  { name: 'Safari Zone',     text: 'One per League, in a gym city. Holds 10 Pokémon from other regions (13, 16 at levels 2 and 3), changing every 12 weeks, that only your targeted trips can catch; each level also makes those finds better.', one: true },
+  // (0.45.0) the Day Care: breeds from the League's breeding pool (the Ranch page's Day Care tab)
+  daycare: { name: 'Day Care',        text: 'Seat only, takes no slot. Breeds Pokémon from your breeding pool (Ranch page, Day Care tab): 1 pair at once, then 2, 3, 4, 5, with an egg every 10 weeks, down to 6 at level 5, and slightly better odds of a condition each level.', seat: true, slotless: true, max: 5, cost: [40000, 80000, 160000, 320000, 640000] },
   academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
 };
 const upMax = k => UPGRADES[k].max || 3;
@@ -2028,9 +2033,9 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires

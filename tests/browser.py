@@ -368,6 +368,26 @@ async def run(path):
                             go('ranch'); rtab('region'); const back = document.querySelector('[data-act=safaritake][data-id="' + id + '"]'); if (!back) log.push('FAIL no take-back button'); else if (!back.disabled) { back.click(); if (inLeague(0, () => safariStock()).some(x => x.uid === id) || !R().mons.some(x => x.uid === id)) log.push('FAIL taking a stocked Pokémon back'); } } } }
                       go('ranch'); rtab('trips'); if (!/Recent history/.test(txt()) || !document.querySelectorAll('#ranchlog tbody tr').length) log.push('FAIL no ranch log'); else log.push('the ranch log has ' + document.querySelectorAll('#ranchlog tbody tr').length + ' rows');
                       if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Ranch page shows undefined after the safari steps'); rtab('pool'); }
+                    // 0.45.0: the Day Care: build it, put two Pokémon that share an egg group in to breed from the Pool tab, start a
+                    // pair on the Day Care tab, hatch an egg and end the pair
+                    { S.fin.money = 2000000; go('cities'); const db = document.querySelector('[data-act=build][data-w=seat][data-k=daycare]');
+                      if (!db) log.push('FAIL no Day Care to build'); else { const m0 = S.fin.money; db.click(); if (!inLeague(0, () => dcBuilt()) || S.fin.money !== m0 - 40000) log.push('FAIL building the Day Care'); else log.push('built the Day Care'); }
+                      const txt = () => document.querySelector('#main').textContent;
+                      go('ranch'); rtab('pool'); const show = document.querySelector('select.ranchf[data-f=show]'); if (show) { show.value = 'all'; show.dispatchEvent(new Event('change', { bubbles: true })); }
+                      const btns = [...document.querySelectorAll('[data-act=ranchbreed]:not([data-ask])')].map(b => ({ b, e: R().mons.find(x => x.uid === +b.dataset.id) })).filter(x => x.e);
+                      let pr = null; for (const x of btns) for (const y of btns) if (!pr && x.e.uid !== y.e.uid && x.e.b !== y.e.b && inLeague(0, () => eggMatch(x.e.b, y.e.b))) pr = [x.e.uid, y.e.uid];
+                      if (!pr) log.push('no two ranch Pokémon share an egg group');
+                      else { const n0 = R().mons.length; for (const id of pr) { const b = document.querySelector('[data-act=ranchbreed][data-id="' + id + '"]'); if (!b) log.push('FAIL no Breed button'); else b.click(); }
+                        const P = inLeague(0, () => dcPool()); if (P.length !== 2 || R().mons.length !== n0 - 2) log.push('FAIL putting two in to breed'); else log.push('put in to breed ' + P.map(e => e.sp).join(' and '));
+                        rtab('daycare'); if (!document.querySelector('#dcpool') || !/Breeding pool/.test(txt())) log.push('FAIL no breeding pool table');
+                        const sa = document.querySelector('select.dcsel[data-k=a]'); if (!sa) log.push('FAIL no pair picker'); else { sa.value = String(pr[0]); sa.dispatchEvent(new Event('change', { bubbles: true }));
+                          const sb = document.querySelector('select.dcsel[data-k=b]'); sb.value = String(pr[1]); sb.dispatchEvent(new Event('change', { bubbles: true }));
+                          const pb = document.querySelector('[data-act=dcpair]'); if (!pb || pb.disabled) log.push('FAIL no Start the pair button'); else { pb.click(); const D = R().dc;
+                            if (D.pairs.length !== 1) log.push('FAIL starting a pair'); else { log.push('a pair started');
+                              const n1 = R().mons.length; D.pairs[0].due = S.turn; inLeague(0, () => breedWeek());
+                              const y = R().mons.find(e => e.from === 'bred'); if (!y && !D.wait.length) log.push('FAIL the egg did not hatch'); else log.push('hatched ' + (y ? y.sp + ' ' + y.g + '★' : 'one waiting for room'));
+                              go('ranch'); rtab('daycare'); const eb = document.querySelector('[data-act=dcend]'); if (!eb) log.push('FAIL no End pair button'); else { eb.click(); if (R().dc.pairs.length) log.push('FAIL ending a pair'); } } } } }
+                      if (/undefined|NaN|\[object/.test(txt())) log.push('FAIL the Day Care tab shows undefined'); rtab('pool'); }
                     S.fin.money = keep; go('ranch'); }
                   log.push('managed staff'); go('circuit'); }
                 // 0.11.0: seat challenges waiting for the player. Approve one for the Champion's seat (it is fought at

@@ -281,3 +281,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - Not built: watching Cup and Gauntlet battles from the year report (the Cup final and a Gauntlet's last battle are kept in `S.seatLogs`, but the year report lists the seat rule's events as text only).
 - Open: whether rival Leagues should be able to pick their rule at setup (Advanced → Where rival Leagues start), as with themes.
 
+## Left over from breeding (0.45.0)
+- **All the numbers are provisional** (item 50): 5 years in the pool, half upkeep, the retiree's price (half the value), 8 weeks' notice, the Day Care's prices, pairs (1 to 5) and egg times (10 to 6 weeks), the IV rule (the better parent's 70% of the time, + 1 to 4), conditions ×2 and ×5 with 10% more a level, 8 weeks waiting for room, the AI's 2 a month.
+- **Egg groups are typed in by hand** (`EGG_RAW`) for the 424 lines' first stages, from the games; worth a check. Babies' lines use the grown-up's groups; Undiscovered lines (Unown, the Galar fossils, Gimmighoul) can't breed. Custom species with no egg field take one from their main type (`TYPE_EGG`).
+- **Not measured:** how breeding moves the wall or the economy. In 12-year sims an AI League's pool reached about 40 with 4 pairs; its offspring rarely beat their parents' grade, because rivals mostly breed their best (grade 5) Pokémon.
+- **The AI never ends a pair** and keeps every parent until it expires or is bumped.
+- **Bred Pokémon and the regional Pokédex (6.22, not built):** they register like any ranch Pokémon when the dex is built.
+- **Flaky sim checks.** The hand-placed sim's plan step (`a planned Pokémon left … team`, `the review did not build … plan`) fails now and then on 0.44.0 as well. Seen once on 0.45.0 only (in about six hand-placed runs): `nobody was carried` (leaving the League). **`3 1 12 1` failed twice in six runs on 0.45.0 with `two off-type Pokémon on <an Elite Four member>`** (both ranch Pokémon stamped assigned, in runs where no rival had bred anything); 0.44.0 passed five runs. The cause wasn't found: every `staffPicks` call limits a team to one off-type pick, so a stale `offType` flag carried through a post change is the likeliest suspect. Worth instrumenting (a copy of `sim.js` printing the team and its stamps at the first failure) in the next chat.
+

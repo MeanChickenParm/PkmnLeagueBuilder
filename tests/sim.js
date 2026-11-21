@@ -47,6 +47,7 @@ const RAN = { trips: 0, area: 0, bought: 0, lbought: 0, sold: 0, released: 0, li
 // (0.36.0) conditions in the ranch
 const CON = { hunts: 0, huntRefused: 0, obTrips: 0, held: 0, fielded: 0, shop: 0, kinds: {}, showMax: 0 };
 const SAF = { kept: 0, stocked: 0, taken: 0, stockMax: 0, logMax: 0, keptMax: 0 }; // (0.44.0)
+const BRD = { built: 0, put: 0, refused: 0, pairs: 0, pairRefused: 0, ended: 0, poolMax: 0, pairsMax: 0, waitMax: 0, rivalPool: 0 }; // (0.45.0)
 const REG = { waves: 0, far: 0, lanes: 0, routes: 0, safari: 0, charters: 0, safariTrips: 0, refusedTrips: 0, gapsMax: 0, shopForeign: 0 }; // (0.27.0)
 const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
@@ -130,6 +131,21 @@ function check(tag) {
       if (R.safari && g.safariLv() === R.safari.lv) for (const b of kp) if (!R.safari.lines.includes(b)) bad('a kept line not in the safari');
       const L = R.log || []; if (L.length > g.RANCH_LOG) bad('the ranch log too long'); for (const x of L) if (typeof x.t !== 'number' || typeof x.text !== 'string' || !x.k) bad('a bad ranch log line ' + JSON.stringify(x));
       SAF.stockMax = Math.max(SAF.stockMax, st.length); SAF.logMax = Math.max(SAF.logMax, L.length); SAF.keptMax = Math.max(SAF.keptMax, kp.length); }
+    // (0.45.0) breeding: one parent per line and condition, never in the ranch or on a team, years in range; pairs of
+    // two parents in the pool that share an egg group (or one Ditto), within the Day Care's room, none but Ditto in two
+    { const D = R.dc || { pool: [], pairs: [], wait: [] }, P = D.pool, keys = new Set(), us = new Set(P.map(e => e.uid));
+      for (const e of P) { const k = g.dcKey(e); if (keys.has(k)) bad('two parents of one line and condition'); keys.add(k);
+        if (R.mons.some(x => x.uid === e.uid) || (R.stock || []).some(x => x.uid === e.uid)) bad('a parent still in the ranch');
+        if (e.at != null || e.sale || e.res || e.lock) bad('a parent fielded, listed, reserved or locked'); if (!g.canBreed(e.b)) bad('a parent that cannot breed');
+        if (!(e.until > z.turn - 1 && e.until - e.bin === g.BREED_YEARS * 48)) bad('a parent past its years ' + JSON.stringify({ until: e.until, bin: e.bin, t: z.turn }));
+        if (!(e.g >= 1 && e.g <= 5) || !e.iv) bad('a bad parent'); }
+      for (const id of g.seniorIds()) for (const m of g.T(id).team) if (m.rid != null && us.has(m.rid)) bad('a parent on a team');
+      if (D.pairs.length > g.dcPairs()) bad('more pairs than the Day Care takes'); const inp = {};
+      for (const p of D.pairs) { const a = g.parentOf(p.a), b = g.parentOf(p.b); if (!a || !b) { bad('a pair with a parent gone'); continue; } if (!g.eggMatch(a.b, b.b)) bad('a pair with no egg group in common: ' + a.b + ' ' + b.b);
+        for (const x of [a, b]) if (!g.isDitto(x.b)) { if (inp[x.uid]) bad('a parent in two pairs'); inp[x.uid] = 1; } if (!(p.due >= z.turn)) bad('a pair overdue'); }
+      for (const w of D.wait) if (!(w.until >= z.turn) || !w.e || !g.ranchable(w.e.b)) bad('a bad young one waiting');
+      for (const e of R.mons) if (e.from === 'bred' && (!(e.g >= 1 && e.g <= 5) || (e.c && e.c.shiny && Object.values(e.iv).some(v => v !== 31)))) bad('a bad bred Pokémon');
+      BRD.poolMax = Math.max(BRD.poolMax, P.length); BRD.pairsMax = Math.max(BRD.pairsMax, D.pairs.length); BRD.waitMax = Math.max(BRD.waitMax, D.wait.length); if (i !== g.ME()) BRD.rivalPool = Math.max(BRD.rivalPool, P.length); }
     for (const tr of R.trips) if (tr.k === 'charter' && (tr.r === z.region || !(tr.r >= 0 && tr.r < g.nRegionsBuilt()))) bad('a bad charter');
     if (R.trips.length > g.TRIP_MAX + 3) bad('too many trips');
     const seen = new Set(); let stops = 0;
@@ -386,6 +402,19 @@ for (let i = 0; i < N; i++) {
         if (!w) { SAF.stocked++; if (R.mons.length !== n0 - 1 || R.stock.length !== s0 + 1 || g.ranchUpkeep() !== u0) fail.push('stocking wrong ' + JSON.stringify({ n0, n: R.mons.length, s0, s: R.stock.length, u0, u: g.ranchUpkeep() })); if (!g.lapsed() && !g.safariSet().has(e.b)) fail.push('a stocked line not in the safari'); if (g.tripOk(e.b) && !g.lapsed() && g.tripPlan(e.b).floor !== Math.max(1, g.stockFloor(e.b) - 1)) fail.push('no grade floor for a stocked line'); }
         else if (s0 < g.stockCap()) fail.push('stocking refused: ' + w); }
       else { const e = rnd(R.stock); if (!e) return; const w = g.unstockMon(e.uid); if (!w) { SAF.taken++; if (R.stock.includes(e) || !R.mons.includes(e)) fail.push('taking back wrong'); } else if (g.ranchRoom() > 0) fail.push('take back refused: ' + w); } });
+    // (0.45.0) breeding: build the Day Care from year 2, put Pokémon in (refused when locked, not better, or unbreedable;
+    // a reserved one only with force), start and end pairs; check upkeep at half and the pool's room
+    if (HAND && S().season >= 2) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.founding || g.dcBuilt() || z.fin.money < 0) return;
+      const ck = g.buildCheck('seat', 'daycare'); if (!ck.why && z.fin.money >= ck.cost) { const m0 = z.fin.money; if (!g.build('seat', 'daycare')) { BRD.built++; if (z.fin.money !== m0 - ck.cost) fail.push('Day Care cost wrong'); } } });
+    if (HAND && Math.random() < 0.05) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || z.founding || !g.dcBuilt()) return; const R = z.ranch, D = g.dcState(), r = Math.random();
+      if (r < 0.5) { g.ranchSync(); const e = rnd(R.mons); if (!e) return; const ck = g.breedCheck(e.uid), u0 = g.ranchUpkeep(), n0 = R.mons.length, old = ck && typeof ck === 'object' ? ck.old : null;
+        const w = g.breedIn(e.uid); if (ck && typeof ck === 'object' && ck.ask) { if (!w) fail.push('a reserved or planned Pokémon went in without asking'); if (Math.random() < 0.5) return; const w2 = g.breedIn(e.uid, true); if (w2) fail.push('breeding with force refused: ' + w2); else BRD.put++; }
+        else if (!w) { BRD.put++; if (typeof ck === 'string') fail.push('breeding allowed past ' + ck); if (R.mons.length !== n0 - 1 || !D.pool.includes(e)) fail.push('breeding moved wrong');
+          const want = u0 - 0 - [8, 12, 18, 26, 36][e.g - 1] + Math.round([8, 12, 18, 26, 36][e.g - 1] * g.BREED_UPKEEP) - (old ? Math.round([8, 12, 18, 26, 36][old.g - 1] * g.BREED_UPKEEP) : 0); if (g.ranchUpkeep() !== want) fail.push('breeding upkeep wrong ' + g.ranchUpkeep() + ' ' + want); if (old && D.pool.includes(old)) fail.push('a bumped parent stayed'); }
+        else { BRD.refused++; if (!ck) fail.push('breeding refused: ' + w); } }
+      else if (r < 0.85) { const P = D.pool; if (P.length < 2) return; let a = rnd(P), b = rnd(P); if (Math.random() < 0.7) { const ok = []; for (const x of P) for (const y of P) if (!g.pairCheck(x.uid, y.uid)) ok.push([x, y]); if (ok.length) [a, b] = rnd(ok); } const ck = g.pairCheck(a.uid, b.uid), w = g.startPair(a.uid, b.uid);
+        if (!w) { BRD.pairs++; if (ck) fail.push('a pair past ' + ck); if (!g.eggMatch(a.b, b.b)) fail.push('a pair with no egg group in common'); } else { BRD.pairRefused++; if (!ck) fail.push('pair refused: ' + w); } }
+      else { const p = rnd(D.pairs); if (p && !g.endPair(p.id)) BRD.ended++; } });
     // (0.25.0) the ranch: trips, the market, other Leagues' sales, selling, releasing, locks, reserves and listings
     if (HAND && Math.random() < 0.08) g.inLeague(g.ME(), () => { const z = S(); if (!z.ranch || !z.fin || z.fin.money < 0 || z.founding) return; const r = Math.random(), m0 = z.fin.money;
       if (r < 0.15) { const ok = g.tripOk, b = Math.random() < 0.3 ? rnd(g.ranchSpecies()) : rnd(g.ranchSpecies().filter(x => ok(x))), p = g.tripPlan(b), avail = ok(b), w = g.startTrip('target', b);
@@ -557,7 +586,7 @@ for (let i = 0; i < N; i++) {
         const other = g.planKeys().find(k => k !== key && g.planOf(k) && g.planOf(k).some(r => r.r != null && !g.planResolve(g.planHolder(k), r, k).gap));
         if (other) { const r = g.planOf(other).find(r => r.r != null); if (typeof g.setPlan(key, [r]) === 'object') fail.push('an entry planned for two posts'); else PLAN.refused++; } }
       const r = g.setPlan(key, refs);
-      if (typeof r !== 'object') { if (refs.every(x => !g.planResolve(t, x, key).gap)) fail.push('setPlan refused: ' + r); return; }
+      if (typeof r !== 'object') { if (refs.every(x => !g.planResolve(t, x, key).gap) && !/plan for the review/.test(r)) fail.push('setPlan refused: ' + r); return; } // (0.45.0) planResolve doesn't see other posts' waiting plans, which setPlan rightly refuses
       if (!refs.length) PLAN.cleared++; else PLAN.set++;
       if (r.now) { PLAN.now++; const slot = g.eliteSlot(t), room = slot.size - t.team.filter(m => g.isSpecial(m) || (t.mega && t.mega.uid === m.uid)).length;
         if (refs.length && refs.slice(0, room).some(x => !t.team.some(m => (x.o != null && m.uid === x.o) || (x.r != null && m.rid === x.r)))) fail.push('a plan set now was not built on ' + t.name);
@@ -655,6 +684,7 @@ console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranc
 console.log('backup types', JSON.stringify(backupStat));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('safari', JSON.stringify(SAF), JSON.stringify(g.SAFARI_LOG));
+console.log('breeding', JSON.stringify(BRD), JSON.stringify(g.BREED_LOG));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.join('/'));
 console.log('regional field', JSON.stringify(fieldStats), 'draws', JSON.stringify(g.FIELD_LOG), 'rebuild', JSON.stringify(g.REBUILD_LOG), 'regions', [...new Set(g.eachLeague(() => g.S.region))].map(r => `${g.LEAGUE_SETS[r].name}: ${g.fieldSize(r)} of ${g.fieldTarget(r)} (${g.regionLgs(r).map(i => g.inLeague(i, () => g.S.challengers.length)).join('/')})`).join('; '));

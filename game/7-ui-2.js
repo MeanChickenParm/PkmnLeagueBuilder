@@ -380,8 +380,8 @@ function ranchPostOpts() {
 function viewRanch() { return inLeague(ME(), viewRanch0); }
 // (0.44.0) the Ranch page in tabs; the pool's filters; the teams as one row a Pokémon
 let ranchTab = 'pool', ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }, teamShow = 'all';
-const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['region', 'Region & safari']];
-const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone' };
+const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['daycare', 'Day Care'], ['region', 'Region & safari']];
+const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care' };
 const RANCH_SHOW = [['free', 'Not fielded'], ['fielded', 'Fielded'], ['all', 'Everything'], ['sale', 'Listed for sale'], ['held', 'Locked or reserved']];
 const RANCH_SORT = [['value', 'Value'], ['grade', 'Grade'], ['name', 'Name'], ['new', 'Newest'], ['type', 'Type']];
 const ranchShows = (e, k) => k === 'free' ? e.at == null : k === 'fielded' ? e.at != null : k === 'sale' ? !!e.sale : k === 'held' ? !!(e.lock || e.res) : true;
@@ -400,7 +400,7 @@ function viewRanch0() {
   const backs = sen.filter(t => t.team.some(m => m.backup));
   const stored = seniorIds().map(T).filter(storePickOk).length, fielded = R.mons.filter(e => e.at != null).length;
   if (!RANCH_TABS.some(([k]) => k === ranchTab)) ranchTab = 'pool';
-  const tabNote = { pool: stored ? ' ●' : '', trips: R.trips.length ? ` (${R.trips.length})` : '' };
+  const tabNote = { pool: stored ? ' ●' : '', trips: R.trips.length ? ` (${R.trips.length})` : '', daycare: R.dc && R.dc.pairs.length ? ` (${R.dc.pairs.length})` : '' };
   const tabs = `<div class="segs ranchtabs">${RANCH_TABS.map(([k, n]) => `<button class="seg${ranchTab === k ? ' on' : ''}" data-act="ranchtab" data-v="${k}" aria-pressed="${ranchTab === k}">${n}${tabNote[k] || ''}</button>`).join('')}</div>`;
   const head = `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Ranch</h2>
     <p>The ranch holds <b>${R.mons.length} of ${ranchCap()}</b> (${fielded} fielded, ${R.mons.length - fielded} not)${safariStock().length ? ` and the Safari Zone <b>${safariStock().length}</b> more` : ''}. Upkeep <b>${money(ranchUpkeep())}</b> a week. Scouting for finds <b>${sc}</b>. ${R.trips.length} of ${tripMax()} trips out.</p>
@@ -408,11 +408,11 @@ function viewRanch0() {
     ${stops.length ? `<p class="warn">Fielding stopgaps (weak stand-ins, because nothing in the ranch fits): ${stops.map(t => `${esc(postName(t))} (${t.team.filter(m => m.stop).length})`).join(', ')}. Catch or buy Pokémon of their type.</p>` : ''}
     ${backs.length ? `<p class="small">Filling with backup types (used only where the ranch has none of their own type left): ${backs.map(t => `${esc(postName(t))} (${t.team.filter(m => m.backup).length})`).join(', ')}. They swap one back as soon as the ranch has one of their type.</p>` : ''}
     ${tabs}</section>${planGapNote()}`;
-  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + ranchPool(R);
+  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'daycare' ? dayCarePanel(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + ranchPool(R);
   return head + body;
 }
 function ranchPool(R) {
-  const posts = ranchPostOpts(), rows = ranchPoolRows(R), saf = safariBuilt(), sroom = saf && safariStock().length < stockCap();
+  const posts = ranchPostOpts(), rows = ranchPoolRows(R), saf = safariBuilt(), sroom = saf && safariStock().length < stockCap(), dc = dcBuilt();
   const holder = id => { const t = T(id); return t ? `${tname(id)} <span class="small muted">${esc(postName(t))}</span>` : '—'; };
   const row = e => {
     const free = e.at == null, v = entryValue(e);
@@ -421,6 +421,7 @@ function ranchPool(R) {
     if (!e.sale) acts.push(`<button class="btn small ghost" data-act="ranchsell" data-id="${e.uid}">Sell (+${money(Math.round(v * SELL_BACK))})</button>`, `<button class="btn small ghost" data-act="ranchrel" data-id="${e.uid}">Release</button>`);
     if (nLeagues() > 1) acts.push(e.sale ? `<button class="btn small ghost" data-act="ranchunlist" data-id="${e.uid}">Withdraw (${money(e.sale.price)})</button>` : `<button class="btn small ghost" data-act="ranchlist" data-id="${e.uid}">List for ${money(v)}</button>`);
     if (saf) acts.push(`<button class="btn small ghost" data-act="ranchstock" data-id="${e.uid}"${sroom ? '' : ' disabled'}>Stock in the safari</button>`);
+    if (dc && canBreed(e.b) && !e.lock) { const ck = breedCheck(e.uid); acts.push(typeof ck === 'string' ? `<button class="btn small ghost" disabled title="${esc(ck)}">Breed</button>` : `<button class="btn small ghost" data-act="ranchbreed" data-id="${e.uid}"${ck && ck.ask ? ' data-ask="1"' : ''} title="Leaves the ranch for good: it breeds in your breeding pool for ${BREED_YEARS} years, then is sold">${ck && ck.ask ? 'Breed (clears reservation/plan)' : ck && ck.old ? 'Breed (replaces a worse one)' : 'Breed'}</button>`); }
     return `<tr><td>${esc(e.sp)}${condTag(e.c)}${e.sp !== e.b ? ` <span class="small muted">(${esc(e.b)} line)</span>` : ''}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${gradeStars(e.g)}</td><td class="num">${money(v)}</td><td class="small">${e.at != null ? holder(e.at) : e.sale ? '<span class="tag small">listed</span>' : e.lock ? '<span class="tag small">locked</span>' : 'in the ranch'}${e.of != null && T(e.of) ? `<br><span class="muted">from ${esc(T(e.of).name)}</span>` : ''}</td><td class="small muted">${esc(FROM_NAMES[e.from] || e.from || '')}<br>${turnDate(e.got || 0)}</td><td>${res}</td><td>${acts.join(' ')}${free ? '' : `<br><span class="small muted">Fielded by ${esc(T(e.at).name)}: selling, releasing, listing or stocking it swaps it out now for the best left in the ranch (or a stopgap). Lock it to take it back at the next monthly swap instead.</span>`}</td></tr>`;
   };
   const froms = [...new Set(R.mons.map(e => e.from))].filter(Boolean).sort();
@@ -495,6 +496,30 @@ function safariPanel() {
     ${saf ? `<div class="scroll"><table class="tbl" id="safarilines"><thead><tr><th>Line</th><th>Type</th><th>Top</th><th>Home regions</th><th>Next change</th><th>Trip</th></tr></thead><tbody>${lines.map(lineRow).join('')}</tbody></table></div>` : `<p class="muted small">${lapsed() ? 'Closed while you are in the red: nothing can be caught here, and the stock waits.' : 'No lines (National Dex rules: every species is everywhere).'}</p>`}
     <h3>Stock (${stock.length} of ${stockCap()})</h3>
     ${stock.length ? `<div class="scroll"><table class="tbl" id="safaristock"><thead><tr><th>Pokémon</th><th>Type</th><th>Grade</th><th>Since</th><th></th></tr></thead><tbody>${stock.map(e => `<tr><td>${esc(e.sp)}${condTag(e.c)}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${gradeStars(e.g)}</td><td class="small muted">${turnDate(e.stocked || 0)}</td><td><button class="btn small ghost" data-act="safaritake" data-id="${e.uid}"${ranchRoom() > 0 ? '' : ' disabled'}>Back to the ranch</button></td></tr>`).join('')}</tbody></table></div><p class="small muted">Next young find: ${lv ? nextFind() : 'when the safari reopens'}.</p>` : '<p class="small muted">Nothing stocked. Stock Pokémon from the Pool tab.</p>'}</section>`;
+}
+// (0.45.0) the Day Care: the breeding pool, pairs under way, young ones waiting for room
+let dcPick = { a: null, b: null };
+function dayCarePanel(R) {
+  const lv = dcBuilt(), D = dcState(), P = D.pool;
+  const intro = `<p class="small">Put a ranch Pokémon in to breed with <b>Breed</b> on the Pool tab: it leaves the ranch and every team for good and stays in the <b>breeding pool</b> for ${BREED_YEARS} years at half its upkeep, taking no ranch space; then it is sold automatically for ${Math.round(BREED_SELL * 100)}% of its value. The pool holds one of each line and condition (a shiny and a plain one of a line can both stay); a better one going in bumps the old one out, which is sold the same way. Two parents sharing an egg group make a <b>pair</b>, or one parent can be Ditto (Ditto can be in several pairs; everyone else in one). A pair lays an egg every ${dcWeeks()} weeks until you end it: the young one takes the non-Ditto parent's line (else either parent's), each IV from one parent (the better one more often) plus a small bump, so it usually comes out a grade above its parents. Conditions come at twice the wild odds, five times for one a parent has; a Delta parent passes on the Delta gene (the young one rolls its own unusual type, whichever line it takes). A young one hatched into a full ranch waits ${HATCH_WAIT} weeks, then is let go. In the red the Day Care closes: eggs wait, the pool's upkeep is still paid.</p>`;
+  if (!lv && !P.length) return `<section class="panel"><div class="ph"><h2>Day Care</h2><span class="muted">Not built</span></div>${intro}<p class="small">Build the Day Care at the seat on the <button class="tlink" data-act="nav" data-v="cities">Cities</button> page (${money(upCost('daycare', 0))}; ${DC_PAIRS.slice(1).join(', ')} pairs at once by level).</p></section>`;
+  const nm = e => `${esc(e.sp)}${condTag(e.c)}${e.sp !== e.b ? ` <span class="small muted">(${esc(e.b)} line)</span>` : ''}`;
+  const pairOf = uid => D.pairs.find(p => p.a === uid || p.b === uid);
+  const poolRows = P.slice().sort((a, b) => a.b.localeCompare(b.b)).map(e => `<tr><td>${nm(e)}</td><td>${chips(entryTypes(e, e.sp))}</td><td class="small">${esc(eggWords(e.b))}</td><td class="small">${gradeStars(e.g)}</td><td class="small">${turnDate(e.until)}${e.until - S.turn <= BREED_WARN ? ' <span class="tag notice small">soon</span>' : ''}<br><span class="muted">then sold for ${money(retirePrice(e))}</span></td><td class="small">${isDitto(e.b) ? `${D.pairs.filter(p => p.a === e.uid || p.b === e.uid).length} pair(s)` : pairOf(e.uid) ? 'in a pair' : '<span class="muted">free</span>'}</td></tr>`).join('');
+  const pairRows = D.pairs.map(p => { const a = parentOf(p.a), b = parentOf(p.b); return a && b ? `<tr><td>${nm(a)} × ${nm(b)}</td><td class="small">${dcLv() ? turnDate(p.due) : 'waiting (closed in the red)'}</td><td class="num small">${p.n}</td><td><button class="btn small ghost" data-act="dcend" data-id="${p.id}">End pair</button></td></tr>` : ''; }).join('');
+  const free = P.filter(e => isDitto(e.b) || !inPair(e.uid));
+  if (!free.some(e => e.uid === dcPick.a)) dcPick.a = free[0] ? free[0].uid : null;
+  const pa = parentOf(dcPick.a), mates = pa ? free.filter(e => e.uid !== pa.uid && !pairCheck(pa.uid, e.uid)) : [];
+  if (!mates.some(e => e.uid === dcPick.b)) dcPick.b = mates[0] ? mates[0].uid : null;
+  const opt = (e, cur) => `<option value="${e.uid}"${e.uid === cur ? ' selected' : ''}>${esc(entryWords(e))} (${esc(eggWords(e.b))})</option>`;
+  const room = D.pairs.length < dcPairs();
+  const form = free.length >= 2 ? `<div class="confirm-row"><select class="dcsel" data-k="a" aria-label="First parent">${free.map(e => opt(e, dcPick.a)).join('')}</select><span>×</span><select class="dcsel" data-k="b" aria-label="Second parent">${mates.length ? mates.map(e => opt(e, dcPick.b)).join('') : '<option value="">No partner shares an egg group</option>'}</select><button class="btn small" data-act="dcpair"${room && dcPick.b != null && lv ? '' : ' disabled'}>Start the pair</button></div>` : '<p class="muted small">Put at least two Pokémon in to breed to start a pair.</p>';
+  const wait = D.wait.map(w => `<li>${esc(entryWords(w.e))}: waits for room until ${turnDate(w.until)}</li>`).join('');
+  return `<section class="panel"><div class="ph"><h2>Day Care</h2><span class="muted">${lv ? `Level ${lv}${lapsed() ? ' · closed while in the red' : ''} · ${D.pairs.length} of ${dcPairs()} pairs · an egg every ${dcWeeks()} weeks` : 'Not built (the pool stays; no pairs)'} · pool upkeep ${money(dcUpkeep())} a week</span></div>${intro}
+    <h3>Pairs</h3>${pairRows ? `<div class="scroll"><table class="tbl" id="dcpairs"><thead><tr><th>Parents</th><th>Next egg</th><th>Eggs so far</th><th></th></tr></thead><tbody>${pairRows}</tbody></table></div>` : '<p class="muted small">No pairs.</p>'}
+    ${form}
+    ${wait ? `<h3>Waiting for room in the ranch</h3><ul>${wait}</ul>` : ''}
+    <h3>Breeding pool (${P.length})</h3>${poolRows ? `<div class="scroll"><table class="tbl" id="dcpool"><thead><tr><th>Pokémon</th><th>Type</th><th>Egg groups</th><th>Grade</th><th>Leaves</th><th>Now</th></tr></thead><tbody>${poolRows}</tbody></table></div>` : '<p class="muted small">Empty. Use Breed on the Pool tab.</p>'}</section>`;
 }
 // (0.37.0) new hires' storage: take up to the number shown into the ranch
 function storagePanel() {
