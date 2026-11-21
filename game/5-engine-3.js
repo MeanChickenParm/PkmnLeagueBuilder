@@ -618,8 +618,9 @@ function useCustom(packs) {
     const P = FAMOUS_PACKS[p.key] = { name: p.name, tag: p.name, desc: 'A pack you made.', trainers: [], custom: true };
     FAMOUS_TAG_LABELS[p.key] = FAMOUS_TAG_PLURAL[p.key] = p.name;
     for (const src of p.trainers || []) {
-      // a custom trainer can share a built-in famous trainer's name (pulled from a built-in pack); if both are on, only one appears in a league
-      if (!src || !src.name || FAMOUS.some(x => x.custom && x.name === src.name)) continue;
+      // a custom trainer can share a name with a built-in famous trainer or one in another of your packs; with both on,
+      // only one appears in a league (S.famousUsed holds names). Within one pack a name counts once.
+      if (!src || !src.name || P.trainers.some(x => x.name === src.name)) continue;
       const f = { ...src, team: src.team.map(x => Array.isArray(x) ? x.slice() : x), pack: p.key, tags: [p.key], custom: true };
       FAMOUS.push(f); P.trainers.push(f); if (!FAMOUS_BY_NAME[f.name]) FAMOUS_BY_NAME[f.name] = f;
     }
@@ -837,9 +838,10 @@ function checkCustom(d, target, editing = null) {
   customSpecies();
   const errs = [], s = v => String(v == null ? '' : v).trim().replace(/\s+/g, ' ');
   const name = s(d.name), cls = s(d.cls), age = Math.round(+d.age);
-  const dupe = customLib.flatMap(p => p.trainers.map((f, i) => ({ p, f, i }))).find(x => !(editing && x.p.key === editing.key && x.i === editing.i) && x.f.name.toLowerCase() === name.toLowerCase());
+  // (0.48.0) names only need to differ within a pack: two packs can each have a Thor, and a league uses whichever comes first
+  const dupe = customLib.filter(p => p.key === target).flatMap(p => p.trainers.map((f, i) => ({ p, f, i }))).find(x => !(editing && x.p.key === editing.key && x.i === editing.i) && x.f.name.toLowerCase() === name.toLowerCase());
   if (!name) errs.push('Give them a name.'); else if (name.length > 30) errs.push('Names can be up to 30 characters.');
-  else if (dupe) errs.push(`You already have a trainer called ${dupe.f.name}${dupe.p.key !== target ? ` in ${dupe.p.name}` : ''}.`);
+  else if (dupe) errs.push(`${dupe.p.name} already has a trainer called ${dupe.f.name}.`);
   else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds in all-famous leagues.');
   if (!cls) errs.push('Give them a title, like Gym Leader or Movie Star.'); else if (cls.length > 30) errs.push('Titles can be up to 30 characters.');
   if (!(age >= 8 && age <= 90)) errs.push('Age must be between 8 and 90.');
@@ -2405,6 +2407,7 @@ function dropLevel(pl, k) {
   x.lv--; if (!x.lv) pl.b.splice(pl.b.indexOf(x), 1);
   if (lapsed()) addRuin(pl.c ? pl.c.id : 'seat', k, 1);
   if (k === 'safari') safariTrim(); // (0.44.0) the stock past its room comes back
+  if (k === 'daycare') { const D = dcState(); if (D && D.pairs.length > dcPairs()) D.pairs = D.pairs.slice(0, dcPairs()); } // (0.48.0) pairs past its room end at once
   return cost;
 }
 // (0.19.0) restoring: a building level a League lost while in the red (sold in the red, or lost to unpaid upkeep)

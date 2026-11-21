@@ -519,7 +519,7 @@ function viewImport() {
     <section class="panel"><div class="ph"><h2>3. Where to</h2></div>
       <div class="cf-grid"><label class="cf-field wide"><span class="eyebrow">Put them in</span><select id="cfimpdest">${destOpts.map(([v, l]) => `<option value="${esc(v)}"${v === I.dest ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
         ${I.dest === '__new' ? `<label class="cf-field wide"><span class="eyebrow">New pack name</span><input id="cfimpname" class="cf-in" maxlength="40" value="${esc(I.newName)}" autocomplete="off"></label>` : ''}</div>
-      <p class="muted small">Trainers you import are yours to edit, like any you made. A trainer can share a name with one of the game's built-in famous trainers; if both packs are on, only one of them appears in a league.</p>
+      <p class="muted small">Trainers you import are yours to edit, like any you made. A trainer can share a name with a trainer in another pack (yours or the game's built-in ones); if both packs are on, only one of them appears in a league. A name already in the pack you import into is left out.</p>
       <div class="confirm-row"><button class="btn primary" id="cfimpgo" data-act="cfimpgo">${cfImpGoLabel()}</button></div>
     </section>` : ''}</main>`;
 }
@@ -531,7 +531,10 @@ function cfImpCommit() {
   if (!picked.length) { toast('Tick at least one trainer first.'); return; }
   const list = customLib.map(p => ({ ...p, trainers: p.trainers.slice() })), made = [];
   const newPack = name => { if (list.length >= CUSTOM_PACKS_MAX) return null; let key; do key = newCustomKey(); while (list.some(p => p.key === key)); const p = { key, name: uniquePackName(name, list), trainers: [] }; list.push(p); made.push(p); return p; };
-  const fill = (pack, entries) => { let p = pack, n = 0; for (const e of entries) { if (!p) break; if (p.trainers.length >= CUSTOM_MAX) p = newPack(p.name); if (!p) break; p.trainers.push(e); n++; } return n; };
+  // (0.48.0) a name already in the pack it goes to is skipped (other packs may share it)
+  let dupes = 0;
+  const has = (p, e) => list.some(x => (x === p || x.name.replace(/ \(\d+\)$/, '') === p.name.replace(/ \(\d+\)$/, '')) && x.trainers.some(f => f.name.toLowerCase() === e.name.toLowerCase()));
+  const fill = (pack, entries) => { let p = pack, n = 0; for (const e of entries) { if (!p) break; if (has(p, e)) { dupes++; continue; } if (p.trainers.length >= CUSTOM_MAX) p = newPack(p.name); if (!p) break; p.trainers.push(e); n++; } return n; };
   let added = 0, firstKey = null;
   if (I.dest === '__each') for (const g of picked) { const p = newPack(g.name); if (!firstKey && p) firstKey = p.key; added += fill(p, g.entries); }
   else {
@@ -539,11 +542,11 @@ function cfImpCommit() {
     let p = I.dest === '__new' ? newPack(checkPackName(I.newName).name || I.newName || picked[0].name) : list.find(x => x.key === I.dest);
     firstKey = p && p.key; added += fill(p, all);
   }
-  const wanted = picked.reduce((a, g) => a + g.entries.length, 0);
+  const wanted = picked.reduce((a, g) => a + g.entries.length, 0) - dupes;
   const ok = setCustomLib(list);
   for (const p of made) setupPacks[p.key] = true;
   cfImp = null;
-  const msg = `Imported ${added} trainer${added === 1 ? '' : 's'}${made.length > 1 ? ` into ${made.length} new packs` : ''}.${added < wanted ? ` ${wanted - added} didn't fit: you can keep up to ${CUSTOM_PACKS_MAX} packs of ${CUSTOM_MAX} trainers.` : ''}${made.length ? ' New packs are switched on.' : ''}${ok ? '' : " This browser couldn't store them, so they'll be gone when the page closes."}`;
+  const msg = `Imported ${added} trainer${added === 1 ? '' : 's'}${made.length > 1 ? ` into ${made.length} new packs` : ''}.${dupes ? ` ${dupes} ${dupes === 1 ? 'was' : 'were'} already in that pack and left out.` : ''}${added < wanted ? ` ${wanted - added} didn't fit: you can keep up to ${CUSTOM_PACKS_MAX} packs of ${CUSTOM_MAX} trainers.` : ''}${made.length ? ' New packs are switched on.' : ''}${ok ? '' : " This browser couldn't store them, so they'll be gone when the page closes."}`;
   if (firstKey && made.length <= 1) { cfOpen(firstKey); cfMsg = msg; } else { setupPage = 'advanced'; toast(msg); }
 }
 // the My trainer packs section of Advanced options

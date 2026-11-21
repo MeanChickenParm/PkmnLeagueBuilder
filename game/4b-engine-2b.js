@@ -515,6 +515,8 @@ function seatHandOver(c, how, conq) {
     installElite(c, 'champion');
     fate = inc.role === 'retired' ? 'retired' : away != null ? `is heading to the ${leagueName(away)}'s circuit` : 'is heading back to the badge circuit';
   }
+  // (0.48.0) someone who just won the seat came for it: no asking for another run the same week (a rival League would grant it at once)
+  if (c.wish && c.wish.k === 'run') c.wish = { k: 'stay', since: S.turn };
   return `${c.name} ${how} and is the new ${cw} of the ${S.lgName}. ${inc.name} ${fate}.`;
 }
 // a temporary team for a seat battle: a Gym Leader topped up to six, a challenger at the level; returns the undo

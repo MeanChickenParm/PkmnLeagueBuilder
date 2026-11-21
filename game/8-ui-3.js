@@ -1,5 +1,11 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 48, ver: '0.48.0', date: 'November 21, 2026', time: '4:45 PM ET', title: 'Trainer packs can share names', items: [
+    "Your trainer packs can now have trainers with the same name as trainers in your other packs, as they already could with the game's built-in packs. If two packs with the same name are both on, only one of that name appears in a league.",
+    "Names still have to differ within one pack. Importing into a pack that already has a trainer of that name leaves the repeat out and says how many were skipped.",
+    "Fixed: when a Day Care level was lost (sold, or lost to unpaid upkeep), pairs beyond what it could still hold carried on for a week. They now end at once.",
+    "Fixed: a trainer who won the Champion's seat (under any seat rule) could ask for another run as a challenger straight away, and a rival League would let them go the same week. A new Champion now starts out wanting to stay.",
+  ] },
   { id: 47, ver: '0.47.0', date: 'November 21, 2026', time: '12:05 PM ET', title: 'More famous trainers', items: [
     "46 new famous trainers can turn up on the circuit and as hires: the Colosseum cast (Wes, Rui and Cipher's Evice, Nascour, Dakim, Venus and Ein), Legends: Arceus (Adaman, Irida, Kamado, Professor Laventon) and Legends: Z-A (AZ, Urbain, Taunie, Lida, Professor Mable, Corbeau).",
     "Also new: Kalos's Battle Chatelaines (Evelyn, Dana, Morgan, Nita), more villains (Proton, Petrel, Tabitha, Charon, Zinzolin, Xerosic, Faba, and GO Rocket's Sierra, Arlo and Cliff), story trainers (Zinnia, Eusine, Looker, and Platinum's Cheryl, Mira, Riley, Buck and Marley) and anime favourites (Jessie, James, Solidad, Harley, Nando, Amethio, Spinel).",
