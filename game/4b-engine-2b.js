@@ -393,24 +393,24 @@ const SEAT_RULES = {
   gauntlet: { name: 'Gauntlet', open: 0.6, text: 'Each New Year the strongest willing candidate may try to beat every Elite Four member in a row, then the Champion.' },
   cup: { name: "Champion's Cup", open: 0.6, every: 2, text: 'On a schedule, the Champion, the Elite Four and the best Gym Leaders play a tournament; the winner takes the seat. Sells tickets.' },
   opencup: { name: 'Open Cup', open: 0.85, every: 2, text: 'The Cup, open to title winners and the circuit\'s best. Bigger gate and prestige; an outsider can win the seat.' },
-  conqueror: { name: 'Conqueror', open: 1, text: 'The year\'s strongest title winner who wants the seat takes it at New Year, as in the main games.' },
+  conqueror: { name: 'Conqueror', open: 1, text: 'A title winner takes the seat, as in the main games: Instant, whoever beats the Champion takes it on the spot (no grace for a new Champion); At New Year, the year\'s strongest title winner who wants it.' },
 };
 const RULE_KEYS = Object.keys(SEAT_RULES);
 const SEAT_EVERY_MIN = 1, SEAT_EVERY_MAX = 6, SEAT_CHANGE_PREST = 5, SEAT_COOLDOWN = 2;
 const SEAT_PREST = 3, SEAT_HUNGRY = 0.25, DRAW_SEAT = 0.5;
 const CUP_GATE = { cup: 40000, opencup: 80000 }, CUP_OPEN_PREST = 1, CUP_LEADERS = 3, CUP_INVITES = 2;
 const COUNCIL_LOBBY = 20000, COUNCIL_LOBBY_MAX = 3, COUNCIL_SWAY = 4, COUNCIL_INC = 3, COUNCIL_CALM = 24;
-const MERIT_MIN = 4, MERIT_CHAMP = 1.5, MERIT_EDGE = 0.05, TERM_ANSWER = 8, TERM_INC = 3, CONQ_WANT = 0.25;
+const MERIT_MIN = 4, MERIT_CHAMP = 1.5, MERIT_EDGE = 0.05, TERM_ANSWER = 8, TERM_INC = 3, CONQ_WANT = 0.25, CONQ_NOW_AI = 0.5; // (0.46.0) CONQ_NOW_AI: a rival's odds of an Instant Conqueror
 // rivals: a theme or an aim leans to some rules (SEAT_LEAN each), every rule keeps a share
 const THEME_SEATS = { dojo: ['gauntlet'], court: ['succession'], board: ['council'], academy: ['merit'], classic: ['conqueror', 'cup'], island: ['gauntlet'] };
 const AIM_SEATS = { wall: ['protected', 'merit'], star: ['cup', 'opencup', 'conqueror'], money: ['opencup', 'cup', 'council'] };
 const SEAT_LEAN = 2, SEAT_REDRAW = 0.5;
-const SEAT_LOG = { drawn: 0, changed: 0, redrawn: 0, cups: 0, gauntlets: 0, gauntletWon: 0, merit: 0, votes: 0, terms: 0, conquer: 0, handovers: 0, lobbies: 0, heirs: 0 };
+const SEAT_LOG = { drawn: 0, changed: 0, redrawn: 0, cups: 0, gauntlets: 0, gauntletWon: 0, merit: 0, votes: 0, terms: 0, conquer: 0, conquerNow: 0, conqDrop: 0, handovers: 0, lobbies: 0, heirs: 0 };
 const seatSched = k => !!(SEAT_RULES[k] && SEAT_RULES[k].every);
 function normSeatRule(sr) {
   const k = sr && SEAT_RULES[sr.k] ? sr.k : 'protected';
   const every = seatSched(k) ? clamp(Math.round(+(sr && sr.every) || SEAT_RULES[k].every), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
-  return { k, every };
+  return { k, every, now: k === 'conqueror' && !!(sr && sr.now) }; // (0.46.0) now: an Instant Conqueror
 }
 // the bound League's rule (made on first use)
 function seatRule() {
@@ -440,7 +440,7 @@ function pickSeatRule(not) {
 function drawSeatRule() {
   if (S.seatRule && SEAT_RULES[S.seatRule.k]) return;
   const k = pickSeatRule(), every = seatSched(k) ? clamp(SEAT_RULES[k].every + ri(-1, 1), SEAT_EVERY_MIN, SEAT_EVERY_MAX) : null;
-  S.seatRule = { k, every, at: null, next: every ? (S.season || 1) + every : null }; SEAT_LOG.drawn++;
+  S.seatRule = { k, every, now: k === 'conqueror' && rand() < CONQ_NOW_AI, at: null, next: every ? (S.season || 1) + every : null }; SEAT_LOG.drawn++;
 }
 // a rival may take a new rule when it rebrands (rebuild mode, a lasting change of aim, new management)
 function maybeRedrawSeat(why) {
@@ -462,21 +462,22 @@ function seatChangeBlock() {
     return null;
   });
 }
-// the player sets their rule (k) and its timing (every, in years); returns an error or null
-function setSeatRule(k, every) {
+// the player sets their rule (k) and its timing (every, in years; for the Conqueror, now: Instant); returns an error or null
+function setSeatRule(k, every, now) {
   if (!SEAT_RULES[k]) return 'No such rule.';
   return inLeague(ME(), () => {
-    const r = seatRule(), same = r.k === k, n = normSeatRule({ k, every });
+    const r = seatRule(), same = r.k === k, n = normSeatRule({ k, every, now });
     if (!same) {
       const b = seatChangeBlock(); if (b) return b;
       const was = r.k, free = !!S.founding;
       if (!free) S.prest = Math.max(0, (S.prest || 0) - SEAT_CHANGE_PREST);
-      S.seatRule = { k, every: n.every, at: free ? null : S.season, next: n.every ? S.season + n.every : null, term: k === 'term' ? S.season + n.every : null };
+      S.seatRule = { k, every: n.every, now: n.now, at: free ? null : S.season, next: n.every ? S.season + n.every : null, term: k === 'term' ? S.season + n.every : null };
       (S.chalPending || []).filter(x => x.k === 'champ' && (x.called || x.from === 'claim')).forEach(x => { S.chalPending.splice(S.chalPending.indexOf(x), 1); const c = T(x.cand); if (c) { c.claimOn = null; c.chalAt = null; } chalRecord(x, { lapsed: true }); });
       SEAT_LOG.changed++;
       if (!free) { const text = `The ${S.lgName} changed how its ${postWord('champion')} is chosen: ${seatRuleName(was)} gives way to ${seatRuleName(k)} (${SEAT_CHANGE_PREST} prestige).`; news(text, 'league'); noteChange(text); }
       return null;
     }
+    if (k === 'conqueror') r.now = n.now; // the timing alone is free
     if (n.every && n.every !== r.every) { r.every = n.every; r.next = S.season + n.every; if (k === 'term' && r.term != null) r.term = Math.min(r.term, S.season + n.every); }
     return null;
   });
@@ -484,16 +485,31 @@ function setSeatRule(k, every) {
 // ---- handing the seat over ----
 // cand takes the Champion's seat: the old Champion takes their Elite Four seat or gym, or (cand from the circuit) leaves
 // the post as after a claim. Returns the words, or null
-function seatHandOver(c, how) {
+// (0.46.0) conq: an Instant Conqueror's hand-over: the beaten Champion drops into a free Elite Four seat (your League's
+// vacancy) if there is one, else leaves with a grudge
+function seatHandOver(c, how, conq) {
   const inc = T(S.champion); if (!inc || !c || c.id === inc.id) return null;
   c.claimOn = null; SEAT_LOG.handovers++;
   const e4k = S.e4.indexOf(c.id), gi = S.gyms.findIndex(g => g.leader === c.id && !g.acting), cw = postWord('champion');
   let fate;
   if (e4k >= 0) { S.e4[e4k] = null; S.champion = null; inc.e4Poor = 0; installElite(c, 'champion'); installElite(inc, 'e4', e4k); fate = `takes ${c.name}'s ${postWord('e4')} seat (#${e4k + 1})`; }
   else if (gi >= 0) { S.gyms[gi].leader = null; S.champion = null; installElite(c, 'champion'); installElite(inc, 'leader', gi); staffGym(gi); fate = `takes over ${townName(gi)} ${gymWord()} (${typeLabel(inc)})`; }
+  else if (conq && freeE4Vacancy()) {
+    const v = freeE4Vacancy(), a = T(S.e4[v.slot]);
+    if (v.incoming != null) cancelIncoming(v, `${inc.name} took the seat`);
+    S.champion = null; inc.e4Poor = 0;
+    if (a && a.acting) { S.e4[v.slot] = null; a.acting = false; retire(a, `after standing in on the ${postWord('e4')}`); }
+    S.e4[v.slot] = null;
+    installElite(c, 'champion'); installElite(inc, 'e4', v.slot);
+    S.vacancies = S.vacancies.filter(x => x !== v);
+    const rest = (v.outsiders || []).filter(x => T(x) && T(x).role === 'prospect'); rest.forEach(x => { T(x).outsider = false; }); fillCircuits(rest);
+    SEAT_LOG.conqDrop++;
+    fate = `drops into the empty ${postWord('e4')} seat (#${v.slot + 1})`;
+  }
   else {
     S.champion = null; inc.role = 'exchamp'; inc.letGoAt = S.turn; inc.deposedBy = c.id;
     retireOrReturn(inc, `lost the ${cw}'s seat to ${c.name}`);
+    if (conq && inc.role !== 'retired') { inc.grudge = S.season; inc.grudgeLg = S.lg || 0; }
     let away = null;
     if (inc.role !== 'retired' && nLeagues() > 1) { away = pick(Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()))); if (away != null) shiftLeague(inc, away); }
     installElite(c, 'champion');
@@ -533,7 +549,7 @@ function seatRuleNewYear(changes) {
   else if (r.k === 'council' && due) say(seatVote());
   else if (r.k === 'term' && S.season >= (r.term != null ? r.term : (r.term = S.season + r.every))) say(seatTermEnds());
   else if (r.k === 'gauntlet' && !champGrace()) say(seatGauntlet());
-  else if (r.k === 'conqueror' && !champGrace()) say(seatConquer());
+  else if (r.k === 'conqueror' && !r.now && !champGrace()) say(seatConquer()); // an Instant Conqueror hands over in leagueRun
 }
 // the Cup: the Champion, the Elite Four and the best Gym Leaders (the Open Cup: one Gym Leader and invited outsiders)
 function seatCup(open) {
@@ -697,7 +713,25 @@ function seatWeek(now) {
     termPick(ch.id);
   });
 }
-// Conqueror: the year's strongest title winner still on the circuit who wants the seat takes it
+// (0.46.0) an Instant Conqueror: the League's rule hands the seat to q the moment they win the title (leagueRun)
+function conquerNow(q) {
+  if (fixedStaff() || S.founding || seatLocked() || !T(S.champion)) return false;
+  const r = seatRule();
+  return r.k === 'conqueror' && !!r.now && claimFree(q);
+}
+// your League's Elite Four seat that waits for you (a vacancy with a stand-in), if any
+function freeE4Vacancy() { return playerLeague() ? (S.vacancies || []).find(v => v.post === 'e4') || null : null; }
+function seatConquerNow(q) {
+  const ch = T(S.champion); if (!ch || q.role !== 'challenger') return null;
+  SEAT_LOG.conquerNow++;
+  const text = seatHandOver(q, `beat ${ch.name} for the title and, under the Conqueror rule, takes the seat at once`, true);
+  if (!text) return null;
+  seatRec({ season: S.season, k: 'conqueror', win: q.id, inc: ch.id, now: true, week: S.week, text });
+  news(text, 'title', q.id); noteChange(text);
+  if (playerLeague()) stopFor('title', text);
+  return text;
+}
+// Conqueror at New Year: the year's strongest title winner still on the circuit who wants the seat takes it
 function seatConquer() {
   const ch = T(S.champion);
   const c = [...new Set(yearLeague().conceded || [])].map(T).filter(t => claimFree(t) && (wantsSeat(t) || rand() < CONQ_WANT)).sort((a, b) => ovr(b) - ovr(a))[0];
