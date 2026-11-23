@@ -2443,11 +2443,12 @@ function vacate(t) {
 const GRUDGE_CHANCE = 0.15;
 function letGo(t, was) {
   t.letGoAt = S.turn; // the automatic gym trainer pick leaves them alone for a year
+  const free = leavingSet(t); // (0.49.0) leaving anyway: no severance
   t.quit = null;
   // (0.10.0) someone who asked for another run goes on it
   if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
   t.wish = null;
-  severance(t, was);
+  severance(t, was, free);
   // (0.37.0) someone who stored their own legendary with this League takes being let go hard: a certain grudge, and
   // likelier than usual to take it to another League
   if (t.storedLg != null && t.storedLg === (S.lg || 0)) {

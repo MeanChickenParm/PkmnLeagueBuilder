@@ -1679,9 +1679,13 @@ function postPay(t, wasStaff) {
   if (fee && t.leftAt === S.turn && t.leftLg != null && t.leftLg >= 0 && t.leftLg !== (S.lg || 0) && t.leftLg < nLeagues()) { const to = S.lgName; inLeague(t.leftLg, () => { if (S.fin) book(fee, 'transfers', `Transfer fee: ${t.name} to the ${to}`); }); }
 }
 // severance for someone let go (not for someone you let go on another run they asked for)
-function severance(t, was) {
-  if (!booksOn()) return;
-  const fee = SEVER_WEEKS * (t.lastPay || 0);
+// (0.49.0) nor for anyone whose leaving date is set: from the moment they announce stepping down or give notice
+// (t.stepDown, t.quit) letting them go early is free; a raise that withdraws the notice makes it cost again
+function leavingSet(t) { return !!t && (t.stepDown != null || t.quit != null); }
+function severanceFee(t) { return leavingSet(t) ? 0 : SEVER_WEEKS * (t.lastPay || 0); }
+function severance(t, was, free) {
+  if (!booksOn() || free) return;
+  const fee = severanceFee(t);
   if (fee) book(-fee, 'severance', `Severance: ${t.name} (${was})`);
 }
 // once a week for every League with books: salaries, attractions, city income, paid bans that run out, and the red

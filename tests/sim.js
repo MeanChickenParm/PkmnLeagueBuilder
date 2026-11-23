@@ -33,7 +33,7 @@ g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x 
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
-const moves = { let: 0, swap: 0, gt: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
+const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
 const call = { made: 0, fought: 0, won: 0, off: 0, blocked: 0, champLeft: 0, champStep: 0, champUp: 0, champRun: 0, champWish: {} };
@@ -363,7 +363,13 @@ for (let i = 0; i < N; i++) {
       const z = S(), seniors = [...z.e4, ...z.gyms.map(x => x.leader)].map(g.T).filter(t => t && !t.acting);
       if (g.releaseStaff(z.champion)) fail.push('the Champion was let go');
       if (Math.random() < 0.04 && seniors.length) { const t = rnd(seniors.concat((z.gyms[rnd([0, 1, 2, 3, 4, 5, 6, 7])].trainers || []).map(g.T).filter(Boolean)));
-        const r = g.releaseStaff(t.id); if (!r) fail.push('releaseStaff refused ' + t.role); else { moves.let++; if (!['challenger', 'retired'].includes(t.role)) fail.push('let go but role ' + t.role); } }
+        // (0.49.0) now and then the one let go has already announced stepping down: no severance once a date is set
+        if (Math.random() < 0.3 && t.stepDown == null && !t.quit) { g.announceStepDown(t); moves.dated++; }
+        const dated = g.leavingSet(t), runReq = t.wish && t.wish.k === 'run' && t.wish.asked != null, fee = g.severanceFee(t), sev0 = (z.fin.yr && z.fin.yr.out.severance) || 0;
+        const r = g.releaseStaff(t.id); if (!r) fail.push('releaseStaff refused ' + t.role); else { moves.let++; if (!['challenger', 'retired'].includes(t.role)) fail.push('let go but role ' + t.role);
+          const paid = ((z.fin.yr && z.fin.yr.out.severance) || 0) - sev0;
+          if (dated) { moves.free++; if (fee || paid) fail.push('severance charged for someone with a leaving date: ' + paid); }
+          else if (!runReq && paid !== fee) fail.push(`severance ${paid}, expected ${fee}`); } }
       if (Math.random() < 0.03) { const role = rnd(['leader', 'e4']), ps = seniors.filter(t => t.role === role);
         if (ps.length >= 2) { const a = rnd(ps), b = rnd(ps.filter(x => x !== a)), why = g.swapRefusal(a, b), ok = g.swapStaff(a.id, b.id);
           if (why) { amb.refusedSwap++; if (ok) fail.push('a refused swap went ahead: ' + why); } else if (!ok) fail.push('swapStaff refused'); else moves.swap++; } }

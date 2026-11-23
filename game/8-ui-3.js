@@ -1,5 +1,8 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 49, ver: '0.49.0', date: 'November 23, 2026', time: '4:05 PM ET', title: 'Small fixes', items: [
+    "Letting go a member of staff who is leaving anyway is now free: once they have announced they're stepping down or given notice (over their ambition, or over unpaid wages), no severance is paid. A raise that withdraws their notice makes severance apply again. The Let go button shows what it will cost.",
+  ] },
   { id: 48, ver: '0.48.0', date: 'November 21, 2026', time: '4:45 PM ET', title: 'Trainer packs can share names', items: [
     "Your trainer packs can now have trainers with the same name as trainers in your other packs, as they already could with the game's built-in packs. If two packs with the same name are both on, only one of that name appears in a league.",
     "Names still have to differ within one pack. Importing into a pack that already has a trainer of that name leaves the repeat out and says how many were skipped.",
