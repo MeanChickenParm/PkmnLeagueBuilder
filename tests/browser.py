@@ -551,11 +551,15 @@ async def run(path):
             for (let n = 0; n < 6; n++) click('[data-act=playweek]');
             log.push('left to found the ' + inLeague(ME(), () => S.lgName)); }
           // the sim dialog, one year
-          click('[data-act=simmany]'); click('[data-act=simmanyn][data-v="1"]'); click('[data-act=simmanygo]');
+          click('[data-act=simmany]'); click('[data-act=simmanyn][data-v="1"]');
+          // (0.50.0) the sim manages your League as a wall-builder
+          if (!document.querySelector('[data-act=simmanyauto][data-v="wall"]')) log.push('FAIL no managing choice in the sim dialog');
+          click('[data-act=simmanyauto][data-v="wall"]'); if (S.simAuto !== 'wall' || !/rival wall-builder would/.test(document.querySelector('#modal, .modal, body').textContent)) log.push('FAIL the managing choice did not take');
+          click('[data-act=simmanygo]');
           log.push('year ' + S.season + ' week ' + S.week + ' leagues ' + nLeagues() + ' ver ' + UPDATES[0].ver + ' key ' + SAVE_KEY);
           return log; }""")
         await pg.wait_for_timeout(4000)
-        after = await pg.evaluate("""() => { const done = !!(modal && modal.done); document.querySelector('[data-act=simmanyclose]') && document.querySelector('[data-act=simmanyclose]').click(); save(); return { done, season: S.season, phase: S.phase, n: Object.keys(S.trainers).length }; }""")
+        after = await pg.evaluate("""() => { const done = !!(modal && modal.done), autoTxt = /Run as a wall-builder/.test(document.body.textContent), simRun = !!S.simRun; document.querySelector('[data-act=simmanyclose]') && document.querySelector('[data-act=simmanyclose]').click(); save(); return { done, autoTxt, simRun, season: S.season, phase: S.phase, n: Object.keys(S.trainers).length }; }""")
         await pg.wait_for_timeout(1500)
         keys = await pg.evaluate("() => Object.keys(localStorage)")
         # 0.30.0: the save is in IndexedDB, not localStorage
@@ -563,6 +567,8 @@ async def run(path):
         await pg.reload(); await pg.wait_for_timeout(1500)
         back = await pg.evaluate("() => S ? { season: S.season, phase: S.phase, n: Object.keys(S.trainers).length, view } : null")
         if not after['done']: out.append('FAIL the sim dialog did not finish')
+        if after['done'] and not after.get('autoTxt'): out.append('FAIL the sim dialog did not report managing your League')
+        if after.get('simRun'): out.append('FAIL S.simRun left set after the sim')
         if not back or back['season'] != after['season'] or back['n'] != after['n']: out.append('FAIL the save did not come back after a reload: %s vs %s' % (back, after))
         if any(k.startswith('plgm') or 'league-gm' in k for k in keys) or 'plb-save' in keys: out.append('FAIL storage keys: %s' % keys)
         if not idb or idb['bytes'] < 1000: out.append('FAIL no save in IndexedDB: %s' % idb)

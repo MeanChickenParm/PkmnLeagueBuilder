@@ -2105,6 +2105,7 @@ function steerSwap(t, slot, s) {
 function steerMonth() {
   metaMonth();
   if (!playerLeague()) aimMonth(); // (0.15.0) steers and spending by the League's aim
+  else if (simAutoAim()) autoMonth(simAutoAim()); // (0.50.0) the multi-year sim managing your League
   for (const id of staffIds()) { const t = T(id), slot = t && eliteSlot(t); if (slot && t.team && t.team.length) steerSwap(t, slot, steerOf(t)); }
 }
 // a Gym Leader back on the circuit for a title run isn't offered a gym again during their guaranteed seasons

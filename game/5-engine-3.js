@@ -2150,6 +2150,21 @@ function aimMonth() {
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
   if (aim) { aimRanch(aim); aimSpend(aim); } // (0.25.0) the ranch first
 }
+// (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
+// (kept as the player's choice for next time), `S.simRun` is set only while the multi-year sim is running. Once a
+// month it spends and runs the ranch as a rival with that aim would (in the red, one building sold a month; the
+// ranch; building, upgrades and paid bans), but leaves the player's steers, team plans and staff alone.
+const simAutoAim = () => (S.simRun && S.simAuto && AIMS[S.simAuto] && playerLeague() && S.fin) ? S.simAuto : null;
+const AUTO_LOG = { months: 0, built: 0, sold: 0, bans: 0 };
+function autoMonth(aim) {
+  AUTO_LOG.months++;
+  if (S.fin.money < 0) { aiSell(); AUTO_LOG.sold++; }
+  aimRanch(aim);
+  const est = estateCost(), bans = paidBans().length;
+  aimSpend(aim);
+  if (estateCost() > est) AUTO_LOG.built++;
+  if (paidBans().length > bans) AUTO_LOG.bans++;
+}
 function aimSpend(aim) {
   const f = S.fin, A = AIMS[aim], lg = S.lg || 0;
   if (f.money < 0) return;

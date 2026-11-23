@@ -1378,6 +1378,7 @@ function simManyBody() {
       <div class="simbar" role="progressbar" aria-valuemin="0" aria-valuemax="${m.n}" aria-valuenow="${m.log.length}"><i style="width:${pct}%"></i></div>
       ${m.stopped ? '<p class="muted small">Stopped early. You pick up at New Year.</p>' : ''}
       ${m.failed ? `<p class="warn">Something went wrong during Year ${m.failed.season}, so the sim stopped. Everything up to that point is saved. If it happens again, please report this message: <span class="small">${esc(m.failed.msg).slice(0, 200)}</span></p>` : ''}
+      ${m.done && m.auto ? simAutoDone(m) : ''}
       ${rows ? `<div class="scroll"><table class="tbl"><thead><tr><th>Year</th><th>Champion${nLeagues() > 1 ? ' · ' + S.lgName : ''}</th><th>Titles</th><th>Badges conceded</th><th>Reached the Elite Four</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
       <div class="confirm-row">${m.done ? `<button class="btn primary" data-act="simmanyclose">Continue in Year ${S.season}</button><button class="btn" data-act="simmanyrecords">See records</button>` : '<button class="btn" data-act="simmanystop">Stop at the next New Year</button>'}</div>`;
   }
@@ -1385,18 +1386,33 @@ function simManyBody() {
   return `<div class="mh"><h2>Sim multiple years</h2><button class="btn icon" data-act="close" aria-label="Close">×</button></div>
     <p>Plays whole years in one go without stopping for anything, then stops at a New Year. Any post that falls vacant on the way is filled for you.</p>
     <div class="eyebrow">Years</div><div class="segs setup-segs sim-n">${SIM_CHOICES.map(k => `<button class="seg${n === k ? ' on' : ''}" data-act="simmanyn" data-v="${k}" aria-pressed="${n === k}">${k}</button>`).join('')}</div>
+    ${booksOn0() ? `<div class="eyebrow">While you're away</div><div class="segs setup-segs sim-auto">${[['', 'Leave it'], ...AIM_KEYS.map(k => [k, AIMS[k].name])].map(([k, nm]) => `<button class="seg${(S.simAuto || '') === k ? ' on' : ''}" data-act="simmanyauto" data-v="${k}" aria-pressed="${(S.simAuto || '') === k}">${nm}</button>`).join('')}</div>
+    <p class="muted small">${S.simAuto ? `Your League spends and runs its ranch as a rival ${AIMS[S.simAuto].name.toLowerCase()} would: ${SIM_AUTO_TEXT[S.simAuto]} Your steers, team plans and staff are left as they are, and nothing reserved, locked or in a plan is sold.` : 'Your League spends nothing and starts nothing at the ranch; trips under way and the Safari Zone and Day Care carry on.'}</p>` : ''}
     ${S.week > 0 ? `<p class="muted small">It is ${weekName(S.week)} of Year ${S.season}, so the rest of this year counts as the first year.</p>` : ''}
     ${n >= 10 || simSaveBig() ? `<p class="warn small">Planning to sim far ahead? Saves grow every year, and browsers only keep a few megabytes per site${simSaveBig() ? ' (this league is already large)' : ''}. If the save gets too big for this browser, the game tells you and stops saving here. Use Download save file in the menu now and then, so a long league is never lost.</p>` : ''}
     <p class="muted small">You can't undo it. Copy your save from the menu first if you might want this point back.</p>
     <div class="confirm-row"><button class="btn primary" data-act="simmanygo">Sim ${n} year${n === 1 ? '' : 's'}</button><button class="btn" data-act="close">Cancel</button></div>`;
+}
+// (0.50.0) managing your League while the multi-year sim runs (S.simAuto, see autoMonth)
+const SIM_AUTO_TEXT = {
+  wall: 'gym features first, then Sanctuaries, a Safari Zone, a training hall, shipping lanes and the rest, a paid ban now and then on the top of the meta, and a ranch that buys for its weakest posts and keeps six spares.',
+  star: 'a training hall and youth academy first, then Sanctuaries, gym halls, shipping lanes, a scouting office and the rest, and a ranch that buys for its weakest posts and keeps four spares.',
+  money: 'attractions first and a larger reserve, little bought for the ranch, and spare Pokémon sold quickly.',
+};
+const booksOn0 = () => inLeague(ME(), () => booksOn() && !!S.fin);
+const simAutoSnap = () => inLeague(ME(), () => ({ money: S.fin.money, built: estateCost(), bans: paidBans().length, ranch: (S.ranch && S.ranch.mons.length) || 0 }));
+function simAutoDone(m) {
+  const a = m.auto, b = simAutoSnap();
+  return `<p class="small">Run as a ${AIMS[a.aim].name.toLowerCase()}: money ${money(a.money)} → <b>${money(b.money)}</b>, buildings at cost ${money(a.built)} → <b>${money(b.built)}</b>, paid bans ${a.bans} → <b>${b.bans}</b>, ranch ${a.ranch} → <b>${b.ranch}</b> Pokémon. The Money and Ranch pages have the details.</p>`;
 }
 function simManyTick() {
   const m = modal; if (!m || m.kind !== 'simmany' || !m.running) return;
   let h;
   // if a year ever fails, stop and say so (progress so far is kept) instead of hanging on "Simulating…"
   // nobody is there to choose, so posts that fall vacant are filled for the player as the years go by
-  try { approveAllChallenges(); fillAllVacancies(); h = simYear(); if (!S.founding) { approveAllChallenges(); fillAllVacancies(); } }
-  catch (e) { m.running = false; m.done = true; m.failed = { season: S.season, msg: String(e && e.message || e) }; save(); view = 'circuit'; render(); renderModal(); return; }
+  try { S.simRun = true; approveAllChallenges(); fillAllVacancies(); h = simYear(); if (!S.founding) { approveAllChallenges(); fillAllVacancies(); } }
+  catch (e) { delete S.simRun; m.running = false; m.done = true; m.failed = { season: S.season, msg: String(e && e.message || e) }; save(); view = 'circuit'; render(); renderModal(); return; }
+  delete S.simRun; // (0.50.0) set only while a year of the multi-year sim is being played
   if (h) m.log.push(h);
   save();
   if (m.log.length >= m.n || m.stopRequested || S.founding) { // (0.18.0) a folded League stops the sim for founding

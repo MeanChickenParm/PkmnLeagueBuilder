@@ -1,5 +1,10 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 50, ver: '0.50.0', date: 'November 23, 2026', time: '6:04 PM ET', title: 'The multi-year sim can run your League', items: [
+    "Sim multiple years has a new choice, While you're away: leave your League as it is (as before), or have it run as a wall-builder, star-maker or money-maker would run it. Once a month it builds and upgrades by that aim's list, pays for a ban now and then (wall-builder), buys for its weakest posts and sells spare Pokémon at the ranch, and sells a building a month if it goes into the red, the same way rival Leagues do.",
+    "It never touches your steers, team plans or staff, and never sells a ranch Pokémon you reserved, locked or named in a team plan. Vacancies are still filled for you as before. Your choice is remembered for next time.",
+    "When the sim finishes, the window shows what changed: money, buildings at cost, paid bans and the size of the ranch.",
+  ] },
   { id: 49, ver: '0.49.0', date: 'November 23, 2026', time: '4:05 PM ET', title: 'Small fixes', items: [
     "New page: Post holders (World → Post holders). It shows who held every post (Champion, Elite Four seats and Gym Leaders) at the end of every year, with a mark where a post changed hands and anyone else who held it during the year, or post by post as tenures. Use the League buttons to see any League's.",
     "The Trainers page shows 50 trainers a page, with First, Prev, Next and Last buttons, instead of loading everyone at once. Changing a filter, search or sort goes back to page 1.",
@@ -935,7 +940,8 @@ document.addEventListener('click', ev => {
     case 'hofsort': hofSort = el.dataset.v; render(); break;
     case 'recmore': modal = { kind: 'recmore', key: el.dataset.k }; renderModal(); break;
     case 'simmanyn': modal.n = +el.dataset.v; renderModal(); break;
-    case 'simmanygo': modal.running = true; modal.log = []; renderModal(); simTimer = setTimeout(simManyTick, 30); break;
+    case 'simmanyauto': S.simAuto = el.dataset.v || undefined; save(); renderModal(); break;
+    case 'simmanygo': modal.running = true; modal.log = []; modal.auto = S.simAuto && booksOn0() ? { aim: S.simAuto, ...simAutoSnap() } : null; renderModal(); simTimer = setTimeout(simManyTick, 30); break;
     case 'simmanystop': modal.stopRequested = true; renderModal(); break;
     case 'simmanyclose': modal = null; renderModal(); go('circuit'); break;
     case 'simmanyrecords': modal = null; renderModal(); go('records'); break;
