@@ -205,3 +205,62 @@ function viewGod() {
     <p>${Array.from({ length: nLeagues() }, (_, i) => leagueName(i)).join(' · ')}</p>
     <div class="confirm-row"><button class="btn primary" data-act="godleague" ${nextRegion() != null ? '' : 'disabled'}>${nextRegion() != null ? `Open the ${nextRegionName()} now` : 'The world is full'}</button></div></section>${godEditor()}`;
 }
+
+// ---------- post holders (0.49.0) ----------
+// Every post of the League on view, year by year: who held it at each New Year (a mark where it changed hands, and
+// anyone else who held it during the year), or post by post as tenures. Read from each year's history entry
+// (`gyms[i].leader`/`lead`, `seats[k].id`/`held`, k 4 = the Champion), with this year's holders as the top row.
+let postsMode = 'year';
+function postCols() {
+  return [{ k: 's4', label: postWord('champion'), now: () => S.champion }]
+    .concat([0, 1, 2, 3].map(k => ({ k: 's' + k, label: `${postWord('e4')} #${k + 1}`, now: () => S.e4[k] })))
+    .concat(S.gyms.map((g, i) => ({ k: 'g' + i, label: `${townName(i)} ${postWord('leader')}`, short: townName(i), now: () => g.leader })));
+}
+// a year's holder of a post: { id, acting, also: [others who held it during the year] }
+function postAt(h, k) {
+  const x = k[0] === 's' ? (h.seats || [])[+k.slice(1)] : (h.gyms || [])[+k.slice(1)];
+  if (!x) return null;
+  const id = k[0] === 's' ? x.id : x.leader, during = (k[0] === 's' ? x.held : x.lead) || [];
+  return { id, acting: !!x.acting, also: during.filter(o => o != null && o !== id) };
+}
+function postNow(c) { const id = c.now(), t = T(id); return { id, acting: !!(t && t.acting), also: [] }; }
+const pName = id => { const t = T(id); return t ? `<button class="tlink" data-act="profile" data-id="${id}">${esc(t.name)}${t.famous ? '<span class="star">★</span>' : ''}</button>` : '<span class="muted">—</span>'; };
+function postCell(p, prev) {
+  if (!p || p.id == null) return '<td class="muted">—</td>';
+  const chg = prev && prev.id !== p.id;
+  const also = p.also.length ? ` <span class="small muted" title="Also held it this year: ${esc(p.also.map(o => (T(o) || {}).name || '?').join(', '))}">+${p.also.length}</span>` : '';
+  return `<td class="${chg ? 'phchg' : ''}">${pName(p.id)}${p.acting ? ' <span class="tag">acting</span>' : ''}${also}</td>`;
+}
+function postTenures(cols, rows) {
+  // rows oldest first: [{ season, get(k) }]; a tenure is a run of years with the same year-end holder
+  return cols.map(c => {
+    const ten = [];
+    for (const r of rows) { const p = r.get(c.k); if (!p || p.id == null) continue;
+      const last = ten[ten.length - 1];
+      if (last && last.id === p.id && last.to === r.season - 1) last.to = r.season; else ten.push({ id: p.id, from: r.season, to: r.season, now: false });
+      if (r.now) ten[ten.length - 1].now = true; }
+    return { c, ten: ten.reverse() };
+  });
+}
+function viewPosts() {
+  const cols = postCols(), hist = S.history.filter(h => h.gyms || h.seats);
+  const nowRow = { season: S.season + 1, now: true, get: k => postNow(cols.find(c => c.k === k)) };
+  const rows = hist.map(h => ({ season: h.season, get: k => postAt(h, k) })).concat([nowRow]);
+  const seg = (v, l) => `<button class="seg${postsMode === v ? ' on' : ''}" data-act="postsmode" data-v="${v}" aria-pressed="${postsMode === v}">${l}</button>`;
+  const head = `<div class="ph"><h2>Post holders${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><span class="muted">${hist.length} year${hist.length === 1 ? '' : 's'} recorded</span></div>
+    <div class="segs" style="margin-bottom:8px">${seg('year', 'By year')}${seg('post', 'By post')}</div>`;
+  let body;
+  if (postsMode === 'post') {
+    body = postTenures(cols, rows).map(({ c, ten }) => `<div class="phpost"><h3>${esc(c.label)}</h3>${ten.length ? `<table class="tbl"><tbody>${ten.map(x => {
+      const n = x.to - x.from + 1, yrs = x.now ? (x.from === S.season + 1 ? 'this year' : `Year ${x.from} – now`) : x.from === x.to ? `Year ${x.from}` : `Years ${x.from}–${x.to}`;
+      return `<tr${x.now ? ' class="sel"' : ''}><td>${pName(x.id)}</td><td class="small">${yrs}</td><td class="num small muted">${n} year${n === 1 ? '' : 's'}${x.now ? ' so far' : ''}</td></tr>`; }).join('')}</tbody></table>` : '<p class="muted">Nobody yet.</p>'}</div>`).join('');
+    body = `<div class="phgrid">${body}</div>`;
+  } else {
+    const desc = rows.slice().reverse();
+    body = `<div class="scroll"><table class="tbl phtbl"><thead><tr><th>Year</th>${cols.map(c => `<th title="${esc(c.label)}">${esc(c.short || c.label)}</th>`).join('')}</tr></thead><tbody>
+      ${desc.map((r, i) => { const prev = desc[i + 1]; return `<tr${r.now ? ' class="sel"' : ''}><td class="num">${r.now ? 'Now' : r.season}</td>${cols.map(c => postCell(r.get(c.k), prev && prev.get(c.k))).join('')}</tr>`; }).join('')}
+    </tbody></table></div>`;
+  }
+  return `<section class="panel">${head}${body}
+    <p class="fine">${postsMode === 'year' ? `Who held each post at the end of each year; the top row is now. A gold edge marks a post that changed hands that year, +N anyone else who held it during the year (hover for names). Gym columns are named by where each gym is now.` : 'Each post\'s holders at the end of each year, newest first; the highlighted row holds it now.'} Use the League buttons above to see another League.</p></section>`;
+}

@@ -1139,7 +1139,7 @@ function hofPanel(t) {
 }
 function viewHistory() {
   const h = S.history.slice().reverse();
-  return `${worldHistory()}${wallReport()}<section class="panel"><div class="ph"><h2>History by year${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2></div>
+  return `${worldHistory()}${wallReport()}<section class="panel"><div class="ph"><h2>History by year${nLeagues() > 1 ? ' · ' + S.lgName : ''}</h2><button class="btn small" data-act="nav" data-v="posts">Post holders</button></div>
   ${h.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Year</th><th>Champion</th><th>Deepest run short of the title</th><th>Runs at the Elite Four</th><th>Meta</th></tr></thead><tbody>
   ${h.map(x => `<tr><td class="num">${x.season}</td><td>${tname(x.champ)}${x.champWasNew ? ' <span class="tag gold">new</span>' : ''}</td><td>${x.runner ? tname(x.runner) + ` <span class="muted">(${x.runnerStage === 4 ? 'Final' : 'E4 #' + (x.runnerStage + 1)})</span>` : '—'}</td><td class="num">${x.qualifiers}</td><td>${x.metaMons && x.metaMons.length ? `<span class="small">${x.metaMons.join(', ')}</span>` : '—'}</td></tr>`).join('')}
   </tbody></table></div>` : '<p class="muted">The first year has not finished yet.</p>'}</section>

@@ -1,6 +1,7 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
   { id: 49, ver: '0.49.0', date: 'November 23, 2026', time: '4:05 PM ET', title: 'Small fixes', items: [
+    "New page: Post holders (World → Post holders). It shows who held every post (Champion, Elite Four seats and Gym Leaders) at the end of every year, with a mark where a post changed hands and anyone else who held it during the year, or post by post as tenures. Use the League buttons to see any League's.",
     "The Trainers page shows 50 trainers a page, with First, Prev, Next and Last buttons, instead of loading everyone at once. Changing a filter, search or sort goes back to page 1.",
     "Letting go a member of staff who is leaving anyway is now free: once they have announced they're stepping down or given notice (over their ambition, or over unpaid wages), no severance is paid. A raise that withdraws their notice makes severance apply again. The Let go button shows what it will cost.",
   ] },
@@ -579,6 +580,7 @@ function render() {
   if (view === 'gyms') v = viewGyms();
   if (view === 'news') v = viewNews();
   if (view === 'history') v = viewHistory();
+  if (view === 'posts') v = viewPosts();
   if (view === 'records') v = viewRecords();
   if (view === 'hof') v = viewHof();
   if (view === 'dex') v = viewDex();
@@ -639,8 +641,8 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch', 'plans'];
-const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'recap', 'records', 'board'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'posts', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch', 'plans'];
+const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'posts', 'recap', 'records', 'board'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
   viewLg = Math.min(viewLg, nLeagues() - 1);
@@ -968,6 +970,7 @@ document.addEventListener('click', ev => {
     case 'dexkind': dexKind = el.dataset.v; render(); break;
     case 'dextrait': dexTrait = el.dataset.v; render(); break;
     case 'dexscope': dexScope = el.dataset.v; render(); break;
+    case 'postsmode': postsMode = el.dataset.v === 'post' ? 'post' : 'year'; render(); break;
     case 'trsort': { const k = el.dataset.k; trSort = trSort.k === k ? { k, dir: -trSort.dir } : { k, dir: ['name', 'pos'].includes(k) ? 1 : -1 }; trPage = 0; render(); break; }
     case 'trscope': trScope = el.dataset.v; trPage = 0; render(); break;
     case 'trgroup': trGroup = el.dataset.v; trFam = 'all'; trPage = 0; render(); break;

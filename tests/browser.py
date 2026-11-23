@@ -15,7 +15,7 @@ async def run(path):
           // 0.9.0: pick a candidate who takes a post at once (not a challenger, who gets an offer, and not senior staff)
           // (0.10.0) staff can now leave over their ambitions, so a scripted step starts with no vacancy already open
           const clearVac = () => inLeague(0, () => { for (let n = 0; n < 20 && (S.vacancies || []).length; n++) { const v = S.vacancies[0]; if (v.incoming != null) withdrawOffer(v.incoming); const o = (v.outsiders || []).find(x => T(x) && T(x).role === 'prospect'); if (!o || !fillVacancy(v, o)) break; } });
-          const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^(Circuit|Another circuit)/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
+          const pickNow = () => { const b = [...document.querySelectorAll('[data-act=hirepick]')].find(b => !/^(Circuit|Another circuit|Region's field)/.test(b.closest('tr').children[1].textContent) && !/Gym Leader ·|Elite Four #/.test(b.closest('tr').textContent)); if (b) { b.click(); return true; } return false; };
           const log = [], click = sel => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
           if (!document.querySelector('[data-act=newworld]')) log.push('FAIL no region cards on the setup screen');
           if (!/Pokémon League Builder/.test(document.title + document.body.textContent)) log.push('FAIL the name is missing');
@@ -137,7 +137,7 @@ async def run(path):
               if (document.querySelectorAll('#main table.tbl tbody tr').length !== S.challengers.length) log.push('FAIL back to this League'); }
             go('table'); if (!/Challengers/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table has no Challengers column');
             log.push('region field ' + fieldSize(S.region) + ' of ' + fieldTarget(S.region) + ', yours ' + S.challengers.length); }
-          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch', 'plans'];
+          const views = ['circuit', 'board', 'gyms', 'news', 'history', 'posts', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch', 'plans'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };
           const cards = tag => { try { go('circuit'); click('[data-act=profile]'); if (!document.querySelector('.sheet-profile')) log.push('FAIL ' + tag + ' no profile'); if (click('.sheet [data-act=mon]')) { if (!document.querySelector('.sheet-mon')) log.push('FAIL ' + tag + ' no Pokémon card'); click('[data-act=close]'); } click('[data-act=close]');
             click('[data-act=glossary]'); if (!document.querySelector('.sheet-glossary')) log.push('FAIL ' + tag + ' no glossary'); if (/undefined/.test(document.querySelector('.sheet').textContent)) log.push('FAIL glossary shows undefined'); click('[data-act=close]');
@@ -227,7 +227,15 @@ async def run(path):
                       else { if (trPage !== 1 || !/Page 2 of/.test(document.querySelector('#trres').textContent)) log.push('FAIL the Trainers page did not turn');
                         const last = document.querySelectorAll('[data-act=trpage]')[3]; last.click(); if (rows() < 1 || rows() > 50) log.push('FAIL the last Trainers page');
                         click('[data-act=trscope][data-v=active]'); if (trPage !== 0) log.push('FAIL a filter did not go back to page 1');
-                        log.push('trainer pages ok'); } } }
+                        log.push('trainer pages ok'); } }
+                    // 0.49.0: post holders, by year and by post, for your League and a rival
+                    { go('posts'); const m = () => document.querySelector('#main');
+                      const rows = m().querySelectorAll('table.phtbl tbody tr').length, cols = m().querySelectorAll('table.phtbl thead th').length;
+                      if (rows !== S.history.length + 1 || cols !== 14) log.push('FAIL post holders by year: ' + rows + ' rows, ' + cols + ' columns');
+                      if (!m().querySelector('table.phtbl tbody tr.sel [data-act=profile]')) log.push('FAIL post holders: no current Champion');
+                      click('[data-act=postsmode][data-v=post]'); if (m().querySelectorAll('.phpost').length !== 13 || /undefined|NaN/.test(m().textContent)) log.push('FAIL post holders by post');
+                      if (nLeagues() > 1) { click('[data-act=lgview][data-v="1"]'); if (!m().querySelectorAll('.phpost').length) log.push('FAIL post holders for a rival'); click('[data-act=lgview][data-v="0"]'); }
+                      click('[data-act=postsmode][data-v=year]'); log.push('post holders ok'); } }
                   // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');

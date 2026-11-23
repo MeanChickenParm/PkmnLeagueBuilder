@@ -317,7 +317,7 @@ function navGroups() {
   if (handOn() && nLeagues() > 1) manage.push(['contenders', 'Contenders']);
   const world = [];
   if (nLeagues() > 1) world.push(['table', 'League table']);
-  world.push(['news', 'News'], ['history', 'History']);
+  world.push(['news', 'News'], ['history', 'History'], ['posts', 'Post holders']);
   const records = [];
   if (S.history.some(x => x.titles != null)) records.push(['recap', 'Year report']);
   records.push(['records', 'Records'], ['hof', 'Hall of Fame'], ['dex', 'Pokémon']);
