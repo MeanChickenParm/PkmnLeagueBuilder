@@ -711,6 +711,9 @@ function accolades(t) {
 const accTags = t => accolades(t).filter(x => x.tag).map(x => `<span class="tag acc-${x.k}">${x.tag}</span>`).join(' ');
 let trFam = 'all';
 let trScope = 'active', trGroup = 'all', trSort = { k: 'w', dir: -1 }, trQ = '';
+// (0.49.0) the Trainers page shows TR_PAGE at a time; trPage is reset by any filter, search or sort
+const TR_PAGE = 50;
+let trPage = 0;
 const fold = x => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const esc = x => String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 function searchBox(id, val, label, ph) {
@@ -739,18 +742,25 @@ function trainersResults() {
   if (q) list = list.filter(t => fold([dn(t), t.name, t.cls, t.legacy ? 'legacy' : '', positionText(t), specName(t), t.spec2 ? 'dual' : '', traitOf(t) ? TRAITS[traitOf(t)].name : '', t.rival ? 'rival' : '', t.nemesis ? 'nemesis' : '', ...famousTags(t).map(k => FAMOUS_TAG_LABELS[k]), ...t.team.map(m => m.sp)].join(' ')).includes(q));
   const val = (t, k) => { const r = recOf(t); const b = r.w + r.l;
     return { name: dn(t), pos: positionText(t), age: t.age, ovr: ovr(t), w: r.w, l: r.l, pct: b ? r.w / b : -1, gym: r.gw, lg: r.lw + r.tw, badges: t.career.badges, titles: (t.titleSeasons || []).length || t.career.titles, mons: t.team.length + (t.alumni || []).length, acc: accolades(t).length }[k]; };
-  list.sort((a, b) => { const x = val(a, trSort.k), y = val(b, trSort.k); const c = typeof x === 'string' ? x.localeCompare(y) : x - y; return c * trSort.dir || recOf(b).w - recOf(a).w; });
+  // (0.49.0) each trainer's sort value is worked out once, not on every comparison
+  const keyed = list.map(t => ({ t, x: val(t, trSort.k), w: recOf(t).w }));
+  keyed.sort((a, b) => { const c = typeof a.x === 'string' ? a.x.localeCompare(b.x) : a.x - b.x; return c * trSort.dir || b.w - a.w; });
+  list = keyed.map(o => o.t);
   const th = ([k, l]) => `<th><button class="sort${trSort.k === k ? ' on' : ''}" data-act="trsort" data-k="${k}">${l}${trSort.k === k ? (trSort.dir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`;
-  const shown = list.slice(0, 200);
+  const pages = Math.max(1, Math.ceil(list.length / TR_PAGE));
+  trPage = Math.max(0, Math.min(trPage, pages - 1));
+  const from = trPage * TR_PAGE, shown = list.slice(from, from + TR_PAGE);
+  const pb = (p, l, off) => `<button class="btn small" data-act="trpage" data-v="${p}"${off ? ' disabled' : ''}>${l}</button>`;
+  const pager = pages < 2 ? '' : `<div class="filters trpager">${pb(0, '« First', trPage === 0)}${pb(trPage - 1, '‹ Prev', trPage === 0)}<span class="small">Page <b>${trPage + 1}</b> of ${pages} · ${from + 1}–${from + shown.length} of ${list.length}</span>${pb(trPage + 1, 'Next ›', trPage >= pages - 1)}${pb(pages - 1, 'Last »', trPage >= pages - 1)}</div>`;
   const count = `<p class="muted small">${list.length} trainer${list.length === 1 ? '' : 's'}${q ? ` matching “${esc(trQ.trim())}”` : ''}</p>`;
   if (!shown.length) return count + `<p class="muted">No trainers match${q ? ' that search' : ''}. ${q || trScope !== 'all' || trGroup !== 'all' ? 'Try “Everyone” and “All roles”, or a shorter search.' : ''}</p>`;
-  return count + `<div class="scroll"><table class="tbl trainers"><thead><tr>${TR_COLS.map(th).join('')}</tr></thead><tbody>
+  return count + pager + `<div class="scroll"><table class="tbl trainers"><thead><tr>${TR_COLS.map(th).join('')}</tr></thead><tbody>
     ${shown.map(t => { const r = recOf(t); const b = r.w + r.l; return `<tr>
       <td>${tname(t.id)}</td><td>${positionText(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td>
       <td class="num">${r.w}</td><td class="num">${r.l}</td><td class="num">${b ? Math.round(r.w / b * 100) + '%' : '—'}</td><td class="num">${r.gw}–${r.gl}</td><td class="num">${r.lw + r.tw}–${r.ll + r.tl}</td>
       <td class="num">${t.career.badges}</td><td class="num">${(t.titleSeasons || []).length || t.career.titles || ''}</td>
       <td title="${t.team.map(m => m.sp + ' Lv ' + Math.floor(m.lvl)).join(', ')}">${teamDots(t)}</td><td class="acc">${accTags(t)}</td></tr>`; }).join('')}
-    </tbody></table></div>${list.length > 200 ? `<p class="fine">Showing 200 of ${list.length}. Search, sort or filter to find others.</p>` : ''}`;
+    </tbody></table></div>${pager}`;
 }
 
 let dexScope = 'season', dexSort = { k: 'b', dir: -1 }, dexMin = 5, dexQ = '', dexKind = 'all';

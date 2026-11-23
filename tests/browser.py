@@ -218,7 +218,16 @@ async def run(path):
                     pick('gym:2', ''); inLeague(0, () => { if ('gym:2' in S.steer.posts) log.push('FAIL clearing a steer'); });
                     go('meta'); if (!/The trend/.test(document.querySelector('#main').textContent)) log.push('FAIL the Meta page');
                     const b = document.querySelector('[data-act=steerall][data-v=year]'); if (b) { b.click(); log.push('countered the year: ' + Object.values(inLeague(0, () => S.steer.posts)).filter(x => x === 'year').length + ' posts'); } else log.push('no year reading yet');
-                    go('trainers'); }
+                    go('trainers');
+                    // 0.49.0: the Trainers page shows 50 a page; Everyone has more than 50, so Next and Last work
+                    { const rows = () => document.querySelectorAll('#trres table.trainers tbody tr').length;
+                      click('[data-act=trscope][data-v=all]');
+                      if (rows() > 50) log.push('FAIL the Trainers page shows ' + rows() + ' rows');
+                      if (!click('[data-act=trpage][data-v="1"]:not([disabled])')) log.push('FAIL no Next page on the Trainers page');
+                      else { if (trPage !== 1 || !/Page 2 of/.test(document.querySelector('#trres').textContent)) log.push('FAIL the Trainers page did not turn');
+                        const last = document.querySelectorAll('[data-act=trpage]')[3]; last.click(); if (rows() < 1 || rows() > 50) log.push('FAIL the last Trainers page');
+                        click('[data-act=trscope][data-v=active]'); if (trPage !== 0) log.push('FAIL a filter did not go back to page 1');
+                        log.push('trainer pages ok'); } } }
                   // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');

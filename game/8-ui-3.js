@@ -1,6 +1,7 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
   { id: 49, ver: '0.49.0', date: 'November 23, 2026', time: '4:05 PM ET', title: 'Small fixes', items: [
+    "The Trainers page shows 50 trainers a page, with First, Prev, Next and Last buttons, instead of loading everyone at once. Changing a filter, search or sort goes back to page 1.",
     "Letting go a member of staff who is leaving anyway is now free: once they have announced they're stepping down or given notice (over their ambition, or over unpaid wages), no severance is paid. A raise that withdraws their notice makes severance apply again. The Let go button shows what it will cost.",
   ] },
   { id: 48, ver: '0.48.0', date: 'November 21, 2026', time: '4:45 PM ET', title: 'Trainer packs can share names', items: [
@@ -967,10 +968,11 @@ document.addEventListener('click', ev => {
     case 'dexkind': dexKind = el.dataset.v; render(); break;
     case 'dextrait': dexTrait = el.dataset.v; render(); break;
     case 'dexscope': dexScope = el.dataset.v; render(); break;
-    case 'trsort': { const k = el.dataset.k; trSort = trSort.k === k ? { k, dir: -trSort.dir } : { k, dir: ['name', 'pos'].includes(k) ? 1 : -1 }; render(); break; }
-    case 'trscope': trScope = el.dataset.v; render(); break;
-    case 'trgroup': trGroup = el.dataset.v; trFam = 'all'; render(); break;
-    case 'trfam': trFam = el.dataset.v; render(); break;
+    case 'trsort': { const k = el.dataset.k; trSort = trSort.k === k ? { k, dir: -trSort.dir } : { k, dir: ['name', 'pos'].includes(k) ? 1 : -1 }; trPage = 0; render(); break; }
+    case 'trscope': trScope = el.dataset.v; trPage = 0; render(); break;
+    case 'trgroup': trGroup = el.dataset.v; trFam = 'all'; trPage = 0; render(); break;
+    case 'trfam': trFam = el.dataset.v; trPage = 0; render(); break;
+    case 'trpage': { trPage = +el.dataset.v || 0; const r = $('#trres'); if (r) { r.innerHTML = trainersResults(); r.scrollIntoView({ block: 'start' }); } else render(); break; }
     case 'dexmin': dexMin = +el.dataset.v; render(); break;
     case 'menu': modal = { kind: 'menu' }; renderModal(); break;
     case 'export': {
@@ -991,7 +993,7 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('input', e => {
   const id = e.target && e.target.id;
-  if (id === 'trsearch') { trQ = e.target.value; const r = $('#trres'); if (r) r.innerHTML = trainersResults(); }
+  if (id === 'trsearch') { trQ = e.target.value; trPage = 0; const r = $('#trres'); if (r) r.innerHTML = trainersResults(); }
   if (id === 'glosssearch') { glossQ = e.target.value; const r = $('#glossres'); if (r) { r.innerHTML = glossResults(); applyFolds(r, 'modal-glossary'); } }
   if (id === 'dexsearch') { dexQ = e.target.value; const r = $('#dexres'); if (r) r.innerHTML = dexResults(); }
   if (id === 'setupload') setupLoadText = e.target.value;
