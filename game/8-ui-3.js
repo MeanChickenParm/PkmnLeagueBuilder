@@ -1,5 +1,9 @@
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 51, ver: '0.51.0', date: 'November 23, 2026', time: '6:45 PM ET', title: 'Sort by egg group', items: [
+    "The ranch's Pool tab can be sorted by egg group (Sort → Egg group). Each Pokémon's egg groups then show under its type, Ditto comes first and Pokémon that can't breed (Undiscovered) come last, so lines that can pair sit together.",
+    "The Day Care's breeding pool has a Sort switch, Line or Egg group, and the two parent pickers follow the same order.",
+  ] },
   { id: 50, ver: '0.50.0', date: 'November 23, 2026', time: '6:04 PM ET', title: 'The multi-year sim can run your League', items: [
     "Sim multiple years has a new choice, While you're away: leave your League as it is (as before), or have it run as a wall-builder, star-maker or money-maker would run it. Once a month it builds and upgrades by that aim's list, pays for a ban now and then (wall-builder), buys for its weakest posts and sells spare Pokémon at the ranch, and sells a building a month if it goes into the red, the same way rival Leagues do.",
     "It never touches your steers, team plans or staff, and never sells a ranch Pokémon you reserved, locked or named in a team plan. Vacancies are still filled for you as before. Your choice is remembered for next time.",
@@ -877,6 +881,7 @@ document.addEventListener('click', ev => {
     case 'ranchfreset': ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }; render(); break;
     case 'ranchstock': { const who = inLeague(ME(), () => { const e = ranchEntry(+el.dataset.id); return e && e.at != null && T(e.at) ? T(e.at).name : null; }); const w = inLeague(ME(), () => stockMon(+el.dataset.id)); save(); render(); toast(w || 'Stocked in the Safari Zone.' + (who ? ` ${who} swapped it out.` : '')); break; }
     case 'ranchbreed': { const w = inLeague(ME(), () => breedIn(+el.dataset.id, !!el.dataset.ask)); save(); render(); toast(w || 'In the breeding pool. Pair it on the Day Care tab.'); break; } // (0.45.0)
+    case 'dcsort': dcSort = el.dataset.v === 'egg' ? 'egg' : 'line'; render(); break; // (0.51.0)
     case 'dcpair': { const w = inLeague(ME(), () => startPair(dcPick.a, dcPick.b)); save(); render(); toast(w || 'The pair has started.'); break; }
     case 'dcend': { const w = inLeague(ME(), () => endPair(+el.dataset.id)); save(); render(); if (w) toast(w); break; }
     case 'safaritake': { const w = inLeague(ME(), () => unstockMon(+el.dataset.id)); save(); render(); toast(w || 'Back in the ranch.'); break; }
