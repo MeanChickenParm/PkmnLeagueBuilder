@@ -1021,7 +1021,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
+function openPost(t, role) { if (t.talk != null) { const k = talkOf(t); if (k) closeTalk(k); } if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1129,6 +1129,7 @@ function endRun(t, entry, stage) {
   // (0.41.0) a challenger staying in the region draws which of its Leagues to take on next (regionDraw)
   const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || regionDraw(t);
   t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
+  starTalks(t, stage); // (0.53.0) a star's run is over: talks may open
 }
 const MOVE_CROWD = 1.25;
 // a challenger moves to another League's circuit between runs: a Triple Crown chaser or a Globetrotter when its
@@ -1412,6 +1413,7 @@ function simWeek() {
   hireArrivals();
   eachLeague(ambitionWeek);
   eachLeague(contractWeek); // (0.52.0) contracts: renewal windows and endings
+  talksWeek(); // (0.53.0) open talks: offers, raises, deadlines
   challengeWeek();
   seatWeek(); // (0.43.0) a Term appointment left unanswered
   birthdays();
@@ -1503,6 +1505,7 @@ const founderProtected = t => !!t.foundingChamp && (S.season || 0) < FOUNDER_SEA
 // a Gym Leader who came back to the circuit is guaranteed five seasons there, whatever their age
 const comebackProtected = t => t.noRetireUntil != null && (S.season || 0) < t.noRetireUntil;
 function retireHere(t, why) {
+  if (t.talk != null && t.role !== 'champion') { const k = talkOf(t); if (k) closeTalk(k); } // (0.53.0)
   if (t.spon) { endContract(t, 'retired'); t.sponFrom = null; } // (0.17.0) a contender's contract ends with their career
   // the reigning Champion never retires; the title only changes hands in battle
   if (t.id === S.champion && t.role === 'champion') return;
@@ -1711,7 +1714,7 @@ const CLAIM_AI_YES = { wall: 0.35, star: 0.7, money: 0.5 };
 const champGrace = () => { const c = T(S.champion); return !c || seatYears(c) < CLAIM_GRACE; };
 const claimOn = t => !!t && t.claimOn != null && S.turn <= t.claimOn;
 // still a challenger on this circuit, free to fight for the seat
-const claimFree = t => !!t && t.role === 'challenger' && S.challengers.includes(t.id) && !t.spon && !t.hired && !t.hireDue && !t.leaving;
+const claimFree = t => !!t && t.role === 'challenger' && S.challengers.includes(t.id) && !t.spon && !t.hired && !t.hireDue && !t.leaving && t.talk == null;
 function wantsSeat(t) {
   let p = CLAIM_WANT;
   if (t.age < 20) p -= 0.2; else if (t.age >= 30) p += 0.15;
@@ -2336,6 +2339,8 @@ function vacancyCands(v, opts = {}) {
   for (const c of out) if (c.from === 'leader' || c.from === 'e4') c.refuse = refusal(c.t, v.post, v.slot);
   // (0.23.0) anyone joining from outside the League's staff must find its prestige enough
   for (const c of out) if (['circuit', 'retired', 'rival', 'away'].includes(c.from)) c.refuse = prestBlock(c.t) || c.refuse;
+  // (0.53.0) a trainer in talks is offered for there (the Talks page); a star or another League's staff opens talks
+  for (const c of out) if (['circuit', 'rival', 'away'].includes(c.from)) { if (c.t.talk != null) c.refuse = c.refuse || 'in talks (see Talks)'; else if (c.from === 'rival' || isStar(c.t)) { c.talks = true; if (!canTalk(c.t) && !c.refuse) c.refuse = 'not open to talks now'; } }
   return out.sort((a, b) => ovr(b.t) - ovr(a.t));
 }
 // fill vacancy v with trainer id (in the player's League). Unpicked outsiders go on to the circuit.
@@ -2343,7 +2348,7 @@ function fillVacancy(v, id, opts = {}) {
   return inLeague(ME(), () => {
     const t = T(id); if (!t || !(S.vacancies || []).includes(v)) return false;
     const cand = vacancyCands(v).find(c => c.t === t);
-    if ((!cand || cand.refuse) && !(opts.hired && t.role === 'challenger')) return false;
+    if ((!cand || cand.refuse) && !(opts.hired && t.role === 'challenger') && !opts.talk) return false;
     // anyone else who had accepted this post isn't coming now (0.9.0)
     if (v.incoming != null && v.incoming !== id) cancelIncoming(v, `${t.name} took the post`);
     v.incoming = null; t.hired = null; t.hireDue = false;
@@ -2392,7 +2397,7 @@ function autoFillVacancy(v) {
   if (v.incoming != null) return 'later';
   return inLeague(ME(), () => {
     for (const c of vacancyCands(v, { noStaff: true })) {
-      if (c.refuse) continue; // (0.23.0) below their prestige minimum
+      if (c.refuse || c.talks) continue; // (0.23.0) below their prestige minimum; (0.53.0) stars and other Leagues' staff need talks
       if (c.from !== 'circuit') return fillVacancy(v, c.t.id);
       if (!canOffer(c.t)) continue;
       const o = offerPost({ post: v.post, slot: v.slot }, c.t);
@@ -2451,6 +2456,8 @@ function letGo(t, was) {
   if (t.wish && t.wish.k === 'run' && t.wish.asked != null && t.stepDown == null) return comeback(t, was);
   t.wish = null;
   severance(t, was, free);
+  // (0.53.0) let go while a promise of no step down or release stands: a certain grudge
+  if (breakPromise(t)) { t.stepDown = null; returnToCircuit(t, `was let go as ${was} against the League's promise`); t.grudge = S.season; t.grudgeLg = S.lg || 0; return grudgeAway(t); }
   // (0.37.0) someone who stored their own legendary with this League takes being let go hard: a certain grudge, and
   // likelier than usual to take it to another League
   if (t.storedLg != null && t.storedLg === (S.lg || 0)) {
@@ -2725,6 +2732,7 @@ function hireForVacancy(v, id, bid = 0) {
     const t = T(id), c = vacancyCands(v).find(x => x.t === t);
     if (!c || c.refuse) return { res: false };
     if (booksOn() && S.fin.money < 0 && !['leader', 'e4', 'gym', 'acting'].includes(c.from)) return { res: 'broke' };
+    if (c.talks) return talkFromHire(t, v.post, v.slot, bid); // (0.53.0) stars and other Leagues' staff: talks
     if (c.from === 'circuit' || c.from === 'away') return bidOffer({ post: v.post, slot: v.slot }, t, bid);
     return { res: 'now', r: fillVacancy(v, id) };
   });
@@ -2777,7 +2785,7 @@ function rivalHire(min, exclude = [], post = null, bidAt = null) {
   // near the floor (cheaper); in the red, anyone takes the cheapest who fits
   const aim = S.fin && S.fin.aim, red = S.fin && S.fin.money < 0;
   const val = t => red ? -ovr(t) : aim === 'star' ? ovr(t) + Math.max(0, 30 - t.age) * 0.6 : aim === 'money' ? ovr(t) + (ovr(t) <= min + 8 ? 100 : 0) : ovr(t) + (t.role === 'challenger' ? t.career.badges / 4 : 0);
-  const cs = fieldPool().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
+  const cs = fieldPool().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && t.talk == null && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
     .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
@@ -2812,7 +2820,7 @@ let POACH_DEPTH = 0;
 function otherStaffFor(post, min) {
   const out = [], me = S.lg || 0;
   if (POACH_DEPTH || nLeagues() < 2 || fixedStaff()) return out;
-  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { for (const t of staffIds().map(T)) if (t && t.wish && t.wish.k === 'up' && !t.acting && !t.quit && t.stepDown == null && !founderChamp(t) && ((post === 'leader' && t.role === 'gymtrainer') || (post === 'e4' && t.role === 'leader')) && ovr(t) >= min) out.push(t); });
+  for (let j = 0; j < nLeagues(); j++) if (j !== me) inLeague(j, () => { if (!(handOn() && j === ME())) for (const t of staffIds().map(T)) if (t && t.talk == null && t.wish && t.wish.k === 'up' && !t.acting && !t.quit && t.stepDown == null && !founderChamp(t) && ((post === 'leader' && t.role === 'gymtrainer') || (post === 'e4' && t.role === 'leader')) && ovr(t) >= min) out.push(t); });
   return out;
 }
 // (0.15.0) challengers on other Leagues' circuits who are resting between runs (so they could come at once), not hired
@@ -3106,6 +3114,7 @@ function moveKind(t, post, slot) {
 function refusal(t, post, slot) {
   if (!t || !STAFF_ROLES.includes(t.role) || t.acting) return null;
   const k = moveKind(t, post, slot);
+  if (k === 'down' && promOn(t, 'nodemote', S.lg || 0)) return 'promised no step down'; // (0.53.0)
   if (!k || k === 'up' || poorRecord(t)) return null;
   if (k === 'down') return 'refuses a step down';
   const a = t.wish && t.wish.k;

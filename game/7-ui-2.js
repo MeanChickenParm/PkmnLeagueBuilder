@@ -112,6 +112,7 @@ function hireRowOf(c, warn, ask, post) {
   const t = c.t, bits = warn ? [warn] : [], imp = c.from === 'circuit' && impressed(t);
   let label = 'Pick', off = '';
   if (c.refuse) off = c.refuse;
+  else if (c.talks) { label = 'Open talks'; bits.push(c.from === 'rival' ? 'under contract: talks with their League' : 'a star: talks open with your offer'); } // (0.53.0)
   else if (c.from === 'circuit' || c.from === 'away') {
     label = 'Offer';
     if (!canOffer(t)) off = `turned you down · ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}`;

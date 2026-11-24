@@ -58,6 +58,7 @@ const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first se
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 const ctrlStats = { cities: 0, tiers: [0, 0, 0, 0], renown: 0, slice: 0, homed: 0 }; // (0.40.0)
 const fieldStats = { rebuildWeeks: 0, crowdMax: 0, regionMax: 0, minShare: 1, loyal: 0 }; // (0.41.0)
+const TALKS = { weeks: 0, most: 0, maxOffers: 0, hand: 0, handErr: 0, refused: 0, cap: 0, red: 0, matched: 0, letGo: 0, bonusOk: 0, withdrawn: 0, fromHire: 0, promised: 0 };
 function check(tag) {
   { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -230,11 +231,11 @@ function check(tag) {
       if (t.wish.k === 'step' && t.role !== 'champion') bad('a non-Champion wants to step down: ' + t.name);
       if (t.role === 'champion' && t.founderUntil != null && s.season < t.founderUntil && t.wish.k !== 'stay') bad('a founder Champion wants ' + t.wish.k);
       if (t.role === 'champion') call.champWish[t.wish.k] = (call.champWish[t.wish.k] || 0) + 1;
-      if (t.quit && (t.quit.at < s.turn || t.quit.at - s.turn > g.RUN_HOLD)) bad('a notice out of range: ' + t.name);
+      if (t.quit && (t.quit.at < s.turn || t.quit.at - s.turn > g.RUN_HOLD)) bad('a notice out of range: ' + t.name + ' ' + JSON.stringify({ q: t.quit, c: t.con, tk: t.talk, w: t.wish, turn: s.turn, role: t.role }));
       if (t.quit && t.stepDown != null) bad('leaving and stepping down at once: ' + t.name);
       if (t.quit) amb.quit.add(t.id);
       // (0.52.0) a contract holds against ambition: overdue promotion and a run request wait for its end
-      const held = t.con && s.turn <= t.con.until;
+      const held = t.con && (s.turn <= t.con.until || t.talk != null); // (0.53.0) in talks after a contract ran out
       if (t.wish.k === 'run' && t.wish.asked != null) { amb.asked.add(t.id); if (s.turn - t.wish.asked > g.RUN_HOLD && !held) bad('held past a year: ' + t.name); }
       if (g.ambClock(t) && t.stepDown == null && !t.quit && s.turn > g.ambDue(t) + 1 && !held) bad('promotion overdue with no notice: ' + t.name + ' ' + t.role);
       // contracts (0.52.0): every member of staff has one of a length for their kind of post, not overdue
@@ -245,7 +246,7 @@ function check(tag) {
           CTR.seen++;
           if (!opts.includes(c.len) || c.until - c.from !== c.len) bad(`a contract of the wrong length: ${t.name} ${t.role} ${c.len}`);
           if ((c.post === 'gymtrainer') !== gt) bad('a contract for the wrong kind of post: ' + t.name);
-          if (s.turn > c.until && t.stepDown == null && !t.quit) bad(`a contract past its end: ${t.name} ${t.role} ${c.until} < ${s.turn}`);
+          if (s.turn > c.until && t.stepDown == null && !t.quit && t.talk == null) bad(`a contract past its end: ${t.name} ${t.role} ${c.until} < ${s.turn}`);
           if (c.win != null && (c.win < c.until - g.CON_WINDOW || c.win > c.until)) bad('a renewal window out of place: ' + t.name);
           if (c.will && !['yes', 'more', 'no'].includes(c.will)) bad('a strange answer to renewal: ' + t.name);
           if (t.quit && ['up', 'run'].includes(t.quit.k) && c.from <= s.turn && s.turn < c.until - 1 && !(t.role === 'champion' && t.quit.k === 'step')) bad(`notice given under contract: ${t.name} ${t.quit.k}`);
@@ -361,6 +362,26 @@ function check(tag) {
     for (const k of ['org', 'user', 'slot', 'prole', 'trust', 'amb', 'promise']) if (t[k] != null && t[k] !== false) bad('cut trainer field is back: ' + k);
     for (const m of t.team || []) for (const k of ['shadow', 'pkrs', 'lucky', 'loan', 'sulk', 'ranch']) if (m[k] != null) bad('cut Pokémon field is back: ' + k);
   }
+  // talks (0.53.0): every talk names a trainer pointing back to it, is open, one offer per League, real posts and terms;
+  // a League in at most TALK_MAX besides its own staff's; a star a challenger; staff talks for real staff of their League
+  { const seen = new Set();
+    for (const k of s.talks || []) {
+      const t = s.trainers[k.tid]; TALKS.weeks++;
+      if (!t || t.talk !== k.id) bad('a talk whose trainer does not point back to it');
+      if (seen.has(k.tid)) bad('two talks for one trainer'); seen.add(k.tid);
+      if (!['star', 'expiry', 'poach'].includes(k.kind)) bad('a talk of a strange kind');
+      if (k.until < s.turn || k.until - k.opened > 7) bad('a talk past its deadline or too long: ' + (k.until - k.opened));
+      const lgs = k.offers.map(o => o.lg); if (new Set(lgs).size !== lgs.length) bad('two offers from one League');
+      for (const o of k.offers) { if (o.lg < 0 || o.lg >= g.nLeagues()) bad('an offer from no League'); if (!['leader', 'e4'].includes(o.post) || o.slot < 0 || o.slot >= (o.post === 'e4' ? 4 : 8)) bad('an offer for no post'); if (!g.TALK_BIDS.includes(o.bid) || !g.TALK_BONUS.includes(o.bonus) || !g.conOpts(o.post).includes(o.len)) bad('an offer with strange terms'); if ((o.prom || []).some(x => !g.PROMISES[x])) bad('a strange promise'); }
+      if (t && k.kind === 'star' && t.role !== 'challenger') bad('a star in talks who is no challenger: ' + t.role);
+      if (t && k.kind !== 'star' && (!['leader', 'e4'].includes(t.role) || g.homeLeague(t) !== k.home)) bad('staff talks for someone not on their staff: ' + t.role);
+      if (t && (t.hired || t.spon)) bad('a trainer in talks who is hired or sponsored');
+      if (k.offers.length > TALKS.maxOffers) TALKS.maxOffers = k.offers.length;
+    }
+    for (let i = 0; i < g.nLeagues(); i++) { const n = (s.talks || []).filter(k => k.home !== i && k.offers.some(o => o.lg === i)).length; if (n > g.TALK_MAX) bad('a League in too many talks: ' + n); }
+    for (const t of Object.values(s.trainers)) if (t.talk != null && !(s.talks || []).some(k => k.id === t.talk)) bad('a trainer in talks that are over: ' + t.name);
+    if ((s.talks || []).length > TALKS.most) TALKS.most = s.talks.length;
+  }
   // a save must survive a round trip
   if (tag.startsWith('s')) { const copy = JSON.parse(JSON.stringify(s)); if (Object.keys(copy.trainers).length !== Object.keys(s.trainers).length) bad('save round trip'); }
 }
@@ -377,6 +398,37 @@ for (let i = 0; i < N; i++) {
     }
     // a Gym Leader, an Elite Four member and the Champion leave in year 2; vacancies are filled now and then
     if (HAND && S().season === 2 && S().week === 10) g.inLeague(g.ME(), () => { g.staffRetires(g.T(S().gyms[1].leader)); g.staffRetires(g.T(S().e4[2])); g.staffRetires(g.T(S().champion)); if ((S().vacancies || []).length < 3) fail.push('expected three vacancies, got ' + (S().vacancies || []).length); hands += S().vacancies.length; });
+    // talks (0.53.0): make, raise and withdraw offers at random; answer rivals going after your staff (match or let go
+    // for the transfer fee); offers from a hiring page for stars; promises kept (no step down, a certain grudge)
+    if (HAND && S().season >= 2 && Math.random() < 0.15 && !S().founding) {
+      const me = g.ME(), ks = (S().talks || []).filter(k => g.T(k.tid));
+      const pk = ks.filter(k => k.kind === 'poach' && k.home === me);
+      if (ks.length) { const k = pk.length ? rnd(pk) : rnd(ks), t = g.T(k.tid), mine = k.offers.find(o => o.lg === me);
+        if (k.home === me && k.kind === 'poach') {
+          const r = Math.random();
+          if (r < 0.4) { const err = g.talkMatch(t.id); if (err) TALKS.handErr++; else { TALKS.matched++; const o = k.offers.find(o => o.lg === me), best = g.talkRank(k).find(x => x.o.lg !== me); if (!o || (best && (o.bid !== best.o.bid || o.bonus !== best.o.bonus))) fail.push('a match that does not match'); } }
+          else if (r < 0.7) { const best = g.talkRank(k).find(x => x.o.lg !== me); if (best) { const fee = g.inLeague(best.o.lg, () => g.payFor(t, best.o.post, best.o.slot)), m0 = g.inLeague(me, () => S().fin.money), tr0 = g.inLeague(me, () => (S().fin.yr && S().fin.yr.in.transfers) || 0);
+            const err = g.talkLetGo(t.id); if (err) fail.push('talkLetGo ' + err); else { TALKS.letGo++; if (g.homeLeague(t) !== best.o.lg || !['leader', 'e4'].includes(t.role)) fail.push('let go in talks but not at the rival: ' + t.role); if (t.talk != null) fail.push('let go but still in talks');
+              const tr = g.inLeague(me, () => (S().fin.yr && S().fin.yr.in.transfers) || 0) - tr0; if (fee && tr <= 0) fail.push('no transfer fee for one let go in talks'); } } }
+        } else if (Math.random() < 0.15 && mine) { if (!g.withdrawTalkOffer(k, me)) fail.push('withdraw refused'); else { TALKS.withdrawn++; if (k.offers.some(o => o.lg === me)) fail.push('withdrawn offer still there'); } }
+        else {
+          const p = k.home === me ? g.inLeague(me, () => g.postOf(t)) : null, post = p ? p.post : rnd(['leader', 'e4']), slot = p ? p.slot : Math.floor(Math.random() * (post === 'e4' ? 4 : 8));
+          const o = { lg: me, post, slot, bid: rnd(g.TALK_BIDS), bonus: rnd(g.TALK_BONUS), len: rnd(g.conOpts(post)), prom: Math.random() < 0.3 ? [rnd(['nodemote', 'own'])] : [] };
+          const cap = !mine && k.home !== me && g.talkCount(me) >= g.TALK_MAX, red = g.inLeague(me, () => S().fin.money < 0);
+          const err = g.makeOffer(k, o); TALKS.hand++;
+          if (cap && !err) fail.push('an offer past the talks limit');
+          if (red && !err) fail.push('an offer in the red');
+          if (err) { TALKS.handErr++; if (cap) TALKS.cap++; if (red) TALKS.red++; }
+          else { const n = k.offers.find(x => x.lg === me); if (!n || n.bid !== o.bid || n.bonus !== o.bonus || n.len !== o.len) fail.push('the offer was not kept as made');
+            const held = g.talkHeld(me); if (g.inLeague(me, () => S().fin.money) < held) fail.push('bonuses on the table beyond the money: ' + held); }
+          if (g.makeOffer(k, { ...o, bid: 0.33 }) == null) fail.push('a strange bid was taken');
+        } }
+      // a star offered from a hiring page opens talks
+      g.inLeague(me, () => { const v = (S().vacancies || [])[0]; if (!v || Math.random() > 0.3) return; const c = g.vacancyCands(v).find(x => x.talks && !x.refuse); if (!c) return;
+        const r = g.hireForVacancy(v, c.t.id, 0); if (r && r.res === 'broke') return; if (!r || r.res !== 'talks') fail.push('a star from a hiring page did not open talks: ' + (r && r.res)); else if (!r.err) { TALKS.fromHire++; if (!g.talkOf(c.t) || !g.talkOf(c.t).offers.some(o => o.lg === me)) fail.push('talks from a hiring page without your offer'); } });
+      // a promise of no step down is kept: the move is refused
+      g.inLeague(me, () => { for (const t of S().e4.map(g.T)) if (t && g.promOn(t, 'nodemote', me)) { TALKS.promised++; if (!g.refusal(t, 'leader', 0)) fail.push('a promised member would take a step down'); } });
+    }
     // staffing at will (0.7.0): let staff go, swap them, and place gym trainers by hand, now and then
     if (HAND && S().season >= 2) g.inLeague(g.ME(), () => {
       const z = S(), seniors = [...z.e4, ...z.gyms.map(x => x.leader)].map(g.T).filter(t => t && !t.acting);
@@ -384,11 +436,11 @@ for (let i = 0; i < N; i++) {
       if (Math.random() < 0.04 && seniors.length) { const t = rnd(seniors.concat((z.gyms[rnd([0, 1, 2, 3, 4, 5, 6, 7])].trainers || []).map(g.T).filter(Boolean)));
         // (0.49.0) now and then the one let go has already announced stepping down: no severance once a date is set
         if (Math.random() < 0.3 && t.stepDown == null && !t.quit) { g.announceStepDown(t); moves.dated++; }
-        const dated = g.leavingSet(t), runReq = t.wish && t.wish.k === 'run' && t.wish.asked != null, fee = g.severanceFee(t), sev0 = (z.fin.yr && z.fin.yr.out.severance) || 0;
+        const dated = g.leavingSet(t), runReq = t.wish && t.wish.k === 'run' && t.wish.asked != null, fee = g.severanceFee(t), yr0 = z.fin.yr, sev0 = (z.fin.yr && z.fin.yr.out.severance) || 0;
         const r = g.releaseStaff(t.id); if (!r) fail.push('releaseStaff refused ' + t.role); else { moves.let++; if (!['challenger', 'retired'].includes(t.role)) fail.push('let go but role ' + t.role);
           const paid = ((z.fin.yr && z.fin.yr.out.severance) || 0) - sev0;
           if (dated) { moves.free++; if (fee || paid) fail.push('severance charged for someone with a leaving date: ' + paid); }
-          else if (!runReq && paid !== fee) fail.push(`severance ${paid}, expected ${fee}`); } }
+          else if (!runReq && paid !== fee && z.fin.yr === yr0) fail.push(`severance ${paid}, expected ${fee} (${t.role} talk ${t.talk} prom ${JSON.stringify(t.prom)} week ${S().week})`); } }
       if (Math.random() < 0.03) { const role = rnd(['leader', 'e4']), ps = seniors.filter(t => t.role === role);
         if (ps.length >= 2) { const a = rnd(ps), b = rnd(ps.filter(x => x !== a)), why = g.swapRefusal(a, b), ok = g.swapStaff(a.id, b.id);
           if (why) { amb.refusedSwap++; if (ok) fail.push('a refused swap went ahead: ' + why); } else if (!ok) fail.push('swapStaff refused'); else moves.swap++; } }
@@ -628,7 +680,7 @@ for (let i = 0; i < N; i++) {
         const other = g.planKeys().find(k => k !== key && g.planOf(k) && g.planOf(k).some(r => r.r != null && !g.planResolve(g.planHolder(k), r, k).gap));
         if (other) { const r = g.planOf(other).find(r => r.r != null); if (typeof g.setPlan(key, [r]) === 'object') fail.push('an entry planned for two posts'); else PLAN.refused++; } }
       const r = g.setPlan(key, refs);
-      if (typeof r !== 'object') { if (refs.every(x => !g.planResolve(t, x, key).gap) && !/plan for the review/.test(r)) fail.push('setPlan refused: ' + r); return; } // (0.45.0) planResolve doesn't see other posts' waiting plans, which setPlan rightly refuses
+      if (typeof r !== 'object') { if (refs.every(x => !g.planResolve(t, x, key).gap) && !/plan for the review/.test(r) && !/You promised/.test(r)) fail.push('setPlan refused: ' + r); return; } // (0.45.0) planResolve doesn't see other posts' waiting plans, which setPlan rightly refuses
       if (!refs.length) PLAN.cleared++; else PLAN.set++;
       if (r.now) { PLAN.now++; const slot = g.eliteSlot(t), room = slot.size - t.team.filter(m => g.isSpecial(m) || (t.mega && t.mega.uid === m.uid)).length;
         if (refs.length && refs.slice(0, room).some(x => !t.team.some(m => (x.o != null && m.uid === x.o) || (x.r != null && m.rid === x.r)))) fail.push('a plan set now was not built on ' + t.name);
@@ -721,6 +773,7 @@ console.log('legendaries', JSON.stringify(LEG));
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('conditions', JSON.stringify(CON));
 console.log('contracts', JSON.stringify(CTR), JSON.stringify(g.CON_LOG));
+console.log('talks', JSON.stringify(TALKS), JSON.stringify(g.TALK_LOG));
 console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);

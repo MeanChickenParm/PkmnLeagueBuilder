@@ -254,6 +254,34 @@ async def run(path):
                     if (!document.querySelector('.conlen') || !/Prefers/.test(m())) log.push('FAIL the gym trainer picker has no contract length');
                     else { click('[data-act=hirelen][data-v="24"]'); if (hireLen !== 24 || !/6 months/.test(document.querySelector('.conlen .seg.on').textContent)) log.push('FAIL picking a contract length'); click('[data-act=hirelen][data-v=""]'); if (hireLen != null) log.push('FAIL going back to their preference'); }
                     go('staff'); }
+                  // 0.53.0: talks. Open talks for a challenger, make an offer from the Talks page (post, pay, bonus, a promise),
+                  // withdraw and offer again, settle it; a rival goes after a Gym Leader: let them go for the transfer fee
+                  { const m = () => document.querySelector('#main'), set = (k, f, v) => { const el = m().querySelector('.talkf[data-k="' + k + '"][data-f="' + f + '"]' + (f === 'prom' ? '[data-v="' + v + '"]' : '')); if (!el) return false; if (f === 'prom') el.checked = true; else el.value = String(v); el.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+                    const c = inLeague(0, () => challengers().find(t => t && canTalk(t) && t.rest != null));
+                    const k = c && inLeague(0, () => openTalks(c, 'star', null, 'a test'));
+                    if (!k) log.push('FAIL could not open talks');
+                    else { go('talks'); if (!m().querySelector('.talk[data-talk="' + k.id + '"]') || /undefined|NaN/.test(m().textContent)) log.push('FAIL the Talks page does not show the talks');
+                      const vac = inLeague(0, () => S.e4.findIndex(id => T(id) && !T(id).acting));
+                      set(k.id, 'post', 'e4:' + vac); set(k.id, 'bid', 0.75); set(k.id, 'bonus', 24); set(k.id, 'prom', 'nodemote');
+                      if (!click('[data-act=talkoffer][data-k="' + k.id + '"]')) log.push('FAIL no offer button');
+                      const o = k.offers.find(x => x.lg === 0);
+                      if (!o || o.post !== 'e4' || o.slot !== vac || o.bid !== 0.75 || o.bonus !== 24 || !o.prom.includes('nodemote')) log.push('FAIL the offer was not made as set: ' + JSON.stringify(o));
+                      else { if (!/Your offer/.test(m().textContent) || !/Leading|Behind/.test(m().textContent)) log.push('FAIL the Talks page does not show your offer');
+                        click('[data-act=talkwd][data-k="' + k.id + '"]'); if (k.offers.some(x => x.lg === 0)) log.push('FAIL withdrawing an offer');
+                        set(k.id, 'post', 'e4:' + vac); set(k.id, 'bid', 0.75); set(k.id, 'bonus', 24); set(k.id, 'prom', 'nodemote'); click('[data-act=talkoffer][data-k="' + k.id + '"]');
+                        k.offers = k.offers.filter(x => x.lg === 0); k.until = S.turn; c.age = 40; const m0 = S.fin.money, bonus = inLeague(0, () => talkBonus(c, k.offers[0])), old = T(S.e4[vac]);
+                        talksWeek(); if (talkList().includes(k) || c.talk != null) log.push('FAIL the talks did not end at the deadline');
+                        else if (c.role === 'e4' && S.e4[vac] === c.id) { if (S.fin.money > m0 - bonus || !promOn(c, 'nodemote', 0) || (old && old.role === 'e4' && S.e4.includes(old.id))) log.push('FAIL signing after talks: bonus, promise or the old holder'); else log.push('signed after talks'); }
+                        else log.push('talks ended without signing (' + c.role + ')'); } }
+                    if (nLeagues() > 1) { const L = inLeague(0, () => S.gyms.map(g => T(g.leader)).reverse().find(t => t && !t.acting && canTalk(t))); // the last gyms: later steps use gym 1
+                      const kp = L && inLeague(0, () => openTalks(L, 'poach', 0));
+                      if (kp) { inLeague(1, () => { S.prest = Math.max(S.prest || 0, 100); if (S.fin) S.fin.money = Math.max(S.fin.money, 500000); }); const err = makeOffer(kp, { lg: 1, post: 'e4', slot: 0, bid: 0.25, bonus: 12, len: 96, prom: [] });
+                        if (err) { closeTalk(kp); log.push('retention skipped: ' + err); }
+                        else { go('talks'); if (!m().querySelector('[data-act=talklet][data-id="' + L.id + '"]')) log.push('FAIL no Let them go button');
+                          const t0 = (S.fin.yr && S.fin.yr.in.transfers) || 0; click('[data-act=talklet][data-id="' + L.id + '"]');
+                          if (homeLeague(L) !== 1 || L.role !== 'e4' || !(((S.fin.yr && S.fin.yr.in.transfers) || 0) > t0)) log.push('FAIL letting a Gym Leader go to a rival in talks'); else log.push('retention let go');
+                          inLeague(0, fillAllVacancies); } } }
+                    go('staff'); }
                   // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');

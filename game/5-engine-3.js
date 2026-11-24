@@ -2149,6 +2149,7 @@ function aimMonth() {
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
   if (aim) { aimRanch(aim); aimSpend(aim); } // (0.25.0) the ranch first
+  if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
 // (kept as the player's choice for next time), `S.simRun` is set only while the multi-year sim is running. Once a
@@ -2215,7 +2216,7 @@ const contendersAt = lg => sponIds().map(T).filter(t => t.spon.to === (lg == nul
 // who the bound League could send now: challengers on its own circuit, its own academy prospects first
 function sendCands() {
   if (nLeagues() < 2 || fixedStaff()) return [];
-  return challengers().filter(t => t && t.role === 'challenger' && !t.spon && !t.hired && !t.hireDue && !t.leaving && t.age >= 13)
+  return challengers().filter(t => t && t.role === 'challenger' && !t.spon && !t.hired && !t.hireDue && !t.leaving && t.talk == null && t.age >= 13)
     .sort((a, b) => (ownAcademy(b) - ownAcademy(a)) || ovr(b) - ovr(a));
 }
 const sponTargets = () => Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== (S.lg || 0) && !(S.founding && i === ME()));
@@ -2664,6 +2665,8 @@ function removeLeague(k, info) {
     c.st = keys(c.st); c.b = keys(c.b); c.spent = keys(c.spent); if (c.rn) c.rn = keys(c.rn); // (0.40.0) renown
     if (c.ctrl != null) { if (c.ctrl === k) c.tier = null; c.ctrl = c.ctrl === k ? null : rm(c.ctrl); }
   }
+  for (const x of S.talks || []) { x.offers = x.offers.filter(o => o.lg !== k); x.offers.forEach(o => { o.lg = rm(o.lg); }); if (x.home != null) x.home = rm(x.home); if (x.lead != null) x.lead = x.lead === k ? null : rm(x.lead); } // (0.53.0)
+  for (const x of (S.talks || []).filter(x => x.home != null && x.home < 0)) closeTalk(x);
   rmArr(S.news); rmArr(S.myLeagues); rmArr(S.chalPending); rmArr(S.distress, 'from'); rmArr(S.hof); rmArr(S.hof, 'spon'); // (0.21.0) Hall entries keep a folded League's name
   for (const w of S.worldHist || []) { w.winnerLg = rm(w.winnerLg); w.runnerLg = rm(w.runnerLg); }
   const hists = [S.history].concat(S.leagues.map((L, i) => i === (S.lg || 0) ? null : L.history));

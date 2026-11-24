@@ -13,7 +13,8 @@ function conInfo(t) {
   const c = t && t.con; if (!c || t.acting || !handOn()) return '';
   const win = !conShort(c.post) && c.win != null && c.from <= S.turn && S.turn < c.until;
   const st = win ? (c.will === 'no' ? ' <span class="tag notice small">Won\'t renew</span>' : c.will === 'more' ? ` <span class="tag notice small">Asks +${CON_MORE * 100}% to renew</span>` : ' <span class="tag notice small">Up for renewal</span>') : c.go ? ' <span class="tag small">Goes at the end</span>' : '';
-  return ` · contract to ${turnDate(c.until)}${c.from > S.turn ? ' (renewed)' : ''}${st}`;
+  const tk = t.talk != null ? ' <span class="tag notice small">In talks</span>' : '';
+  return ` · contract to ${turnDate(c.until)}${c.from > S.turn ? ' (renewed)' : ''}${st}${tk}`;
 }
 function conActs(t) {
   const c = t && t.con; if (!c || t.acting || !handOn() || (S.lg || 0) !== ME()) return '';
@@ -26,8 +27,93 @@ function conNotice(list) {
   return `<div class="eyebrow">Contracts up for renewal</div><ul class="mini">${list.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)} <span class="small">${t.con.will === 'no' ? 'won\'t renew' : t.con.will === 'more' ? `restless: asks ${CON_MORE * 100}% more pay` : 'happy to renew'}</span></span><span class="small">ends ${turnDate(t.con.until)}</span></li>`).join('')}</ul><p class="muted small">Renew from Your staff (prefers ${list.filter(t => t.con.will !== 'no').map(t => `${esc(t.name)} ${conWords(conPref(t, t.con.post))}`).join(', ') || 'nobody willing'}). A contract not renewed ends on its date: they return to the circuit (unhappy if restless) or retire, and the post opens.</p>`;
 }
 GLOSS_TERMS.league.push(['Contracts', `Everyone who takes a post signs a contract: Gym Leaders, the Elite Four and the Champion for 1 to 4 years, gym trainers for 3, 6 or 9 months. You pick the length when you hire (Their preference by default). Each trainer prefers one: those who want to stay put like long deals, those after a bigger post short ones; every step away from it makes an offer likelier to be turned down and adds ${CON_PAY * 100}% to their pay. Staff you move between posts keep their contract (a gym trainer moving up signs a new one). A contract holds against ambition: a member of staff tired of waiting for promotion, or asking for another run, stays until it ends, though their restlessness shows. For the last ${CON_WINDOW} weeks only your League can renew it, from Your staff: a content member renews at the length you pick; a restless one asks ${CON_MORE * 100}% more pay (and starts their wait afresh) or won't renew. A contract not renewed ends on its date: they go back to the circuit, holding a grudge if they were restless, or retire, and the post opens. Gym trainers renew quietly unless you mark them to go (Let it run out) or they are restless. You can still let anyone go early (severance), and staff still leave when unpaid in the red, take a bigger post in another League, step down after a long career, or (the Champion) step down. Rival Leagues renew by aim, and the multi-year sim renews yours.`]); // (0.52.0)
+// ---------- talks (0.53.0, design doc 6.24 part 2) ----------
+// The Talks page (Manage): open talks for stars, for staff whose contracts ran out, and rivals going after your staff
+// (the Retention stop). One offer per talks, changed any week; Scouting decides how much of other offers you see.
+let talkDraft = {};
+const TALK_KINDS = { star: 'Star', expiry: 'Contract ran out', poach: 'Under contract' };
+const bidWords = b => b ? `+${Math.round(b * 100)}% pay` : 'their asking pay';
+const bonusWords = w => w ? `${w} weeks' pay up front` : 'no bonus';
+function talkPostOpts(k, t) {
+  if (k.home === ME()) { const p = postOf(t); return p ? [[`${p.post}:${p.slot}`, `${postName(t)} (their post)`]] : []; }
+  const out = [];
+  S.e4.forEach((id, i) => { const h = T(id); out.push([`e4:${i}`, `Elite Four seat #${i + 1}${!h || h.acting ? ' (vacant)' : ` (replaces ${h.name}, OVR ${ovr(h)})`}`]); });
+  S.gyms.forEach((g, i) => { const h = T(g.leader); out.push([`leader:${i}`, `${townName(i)} Gym${!h || g.acting ? ' (vacant)' : ` (replaces ${h.name}, OVR ${ovr(h)})`}`]); });
+  return out;
+}
+function talkDraftOf(k, t) {
+  if (talkDraft[k.id]) return talkDraft[k.id];
+  const mine = k.offers.find(o => o.lg === ME()), opts = talkPostOpts(k, t);
+  const vac = opts.find(x => /vacant/.test(x[1])) || opts.find(x => x[0].startsWith(ovr(t) >= E4_HIRE_MIN ? 'e4' : 'leader')) || opts[0];
+  const d = mine ? { post: `${mine.post}:${mine.slot}`, bid: mine.bid, bonus: mine.bonus, len: mine.len, prom: mine.prom.slice() } : { post: vac ? vac[0] : '', bid: 0, bonus: 0, len: null, prom: [] };
+  if (d.len == null && d.post) d.len = conPref(t, d.post.split(':')[0], k.home !== ME());
+  return (talkDraft[k.id] = d);
+}
+const draftOffer = d => { const [post, slot] = (d.post || ':').split(':'); return { lg: ME(), post, slot: +slot, bid: d.bid, bonus: d.bonus, len: d.len, prom: d.prom.slice() }; };
+// what you can see of another League's offer, by your scouting
+function seenOffer(t, k, o, sight, need) {
+  const name = `the ${esc(leagueName(o.lg))}`;
+  if (sight <= 0) return `${name} is interested`;
+  const rough = sight === 1;
+  const pay = rough ? (o.bid ? 'over their asking pay' : 'their asking pay') : bidWords(o.bid), bonus = rough ? (o.bonus ? 'a bonus' : 'no bonus') : bonusWords(o.bonus);
+  let s = `${name}: ${o.post === 'e4' ? (rough ? 'an Elite Four seat' : `Elite Four seat #${o.slot + 1}`) : (rough ? 'a gym' : offerWords(o))}, ${pay}, ${bonus}${rough ? '' : `, ${conWords(o.len)}${o.prom.length ? `, promises: ${o.prom.map(x => PROMISES[x].toLowerCase()).join('; ')}` : ''}`}`;
+  if (sight >= 3) s += ` ${interestBar(talkInterest(t, k, o), need)}`;
+  return s;
+}
+function interestBar(v, need) { const p = clamp(Math.round(50 + (v - need) * 40), 2, 100); return `<span class="hbar" title="Their interest against what they need (the middle)"><span style="width:${p}%"></span></span>`; }
+function talkPanel(k, sight) {
+  const t = T(k.tid); if (!t) return '';
+  const me = ME(), mine = k.offers.find(o => o.lg === me), others = k.offers.filter(o => o.lg !== me), need = talkNeed(t, k), lead = k.lead;
+  const d = talkDraftOf(k, t), opts = talkPostOpts(k, t), dp = (d.post || ':').split(':')[0], o = d.post ? draftOffer(d) : null;
+  const where = STAFF_ROLES.includes(t.role) ? `${inLeague(homeLeague(t), () => postName(t))} of the ${esc(leagueName(homeLeague(t)))}` : `a challenger on the ${esc(leagueName(lgOf(t)))} circuit`;
+  const status = mine ? (lead === me ? '<span class="tag good small">Leading</span>' : '<span class="tag notice small">Behind</span>') + (sight >= 3 ? ` ${interestBar(talkInterest(t, k, mine), need)}` : '') : '';
+  const retain = k.kind === 'poach' && k.home === me, best = retain ? talkRank(k).find(x => x.o.lg !== me) : null;
+  const sel = (f, list, cur) => `<select class="talkf" data-k="${k.id}" data-f="${f}" aria-label="${f}">${list.map(([v, n]) => `<option value="${v}"${String(cur) === String(v) ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  const lens = dp ? conOpts(dp).map(w => [w, conWords(w) + (w === conPref(t, dp, k.home !== me) ? ' (they prefer)' : '')]) : [];
+  const promBox = Object.entries(PROMISES).filter(([x]) => x !== 'legend' || (dp === 'e4' && (S.vault || []).some(e => e.m))).filter(([x]) => k.home !== me || x !== 'legend').map(([x, n]) => `<label class="small"><input type="checkbox" class="talkf" data-k="${k.id}" data-f="prom" data-v="${x}"${d.prom.includes(x) ? ' checked' : ''}> ${esc(n)}</label>`).join(' ');
+  const pay = o && dp ? talkPay(t, o) : 0, bonus = o && dp ? talkBonus(t, o) : 0;
+  return `<section class="panel talk" data-talk="${k.id}"><div class="ph"><h2>${tname(t.id)} <span class="tag small">${TALK_KINDS[k.kind]}</span></h2><span class="muted">OVR ${ovr(t)} · age ${t.age} · ${where} · ends ${turnDate(k.until)}${k.ext ? ' (extended)' : ''}</span></div>
+    ${k.why ? `<p class="small muted">${esc(k.why)}.</p>` : ''}
+    ${retain && best ? `<p class="warn">The ${esc(leagueName(best.o.lg))} offers ${tname(t.id)} ${offerWords(best.o)}, ${bidWords(best.o.bid)}, ${bonusWords(best.o.bonus)}, ${conWords(best.o.len)}. Match it in their post, beat it below, or let them go now for a transfer fee of about ${money(talkFee(t, best.o))}.</p><div class="confirm-row"><button class="btn small" data-act="talkmatch" data-id="${t.id}">Match</button> <button class="btn small ghost" data-act="talklet" data-id="${t.id}">Let them go (${money(talkFee(t, best.o))})</button></div>` : ''}
+    <p class="small"><b>Other offers:</b> ${others.length ? others.map(x => seenOffer(t, k, x, sight, need)).join('; ') : 'none yet'}${others.length && lead != null && lead !== me ? `. The ${esc(leagueName(lead))} leads` : ''}.</p>
+    ${mine ? `<p class="small"><b>Your offer:</b> ${offerWords(mine)}, ${bidWords(mine.bid)} (${money(talkPay(t, mine))} a week), ${bonusWords(mine.bonus)}${mine.bonus ? ` (${money(talkBonus(t, mine))})` : ''}, ${conWords(mine.len)}${mine.prom.length ? `; you promise: ${mine.prom.map(x => PROMISES[x].toLowerCase()).join('; ')}` : ''} ${status}</p>` : ''}
+    ${opts.length ? `<div class="confirm-row">${sel('post', opts, d.post)} ${sel('bid', TALK_BIDS.map(b => [b, bidWords(b)]), d.bid)} ${sel('bonus', TALK_BONUS.map(w => [w, bonusWords(w)]), d.bonus)} ${lens.length ? sel('len', lens, d.len) : ''}</div>
+    <div class="confirm-row">${promBox}</div>
+    <p class="small muted">${dp ? `They ask ${money(talkAsk(t, o))} a week for it: this offer pays ${money(pay)}${bonus ? ` and ${money(bonus)} up front` : ''}.` : ''}</p>
+    <div class="confirm-row"><button class="btn small" data-act="talkoffer" data-k="${k.id}">${mine ? 'Change your offer' : k.home === me ? 'Offer to keep them' : 'Make an offer'}</button>${mine ? ` <button class="btn small ghost" data-act="talkwd" data-k="${k.id}">Withdraw</button>` : ''}</div>` : ''}</section>`;
+}
+function viewTalks() { return inLeague(ME(), viewTalks0); }
+function viewTalks0() {
+  const me = ME(), sight = talkSight(), ks = talksForMe();
+  const own = ks.filter(k => k.home === me), rest = ks.filter(k => k.home !== me);
+  const sightText = ['you only see which Leagues are interested', 'you see roughly what other Leagues offer', 'you see what other Leagues offer', 'you see what other Leagues offer and how keen the trainer is on each'][Math.min(3, sight)];
+  return `<section class="panel callout"><div class="eyebrow">${esc(S.lgName)}</div><h2>Talks</h2>
+    <p>When a valuable trainer becomes available, talks open with a deadline: a challenger who won a title or reached the Elite Four (at OVR ${TALK_STAR_OVR}+, or anyone you make an offer to from a hiring page), a Gym Leader or Elite Four member whose contract ran out without a renewal (they stay in post until the talks end), and staff under contract another League goes after. Any League can make one offer and change it each week: a post (a vacancy, or one whose holder it replaces: they are let go with severance), pay over their asking, a signing bonus, the contract length and promises. At the deadline they sign with the League they like best, if it is enough for them; if nothing is, they may walk away from every League. Talks last 2 to 6 weeks (bigger names longer); a new leader in the last week adds a week, once. The sim stops when you're outbid, a deadline you're in is a week off, or a rival goes after your staff.</p>
+    <p class="small">You are in ${talkCount(me)} of at most ${TALK_MAX} talks (besides your own staff's) · bonuses on the table ${money(talkHeld(me))} · your scouting office (level ${sight}): ${sightText}. Nobody makes offers while the League is in the red.</p></section>
+    ${own.length ? `<div class="eyebrow">Your staff</div>${own.map(k => talkPanel(k, sight)).join('')}` : ''}
+    ${rest.length ? `<div class="eyebrow">Open talks</div>${rest.map(k => talkPanel(k, sight)).join('')}` : (own.length ? '' : '<section class="panel"><p class="muted">No talks are open now.</p></section>')}`;
+}
+function talkAction(a, el) {
+  const k = talkList().find(x => x.id === +el.dataset.k);
+  if (a === 'talkoffer') { if (!k) return; const t = T(k.tid), d = talkDraftOf(k, t), err = makeOffer(k, draftOffer(d)); if (err) toast(err); else { delete talkDraft[k.id]; save(); toast(`Offer made to ${t.name}: ${k.lead === ME() ? 'you lead the talks' : 'another League leads'}.`); } render(); return; }
+  if (a === 'talkwd') { if (k && withdrawTalkOffer(k, ME())) { delete talkDraft[k.id]; save(); toast('Offer withdrawn.'); } render(); return; }
+  if (a === 'talkmatch') { const err = talkMatch(+el.dataset.id); if (err) toast(err); else { save(); toast('You matched the offer.'); } render(); return; }
+  if (a === 'talklet') { const t = T(+el.dataset.id), err = talkLetGo(+el.dataset.id); if (err) toast(err); else { save(); toast(`${t.name} leaves for the ${leagueName(homeLeague(t))}.`); } render(); }
+}
+GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). The Champion is never in talks. Rival Leagues bid by a simple rule for now; the multi-year sim keeps your staff by matching and bids only when it runs your League by an aim.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 53, ver: '0.53.0', date: 'November 23, 2026', time: '9:30 PM ET', title: 'Talks', items: [
+    "Leagues now compete for valuable trainers in talks lasting 2 to 6 weeks, on the new Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four as a strong trainer, for a Gym Leader or Elite Four member whose contract ends without a renewal, and when another League goes after one of your staff.",
+    "Make one offer per talks and change it any week: the post (a vacancy, or one whose holder you'd replace), pay over their asking, a signing bonus, the contract length, and promises (no step down or release for 2 years, keeping their own team, or a legendary from your Sanctuary vault). At the deadline they sign with the League they like best, if it's enough for them. If nothing is, they may walk away from everyone.",
+    "Offering a post to a star (a title this year or last, or the Elite Four) or to another League's staff from a hiring page now opens talks with your offer, instead of an instant answer.",
+    "A trainer weighs more than money: the post against the one they hold, the length they prefer, your seat rule, their hometown, your prestige, any grudge, and their own League's loyalty.",
+    "Other Leagues' offers are hidden. Your scouting office shows them roughly, then closely, then how keen the trainer is on each.",
+    "The Retention stop: when a rival goes after one of your staff under contract, match its offer, beat it, or let them go now for the transfer fee.",
+    "A staff member whose contract runs out without a renewal now goes to open talks instead of simply leaving. You can still bid to keep them, though a restless one is harder to win back.",
+    "You can be in at most 3 talks at once (besides your own staff's), signing bonuses on the table count against your money, and nobody makes offers while in the red. The sim stops when you're outbid, a deadline you're in is a week away, or a rival goes after your staff.",
+    "Rival Leagues make offers and raise them by a simple rule for now. Smarter bidding, by each League's aim, is coming next.",
+  ] },
   { id: 52, ver: '0.52.0', date: 'November 23, 2026', time: '7:30 PM ET', title: 'Contracts', items: [
     "Staff now sign contracts. Gym Leaders, the Elite Four and the Champion sign for 1 to 4 years, gym trainers for 3, 6 or 9 months. Your current staff start with staggered lengths, so they don't all come up at once.",
     "Pick the length when you hire, on the hiring pages (Their preference by default). Each candidate shows the length they'd rather have: stay-put types like long deals, those after a bigger post short ones. Every step away from it makes an offer likelier to be turned down and adds 5% to their pay. Staff you move between posts keep their contract.",
@@ -620,7 +706,7 @@ function render() {
   if (S.founding) useLeague(ME());
   if (S.founding) { app.innerHTML = `<header class="top"><div class="top-in"><div class="mark"><span class="mark-ball" aria-hidden="true"></span><div><div class="mark-name">${GAME_NAME} <span class="mark-ver">v${verName(UPDATES[0])}</span></div><div class="mark-sub">Founding the ${S.lgName}</div></div></div><div class="top-act"><button class="btn ghost" data-act="glossary">Glossary</button></div></div></header>` + embedNote() + viewFounding() + '<div id="toast" class="toast" role="status" hidden></div>'; return; }
   bindView();
-  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders', 'ranch', 'plans'].includes(view)) useLeague(ME());
+  if (['hire', 'staff', 'gtpick', 'money', 'cities', 'contenders', 'ranch', 'plans', 'talks'].includes(view)) useLeague(ME());
   let v = '';
   if (view === 'circuit') v = viewCircuit();
   if (view === 'gyms') v = viewGyms();
@@ -642,6 +728,7 @@ function render() {
   if (view === 'cities') v = viewCities();
   if (view === 'ranch') v = viewRanch();
   if (view === 'plans') v = viewPlans();
+  if (view === 'talks') v = viewTalks(); // (0.53.0)
   if (view === 'contenders') v = viewContenders();
   if (view === 'gtpick') v = viewGtPick();
   if (view === 'updates') v = viewUpdates();
@@ -687,7 +774,7 @@ function toggleFold(el) {
   saveFolds();
 }
 // with several Leagues, the league-wide pages show one League at a time; a trainer's page shows their own League
-const VIEWS = ['circuit', 'gyms', 'news', 'history', 'posts', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch', 'plans'];
+const VIEWS = ['circuit', 'gyms', 'news', 'history', 'posts', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'gtpick', 'contenders', 'table', 'board', 'ranch', 'plans', 'talks'];
 const LG_VIEWS = ['circuit', 'gyms', 'news', 'history', 'posts', 'recap', 'records', 'board'];
 function bindView() {
   if (!S || nLeagues() < 2) return;
@@ -701,7 +788,7 @@ function lgBar() {
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
-function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders', 'plans'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
+function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders', 'plans', 'talks'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
 
 // after a staffing move: a post it opened (a vacancy) goes straight to its hiring page; otherwise back to the staff page
 function afterMove(r, msg) {
@@ -717,6 +804,7 @@ function hireResult(o, id, name) {
   if (o.res === 'now') afterMove(o.r, `${dn(t)} takes the post: ${name}.`);
   else if (o.res === 'later') { go('staff'); toast(`${t.name} accepted (${name}) and comes after their run, by ${turnDate(t.hired.by)} at the latest.`); }
   else if (o.res === 'refused') { render(); toast(`${t.name} turned the offer down.`); }
+  else if (o.res === 'talks') { if (o.err) toast(o.err); else { talkDraft = {}; go('talks'); toast(`Talks are open for ${t.name} with your offer: see Talks.`); } if (o.err) render(); }
   else if (o.res === 'broke') { render(); toast('The League is in the red: nobody new can be hired until it is back above zero.'); }
   else render();
 }
@@ -820,6 +908,7 @@ function playWeeks(n) {
   save();
   if (S.season !== y) { repYear = null; go('recap'); toast(`Year ${y} is over. Here is the year report.`); return; }
   if (stop && stop.why === 'review' && playerFin()) { view = 'plans'; planDraft = {}; window.scrollTo(0, 0); } // (0.39.0)
+  if (stop && stop.why === 'talks') { view = 'talks'; talkDraft = {}; window.scrollTo(0, 0); } // (0.53.0)
   render();
   toast(stop ? `Stopped in ${weekName(S.week)}: ${stop.text}` : `It is now ${weekName(S.week)}, Year ${S.season}.`);
 }
@@ -836,6 +925,7 @@ document.addEventListener('click', ev => {
   if (!S && regionAction(a, el)) { render(); if (['rgnew', 'rgcopyreg', 'rgedit', 'rgsave', 'rgcancel'].includes(a)) window.scrollTo(0, 0); return; }
   // an action on a trainer works in that trainer's League
   if (S && nLeagues() > 1 && el.dataset.id && T(+el.dataset.id)) useLeague(lgOf(T(+el.dataset.id)));
+  if (a.startsWith('talk')) { inLeague(ME(), () => talkAction(a, el)); return; } // (0.53.0)
   switch (a) {
     case 'imgup': openImgUp(el.dataset.k, el.dataset.c); break;
     case 'imgopt': if (modal && modal.draft) { modal.draft[el.dataset.k] = !modal.draft[el.dataset.k]; imgRedraft(); } break;
@@ -1072,6 +1162,11 @@ document.addEventListener('input', e => {
 });
 // a chosen save file is read into the paste box, so it can be checked and loaded the same way
 document.addEventListener('change', e => {
+  if (e.target && e.target.classList && e.target.classList.contains('talkf')) { const k = talkList().find(x => x.id === +e.target.dataset.k), t = k && T(k.tid); if (!k || !t) return; const d = inLeague(ME(), () => talkDraftOf(k, t)), f = e.target.dataset.f;
+    if (f === 'prom') { const x = e.target.dataset.v; d.prom = e.target.checked ? [...new Set(d.prom.concat([x]))] : d.prom.filter(y => y !== x); }
+    else if (f === 'post') { d.post = e.target.value; d.len = inLeague(ME(), () => conPref(t, d.post.split(':')[0], k.home !== ME())); if (!d.post.startsWith('e4')) d.prom = d.prom.filter(y => y !== 'legend'); }
+    else d[f] = +e.target.value;
+    render(); return; } // (0.53.0)
   if (e.target && e.target.classList && e.target.classList.contains('sendtosel')) { sendTo = +e.target.value; return; }
   if (e.target && e.target.classList && e.target.classList.contains('ranchf')) { const f = e.target.dataset.f; ranchF[f] = f === 'g' ? +e.target.value : e.target.value; render(); return; } // (0.44.0)
   if (e.target && e.target.classList && e.target.classList.contains('ranchtypesel')) { ranchType = e.target.value; ranchSp = null; render(); return; }
