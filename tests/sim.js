@@ -184,7 +184,7 @@ function check(tag) {
         if (!t || t.role !== 'gymtrainer' || g.lgOf(t) !== i) { bad('gym ' + j + ' trainer is wrong'); continue; }
         if (!act && !g.gymFits(t, L)) bad('gym ' + j + ' trainer type ' + g.typeLabel(t) + ' in a ' + g.typeLabel(L) + ' gym');
         for (const m of t.team) if (t.specialty && !g.isSpecial(m) && !m.offType && !g.specFit(t, m.sp)) bad('gym ' + j + ' trainer ' + g.typeLabel(t) + ' fields off-type ' + m.sp);
-        if (t.team.length !== g.GT_HOLD) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired);
+        if (t.team.length !== g.GT_HOLD) bad('gym ' + j + ' trainer fields ' + t.team.length + ' L' + i + ' ' + JSON.stringify((t.posts || []).slice(-3)) + ' cb ' + JSON.stringify(t.comebacks || []) + ' un ' + t.unretired + ' team ' + t.team.map(m => m.sp + '/' + ((m.met && m.met.how) || '') + (m.rid != null ? '/rid' : '') + (m.vaulted ? '/v' : '')).join(','));
         staff.add(id); } });
     for (const id of [...z.e4, z.champion]) if (g.T(id) && g.T(id).team.length !== g.E4_SIZE) bad('Elite team of ' + g.T(id).team.length);
     if (g.T(z.champion) && g.T(z.champion).acting) bad('an acting Champion');
@@ -246,8 +246,8 @@ function check(tag) {
           CTR.seen++;
           if (!opts.includes(c.len) || c.until - c.from !== c.len) bad(`a contract of the wrong length: ${t.name} ${t.role} ${c.len}`);
           if ((c.post === 'gymtrainer') !== gt) bad('a contract for the wrong kind of post: ' + t.name);
-          if (s.turn > c.until && t.stepDown == null && !t.quit && t.talk == null) bad(`a contract past its end: ${t.name} ${t.role} ${c.until} < ${s.turn}`);
-          if (c.win != null && (c.win < c.until - g.CON_WINDOW || c.win > c.until)) bad('a renewal window out of place: ' + t.name);
+          if (s.turn > c.until && t.stepDown == null && !t.quit && t.talk == null) bad(`a contract past its end: ${t.name} ${t.role} ${c.until} < ${s.turn} ` + JSON.stringify({ c, acting: t.acting, posts: (t.posts || []).slice(-2) }));
+          if (c.win != null && (c.win < c.until - g.CON_WINDOW || c.win > c.until)) bad('a renewal window out of place: ' + t.name + ' ' + t.role + ' ' + JSON.stringify({ c, tk: t.talk, q: t.quit, turn: s.turn }));
           if (c.will && !['yes', 'more', 'no'].includes(c.will)) bad('a strange answer to renewal: ' + t.name);
           if (t.quit && ['up', 'run'].includes(t.quit.k) && c.from <= s.turn && s.turn < c.until - 1 && !(t.role === 'champion' && t.quit.k === 'step')) bad(`notice given under contract: ${t.name} ${t.quit.k}`);
           if (c.win != null && c.from <= s.turn) CTR.win++;
@@ -369,12 +369,13 @@ function check(tag) {
       const t = s.trainers[k.tid]; TALKS.weeks++;
       if (!t || t.talk !== k.id) bad('a talk whose trainer does not point back to it');
       if (seen.has(k.tid)) bad('two talks for one trainer'); seen.add(k.tid);
-      if (!['star', 'expiry', 'poach'].includes(k.kind)) bad('a talk of a strange kind');
+      if (!['star', 'expiry', 'poach', 'champ'].includes(k.kind)) bad('a talk of a strange kind');
       if (k.until < s.turn || k.until - k.opened > 7) bad('a talk past its deadline or too long: ' + (k.until - k.opened));
       const lgs = k.offers.map(o => o.lg); if (new Set(lgs).size !== lgs.length) bad('two offers from one League');
-      for (const o of k.offers) { if (o.lg < 0 || o.lg >= g.nLeagues()) bad('an offer from no League'); if (!['leader', 'e4'].includes(o.post) || o.slot < 0 || o.slot >= (o.post === 'e4' ? 4 : 8)) bad('an offer for no post'); if (!g.TALK_BIDS.includes(o.bid) || !g.TALK_BONUS.includes(o.bonus) || !g.conOpts(o.post).includes(o.len)) bad('an offer with strange terms'); if ((o.prom || []).some(x => !g.PROMISES[x])) bad('a strange promise'); }
+      for (const o of k.offers) { if (o.lg < 0 || o.lg >= g.nLeagues()) bad('an offer from no League'); if (!['leader', 'e4', 'champion'].includes(o.post) || o.slot < 0 || o.slot >= (o.post === 'e4' ? 4 : o.post === 'champion' ? 1 : 8)) bad('an offer for no post'); if (t && (o.post === 'champion') !== (t.role === 'champion')) bad('a Champion\'s seat offered to a non-Champion, or another post to a Champion'); if (t && o.post === 'champion' && o.lg !== k.home && !g.inLeague(o.lg, () => { const h = S().champion != null ? g.T(S().champion) : null; return !h || h.id === t.id || h.stepDown != null || !!h.quit; })) bad('a seat offered by a League whose Champion is not leaving'); if (!g.TALK_BIDS.includes(o.bid) || !g.TALK_BONUS.includes(o.bonus) || !g.conOpts(o.post).includes(o.len)) bad('an offer with strange terms'); if ((o.prom || []).some(x => !g.PROMISES[x])) bad('a strange promise'); }
       if (t && k.kind === 'star' && t.role !== 'challenger') bad('a star in talks who is no challenger: ' + t.role);
-      if (t && k.kind !== 'star' && (!['leader', 'e4'].includes(t.role) || g.homeLeague(t) !== k.home)) bad('staff talks for someone not on their staff: ' + t.role);
+      if (t && k.kind !== 'star' && (!['leader', 'e4', 'champion'].includes(t.role) || g.homeLeague(t) !== k.home)) bad('staff talks for someone not on their staff: ' + t.role);
+      if (t && k.kind === 'champ' && (t.role !== 'champion' || !t.quit || t.quit.k !== 'up')) bad('champ talks for someone not a Champion after a bigger seat');
       if (t && (t.hired || t.spon)) bad('a trainer in talks who is hired or sponsored');
       if (k.offers.length > TALKS.maxOffers) TALKS.maxOffers = k.offers.length;
     }
@@ -398,6 +399,32 @@ for (let i = 0; i < N; i++) {
     }
     // a Gym Leader, an Elite Four member and the Champion leave in year 2; vacancies are filled now and then
     if (HAND && S().season === 2 && S().week === 10) g.inLeague(g.ME(), () => { g.staffRetires(g.T(S().gyms[1].leader)); g.staffRetires(g.T(S().e4[2])); g.staffRetires(g.T(S().champion)); if ((S().vacancies || []).length < 3) fail.push('expected three vacancies, got ' + (S().vacancies || []).length); hands += S().vacancies.length; });
+    // (0.54.0) a Champion in talks: a rival's Champion gives notice for a bigger seat while yours is stepping down;
+    // you offer your seat (an Elite Four seat is refused), and at the deadline they take it (or don't)
+    if (HAND && S().season === 3 && S().week === 20 && g.nLeagues() > 1 && !S().founding) {
+      const me = g.ME(), R = [...Array(g.nLeagues()).keys()].find(i => i !== me && g.inLeague(i, () => { const c = g.T(S().champion); return c && !g.founderChamp(c) && g.canTalk(c) && !c.quit && c.stepDown == null; }));
+      const h = g.inLeague(me, () => g.T(S().champion));
+      if (R != null && h && !g.founderChamp(h) && h.talk == null) {
+        const c = g.inLeague(R, () => g.T(S().champion));
+        c.quit = { at: S().turn + 8, k: 'up' }; if (c.con) { c.con.until = S().turn; c.con.from = c.con.until - c.con.len; c.con.win = c.con.until; } // as it would be: the notice comes once the contract no longer holds
+        if (g.inLeague(me, () => g.seatOpening())) fail.push('your seat opening before your Champion is leaving');
+        const k = g.inLeague(R, () => g.champUpTalks(c) ? g.talkOf(c) : null);
+        if (!k) fail.push('no talks for a Champion after a bigger seat');
+        else {
+          const len = g.conOpts('champion')[0];
+          if (!g.makeOffer(k, { lg: me, post: 'champion', slot: 0, bid: 0.75, bonus: 0, len, prom: [] })) fail.push('a seat offered while your Champion stays');
+          h.stepDown = S().turn + 30;
+          if (!g.makeOffer(k, { lg: me, post: 'e4', slot: 0, bid: 0.75, bonus: 0, len, prom: [] })) fail.push('an Elite Four seat offered to a Champion');
+          const err = g.makeOffer(k, { lg: me, post: 'champion', slot: 0, bid: 0.75, bonus: 0, len, prom: [] });
+          if (err) { TALKS.champErr = err; h.stepDown = null; }
+          else {
+            const res = g.settleTalk(k); TALKS.champ = res;
+            if (res === 'signed') { if (g.inLeague(me, () => S().champion) !== c.id || g.homeLeague(c) !== me) fail.push('a Champion signed in talks is not in your seat'); if (h.role === 'champion') fail.push('your old Champion is still Champion'); if (g.inLeague(R, () => S().champion) === c.id || g.inLeague(R, () => S().champion) == null) fail.push('the Champion\'s old League has no new Champion'); }
+            else { h.stepDown = null; if (c.role === 'champion' && c.quit && c.quit.k === 'up' && g.homeLeague(c) === R) {} }
+          }
+        }
+      }
+    }
     // talks (0.53.0): make, raise and withdraw offers at random; answer rivals going after your staff (match or let go
     // for the transfer fee); offers from a hiring page for stars; promises kept (no step down, a certain grudge)
     if (HAND && S().season >= 2 && Math.random() < 0.15 && !S().founding) {
@@ -412,7 +439,7 @@ for (let i = 0; i < N; i++) {
               const tr = g.inLeague(me, () => (S().fin.yr && S().fin.yr.in.transfers) || 0) - tr0; if (fee && tr <= 0) fail.push('no transfer fee for one let go in talks'); } } }
         } else if (Math.random() < 0.15 && mine) { if (!g.withdrawTalkOffer(k, me)) fail.push('withdraw refused'); else { TALKS.withdrawn++; if (k.offers.some(o => o.lg === me)) fail.push('withdrawn offer still there'); } }
         else {
-          const p = k.home === me ? g.inLeague(me, () => g.postOf(t)) : null, post = p ? p.post : rnd(['leader', 'e4']), slot = p ? p.slot : Math.floor(Math.random() * (post === 'e4' ? 4 : 8));
+          const p = k.home === me ? g.inLeague(me, () => g.postOf(t)) : null, post = p ? p.post : t.role === 'champion' ? 'champion' : rnd(['leader', 'e4']), slot = p ? p.slot : post === 'champion' ? 0 : Math.floor(Math.random() * (post === 'e4' ? 4 : 8));
           const o = { lg: me, post, slot, bid: rnd(g.TALK_BIDS), bonus: rnd(g.TALK_BONUS), len: rnd(g.conOpts(post)), prom: Math.random() < 0.3 ? [rnd(['nodemote', 'own'])] : [] };
           const cap = !mine && k.home !== me && g.talkCount(me) >= g.TALK_MAX, red = g.inLeague(me, () => S().fin.money < 0);
           const err = g.makeOffer(k, o); TALKS.hand++;
@@ -774,6 +801,7 @@ console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of 
 console.log('conditions', JSON.stringify(CON));
 console.log('contracts', JSON.stringify(CTR), JSON.stringify(g.CON_LOG));
 console.log('talks', JSON.stringify(TALKS), JSON.stringify(g.TALK_LOG));
+console.log('talks by aim', JSON.stringify(g.TALK_AIM_LOG), 'tempers', JSON.stringify(Array.from({ length: g.nLeagues() }, (_, i) => g.inLeague(i, () => S().fin ? (S().fin.aim || 'you') + ':' + S().fin.temper : '-'))));
 console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);

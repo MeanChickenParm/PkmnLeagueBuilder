@@ -1662,6 +1662,7 @@ function initBooks() {
   const mine = !!(S.cfg && S.cfg.hand) && (S.lg || 0) === ME();
   S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0, aim: mine ? null : pickAim(), aimAt: S.season || 0, redAt: null };
   S.ranch = newRanch(); // (0.25.0) every League with books keeps a ranch
+  S.fin.temper = pick(BID_TEMPER_KEYS); // (0.54.0) how boldly it bids in talks
   if (S.fin.aim) { drawTheme(); drawSeatRule(); } // (0.42.0) a rival's theme, by its aim and region (unless set at setup); (0.43.0) its seat rule
   finYear();
 }
@@ -1715,7 +1716,7 @@ const RED_BITE_WEEKS = 4;
 function redWeek() {
   const f = S.fin;
   if (f.money >= 0) {
-    if (f.redAt != null) { f.redAt = null; for (const t of staffIds().map(T)) if (t && t.quit && t.quit.k === 'pay') { t.quit = null; news(`${dn(t)} will stay at ${postName(t)} now the ${S.lgName} is out of the red.`, 'move', t.id); } }
+    if (f.redAt != null) { f.redAt = null; for (const t of staffIds().map(T)) if (t && t.quit && t.quit.k === 'pay') { t.quit = null; news(`${dn(t)} will stay at ${postName(t)} now the ${S.lgName} is out of the red.`, 'move', t.id); conCatchUp(t); } }
     return;
   }
   if (f.redAt == null) f.redAt = S.turn;
@@ -1749,6 +1750,7 @@ function giveRaise(id) {
     book(-c, 'raises', `Raise: ${t.name} (${postName(t)})`);
     t.payMul = (t.payMul || 1) * RAISE_MUL; t.raised = true; t.wish.since = Math.min(S.turn, t.wish.since + YEAR_WEEKS); t.quit = null; S.fin.raised++;
     news(`${dn(t)} took a raise and will wait another year for promotion.`, 'move', t.id);
+    conCatchUp(t); // (0.54.0) a notice withdrawn after the contract's end
     return null;
   });
 }
@@ -2149,7 +2151,7 @@ function aimMonth() {
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
   if (aim) { aimRanch(aim); aimSpend(aim); } // (0.25.0) the ranch first
-  if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff
+  if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff; (0.54.0) or another League's, by aim
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
 // (kept as the player's choice for next time), `S.simRun` is set only while the multi-year sim is running. Once a

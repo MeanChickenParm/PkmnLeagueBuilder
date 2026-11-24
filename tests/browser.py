@@ -136,6 +136,7 @@ async def run(path):
               if (!/The region's field: /.test(document.querySelector('#main').textContent)) log.push('FAIL no region field summary'); click('[data-act=circscope][data-v=lg]');
               if (document.querySelectorAll('#main table.tbl tbody tr').length !== S.challengers.length) log.push('FAIL back to this League'); }
             go('table'); if (!/Challengers/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table has no Challengers column');
+            if (!/(Bold|Steady|Tight) bidder/.test(document.querySelector('#main').textContent)) log.push('FAIL the League table shows no rival bidding temper');
             log.push('region field ' + fieldSize(S.region) + ' of ' + fieldTarget(S.region) + ', yours ' + S.challengers.length); }
           const views = ['circuit', 'board', 'gyms', 'news', 'history', 'posts', 'records', 'hof', 'dex', 'trainers', 'recap', 'god', 'updates', 'hire', 'staff', 'meta', 'money', 'cities', 'ranch', 'plans'];
           const tour = tag => { for (const v of views) { try { go(v); const m = document.querySelector('#main'); if (!m || m.textContent.trim().length < 20) log.push('FAIL ' + tag + ' empty ' + v); if (/undefined|NaN|\\[object/.test(m.textContent)) log.push('FAIL ' + tag + ' ' + v + ' shows ' + m.textContent.match(/.{30}(undefined|NaN|\\[object).{20}/)[0]); } catch (e) { log.push('FAIL ' + tag + ' ' + v + ': ' + e.message); } } };

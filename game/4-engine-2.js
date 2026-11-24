@@ -2788,7 +2788,7 @@ function rivalHire(min, exclude = [], post = null, bidAt = null) {
   const cs = fieldPool().filter(t => t && t.role === 'challenger' && !exclude.includes(t.id) && !t.hired && t.talk == null && !underContract(t) && !comebackProtected(t) && !t.leaving && t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS))
     .concat(hireRetirees(t => ovr(t) >= min && !exclude.includes(t.id) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)))
     .concat(post ? otherCircuits(t => t.age >= 17 && t.seasons >= 2 && ovr(t) >= min && !exclude.includes(t.id) && !comebackProtected(t) && !(t.letGoAt != null && S.turn - t.letGoAt < YEAR_WEEKS)) : [])
-    .concat(post ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
+    .concat(post && post !== 'e4' ? otherStaffFor(post, min).filter(t => !exclude.includes(t.id) && rand() < POACH_ACCEPT + BID_ODDS * steps) : []).filter(t => willSign(t)).sort((a, b) => val(b) - val(a));
   for (const t of cs) {
     if (t.role === 'retired') return t;
     t.bidMul = bid ? 1 + bid : null;
@@ -2993,7 +2993,7 @@ function ambitionWeek() {
     if (!t || t.acting || t.stepDown != null || !postOf(t) || (t.role === 'champion' && founderChamp(t))) continue;
     if (!t.wish) setAmbition(t, t.role);
     const a = t.wish;
-    if (t.quit) { if (S.turn >= t.quit.at) staffQuits(t); continue; }
+    if (t.quit) { if (S.turn >= t.quit.at && t.talk == null && !champUpTalks(t)) staffQuits(t); continue; } // (0.54.0) a Champion after a bigger seat: talks first
     if (a.k === 'run') {
       if (a.asked == null) {
         a.asked = S.turn;
@@ -3003,6 +3003,7 @@ function ambitionWeek() {
       }
       if (conHolds(t)) continue; // (0.52.0) a contract holds against ambition
       if (!mine) { staffQuits(t); continue; }
+      if (S.turn >= a.asked + RUN_HOLD) { staffQuits(t); continue; } // (0.54.0) a contract that held them past their date: they go now
       if (S.turn >= a.asked + RUN_HOLD - QUIT_NOTICE) announceQuit(t, a.asked + RUN_HOLD);
     } else if (ambClock(t) && S.turn >= ambDue(t) && !conHolds(t)) {
       if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE);
