@@ -25,7 +25,7 @@ function runWorlds(list) {
   for (const w of list) {
     g.seedRandom(seed * 1000 + w);
     g.newWorld({ leagues: 1, growth: false, hand: true });
-    g.foundingFill(); g.finishFounding();
+    g.foundingFill(); g.finishFounding(); g.S.simRun = true; // (0.52.0) the passive player renews contracts
     // (0.41.0) a region holds four Leagues now: keep L1 in the player's region and the others each in a region of its own
     for (let i = 1; i < L; i++) { const used = g.eachLeague(() => g.S.region); g.openNewLeague(undefined, i === 1 ? used[0] : g.LEAGUE_SETS.findIndex((_, r) => !used.includes(r))); }
     let shockAt = null, back = null;
@@ -68,7 +68,7 @@ function foldWorlds(g, list) {
   for (const w of list) {
     g.seedRandom(seed * 1000 + w);
     g.newWorld({ leagues: 1, growth: false, hand: true });
-    g.foundingFill(); g.finishFounding();
+    g.foundingFill(); g.finishFounding(); g.S.simRun = true; // (0.52.0) the passive player renews contracts
     // (0.41.0) a region holds four Leagues now: keep L1 in the player's region and the others each in a region of its own
     for (let i = 1; i < L; i++) { const used = g.eachLeague(() => g.S.region); g.openNewLeague(undefined, i === 1 ? used[0] : g.LEAGUE_SETS.findIndex((_, r) => !used.includes(r))); }
     const r = { w, foldAt: null, name: null, before: null, after: [], peak: 0 };

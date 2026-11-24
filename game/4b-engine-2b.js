@@ -743,3 +743,150 @@ function seatConquer() {
   seatRec({ season: S.season, k: 'conqueror', win: c.id, inc: ch.id, text });
   return text;
 }
+// ================= CONTRACTS (0.52.0; design doc 6.24, talks part 1) =================
+// Every member of staff signs a contract when they take a post: senior staff (Gym Leaders, the Elite Four and the
+// Champion) for 1 to 4 years, gym trainers for 3, 6 or 9 months. The player picks the length when hiring; each trainer
+// prefers one (stay-put trainers long deals, promotion-seekers short ones), and every step away from it lowers the odds
+// they accept an offer and raises their pay. Staff moved within the League keep their contract (a gym trainer moving
+// up to a senior post signs a new one). A contract holds against ambition: an ignored ambition no longer makes anyone
+// give notice; restlessness shows and comes due at renewal. CON_WINDOW weeks before a senior contract ends only the
+// current League can renew it: a content trainer renews, a restless one asks for more (pay, and a fresh clock) or
+// refuses. A contract not renewed ends: they go back to the circuit (a grudge if restless) or retire, and the post
+// opens. Gym trainers' contracts renew quietly unless the player marked them to go or they are restless. Ways out
+// mid-contract are unchanged: let go (severance), unpaid in the red (notice), poached for a bigger post, stepping down
+// after a long career, and a Champion's wish to step down. Open talks between Leagues are part 2. All numbers
+// provisional.
+const CON_SENIOR = [48, 96, 144, 192], CON_SHORT = [12, 24, 36], CON_WINDOW = 4;
+const CON_ODDS = 0.06, CON_PAY = 0.05, CON_MORE = 0.25, CON_REFUSE = 0.5;
+const CON_AI_KEEP = { wall: 0.9, star: 0.85, money: 0.75 };
+const CON_LOG = { made: 0, kept: 0, renewed: 0, more: 0, quiet: 0, ended: 0, refused: 0, lapsed: 0, gtGone: 0, auto: 0 };
+const conOpts = post => post === 'gymtrainer' ? CON_SHORT : CON_SENIOR;
+const conShort = post => post === 'gymtrainer';
+const conWords = w => w >= YEAR_WEEKS ? `${w / YEAR_WEEKS} year${w === YEAR_WEEKS ? '' : 's'}` : `${w / 4} months`;
+// the length a trainer would rather sign for (an index into conOpts). Someone already on the staff goes by their
+// ambition; anyone else by what they want of a post (hungry for one: short; 40 or older: long)
+function conPrefIdx(t, post, fresh) {
+  const n = conOpts(post).length;
+  const k = !fresh && t.wish && STAFF_ROLES.includes(t.role) ? t.wish.k : hungry(t) ? 'up' : t.age >= 40 ? 'stay' : null;
+  return k === 'stay' ? n - 1 : k === 'up' || k === 'run' || k === 'step' ? 0 : Math.floor((n - 1) / 2);
+}
+const conPref = (t, post, fresh) => conOpts(post)[conPrefIdx(t, post, fresh)];
+// steps between a length and the one they prefer (0 when no length is asked)
+function conMiss(t, post, len, fresh = true) {
+  const o = conOpts(post), i = o.indexOf(len);
+  return i < 0 ? 0 : Math.abs(i - conPrefIdx(t, post, fresh));
+}
+// is this member of staff held by a contract now? (not the Champion's wish to step down, which still goes ahead)
+function conHolds(t) {
+  const c = t && t.con;
+  return !!c && !t.acting && !fixedStaff() && postOf(t) != null && S.turn < c.until && !(t.role === 'champion' && t.wish && t.wish.k === 'step');
+}
+function newCon(t, post, len) { t.con = { post, len, from: S.turn, until: S.turn + len }; return t.con; }
+// from openPost: a new contract, or the one they hold if they moved within the staff
+function setContract(t, role, was) {
+  const ask = t.conAsk; t.conAsk = null;
+  if (!STAFF_ROLES.includes(role)) { t.con = null; return; }
+  if (t.acting) return; // an acting holder keeps whatever they had (a stand-in has none)
+  const c = t.con, opts = conOpts(role);
+  if (was && c && conShort(c.post) === conShort(role) && S.turn < c.until - CON_WINDOW) { c.post = role; CON_LOG.kept++; return; }
+  const len = opts.includes(ask) ? ask : rand() < 0.5 ? conPref(t, role, true) : pick(opts); // unasked: staggered
+  newCon(t, role, len); CON_LOG.made++;
+  const miss = conMiss(t, role, len);
+  if (miss && !fixedStaff()) { t.payMul = (t.payMul || 1) * (1 + CON_PAY * miss); t.lastPay = payOf(t); }
+}
+// will they renew? A content trainer yes; one who asked for another run no; a restless one asks for more or refuses
+function conWill(t) {
+  const w = t.wish;
+  if (w && w.k === 'run' && w.asked != null) return 'no';
+  if (ambClock(t) && restless(t)) return rand() < CON_REFUSE ? 'no' : 'more';
+  return 'yes';
+}
+// a renewal: the new term follows on from the old one. Asking for more: CON_MORE on their pay and a fresh clock.
+function renewCon(t, len, more) {
+  const c = t.con, base = Math.max(S.turn, c.until);
+  t.con = { post: c.post, len, from: base, until: base + len };
+  let mul = 1 + (more ? CON_MORE : 0) + CON_PAY * conMiss(t, c.post, len, false);
+  if (more) { CON_LOG.more++; if (t.wish) t.wish.since = S.turn; }
+  if (mul !== 1 && !fixedStaff()) { t.payMul = (t.payMul || 1) * mul; t.lastPay = payOf(t); }
+}
+// rival Leagues (and the multi-year sim for yours) answer the window at once: keep the willing, by aim, at the length
+// they prefer; a poor record isn't kept
+function aiRenew(t, auto) {
+  const c = t.con;
+  if (c.will === 'no') { CON_LOG.refused++; return false; }
+  const aim = S.fin && S.fin.aim, keep = auto ? 1 : CON_AI_KEEP[aim] != null ? CON_AI_KEEP[aim] : 0.85;
+  if (!auto && (poorRecord(t) || rand() >= keep)) { CON_LOG.lapsed++; return false; }
+  renewCon(t, conPref(t, c.post), c.will === 'more'); CON_LOG.renewed++; if (auto) CON_LOG.auto++;
+  return true;
+}
+// the contract ends: through staffQuits (the post opens in your League, is filled at once elsewhere)
+function conEnd(t) {
+  t.conSore = restless(t) || (t.con && t.con.will === 'no' && !(t.wish && t.wish.k === 'run'));
+  t.quit = { at: S.turn, k: 'con' }; CON_LOG.ended++;
+  if (t.role === 'gymtrainer') CON_LOG.gtGone++;
+  staffQuits(t);
+}
+// where they go: another run if they asked for one; retired by the rule for a lost post; else the circuit, with a
+// grudge if they left restless
+function conLeave(t, was) {
+  const sore = t.conSore; t.conSore = null; t.con = null;
+  if (t.wish && t.wish.k === 'run' && t.wish.asked != null) return comeback(t, was);
+  t.wish = null; t.letGoAt = S.turn;
+  if (retiresOnLosingPost(t)) { retire(t, `after their contract as ${was} ran out`); return 'retired'; }
+  returnToCircuit(t, `contract as ${was} ran out`);
+  if (!sore) return 'circuit';
+  t.grudge = S.season; t.grudgeLg = S.lg || 0;
+  return grudgeAway(t);
+}
+function conText(t, was, fate) {
+  return `${t.name}'s contract as ${was} ran out${fate === 'comeback' ? ', and they set off on another run as a challenger' : fate === 'retired' ? ', and they retired' : fate === 'away' ? `, and they took a grudge to the ${leagueName(lgOf(t))}` : fate === 'grudge' ? '; unhappy, they return to the circuit holding a grudge' : ', and they return to the badge circuit'}.`;
+}
+// once a week in each League
+function contractWeek() {
+  if (fixedStaff() || (S.founding && (S.lg || 0) === ME())) return;
+  const mine = playerLeague(), auto = mine && !!S.simRun;
+  for (const id of staffIds()) {
+    const t = T(id);
+    if (!t || t.acting || !postOf(t)) continue;
+    if (!t.con) newCon(t, t.role, conPref(t, t.role));
+    const c = t.con;
+    if (t.stepDown != null || t.quit) continue;
+    if (t.role === 'champion' && founderChamp(t)) { if (S.turn >= c.until - CON_WINDOW) renewCon(t, c.len); continue; }
+    if (conShort(c.post)) {
+      if (S.turn < c.until) continue;
+      if (c.go || (ambClock(t) && restless(t))) conEnd(t);
+      else { renewCon(t, c.len); CON_LOG.quiet++; }
+      continue;
+    }
+    if (c.win == null && S.turn >= c.until - CON_WINDOW) {
+      c.win = S.turn; c.will = conWill(t);
+      if (!mine || auto) aiRenew(t, auto);
+      else {
+        const msg = `${dn(t)}'s contract as ${postName(t)} ends on ${turnDate(c.until)}. ${c.will === 'no' ? 'They won\'t renew: they leave then, and the post opens.' : c.will === 'more' ? `Restless, they will renew only for ${CON_MORE * 100}% more pay.` : 'They are happy to renew.'} Only your League can renew it until then (Your staff).`;
+        news(msg, 'move', t.id); noteChange(msg); stopFor('contract', msg);
+      }
+    }
+    if (t.con.win != null && auto && S.turn < t.con.until && t.con.from <= S.turn && t.con.will !== 'no' && t.con === c) aiRenew(t, true);
+    if (S.turn >= t.con.until) conEnd(t);
+  }
+}
+// the player renews a contract in its window (no cost but the pay they ask)
+function renewContract(id, len) {
+  return inLeague(ME(), () => {
+    const t = T(id), c = t && t.con;
+    if (!c || !postOf(t) || t.acting || conShort(c.post) || c.win == null || S.turn >= c.until || c.from > S.turn) return 'Their contract is not up for renewal.';
+    if (c.will === 'no') return `${t.name} won't renew.`;
+    if (!conOpts(c.post).includes(len)) return 'Pick a length.';
+    renewCon(t, len, c.will === 'more'); CON_LOG.renewed++;
+    news(`${dn(t)} renewed for ${conWords(len)} as ${postName(t)}, to ${turnDate(t.con.until)}${c.will === 'more' ? `, for ${CON_MORE * 100}% more pay` : ''}.`, 'move', t.id);
+    return null;
+  });
+}
+// a gym trainer: let them go when the contract ends (or keep them on)
+function conLetRun(id, go) {
+  return inLeague(ME(), () => { const t = T(id); if (!t || !t.con || !conShort(t.con.post) || !postOf(t)) return false; t.con.go = !!go; return true; });
+}
+// contracts in their renewal window waiting for the player
+function conPending() { return inLeague(ME(), () => staffIds().map(T).filter(t => t && !t.acting && t.con && !conShort(t.con.post) && t.con.win != null && t.con.from <= S.turn && S.turn < t.con.until)); }
+// the length to show and the preferred one for a candidate (hiring pages)
+function setConAsk(id, len) { const t = T(id); if (t) t.conAsk = len || null; }

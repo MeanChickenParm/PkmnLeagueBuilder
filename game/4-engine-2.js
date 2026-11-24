@@ -1021,7 +1021,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); storeHire(t, role, was); }
+function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1411,6 +1411,7 @@ function simWeek() {
   sponsorWeek();
   hireArrivals();
   eachLeague(ambitionWeek);
+  eachLeague(contractWeek); // (0.52.0) contracts: renewal windows and endings
   challengeWeek();
   seatWeek(); // (0.43.0) a Term appointment left unanswered
   birthdays();
@@ -1768,7 +1769,7 @@ function rivalChampChallenger() {
 function chalRestless(t) {
   if (!t || !wantsUp(t) || !ambClock(t) || t.quit) return;
   t.wish.since -= YEAR_WEEKS;
-  if (S.turn >= ambDue(t)) { if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE); }
+  if (S.turn >= ambDue(t) && !conHolds(t)) { if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE); }
 }
 function chalRecord(x, extra) {
   const h = S.history.find(e => e.season === x.season), rec = { k: x.k, slot: x.slot, cand: x.cand, inc: x.inc, from: x.from, gym: x.gym, called: x.called || undefined, ...extra };
@@ -2598,6 +2599,7 @@ function acceptsOffer(t, post) {
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
   if (ownAcademy(t)) p += ACADEMY_LOYAL;
+  p -= CON_ODDS * conMiss(t, post, t.conAsk); // (0.52.0) a contract length they don't want
   p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);
 }
@@ -2690,7 +2692,7 @@ function cancelIncoming(target, why) {
   if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; id = (g.incoming || [])[target.k]; if (g.incoming) g.incoming[target.k] = null; }
   else { const v = vacancyAt(target.post, target.slot); if (v) { id = v.incoming; v.incoming = null; } }
   const t = T(id); if (!t || !t.hired) return;
-  t.hired = null; t.hireDue = false; t.bidMul = null;
+  t.hired = null; t.hireDue = false; t.bidMul = t.conAsk = null;
   if (why) { const msg = `${dn(t)} will not become ${hireTarget(target)} after all: ${why}.`; news(msg, 'move', t.id); noteChange(msg); }
 }
 // the player withdraws an offer someone accepted
@@ -2740,7 +2742,7 @@ function hireForGymTrainer(i, k, id, bid = 0) {
 function bidOffer(target, t, bid) {
   t.bidMul = booksOn() && BIDS.includes(bid) && bid > 0 ? 1 + bid : null;
   const r = offerPost(target, t);
-  if (r.res === 'refused' || r.res === 'cool') t.bidMul = null;
+  if (r.res === 'refused' || r.res === 'cool') t.bidMul = t.conAsk = null;
   return r;
 }
 // outsiders for a gym trainer's place picked by hand: GT_OUTSIDERS trainers of the leader's type, made when the
@@ -2987,18 +2989,20 @@ function ambitionWeek() {
     if (a.k === 'run') {
       if (a.asked == null) {
         a.asked = S.turn;
-        const msg = `${dn(t)} (${postName(t)}) wants another run as a challenger${a.streak ? ` after ${a.streak} outstanding years in a row` : ''}${mine ? `. Let them go, or they leave anyway on ${turnDate(S.turn + RUN_HOLD)}` : ''}.`;
+        const msg = `${dn(t)} (${postName(t)}) wants another run as a challenger${a.streak ? ` after ${a.streak} outstanding years in a row` : ''}${conHolds(t) ? `. Under contract, they stay until ${turnDate(t.con.until)} unless you let them go` : mine ? `. Let them go, or they leave anyway on ${turnDate(S.turn + RUN_HOLD)}` : ''}.`;
         news(msg, 'move', t.id); noteChange(msg);
         if (mine) stopFor('ambition', msg);
       }
+      if (conHolds(t)) continue; // (0.52.0) a contract holds against ambition
       if (!mine) { staffQuits(t); continue; }
       if (S.turn >= a.asked + RUN_HOLD - QUIT_NOTICE) announceQuit(t, a.asked + RUN_HOLD);
-    } else if (ambClock(t) && S.turn >= ambDue(t)) {
+    } else if (ambClock(t) && S.turn >= ambDue(t) && !conHolds(t)) {
       if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE);
     }
   }
 }
 function announceQuit(t, at) {
+  if (conHolds(t)) return;
   t.quit = { at, k: t.wish ? t.wish.k : 'up' };
   const msg = t.quit.k === 'run' ? `${dn(t)} (${postName(t)}) will leave for another run as a challenger on ${turnDate(at)}, unless you let them go sooner.`
     : t.quit.k === 'step' ? `Champion ${t.name} will step down on ${turnDate(at)}. ${champHeir()} would move up, unless you call a challenge for the seat first.`
@@ -3016,11 +3020,11 @@ function staffQuits(t) {
   t.quit = null;
   if (mine) vacate(t);
   else { closePost(t); if (p.post === 'leader') S.gyms[p.slot].leader = null; else if (p.post === 'e4') S.e4[p.slot] = null; else S.gyms[p.slot].trainers[p.k] = null; }
-  const fate = k === 'run' ? comeback(t, was) : leaveUnhappy(t, was);
+  const fate = k === 'run' ? comeback(t, was) : k === 'con' ? conLeave(t, was) : leaveUnhappy(t, was);
   const changes = [];
   if (p.post === 'gymtrainer') staffGym(p.slot);
   else if (!mine) { if (p.post === 'leader') { fillGym(p.slot, changes); staffGym(p.slot); } else rivalE4(p.slot); }
-  const text = k === 'pay' ? `${t.name} left ${was}, unpaid while the League was in the red.` : k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
+  const text = k === 'con' ? conText(t, was, fate) : k === 'pay' ? `${t.name} left ${was}, unpaid while the League was in the red.` : k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
     : `${t.name} left ${was}, tired of waiting for ${p.post === 'gymtrainer' ? 'a gym of their own' : 'promotion'}${fate === 'retired' ? ', and retired' : fate === 'away' ? `, and took their grudge to the ${leagueName(lgOf(t))}` : ', and returns to the circuit holding a grudge'}.`;
   news(text, 'move', t.id); noteChange(text); changes.forEach(noteChange);
   if (mine && p.post !== 'gymtrainer') stopFor('vacancy', `${text} ${p.post === 'leader' ? `${dn(T(S.gyms[p.slot].leader))} is acting leader` : `${T(S.e4[p.slot]).name} stands in`} until you choose.`);
@@ -3063,13 +3067,14 @@ function champQuits(t) {
     if (mine) { const a = actingE4(at); openVacancy('e4', at); fill = ` ${a.name} stands in at seat #${at + 1} until you choose a new member.`; }
     else { const nt = rivalE4(at); fill = ` ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${at + 1}.`; }
     if (k === 'run') { comeback(t, was); fate = 'is off on another run as a challenger'; }
+    else if (k === 'con') fate = conLeave(t, was) === 'retired' ? 'retired' : 'returns to the badge circuit';
     else if (k === 'up') {
       t.wish = null; t.letGoAt = S.turn; returnToCircuit(t, `left ${was} for a bigger League`);
       const me = S.lg || 0, to = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== me && !(S.founding && i === ME())).sort((a, b) => prestOf(b) - prestOf(a))[0];
       if (to != null) { shiftLeague(t, to); fate = `heads for the ${leagueName(to)}'s circuit, after its seat`; } else fate = 'returns to the badge circuit';
     } else { t.wish = null; retire(t, `after stepping down as Champion of the ${S.lgName}`); fate = t.role === 'retired' ? 'retired' : 'returns to the badge circuit'; }
   }
-  const text = `Champion ${t.name} ${k === 'step' ? 'stepped down' : 'left the seat'} and ${fate}. ${dn(m)} moves up from the Elite Four to become Champion.${fill}`;
+  const text = `Champion ${t.name} ${k === 'step' ? 'stepped down' : k === 'con' ? 'left when their contract ran out' : 'left the seat'} and ${fate}. ${dn(m)} moves up from the Elite Four to become Champion.${fill}`;
   news(text, 'title', m.id); noteChange(text);
   if (mine) stopFor('vacancy', text);
   return text;

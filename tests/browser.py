@@ -236,6 +236,24 @@ async def run(path):
                       click('[data-act=postsmode][data-v=post]'); if (m().querySelectorAll('.phpost').length !== 13 || /undefined|NaN/.test(m().textContent)) log.push('FAIL post holders by post');
                       if (nLeagues() > 1) { click('[data-act=lgview][data-v="1"]'); if (!m().querySelectorAll('.phpost').length) log.push('FAIL post holders for a rival'); click('[data-act=lgview][data-v="0"]'); }
                       click('[data-act=postsmode][data-v=year]'); log.push('post holders ok'); } }
+                  // 0.52.0: contracts. Three Elite Four contracts put in their renewal window: renew a content one and a restless
+                  // one (more pay) from Your staff, see one who won't renew; mark a gym trainer to go and back; the length picker
+                  { const ids = S.e4.slice(0, 3), ts = ids.map(T), m = () => document.querySelector('#main').textContent;
+                    if (ts.some(t => !t || !t.con)) log.push('FAIL an Elite Four member has no contract');
+                    else { ts.forEach((t, k) => { t.quit = null; t.con = { post: 'e4', len: 48, from: S.turn - 46, until: S.turn + 2, win: S.turn, will: ['yes', 'more', 'no'][k] }; });
+                      go('staff'); if (!/Contracts up for renewal/.test(m()) || !/Won't renew/.test(m()) || !/Asks \+25% to renew/.test(m())) log.push('FAIL the staff page does not show contracts up for renewal');
+                      const u0 = ts[0].con.until; if (!click('[data-act=conrenew][data-id="' + ids[0] + '"][data-v="96"]') || ts[0].con.until !== u0 + 96 || ts[0].con.from !== u0) log.push('FAIL renewing a contract');
+                      const p0 = inLeague(0, () => payOf(ts[1])); if (!click('[data-act=conrenew][data-id="' + ids[1] + '"][data-v="48"]') || inLeague(0, () => payOf(ts[1])) < p0 * 1.2) log.push('FAIL renewing a restless member for more');
+                      if (document.querySelector('[data-act=conrenew][data-id="' + ids[2] + '"]')) log.push('FAIL a renew button for someone who will not renew');
+                      if (/undefined|NaN/.test(m())) log.push('FAIL the staff page shows undefined after renewing');
+                      log.push('renewed contracts'); }
+                    const gid = S.gyms[1].trainers[0], gt = T(gid);
+                    if (!gt || !gt.con) log.push('FAIL a gym trainer has no contract');
+                    else { go('staff'); click('[data-act=congo][data-id="' + gid + '"]'); const on = gt.con.go; click('[data-act=congo][data-id="' + gid + '"]'); if (!on || gt.con.go) log.push('FAIL marking a gym trainer to go'); }
+                    go('staff'); click('[data-act=gtpick][data-g="1"][data-k="0"]');
+                    if (!document.querySelector('.conlen') || !/Prefers/.test(m())) log.push('FAIL the gym trainer picker has no contract length');
+                    else { click('[data-act=hirelen][data-v="24"]'); if (hireLen !== 24 || !/6 months/.test(document.querySelector('.conlen .seg.on').textContent)) log.push('FAIL picking a contract length'); click('[data-act=hirelen][data-v=""]'); if (hireLen != null) log.push('FAIL going back to their preference'); }
+                    go('staff'); }
                   // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');

@@ -1,5 +1,42 @@
+// ---------- contracts (0.52.0) ----------
+// the length picked on the hiring pages (null: whatever each candidate prefers)
+let hireLen = null;
+function conRow(post) {
+  const opts = conOpts(post), cur = opts.includes(hireLen) ? hireLen : null;
+  return `<div class="segs conlen"><button class="seg${cur == null ? ' on' : ''}" data-act="hirelen" data-v="" aria-pressed="${cur == null}">Their preference</button>${opts.map(w => `<button class="seg${cur === w ? ' on' : ''}" data-act="hirelen" data-v="${w}" aria-pressed="${cur === w}">${conWords(w)}</button>`).join('')}</div><p class="small muted">Contract length for anyone new to your staff (staff you move keep theirs). Each trainer prefers a length: stay-put types long deals, those after a bigger post short ones. Every step away from it makes an offer likelier to be turned down and adds ${CON_PAY * 100}% to their pay.</p>`;
+}
+const conPrefTag = (t, post) => { const w = conPref(t, post, true), miss = conOpts(post).includes(hireLen) ? conMiss(t, post, hireLen) : 0; return ` <span class="tag small${miss ? ' notice' : ''}" title="${miss ? `${miss} step${miss === 1 ? '' : 's'} from what they want: less likely to accept, ${CON_PAY * 100 * miss}% more pay` : 'The length they would rather sign for'}">Prefers ${conWords(w)}</span>`; };
+// set the length on a candidate before an offer or install (true, so it can sit in an && chain)
+function hireLenFor(id, post) { const t = T(id); if (t) setConAsk(id, conOpts(post).includes(hireLen) ? hireLen : conPref(t, post, true)); return true; }
+// a staff row's contract: its end, and its renewal state
+function conInfo(t) {
+  const c = t && t.con; if (!c || t.acting || !handOn()) return '';
+  const win = !conShort(c.post) && c.win != null && c.from <= S.turn && S.turn < c.until;
+  const st = win ? (c.will === 'no' ? ' <span class="tag notice small">Won\'t renew</span>' : c.will === 'more' ? ` <span class="tag notice small">Asks +${CON_MORE * 100}% to renew</span>` : ' <span class="tag notice small">Up for renewal</span>') : c.go ? ' <span class="tag small">Goes at the end</span>' : '';
+  return ` · contract to ${turnDate(c.until)}${c.from > S.turn ? ' (renewed)' : ''}${st}`;
+}
+function conActs(t) {
+  const c = t && t.con; if (!c || t.acting || !handOn() || (S.lg || 0) !== ME()) return '';
+  if (conShort(c.post)) return ` <button class="btn small" data-act="congo" data-id="${t.id}" title="${c.go ? 'Keep them on: the contract renews as usual' : 'Let them go when the contract ends'}">${c.go ? 'Keep on' : 'Let it run out'}</button>`;
+  if (c.win == null || c.from > S.turn || S.turn >= c.until || c.will === 'no') return '';
+  return `<div class="segs small">${CON_SENIOR.map(w => `<button class="seg" data-act="conrenew" data-id="${t.id}" data-v="${w}">Renew ${conWords(w)}</button>`).join('')}</div>`;
+}
+function conNotice(list) {
+  if (!list.length) return '';
+  return `<div class="eyebrow">Contracts up for renewal</div><ul class="mini">${list.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)} <span class="small">${t.con.will === 'no' ? 'won\'t renew' : t.con.will === 'more' ? `restless: asks ${CON_MORE * 100}% more pay` : 'happy to renew'}</span></span><span class="small">ends ${turnDate(t.con.until)}</span></li>`).join('')}</ul><p class="muted small">Renew from Your staff (prefers ${list.filter(t => t.con.will !== 'no').map(t => `${esc(t.name)} ${conWords(conPref(t, t.con.post))}`).join(', ') || 'nobody willing'}). A contract not renewed ends on its date: they return to the circuit (unhappy if restless) or retire, and the post opens.</p>`;
+}
+GLOSS_TERMS.league.push(['Contracts', `Everyone who takes a post signs a contract: Gym Leaders, the Elite Four and the Champion for 1 to 4 years, gym trainers for 3, 6 or 9 months. You pick the length when you hire (Their preference by default). Each trainer prefers one: those who want to stay put like long deals, those after a bigger post short ones; every step away from it makes an offer likelier to be turned down and adds ${CON_PAY * 100}% to their pay. Staff you move between posts keep their contract (a gym trainer moving up signs a new one). A contract holds against ambition: a member of staff tired of waiting for promotion, or asking for another run, stays until it ends, though their restlessness shows. For the last ${CON_WINDOW} weeks only your League can renew it, from Your staff: a content member renews at the length you pick; a restless one asks ${CON_MORE * 100}% more pay (and starts their wait afresh) or won't renew. A contract not renewed ends on its date: they go back to the circuit, holding a grudge if they were restless, or retire, and the post opens. Gym trainers renew quietly unless you mark them to go (Let it run out) or they are restless. You can still let anyone go early (severance), and staff still leave when unpaid in the red, take a bigger post in another League, step down after a long career, or (the Champion) step down. Rival Leagues renew by aim, and the multi-year sim renews yours.`]); // (0.52.0)
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 52, ver: '0.52.0', date: 'November 23, 2026', time: '7:30 PM ET', title: 'Contracts', items: [
+    "Staff now sign contracts. Gym Leaders, the Elite Four and the Champion sign for 1 to 4 years, gym trainers for 3, 6 or 9 months. Your current staff start with staggered lengths, so they don't all come up at once.",
+    "Pick the length when you hire, on the hiring pages (Their preference by default). Each candidate shows the length they'd rather have: stay-put types like long deals, those after a bigger post short ones. Every step away from it makes an offer likelier to be turned down and adds 5% to their pay. Staff you move between posts keep their contract.",
+    "A contract holds against ambition. A member of staff tired of waiting for promotion, or asking for another run, no longer gives notice and walks out: they stay until the contract ends, and their restlessness shows.",
+    "For the last 4 weeks of a senior contract, only you can renew it, from Your staff (the game stops when one comes up). A content member renews at the length you pick. A restless one asks for 25% more pay (and their wait starts afresh) or won't renew at all. A contract you don't renew ends on its date: they go back to the circuit, holding a grudge if they were restless, or retire, and the post opens.",
+    "Gym trainers' contracts renew on their own unless you mark them Let it run out, or they're restless.",
+    "Letting someone go early still costs severance. Staff still leave when unpaid in the red, when another League gives them a bigger post, or when they step down after a long career, and a Champion who wants to step down still can. Rival Leagues renew by their aim, and the multi-year sim renews your contracts for you.",
+    "Coming next: open talks, where Leagues compete for stars and staff whose contracts end.",
+  ] },
   { id: 51, ver: '0.51.0', date: 'November 23, 2026', time: '6:45 PM ET', title: 'Sort by egg group', items: [
     "The ranch's Pool tab can be sorted by egg group (Sort → Egg group). Each Pokémon's egg groups then show under its type, Ditto comes first and Pokémon that can't breed (Undiscovered) come last, so lines that can pair sit together.",
     "The Day Care's breeding pool has a Sort switch, Line or Egg group, and the two parent pickers follow the same order.",
@@ -913,7 +950,10 @@ document.addEventListener('click', ev => {
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
-    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; if (v) hireLenFor(id, v.post); hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
+    case 'hirelen': hireLen = el.dataset.v ? +el.dataset.v : null; render(); break;
+    case 'conrenew': { const t = T(+el.dataset.id), err = renewContract(+el.dataset.id, +el.dataset.v); if (err) toast(err); else { save(); render(); toast(`${t.name} renewed to ${turnDate(t.con.until)}.`); } break; }
+    case 'congo': { const t = T(+el.dataset.id); if (t && conLetRun(t.id, !t.con.go)) { save(); render(); toast(t.con.go ? `${t.name} goes when their contract ends, ${turnDate(t.con.until)}.` : `${t.name} renews as usual.`); } break; }
     case 'hirebid': hireBid = +el.dataset.v; render(); break;
     case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
     case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
@@ -929,7 +969,7 @@ document.addEventListener('click', ev => {
     case 'staffswap': staffSwap = el.dataset.id ? +el.dataset.id : null; staffAsk = null; render(); break;
     case 'staffswapto': { const a = staffSwap; staffSwap = null; if (a != null && swapStaff(a, +el.dataset.id)) { save(); toast(`${T(a).name} and ${T(+el.dataset.id).name} swapped posts.`); } render(); break; }
     case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; gymOutsiders(gtSel.g); save(); go('gtpick'); break;
-    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireForGymTrainer(gtSel.g, gtSel.k, id, hireBid); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
+    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireLenFor(id, 'gymtrainer') && hireForGymTrainer(gtSel.g, gtSel.k, id, hireBid); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
     case 'watchgym': { const g = S.gyms[+el.dataset.g], r = g && (g.watch || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;

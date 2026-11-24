@@ -291,3 +291,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - (0.47.0) 16 famous trainers (pack trainers and some base ones, e.g. Magic Johnson, Raiden, Mustard, Briar) have the trait `'mentor'` in `FAMOUS_TRAITS`, which isn't a key of `TRAITS`: give them a real trait or add a Mentor trait.
 - (0.47.0) **Flaky browser test:** in 2 of 5 runs of the main page on 0.47.0 (0 of 3 on 0.46.0, which proves little with random worlds) the Your staff steps in year 2 failed (`posts left open after the move`, `a stay-put swap was offered`, `the swap`); the itch copy and 3 reruns passed. 0.47.0 only added famous trainers, so it is most likely the scripted staffing steps meeting an unlucky world; worth tracing.
 - (Nov 23, 0.49.0) The browser test's contender step ("nobody to send": every Send button disabled) failed once in four runs; not looked into. (The year-2 vacancy flake was the test picking a region's-field challenger, who only accepts as an offer; fixed in the test.)
+
+## Left over from contracts (0.52.0)
+- **All the numbers are provisional:** lengths (1 to 4 years; 3, 6, 9 months), the 4-week window, `CON_ODDS` 0.06 and `CON_PAY` 0.05 a step from the preferred length, `CON_MORE` 0.25 for a restless renewal, `CON_REFUSE` 0.5, the rivals' keep odds by aim, and how preference is read (ambition for staff; hunger and age for anyone else).
+- **Renewal is free** apart from the pay asked; signing bonuses come with talks (part 2).
+- **Poaching still ignores contracts:** another League can still hire away a member of staff who wants promotion (`otherStaffFor`), paying the transfer fee as before. Part 2 turns that into a rival's offer and your Retention stop.
+- **A contract that isn't renewed opens the post at once**; part 2 sends such trainers (and the stars listed in 6.24) into open talks instead.
+- **Champion's contracts:** a Champion whose contract ends leaves like any member of staff (the heir moves up). Whether the seat rules (Term especially) should drive the Champion's contract instead is open.
+- **Not measured:** the wall and the economy with contracts (rivals now turn staff over at contract ends; restless staff stay longer).

@@ -20,7 +20,7 @@ function run(boost, hand) {
   for (let w = 0; w < W; w++) {
     g.seedRandom(seed * 1000 + w);
     g.newWorld(Object.assign({ leagues: 1, growth: false }, boost == null ? {} : { staffBoost: boost }, hand ? { hand: true } : {}));
-    if (hand) { g.foundingFill(); g.finishFounding(); }
+    if (hand) { g.foundingFill(); g.finishFounding(); g.S.simRun = true; } // (0.52.0) the passive player renews contracts as the multi-year sim does
     for (let i = 0; i < N; i++) {
       if (hand) { g.approveAllChallenges(); g.fillAllVacancies(); }
       g.simYear();

@@ -35,6 +35,7 @@ const S = () => g.S, fail = [];
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
+const CTR = { seen: 0, win: 0, yrs: {}, renewed: 0, refused: 0, let: 0, gtGo: 0, asked: 0, askMiss: 0, payUp: 0 }; // (0.52.0) contracts
 const money = { built: 0, bans: 0, raises: 0, moved: 0 };
 const call = { made: 0, fought: 0, won: 0, off: 0, blocked: 0, champLeft: 0, champStep: 0, champUp: 0, champRun: 0, champWish: {} };
 const chal = { n: 0, claims: 0, claimWon: 0, claimNo: 0, claimPost: 0, champ: 0, leader: 0, circuit: 0, won: 0, refused: 0, lapsed: 0 };
@@ -232,8 +233,26 @@ function check(tag) {
       if (t.quit && (t.quit.at < s.turn || t.quit.at - s.turn > g.RUN_HOLD)) bad('a notice out of range: ' + t.name);
       if (t.quit && t.stepDown != null) bad('leaving and stepping down at once: ' + t.name);
       if (t.quit) amb.quit.add(t.id);
-      if (t.wish.k === 'run' && t.wish.asked != null) { amb.asked.add(t.id); if (s.turn - t.wish.asked > g.RUN_HOLD) bad('held past a year: ' + t.name); }
-      if (g.ambClock(t) && t.stepDown == null && !t.quit && s.turn > g.ambDue(t) + 1) bad('promotion overdue with no notice: ' + t.name + ' ' + t.role); }
+      // (0.52.0) a contract holds against ambition: overdue promotion and a run request wait for its end
+      const held = t.con && s.turn <= t.con.until;
+      if (t.wish.k === 'run' && t.wish.asked != null) { amb.asked.add(t.id); if (s.turn - t.wish.asked > g.RUN_HOLD && !held) bad('held past a year: ' + t.name); }
+      if (g.ambClock(t) && t.stepDown == null && !t.quit && s.turn > g.ambDue(t) + 1 && !held) bad('promotion overdue with no notice: ' + t.name + ' ' + t.role);
+      // contracts (0.52.0): every member of staff has one of a length for their kind of post, not overdue
+      if (!(i === g.ME() && s.founding)) {
+        const c = t.con, gt = t.role === 'gymtrainer', opts = gt ? g.CON_SHORT : g.CON_SENIOR;
+        if (!c) bad('no contract: ' + t.name + ' ' + t.role);
+        else {
+          CTR.seen++;
+          if (!opts.includes(c.len) || c.until - c.from !== c.len) bad(`a contract of the wrong length: ${t.name} ${t.role} ${c.len}`);
+          if ((c.post === 'gymtrainer') !== gt) bad('a contract for the wrong kind of post: ' + t.name);
+          if (s.turn > c.until && t.stepDown == null && !t.quit) bad(`a contract past its end: ${t.name} ${t.role} ${c.until} < ${s.turn}`);
+          if (c.win != null && (c.win < c.until - g.CON_WINDOW || c.win > c.until)) bad('a renewal window out of place: ' + t.name);
+          if (c.will && !['yes', 'more', 'no'].includes(c.will)) bad('a strange answer to renewal: ' + t.name);
+          if (t.quit && ['up', 'run'].includes(t.quit.k) && c.from <= s.turn && s.turn < c.until - 1 && !(t.role === 'champion' && t.quit.k === 'step')) bad(`notice given under contract: ${t.name} ${t.quit.k}`);
+          if (c.win != null && c.from <= s.turn) CTR.win++;
+          CTR.yrs[c.len] = (CTR.yrs[c.len] || 0) + 1;
+        }
+      } }
     // seat challenges (0.11.0): only the player's League keeps challenges waiting for an answer, each within its
     // answer window and naming people still on the books; kept challenge battles stay capped
     if ((z.seatLogs || []).length > g.SEAT_LOGS) bad('too many kept seat challenges');
@@ -383,11 +402,13 @@ for (let i = 0; i < N; i++) {
       const tally = o => { if (o && o.res) offers[o.res] = (offers[o.res] || 0) + 1; else fail.push('an offer failed'); };
       if ((z.vacancies || []).length && Math.random() < 0.1) { const v = rnd(z.vacancies), all = g.vacancyCands(v), c = all.filter(x => x.from === 'circuit' && !x.refuse && g.canOffer(x.t) && x.t.id !== v.incoming);
         { const bl = all.find(x => x.from === 'circuit' && x.refuse); if (bl) { PGH.blocked++; const r = g.hireForVacancy(v, bl.t.id); if (r && r.res) fail.push('a blocked candidate was offered a post'); } } // (0.23.0)
-        if (c.length) tally(g.hireForVacancy(v, rnd(c.slice(0, 12)).t.id, rnd(g.BIDS))); }
+        if (c.length) { const t = rnd(c.slice(0, 12)).t, len = rnd(g.CON_SENIOR); g.setConAsk(t.id, len); CTR.asked++; if (g.conMiss(t, v.post, len)) CTR.askMiss++;
+          const o = g.hireForVacancy(v, t.id, rnd(g.BIDS)); tally(o); if (o && o.res === 'now' && t.con && t.con.from === S().turn && t.con.len !== len) fail.push('a hire signed for a length not asked'); if (o && (o.res === 'refused' || o.res === 'cool') && t.conAsk) fail.push('a refused offer kept its length'); } }
       if (Math.random() < 0.05) { const i = rnd([0, 1, 2, 3, 4, 5, 6, 7]), gy = z.gyms[i], k = (gy.trainers || []).findIndex(x => x != null);
         if (Math.random() < 0.5) g.gymOutsiders(i);
         const c = g.gymTrainerCands(i).filter(x => ['circuit', 'outsider', 'retired'].includes(x.from) && !x.refuse && (x.from !== 'circuit' || g.canOffer(x.t)));
-        if (k >= 0 && c.length) tally(g.hireForGymTrainer(i, k, rnd(c.slice(0, 8)).t.id)); }
+        if (k >= 0 && c.length) { const t = rnd(c.slice(0, 8)).t, len = rnd(g.CON_SHORT); g.setConAsk(t.id, len); CTR.asked++;
+          const o = g.hireForGymTrainer(i, k, t.id); tally(o); if (o && o.res === 'now' && t.role === 'gymtrainer' && t.con && t.con.from === S().turn && t.con.len !== len) fail.push('a gym trainer signed for a length not asked'); } }
       if (Math.random() < 0.01) { const h = Object.values(z.trainers).find(t => t.hired); if (h && g.withdrawOffer(h.id)) offers.withdrawn++; }
     });
     // (0.36.0) a condition hunt (refused out of reach, the cost the plan's) and a trip to an outbreak
@@ -579,6 +600,15 @@ for (let i = 0; i < N; i++) {
       else if (ok.length) { const used = g.callsUsed(), c = ok[Math.floor(Math.random() * ok.length)], err = g.callChallenge(c.t.id);
         if (err) fail.push('callChallenge refused: ' + err); else { call.made++; if (g.callsUsed() !== used + 1) fail.push('a call was not counted');
           const x = S().chalPending[S().chalPending.length - 1]; if (!x.called || x.cand !== c.t.id || x.due !== S().turn + g.CALL_WEEKS) fail.push('a malformed called challenge'); } } }
+    // (0.52.0) contracts: renew most in their window at a random length (a refusal checked), let some run out, and mark
+    // a gym trainer to go now and then
+    if (HAND && !S().founding) for (const t of g.conPending()) { if (t.con.seenBy === S().turn) continue; t.con.seenBy = S().turn; if (Math.random() > 0.35) continue;
+      if (Math.random() < 0.8) { const len = rnd(g.CON_SENIOR), u0 = t.con.until, pay0 = g.inLeague(g.ME(), () => g.payOf(t)), err = g.renewContract(t.id, len);
+        if (t.con.will === 'no' || (t.con.until === u0 && err)) { if (!err) fail.push('renewed someone who refused'); else CTR.refused++; }
+        else if (err) fail.push('renewContract refused: ' + err);
+        else { CTR.renewed++; if (t.con.until !== u0 + len) fail.push('a renewal of the wrong length'); if (g.inLeague(g.ME(), () => g.payOf(t)) > pay0) CTR.payUp++; if (!g.renewContract(t.id, len)) fail.push('renewed twice'); } }
+      else CTR.let++; }
+    if (HAND && !S().founding && Math.random() < 0.02) g.inLeague(g.ME(), () => { const gts = g.staffIds().map(g.T).filter(t => t && t.role === 'gymtrainer' && !t.acting && t.con); if (gts.length) { const t = rnd(gts); if (!g.conLetRun(t.id, !t.con.go)) fail.push('conLetRun failed'); else CTR.gtGo++; } });
     const hiredBefore = new Set(Object.values(S().trainers).filter(t => t.hired).map(t => t.id));
     if (HAND && (S().vacancies || []).length && Math.random() < 0.08) { const v = S().vacancies[0], all = g.inLeague(g.ME(), () => g.vacancyCands(v)), c = all.filter(x => !x.refuse), no = all.find(x => x.refuse);
       if (no) { amb.refusedMove++; if (g.fillVacancy(v, no.t.id)) fail.push('a refused vacancy move went ahead'); }
@@ -690,6 +720,7 @@ console.log('legendaries', JSON.stringify(LEG));
 }
 console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of Famers', new Set((S().hof || []).map(e => e.id)).size, 'repeat winners', Object.values(S().trainers).filter(t => (t.hofN || 0) > 1).length, 'memories now', g.eachLeague(() => Object.values(S().gmem || {}).reduce((a, x) => a + Object.keys(x).length, 0)).join('/'), 'avg memories a week', (MEM.n / Math.max(1, fieldN)).toFixed(1));
 console.log('conditions', JSON.stringify(CON));
+console.log('contracts', JSON.stringify(CTR), JSON.stringify(g.CON_LOG));
 console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);

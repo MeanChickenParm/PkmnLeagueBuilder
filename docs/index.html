@@ -8545,7 +8545,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); storeHire(t, role, was); }
+function openPost(t, role) { if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -8935,6 +8935,7 @@ function simWeek() {
   sponsorWeek();
   hireArrivals();
   eachLeague(ambitionWeek);
+  eachLeague(contractWeek); // (0.52.0) contracts: renewal windows and endings
   challengeWeek();
   seatWeek(); // (0.43.0) a Term appointment left unanswered
   birthdays();
@@ -9292,7 +9293,7 @@ function rivalChampChallenger() {
 function chalRestless(t) {
   if (!t || !wantsUp(t) || !ambClock(t) || t.quit) return;
   t.wish.since -= YEAR_WEEKS;
-  if (S.turn >= ambDue(t)) { if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE); }
+  if (S.turn >= ambDue(t) && !conHolds(t)) { if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE); }
 }
 function chalRecord(x, extra) {
   const h = S.history.find(e => e.season === x.season), rec = { k: x.k, slot: x.slot, cand: x.cand, inc: x.inc, from: x.from, gym: x.gym, called: x.called || undefined, ...extra };
@@ -10122,6 +10123,7 @@ function acceptsOffer(t, post) {
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
   if (ownAcademy(t)) p += ACADEMY_LOYAL;
+  p -= CON_ODDS * conMiss(t, post, t.conAsk); // (0.52.0) a contract length they don't want
   p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);
 }
@@ -10214,7 +10216,7 @@ function cancelIncoming(target, why) {
   if (target.post === 'gymtrainer') { const g = S.gyms[target.slot]; id = (g.incoming || [])[target.k]; if (g.incoming) g.incoming[target.k] = null; }
   else { const v = vacancyAt(target.post, target.slot); if (v) { id = v.incoming; v.incoming = null; } }
   const t = T(id); if (!t || !t.hired) return;
-  t.hired = null; t.hireDue = false; t.bidMul = null;
+  t.hired = null; t.hireDue = false; t.bidMul = t.conAsk = null;
   if (why) { const msg = `${dn(t)} will not become ${hireTarget(target)} after all: ${why}.`; news(msg, 'move', t.id); noteChange(msg); }
 }
 // the player withdraws an offer someone accepted
@@ -10264,7 +10266,7 @@ function hireForGymTrainer(i, k, id, bid = 0) {
 function bidOffer(target, t, bid) {
   t.bidMul = booksOn() && BIDS.includes(bid) && bid > 0 ? 1 + bid : null;
   const r = offerPost(target, t);
-  if (r.res === 'refused' || r.res === 'cool') t.bidMul = null;
+  if (r.res === 'refused' || r.res === 'cool') t.bidMul = t.conAsk = null;
   return r;
 }
 // outsiders for a gym trainer's place picked by hand: GT_OUTSIDERS trainers of the leader's type, made when the
@@ -10511,18 +10513,20 @@ function ambitionWeek() {
     if (a.k === 'run') {
       if (a.asked == null) {
         a.asked = S.turn;
-        const msg = `${dn(t)} (${postName(t)}) wants another run as a challenger${a.streak ? ` after ${a.streak} outstanding years in a row` : ''}${mine ? `. Let them go, or they leave anyway on ${turnDate(S.turn + RUN_HOLD)}` : ''}.`;
+        const msg = `${dn(t)} (${postName(t)}) wants another run as a challenger${a.streak ? ` after ${a.streak} outstanding years in a row` : ''}${conHolds(t) ? `. Under contract, they stay until ${turnDate(t.con.until)} unless you let them go` : mine ? `. Let them go, or they leave anyway on ${turnDate(S.turn + RUN_HOLD)}` : ''}.`;
         news(msg, 'move', t.id); noteChange(msg);
         if (mine) stopFor('ambition', msg);
       }
+      if (conHolds(t)) continue; // (0.52.0) a contract holds against ambition
       if (!mine) { staffQuits(t); continue; }
       if (S.turn >= a.asked + RUN_HOLD - QUIT_NOTICE) announceQuit(t, a.asked + RUN_HOLD);
-    } else if (ambClock(t) && S.turn >= ambDue(t)) {
+    } else if (ambClock(t) && S.turn >= ambDue(t) && !conHolds(t)) {
       if (t.role === 'gymtrainer') staffQuits(t); else announceQuit(t, S.turn + QUIT_NOTICE);
     }
   }
 }
 function announceQuit(t, at) {
+  if (conHolds(t)) return;
   t.quit = { at, k: t.wish ? t.wish.k : 'up' };
   const msg = t.quit.k === 'run' ? `${dn(t)} (${postName(t)}) will leave for another run as a challenger on ${turnDate(at)}, unless you let them go sooner.`
     : t.quit.k === 'step' ? `Champion ${t.name} will step down on ${turnDate(at)}. ${champHeir()} would move up, unless you call a challenge for the seat first.`
@@ -10540,11 +10544,11 @@ function staffQuits(t) {
   t.quit = null;
   if (mine) vacate(t);
   else { closePost(t); if (p.post === 'leader') S.gyms[p.slot].leader = null; else if (p.post === 'e4') S.e4[p.slot] = null; else S.gyms[p.slot].trainers[p.k] = null; }
-  const fate = k === 'run' ? comeback(t, was) : leaveUnhappy(t, was);
+  const fate = k === 'run' ? comeback(t, was) : k === 'con' ? conLeave(t, was) : leaveUnhappy(t, was);
   const changes = [];
   if (p.post === 'gymtrainer') staffGym(p.slot);
   else if (!mine) { if (p.post === 'leader') { fillGym(p.slot, changes); staffGym(p.slot); } else rivalE4(p.slot); }
-  const text = k === 'pay' ? `${t.name} left ${was}, unpaid while the League was in the red.` : k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
+  const text = k === 'con' ? conText(t, was, fate) : k === 'pay' ? `${t.name} left ${was}, unpaid while the League was in the red.` : k === 'run' ? `${t.name} left ${was} for another run as a challenger.`
     : `${t.name} left ${was}, tired of waiting for ${p.post === 'gymtrainer' ? 'a gym of their own' : 'promotion'}${fate === 'retired' ? ', and retired' : fate === 'away' ? `, and took their grudge to the ${leagueName(lgOf(t))}` : ', and returns to the circuit holding a grudge'}.`;
   news(text, 'move', t.id); noteChange(text); changes.forEach(noteChange);
   if (mine && p.post !== 'gymtrainer') stopFor('vacancy', `${text} ${p.post === 'leader' ? `${dn(T(S.gyms[p.slot].leader))} is acting leader` : `${T(S.e4[p.slot]).name} stands in`} until you choose.`);
@@ -10587,13 +10591,14 @@ function champQuits(t) {
     if (mine) { const a = actingE4(at); openVacancy('e4', at); fill = ` ${a.name} stands in at seat #${at + 1} until you choose a new member.`; }
     else { const nt = rivalE4(at); fill = ` ${nt.name} (${typeLabel(nt)}) fills Elite Four seat #${at + 1}.`; }
     if (k === 'run') { comeback(t, was); fate = 'is off on another run as a challenger'; }
+    else if (k === 'con') fate = conLeave(t, was) === 'retired' ? 'retired' : 'returns to the badge circuit';
     else if (k === 'up') {
       t.wish = null; t.letGoAt = S.turn; returnToCircuit(t, `left ${was} for a bigger League`);
       const me = S.lg || 0, to = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => i !== me && !(S.founding && i === ME())).sort((a, b) => prestOf(b) - prestOf(a))[0];
       if (to != null) { shiftLeague(t, to); fate = `heads for the ${leagueName(to)}'s circuit, after its seat`; } else fate = 'returns to the badge circuit';
     } else { t.wish = null; retire(t, `after stepping down as Champion of the ${S.lgName}`); fate = t.role === 'retired' ? 'retired' : 'returns to the badge circuit'; }
   }
-  const text = `Champion ${t.name} ${k === 'step' ? 'stepped down' : 'left the seat'} and ${fate}. ${dn(m)} moves up from the Elite Four to become Champion.${fill}`;
+  const text = `Champion ${t.name} ${k === 'step' ? 'stepped down' : k === 'con' ? 'left when their contract ran out' : 'left the seat'} and ${fate}. ${dn(m)} moves up from the Elite Four to become Champion.${fill}`;
   news(text, 'title', m.id); noteChange(text);
   if (mine) stopFor('vacancy', text);
   return text;
@@ -11422,6 +11427,153 @@ function seatConquer() {
   seatRec({ season: S.season, k: 'conqueror', win: c.id, inc: ch.id, text });
   return text;
 }
+// ================= CONTRACTS (0.52.0; design doc 6.24, talks part 1) =================
+// Every member of staff signs a contract when they take a post: senior staff (Gym Leaders, the Elite Four and the
+// Champion) for 1 to 4 years, gym trainers for 3, 6 or 9 months. The player picks the length when hiring; each trainer
+// prefers one (stay-put trainers long deals, promotion-seekers short ones), and every step away from it lowers the odds
+// they accept an offer and raises their pay. Staff moved within the League keep their contract (a gym trainer moving
+// up to a senior post signs a new one). A contract holds against ambition: an ignored ambition no longer makes anyone
+// give notice; restlessness shows and comes due at renewal. CON_WINDOW weeks before a senior contract ends only the
+// current League can renew it: a content trainer renews, a restless one asks for more (pay, and a fresh clock) or
+// refuses. A contract not renewed ends: they go back to the circuit (a grudge if restless) or retire, and the post
+// opens. Gym trainers' contracts renew quietly unless the player marked them to go or they are restless. Ways out
+// mid-contract are unchanged: let go (severance), unpaid in the red (notice), poached for a bigger post, stepping down
+// after a long career, and a Champion's wish to step down. Open talks between Leagues are part 2. All numbers
+// provisional.
+const CON_SENIOR = [48, 96, 144, 192], CON_SHORT = [12, 24, 36], CON_WINDOW = 4;
+const CON_ODDS = 0.06, CON_PAY = 0.05, CON_MORE = 0.25, CON_REFUSE = 0.5;
+const CON_AI_KEEP = { wall: 0.9, star: 0.85, money: 0.75 };
+const CON_LOG = { made: 0, kept: 0, renewed: 0, more: 0, quiet: 0, ended: 0, refused: 0, lapsed: 0, gtGone: 0, auto: 0 };
+const conOpts = post => post === 'gymtrainer' ? CON_SHORT : CON_SENIOR;
+const conShort = post => post === 'gymtrainer';
+const conWords = w => w >= YEAR_WEEKS ? `${w / YEAR_WEEKS} year${w === YEAR_WEEKS ? '' : 's'}` : `${w / 4} months`;
+// the length a trainer would rather sign for (an index into conOpts). Someone already on the staff goes by their
+// ambition; anyone else by what they want of a post (hungry for one: short; 40 or older: long)
+function conPrefIdx(t, post, fresh) {
+  const n = conOpts(post).length;
+  const k = !fresh && t.wish && STAFF_ROLES.includes(t.role) ? t.wish.k : hungry(t) ? 'up' : t.age >= 40 ? 'stay' : null;
+  return k === 'stay' ? n - 1 : k === 'up' || k === 'run' || k === 'step' ? 0 : Math.floor((n - 1) / 2);
+}
+const conPref = (t, post, fresh) => conOpts(post)[conPrefIdx(t, post, fresh)];
+// steps between a length and the one they prefer (0 when no length is asked)
+function conMiss(t, post, len, fresh = true) {
+  const o = conOpts(post), i = o.indexOf(len);
+  return i < 0 ? 0 : Math.abs(i - conPrefIdx(t, post, fresh));
+}
+// is this member of staff held by a contract now? (not the Champion's wish to step down, which still goes ahead)
+function conHolds(t) {
+  const c = t && t.con;
+  return !!c && !t.acting && !fixedStaff() && postOf(t) != null && S.turn < c.until && !(t.role === 'champion' && t.wish && t.wish.k === 'step');
+}
+function newCon(t, post, len) { t.con = { post, len, from: S.turn, until: S.turn + len }; return t.con; }
+// from openPost: a new contract, or the one they hold if they moved within the staff
+function setContract(t, role, was) {
+  const ask = t.conAsk; t.conAsk = null;
+  if (!STAFF_ROLES.includes(role)) { t.con = null; return; }
+  if (t.acting) return; // an acting holder keeps whatever they had (a stand-in has none)
+  const c = t.con, opts = conOpts(role);
+  if (was && c && conShort(c.post) === conShort(role) && S.turn < c.until - CON_WINDOW) { c.post = role; CON_LOG.kept++; return; }
+  const len = opts.includes(ask) ? ask : rand() < 0.5 ? conPref(t, role, true) : pick(opts); // unasked: staggered
+  newCon(t, role, len); CON_LOG.made++;
+  const miss = conMiss(t, role, len);
+  if (miss && !fixedStaff()) { t.payMul = (t.payMul || 1) * (1 + CON_PAY * miss); t.lastPay = payOf(t); }
+}
+// will they renew? A content trainer yes; one who asked for another run no; a restless one asks for more or refuses
+function conWill(t) {
+  const w = t.wish;
+  if (w && w.k === 'run' && w.asked != null) return 'no';
+  if (ambClock(t) && restless(t)) return rand() < CON_REFUSE ? 'no' : 'more';
+  return 'yes';
+}
+// a renewal: the new term follows on from the old one. Asking for more: CON_MORE on their pay and a fresh clock.
+function renewCon(t, len, more) {
+  const c = t.con, base = Math.max(S.turn, c.until);
+  t.con = { post: c.post, len, from: base, until: base + len };
+  let mul = 1 + (more ? CON_MORE : 0) + CON_PAY * conMiss(t, c.post, len, false);
+  if (more) { CON_LOG.more++; if (t.wish) t.wish.since = S.turn; }
+  if (mul !== 1 && !fixedStaff()) { t.payMul = (t.payMul || 1) * mul; t.lastPay = payOf(t); }
+}
+// rival Leagues (and the multi-year sim for yours) answer the window at once: keep the willing, by aim, at the length
+// they prefer; a poor record isn't kept
+function aiRenew(t, auto) {
+  const c = t.con;
+  if (c.will === 'no') { CON_LOG.refused++; return false; }
+  const aim = S.fin && S.fin.aim, keep = auto ? 1 : CON_AI_KEEP[aim] != null ? CON_AI_KEEP[aim] : 0.85;
+  if (!auto && (poorRecord(t) || rand() >= keep)) { CON_LOG.lapsed++; return false; }
+  renewCon(t, conPref(t, c.post), c.will === 'more'); CON_LOG.renewed++; if (auto) CON_LOG.auto++;
+  return true;
+}
+// the contract ends: through staffQuits (the post opens in your League, is filled at once elsewhere)
+function conEnd(t) {
+  t.conSore = restless(t) || (t.con && t.con.will === 'no' && !(t.wish && t.wish.k === 'run'));
+  t.quit = { at: S.turn, k: 'con' }; CON_LOG.ended++;
+  if (t.role === 'gymtrainer') CON_LOG.gtGone++;
+  staffQuits(t);
+}
+// where they go: another run if they asked for one; retired by the rule for a lost post; else the circuit, with a
+// grudge if they left restless
+function conLeave(t, was) {
+  const sore = t.conSore; t.conSore = null; t.con = null;
+  if (t.wish && t.wish.k === 'run' && t.wish.asked != null) return comeback(t, was);
+  t.wish = null; t.letGoAt = S.turn;
+  if (retiresOnLosingPost(t)) { retire(t, `after their contract as ${was} ran out`); return 'retired'; }
+  returnToCircuit(t, `contract as ${was} ran out`);
+  if (!sore) return 'circuit';
+  t.grudge = S.season; t.grudgeLg = S.lg || 0;
+  return grudgeAway(t);
+}
+function conText(t, was, fate) {
+  return `${t.name}'s contract as ${was} ran out${fate === 'comeback' ? ', and they set off on another run as a challenger' : fate === 'retired' ? ', and they retired' : fate === 'away' ? `, and they took a grudge to the ${leagueName(lgOf(t))}` : fate === 'grudge' ? '; unhappy, they return to the circuit holding a grudge' : ', and they return to the badge circuit'}.`;
+}
+// once a week in each League
+function contractWeek() {
+  if (fixedStaff() || (S.founding && (S.lg || 0) === ME())) return;
+  const mine = playerLeague(), auto = mine && !!S.simRun;
+  for (const id of staffIds()) {
+    const t = T(id);
+    if (!t || t.acting || !postOf(t)) continue;
+    if (!t.con) newCon(t, t.role, conPref(t, t.role));
+    const c = t.con;
+    if (t.stepDown != null || t.quit) continue;
+    if (t.role === 'champion' && founderChamp(t)) { if (S.turn >= c.until - CON_WINDOW) renewCon(t, c.len); continue; }
+    if (conShort(c.post)) {
+      if (S.turn < c.until) continue;
+      if (c.go || (ambClock(t) && restless(t))) conEnd(t);
+      else { renewCon(t, c.len); CON_LOG.quiet++; }
+      continue;
+    }
+    if (c.win == null && S.turn >= c.until - CON_WINDOW) {
+      c.win = S.turn; c.will = conWill(t);
+      if (!mine || auto) aiRenew(t, auto);
+      else {
+        const msg = `${dn(t)}'s contract as ${postName(t)} ends on ${turnDate(c.until)}. ${c.will === 'no' ? 'They won\'t renew: they leave then, and the post opens.' : c.will === 'more' ? `Restless, they will renew only for ${CON_MORE * 100}% more pay.` : 'They are happy to renew.'} Only your League can renew it until then (Your staff).`;
+        news(msg, 'move', t.id); noteChange(msg); stopFor('contract', msg);
+      }
+    }
+    if (t.con.win != null && auto && S.turn < t.con.until && t.con.from <= S.turn && t.con.will !== 'no' && t.con === c) aiRenew(t, true);
+    if (S.turn >= t.con.until) conEnd(t);
+  }
+}
+// the player renews a contract in its window (no cost but the pay they ask)
+function renewContract(id, len) {
+  return inLeague(ME(), () => {
+    const t = T(id), c = t && t.con;
+    if (!c || !postOf(t) || t.acting || conShort(c.post) || c.win == null || S.turn >= c.until || c.from > S.turn) return 'Their contract is not up for renewal.';
+    if (c.will === 'no') return `${t.name} won't renew.`;
+    if (!conOpts(c.post).includes(len)) return 'Pick a length.';
+    renewCon(t, len, c.will === 'more'); CON_LOG.renewed++;
+    news(`${dn(t)} renewed for ${conWords(len)} as ${postName(t)}, to ${turnDate(t.con.until)}${c.will === 'more' ? `, for ${CON_MORE * 100}% more pay` : ''}.`, 'move', t.id);
+    return null;
+  });
+}
+// a gym trainer: let them go when the contract ends (or keep them on)
+function conLetRun(id, go) {
+  return inLeague(ME(), () => { const t = T(id); if (!t || !t.con || !conShort(t.con.post) || !postOf(t)) return false; t.con.go = !!go; return true; });
+}
+// contracts in their renewal window waiting for the player
+function conPending() { return inLeague(ME(), () => staffIds().map(T).filter(t => t && !t.acting && t.con && !conShort(t.con.post) && t.con.win != null && t.con.from <= S.turn && S.turn < t.con.until)); }
+// the length to show and the preferred one for a candidate (hiring pages)
+function setConAsk(id, len) { const t = T(id); if (t) t.conAsk = len || null; }
 // ================= FAMOUS TRAINERS =================
 // Rarely, a newcomer or a founding Elite Four member is a trainer from the games or anime.
 const FAMOUS = [
@@ -16213,6 +16365,7 @@ function aimBreed(aim) {
 
 if (typeof module !== 'undefined') module.exports = { simAutoAim, autoMonth, AUTO_LOG, SEAT_RULES, RULE_KEYS, seatRule, seatRuleOf, seatRuleKey, seatRuleName, setSeatRule, seatChangeBlock, termPick, termCands, lobbySeat, councilCands, SEAT_LOG, SEAT_EVERY_MIN, SEAT_EVERY_MAX, SEAT_CHANGE_PREST, SEAT_COOLDOWN, seatSched, TERM_ANSWER, COUNCIL_LOBBY, COUNCIL_LOBBY_MAX, meritTable, normSeatRule, seatOpen, THEMES, THEME_KEYS, POST_KEYS, POST_MAX, postWord, postWords, themeOf, setPosts, postSetOf, pickTheme, themeWeights, maybeRebrand, THEME_LOG, normPostSet, themeWords, regionThemes, REGION_THEMES, FIELD_PER, FIELD_FULL, FIELD_LOG, REBUILD_LOG, REBUILD_UNDER, REBUILD_BACK, LOYAL_YEARS, lgRegion, regionLgs, fieldIds, fieldSize, fieldTarget, fieldCrowd, crowdMul, noteLoyal, drawWeights, drawLeague, regionDraw, fieldRegionFor, fieldArrivals, fieldPool, fieldShare, rebuilding, rebuildNewYear, strongestGym, aimTrim, freeSeat, seatOf, SEAT_KEYS, FOUNDER_BARS, growthRegions, cityState, cityPrestige, strongholdOf, renown, addRenown, homeCity, homeName, setHome, contenderRenown, TIER_NAMES, TIER_SHARE, RN_CAP, RN_WEIGHT, RN_SLICE, HERO_PTS, QUARTER_WEEKS, PLAN_MAX, BENCH_QUARTERS, plansOn, plansState, planKeys, planHolder, planOf, planNext, planOpen, planClaim, isPlanned, planResolve, planGaps, applyPlan, planInstall, planNow, setPlan, benchDrift, planReview, planSuggest, backupTypes, backupMax, BACKUP_N, STORE_MAX, STORE_PICKS, STORE_LOG, storeMon, storeValue, storeTotal, storePayMul, storePickN, storePickOk, pickStore, doneStore, VAULT_LOG, VAULT_FEE, allVault, legendsWithLeague, sanctOpen, sanctuaries, sealedCost, vaultCands, vaultOdds, vaultFee, storeLegend, vaultTakers, vaultGive, siteLines, LEGEND_TENURE, TYPES, COND_KINDS, COND_MUL, COND_NAME, condKeys, condOf, condMul, condWords, huntOk, huntPlan, obTrip, deltaSet, showcase, entryTypes, ranchKeeps, OB_TRIP_COST, callChallenge, callCands, callBlock, callsUsed, CALL_MAX, CALL_WEEKS, champQuits, champCalledOn, LEADER_HOLD, GT_HOLD, GYM_TOP, triesAt, stageAtGym, pickGym, stageBand, regionLib, saveRegionLib, regionBlank, regionCopy, lineGen, generatePool, poolStats, regionChecks, regionNorm, regionFileText, regionFileName, regionCode, regionRead, regionUniqueName, saveRegion, addImportedRegion, deleteRegion, libRegion, regionDex, regionChoices, withRegionSpecies, worldRegions, regionClashes, homeOnly, seatLgName, uniqueLgName, cleanLgName, renameLeague, canRename, LG_NAME_MAX, rivalOk, REGION_CODE, set dexPreview(v) { dexPreview = v; }, regionLines, builtinLines, applyRegions, startRegions, maxStartLeagues, builtinRegions, REGION_FMT, portKind, get LEAGUE_SETS() { return LEAGUE_SETS; }, get LEGEND_HOME() { return LEGEND_HOME; }, get LEGEND_HOMES() { return LEGEND_HOMES; }, legendCap, legendHomes, legendHeld, greatFree, genRegion, lineTypesTop, resetRegionCaches, nRegionsBuilt, regionName, homeSet, lineBaseOf, linesRegions, migrantSet, migrationOf, migrationWeek, wildOk, regional, BUILTIN_PORTS, isPort, lanesOf, laneSet, setLane, laneFee, LANE_WEEK, LANE_ROUTE, CHARTER_COST, CHARTER_WEEKS, safariLv, safariSet, SAFARI_SIZE, safariBuilt, safariStock, stockCap, keepCap, safariKept, stockFloor, keepLine, safariTrim, stockMon, unstockMon, safariFind, SAFARI_LOG, SAFARI_KEEP, SAFARI_STOCK, SAFARI_DISC, SAFARI_ODDS, SAFARI_STOCK_ODDS, ranchLog, RANCH_LOG, hereLines, marketLines, tripOk, lineSource, FOREIGN_MAX, REGION_LOG, regionMove, steerGaps, get NEIGHBOURS() { return NEIGHBOURS; }, REGION_SIZE, regionalOn, ranchOn, ranchFor, ranchCap, ranchRoom, ranchEntry, ranchSync, ranchFree, ranchPicks, ranchSwap, ranchStock, ranchScout, ranchUpkeep, ranchWeek, ranchLv, ranchSpecies, ranchable, freeEntry, AI_IDLE, ranchSpares, monValue, entryValue, monGrade, gradeStars, lineTop, tripPlan, tripMax, startTrip, buyShop, listings, listMon, unlistMon, buyListing, sellMon, lockMon, reserveMon, stopPosts, seniorIds, aimRanch, RANCH_CAP, RANCH_UPKEEP, SALE_SHARE, SELL_BACK, AREA_COST, SHOP_SIZE, SALE_WEEKS, TRIP_MAX, prestMin, willSign, prestBlock, hungry, foundingCands, foundSignable, PM_FREE, PM_PER, prestQ, grow, growPot, growAges, talent, coachOf, startAge, siteOn, noteSite, sanctIncome, sanctLevels, obeyBadges, obeys, legendElsewhere, paradoxHeld, regionMul, AREA_ZERO, PARADOX_FIND, RESTORE_SHARE, ruinsAt, distressOffers, buyDistress, declineDistress, DISTRESS_OFFER_WEEKS, foldRegions, foldRegion, lapsed, sellBuilding, sellValue, salvage, topLevels, foldLeague, foldNewYear, removeLeague, decayOne, distressSale, prestOf, SELL_SHARE, DISTRESS_SHARE, DECAY_WEEKS, FOLD_YEARS, founderBar, sponStipend, contendersOf, contendersAt, sendCands, sponTargets, sendContender, recallContender, canRenew, renewContender, sponsorWeek, sponsorNewYear, leaveCheck, leaveTakers, leaveLeague, SPON_MAX, SPON_BOUNTY, SPON_E4_BOUNTY, LEAVE_FEE, LEAVE_TAKE, underContract, ME, trainerPrestige, leaguePrestige, prestigeNewYear, regionsWithRoom, nextRegion, REGION_CAP, PRESTIGE_BAR, aimBid, aimUpgrade, runningNet, AIM_BID, AIM_UPGRADE, estateCost, upkeepWeek, builtCost, slotsUsed, upMax, upCost, UPKEEP, ACADEMY_PAY, ACADEMY_LOYAL, academyLv, gymMap, cityCtrl, cityShare, cityIncome, standing, CITY_INCOME, AIMS, AIM_KEYS, aimOf, aimMonth, redWeek, RED_BITE_WEEKS, richMul, playerFin, myBooks, booksOn, payOf, askFor, wageBill, money, canSpend, giveRaise, canRaise, raiseCost, UPGRADES, myPlaces, buildCheck, build, moveGym, homeEdge, placeLv, citySlots, banCands, payBan, paidBans, banProtected, BIDS, START_FUND, ENTRY_FEE, MOVE_FEE, BAN_PAID_MAX, scoutLv, attractionIncome, STEERS, STEER_KEYS, setSteer, steerOf, steerAt, postKey, steerMonth, answersOnType, metaTypes, answerChallenge, approveAllChallenges, runChallenge, chalValid, seatChallenges, SEAT_LOGS, CLAIM_ANSWER, claimOn, claimant, claimRefused, CLAIM_PRESTIGE, CHAL_WAIT, CHAL_ANSWER, seatYears, swapRefusal, refusal, ambClock, ambDue, restless, careerBase, promoteForVacancy, staffQuits, poorRecord, QUIT_NOTICE, AMB_WAIT_YEARS, RUN_HOLD, hireForVacancy, hireForGymTrainer, offerPost, withdrawOffer, gymOutsiders, impressed, hireRetirees, acceptsOffer, canOffer, HIRE_NOTICE, rivalHire, POOR_YEARS, REFUSED_WEEKS, releaseStaff, swapStaff, placeGymTrainer, gymTrainerCands, postOf, gymLineKey, gymStageNow, GYM_WATCH, staffRetires, announceStepDown, stepDownChance, postYears, postName, vacancyCands, fillVacancy, autoFillVacancy, fillAllVacancies, prepFounding, foundPool, foundPlace, foundingFill, finishFounding, foundTypesUsed, foundPlaced, playerLeague, handOn, godEdit, walkingPartner, openNewLeague, worldGrowth, godOn, godOpenLeague, nextRegionName, BAN_BALLOT, BAN_CAP, BAN_MAX_NEW, BAN_MAX_SEASONS, banShare, trainerBanVote, trainerBanVotes, banTrainers, banLen, banLeft, expireBans, banMembers, bansIn, banOf, bannedIn, buildBanBallot, enforceBans, startWorld, simYear, simWeeks, YEAR_WEEKS, dateName, weekName, yearOf, bweek, applyDex, dexImport, checkDexEntry, dexNorm, dexBaseStats, get dexLib() { return dexLib; }, set dexLib(v) { dexLib = v; }, BASE_STATS, SPECIES_AB, STARTERS, LINE, EVOLVED, GREAT_LEGENDS, makeMon, ROAMERS, STORMS, settleStorm, stormRank, ABILITIES, abilityOf, rollAbSlot, ITEMS, TYPE_ITEMS, itemScore, autoEquip, eliteItems, gymItemOffer, bagAdd, heldItem, crossroads, reinvent, dryStreak, isGrandSlam, champLeaguesOf, checkGrandSlams, useLeague, inLeague, eachLeague, nLeagues, lgOf, leagueFit, worldChampionship, leagueName, startLegend, legendBattle, legendWeek, legendOffseason, joinLegend, weald, wantsLegend, recordGreat, REWARD_LEGENDS, FEATURES, featOn, legacyChance, scheduleLegacy, makeLegacy, legacyLine, metaMons, counterTypesFor, metaCounters, AWARDS, seasonAwards, seasonScore, circuitLevel, bondBlocked, BOND_ROLES, checkBonds, bondMon, bondName, BOND_ATK, titleOf, titleNameTaken, famName, famBase, chooseFamous, checkCustom, checkPackName, setCustomLib, parsePackText, prepImport, builtinSource, packExportText, uniquePackName, BUILTIN_SOURCES, ensureCustom, useCustom, customSpecies, newCustomKey, get customLib() { return customLib; }, MALE, FEMALE, FAMOUS_PACKS, BASE_FAMOUS, packOn, famousAvailable, MEGA, megaFor, hasMega, megaHolder, assignMegaStone, earnMega, staffGym, staffIds, gymFits, seedRandom, typeLabel, setTeamLevel, challengerLevel, depthName, GYM_LV, GYM_SIZE, GYM_TRAINERS, GYM_TRIES, E4_LV, E4_SIZE, isSpecial, monTypes, makeDelta, DELTA_CHANCE, gymLost, adaptGym, activeOutbreak, maybeOutbreak, homeLeague, isLegendLine, legendBlocked, pooledLegend, claimLegend, legendDepartures, curSeason, eliteSlot, TRAITS, traitOf, h2hOf, isRival, roadBattles, FAMOUS_TAG_LIST, FAMOUS_BY_NAME, ULTRA_BEASTS, BABY_LEGENDS, ownedLegends, freeBabies, PARADOX, DUAL_CLASSES, specTypes, specFit, applyCfg, careerSpan, ageRetireChance, leadStyle, LEAD_STYLES, coverOptions, MOVES, idealMoves, refreshMoves, estimate, battler, natureFx, NATURES, TEMPER, temperOf, temperMul, moveLv, ensureMon, learnedCov, frTier, formTier, trainerRec, blankStat, FAMOUS, LEGENDS, dn, CLASSES, get S() { return S; }, set S(v) { S = v; }, newWorld, simWeek, aiAction, aiCatch, wildOffers, ovr, T, challengers, SP, BASES, battle, fillCircuits, circuitValue, makeNewcomers, settleBanVote, CIRCUIT_SIZE, START_TEAM, banLength, slamRoom, shiftLeague, retire, regionCities, townName, gymCity, SAVE_VERSION };
 if (typeof module !== 'undefined') Object.assign(module.exports, { leavingSet, severanceFee, EGG, EGG_NAMES, EGG_KEYS, TYPE_EGG, eggOf, eggWords, isDitto, canBreed, eggMatch, dcState, dcBuilt, dcLv, dcPairs, dcWeeks, dcPool, dcKey, dcUpkeep, parentOf, inPair, betterParent, retirePrice, plannedRefs, breedCheck, breedIn, retireParent, pairCheck, startPair, endPair, breedYoung, breedWeek, aimBreed, BREED_LOG, BREED_YEARS, BREED_UPKEEP, BREED_SELL, HATCH_WAIT, DC_PAIRS, DC_WEEKS });
+if (typeof module !== 'undefined') Object.assign(module.exports, { CON_SENIOR, CON_SHORT, CON_WINDOW, CON_ODDS, CON_PAY, CON_MORE, CON_LOG, conOpts, conShort, conWords, conPrefIdx, conPref, conMiss, conHolds, setContract, conWill, renewCon, aiRenew, conEnd, contractWeek, renewContract, conLetRun, conPending, setConAsk });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -17748,7 +17901,7 @@ function wishTag(t) {
   if (w.k === 'run') return ` <span class="tag notice small" title="Let them go on their run, or they leave a year after asking">${w.asked != null ? 'Asks for another run' : 'Wants another run'}</span>`;
   if (w.k === 'step') { const due = ambDue(t); return ` <span class="tag small${restless(t) ? ' notice' : ''}" title="${due != null ? `Gives notice to step down on ${turnDate(due)}; the strongest Elite Four member would move up` : 'Wants to step down'}">Wants to step down</span>`; }
   const due = ambDue(t), rest = restless(t);
-  return ` <span class="tag small${rest ? ' notice' : ''}" title="${due != null ? `Leaves if not promoted by ${turnDate(due)}` : 'Waits until the seat can be challenged for'}">${rest ? 'Restless: wants ' : 'Wants '}${ambWho(t)}</span>`;
+  return ` <span class="tag small${rest ? ' notice' : ''}" title="${conHolds(t) ? `Under contract to ${turnDate(t.con.until)}: they stay, but ${rest ? 'restless, they will ask for more or refuse to renew' : `grow restless from ${turnDate(t.wish.since + AMB_RESTLESS_YEARS * YEAR_WEEKS)}`}` : due != null ? `Leaves if not promoted by ${turnDate(due)}` : 'Waits until the seat can be challenged for'}">${rest ? 'Restless: wants ' : 'Wants '}${ambWho(t)}</span>`;
 }
 // (0.23.0) a candidate's prestige minimum, when they have one, for the hiring and founding pages
 function prestTag(t, lg) {
@@ -17758,7 +17911,7 @@ function prestTag(t, lg) {
   return ` <span class="tag small${ok ? '' : ' notice'}" title="${ok ? 'Your League has the prestige to sign them' : 'Your League needs more prestige before they will sign'}${hungry(t) ? '; hungry for a post, so their bar is lower' : ''}">Prestige ${m}</span>`;
 }
 // a candidate row for the hiring pages: a challenger gets an offer (and may be out on a run, or have turned you down lately)
-function hireRowOf(c, warn, ask) {
+function hireRowOf(c, warn, ask, post) {
   const t = c.t, bits = warn ? [warn] : [], imp = c.from === 'circuit' && impressed(t);
   let label = 'Pick', off = '';
   if (c.refuse) off = c.refuse;
@@ -17767,7 +17920,7 @@ function hireRowOf(c, warn, ask) {
     if (!canOffer(t)) off = `turned you down · ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}`;
     else if (t.rest == null) bits.push(`on a run: comes by ${turnDate(S.turn + HIRE_NOTICE)}`);
   }
-  return { t, from: pickFrom(c), warn: bits.join(' · '), label, off, tags: (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (['leader', 'e4', 'gym'].includes(c.from) ? wishTag(t) : '') + (ask != null && !['leader', 'e4', 'gym', 'acting'].includes(c.from) ? payTag(ask) : '') + (['circuit', 'retired', 'rival', 'away'].includes(c.from) ? prestTag(t, ME()) : '') };
+  return { t, from: pickFrom(c), warn: bits.join(' · '), label, off, tags: (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (['leader', 'e4', 'gym'].includes(c.from) ? wishTag(t) : '') + (ask != null && !['leader', 'e4', 'gym', 'acting'].includes(c.from) ? payTag(ask) : '') + (['circuit', 'retired', 'rival', 'away'].includes(c.from) ? prestTag(t, ME()) : '') + (post && !['leader', 'e4', 'gym', 'acting'].includes(c.from) ? conPrefTag(t, post) : '') };
 }
 // someone who accepted a post and comes after their run, with a button to withdraw the offer
 const incomingLine = (id, what) => { const t = T(id); return t && t.hired ? `<p><b>${tname(id)}</b> accepted ${what} and comes after their run, by ${turnDate(t.hired.by)} at the latest. <button class="btn small" data-act="hirewd" data-id="${id}">Withdraw the offer</button></p>` : ''; };
@@ -17778,11 +17931,13 @@ function staffNotices() {
   const leaving = staffIds().map(T).filter(t => t && t.quit && t.role !== 'gymtrainer').sort((a, b) => a.quit.at - b.quit.at);
   const asking = staffIds().map(T).filter(t => t && !t.quit && t.wish && t.wish.k === 'run' && t.wish.asked != null);
   const chal = S.chalPending || [];
-  if (!vac.length && !going.length && !leaving.length && !asking.length && !chal.length) return '';
+  const cons = conPending();
+  if (!vac.length && !going.length && !leaving.length && !asking.length && !chal.length && !cons.length) return '';
   return `<section class="panel callout warnbox"><div class="ph"><div class="eyebrow">Your staff</div><button class="btn small" data-act="nav" data-v="staff">Manage your staff</button></div>
     ${vac.length ? `<h2>${vac.length} post${vac.length === 1 ? '' : 's'} waiting for you</h2><ul class="mini">${vac.map((v, i) => `<li><span><b>${vacancyName(v)}</b> &nbsp;· vacant since ${turnDate(v.since)} · held by&nbsp;${tname(vacancyActing(v))}&nbsp;(acting)${v.incoming != null && T(v.incoming) && T(v.incoming).hired ? ` · ${tname(v.incoming)} comes by ${turnDate(T(v.incoming).hired.by)}` : ''}</span><span><button class="btn small primary" data-act="hire" data-v="${i}">Choose</button> <button class="btn small" data-act="hireauto" data-v="${i}">Fill it for me</button></span></li>`).join('')}</ul>
       <p class="muted small">Until you choose, the acting holder fights in the post. ${vac.some(v => v.post === 'leader') ? 'A gym with an acting leader runs one gym trainer short. ' : ''}</p>` : ''}
     ${chalNotice()}
+    ${conNotice(cons)}
     ${going.length ? `<div class="eyebrow">Stepping down</div><ul class="mini">${going.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">leaves ${turnDate(t.stepDown)}</span></li>`).join('')}</ul>` : ''}
     ${leaving.length ? `<div class="eyebrow">Leaving</div><ul class="mini">${leaving.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">${t.quit.k === 'run' ? 'for another run' : t.quit.k === 'step' ? 'stepping down' : t.role === 'champion' ? 'for a bigger League, unless given a raise' : `unless promoted to ${ambWho(t)}`}, ${turnDate(t.quit.at)}</span></li>`).join('')}</ul>` : ''}
     ${asking.length ? `<div class="eyebrow">Asking for another run</div><ul class="mini">${asking.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)}</span><span class="small">leaves anyway ${turnDate(t.wish.asked + RUN_HOLD)}</span></li>`).join('')}</ul>` : ''}</section>`;
@@ -17818,9 +17973,9 @@ function viewHire() {
   return `<section class="panel callout"><div class="eyebrow">Choose a new ${v.post === 'leader' ? 'Gym Leader' : 'Elite Four member'}</div><h2>${vacancyName(v)}</h2>
     <p>Vacant since ${turnDate(v.since)}. ${tname(vacancyActing(v))} is acting until you choose. ${v.post === 'leader' ? `The gym scales to each challenger's badges (Lv ${GYM_LV[0]} with ${GYM_SIZE[0]} Pokémon up to Lv ${GYM_LV[GYM_TOP]} with ${GYM_SIZE[GYM_TOP]}), so its leader holds up to ${LEADER_HOLD}, and its type is the new leader's class; a gym trainer who shares no type with the new leader is let go and replaced from the circuit.` : `The seat fights at level ${E4_LV[v.slot]} with ${E4_SIZE} Pokémon.`} Whoever you pick builds their own team: Scouting finds stronger Pokémon, Strategy fits the team together, Training raises each Pokémon.</p>
     ${v.incoming != null ? incomingLine(v.incoming, 'the post') : ''}
-    <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div>${bidRow()}</section>
+    <div class="confirm-row"><button class="btn${hireFit ? ' on' : ''}" data-act="hirefit" aria-pressed="${hireFit}">${v.post === 'leader' ? 'Only those who keep both gym trainers' : 'Only types the Elite Four lacks'}</button><button class="btn" data-act="hireauto" data-v="${hireIdx}">Fill it for me</button><button class="btn" data-act="nav" data-v="staff">Decide later</button></div>${bidRow()}${conRow(v.post)}</section>
   <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers: the ${S.lgName} circuit, your gym trainers, your other Gym Leaders and Elite Four members, recent retirees and ${(v.outsiders || []).length} outsiders. A challenger gets an <b>offer</b>, which they can turn down (then they aren't asked again for half a year); one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while the acting holder stays. Everyone else takes the post at once: a gym trainer leaves their place, a retiree comes out of retirement, and a Gym Leader or Elite Four member leaves their post open, with an acting holder, and you choose for it next.</span></div>
-  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : c.from === 'rival' ? 'their League gets the signing fee' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot))), 'hirepick')}</section>`;
+  ${pickTable(rows.map(c => hireRowOf(c, [fits(c.t) ? '' : (v.post === 'leader' ? 'gym trainers change' : 'type already on the Elite Four'), c.from === 'leader' || c.from === 'e4' ? 'their post opens' : c.from === 'rival' ? 'their League gets the signing fee' : ''].filter(Boolean).join(' · '), askFor(c.t, v.post, v.slot), v.post)), 'hirepick')}</section>`;
 }
 // where a candidate comes from, in words
 const PICK_FROM = { circuit: 'Circuit', field: 'Region\'s field', gym: 'Gym trainer', acting: 'Acting leader', outsider: 'Outsider', leader: 'Gym Leader', e4: 'Elite Four', retired: 'Retired', rival: 'Another League', away: 'Another circuit' };
@@ -17847,7 +18002,8 @@ function staffActs(t) {
 }
 function staffRow(t, label, info) {
   if (booksOn()) info += ` · ${money(payOf(t))}/wk`;
-  return `<tr${staffSwap === t.id ? ' class="sel"' : ''}><td><b>${label}</b><div class="small muted">${info}</div></td><td>${tname(t.id)} ${staffTags(t)}${staffWarn(t)}${wishTag(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td>${staffActs(t)}</td></tr>`;
+  info += conInfo(t);
+  return `<tr${staffSwap === t.id ? ' class="sel"' : ''}><td><b>${label}</b><div class="small muted">${info}</div></td><td>${tname(t.id)} ${staffTags(t)}${staffWarn(t)}${wishTag(t)}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td>${staffActs(t)}${conActs(t)}</td></tr>`;
 }
 function viewStaff() {
   const ch = T(S.champion), head = '<thead><tr><th>Post</th><th>Trainer</th><th>Type</th><th>Age</th><th>OVR</th><th title="Years in posts">Years</th><th></th></tr></thead>';
@@ -17857,12 +18013,12 @@ function viewStaff() {
     return staffRow(L, `Gym ${i + 1} · ${townName(i)}`, `Up to ${LEADER_HOLD} Pokémon · ${g.w}–${g.l} this year`)
       + ts.map((id, k) => { const t = T(id), inc = (g.incoming || [])[k], coming = inc != null && T(inc) && T(inc).hired ? `<div class="small">Coming: ${tname(inc)} by ${turnDate(T(inc).hired.by)} <button class="btn small" data-act="hirewd" data-id="${inc}">Withdraw</button></div>` : '';
         if (!t) return `<tr class="sub"><td class="small muted">&nbsp;&nbsp;Gym trainer</td><td colspan="6" class="small muted">Left empty while the gym has an acting leader.</td></tr>`;
-        return `<tr class="sub"><td class="small">&nbsp;&nbsp;Gym trainer · up to ${GT_HOLD} Pokémon</td><td>${tname(t.id)} ${staffTags(t)}${wishTag(t)}${coming}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td><button class="btn small" data-act="gtpick" data-g="${i}" data-k="${k}">Replace</button> ${staffAsk === t.id ? `<button class="btn small primary" data-act="staffgo" data-id="${t.id}">Let ${esc(t.name)} go${letGoCost(t)}</button> <button class="btn small ghost" data-act="staffask">Cancel</button>` : `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>`}</td></tr>`; }).join('');
+        return `<tr class="sub"><td class="small">&nbsp;&nbsp;Gym trainer · up to ${GT_HOLD} Pokémon<div class="small muted">${conInfo(t).replace(/^ · /, '')}</div></td><td>${tname(t.id)} ${staffTags(t)}${wishTag(t)}${coming}</td><td>${specChips(t)}</td><td class="num">${t.age}</td><td>${ovrPill(t)}</td><td class="num">${postYears(t)}</td><td><button class="btn small" data-act="gtpick" data-g="${i}" data-k="${k}">Replace</button> ${staffAsk === t.id ? `<button class="btn small primary" data-act="staffgo" data-id="${t.id}">Let ${esc(t.name)} go${letGoCost(t)}</button> <button class="btn small ghost" data-act="staffask">Cancel</button>` : `<button class="btn small" data-act="staffask" data-id="${t.id}">Let go</button>`}${conActs(t)}</td></tr>`; }).join('');
   }).join('');
   return `${staffNotices()}<section class="panel callout"><div class="eyebrow">${S.lgName}</div><h2>Your staff</h2>
-    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes when they step down or leave, or lose a seat challenge. <b>Calling a challenge:</b> you decide when your Champion's seat is fought for: up to ${CALL_MAX} times a year, name an Elite Four member, a Gym Leader or a recent title winner to challenge the Champion, ${CALL_WEEKS} weeks later. A Champion called against may come to want to leave. <b>Seat challenges:</b> at New Year a Gym Leader who wants promotion (or a challenger after a run to the Elite Four) may challenge an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger; the Champion may also want a bigger League's seat, or to step down. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last); then a Gym Leader or Elite Four member gives ${QUIT_NOTICE} weeks' notice and leaves unless promoted, and a gym trainer just goes. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
+    <p>Change your staff at any time. <b>Let go</b> opens a Gym Leader's or Elite Four seat, which waits for you with an acting holder, as when someone steps down; anyone let go returns to the circuit as a challenger, or retires if they are over 45 with ten years behind them. To move someone into another post, let its holder go and pick them from the list: the post they leave opens next. <b>Swap</b> trades two Gym Leaders' gyms or two Elite Four members' seats at once. A gym trainer you let go is replaced from the circuit straight away; <b>Replace</b> lets you pick one yourself. The Champion changes when they step down or leave, or lose a seat challenge. <b>Calling a challenge:</b> you decide when your Champion's seat is fought for: up to ${CALL_MAX} times a year, name an Elite Four member, a Gym Leader or a recent title winner to challenge the Champion, ${CALL_WEEKS} weeks later. A Champion called against may come to want to leave. <b>Seat challenges:</b> at New Year a Gym Leader who wants promotion (or a challenger after a run to the Elite Four) may challenge an Elite Four seat; you approve or refuse each. <b>Ambitions:</b> each member of staff wants promotion, to stay put, or another run as a challenger; the Champion may also want a bigger League's seat, or to step down. Promotion waits ${AMB_WAIT_YEARS} years (restless in the last). <b>Contracts:</b> everyone signs for a set time when they take a post (Gym Leaders, the Elite Four and the Champion 1 to 4 years, gym trainers 3, 6 or 9 months), and a contract holds against ambition: a restless member stays to the end of it, then asks for more pay or won't renew. For the last ${CON_WINDOW} weeks of a senior contract only you can renew it, here; one not renewed ends, and the post opens. Gym trainers renew on their own unless you mark them to go, or they're restless. Staff refuse a step down unless their record is poor, and anyone who wants to stay put refuses a sideways move or a swap. A Gym Leader's run of poor years and an Elite Four member with the worst record of the four show as warnings here; nothing happens to them unless you act.</p></section>
   ${steersPanel()}
-  <section class="panel champ"><div class="ph"><h2>${esc(postWord('champion'))}</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>${esc(postWord('champion'))}</b><div class="small muted">Lv ${champLv()} · 6 Pokémon</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td></td></tr></tbody></table></div></section>
+  <section class="panel champ"><div class="ph"><h2>${esc(postWord('champion'))}</h2><span class="muted">The seat changes when the Champion steps down or leaves, or loses a challenge you call or a title claim you allow</span></div><div class="scroll"><table class="tbl">${head}<tbody><tr><td><b>${esc(postWord('champion'))}</b><div class="small muted">Lv ${champLv()} · 6 Pokémon${conInfo(ch)}</div></td><td>${tname(ch.id)} ${staffTags(ch)}${wishTag(ch)}</td><td>${specChips(ch)}</td><td class="num">${ch.age}</td><td>${ovrPill(ch)}</td><td class="num">${postYears(ch)}</td><td>${conActs(ch)}</td></tr></tbody></table></div></section>
   ${seatPanel()}${seatRuleKey() === 'protected' ? callPanel() : ''}
   <section class="panel"><div class="ph"><h2>${esc(postWord('e4'))}</h2><span class="muted">Faced in this order</span></div><div class="scroll"><table class="tbl">${head}<tbody>${S.e4.map((id, k) => staffRow(T(id), `${postWord('e4')} #${k + 1}`, `Lv ${E4_LV[k]} · ${E4_SIZE} Pokémon`)).join('')}</tbody></table></div></section>
   <section class="panel"><div class="ph"><h2>Gyms</h2><span class="muted">A gym's type is its leader's class; gym trainers share a type with the leader</span></div><div class="scroll"><table class="tbl">${head}<tbody>${gymRows}</tbody></table></div></section>`;
@@ -18251,9 +18407,9 @@ function viewGtPick() {
   return `<section class="panel callout"><div class="eyebrow">Choose a gym trainer</div><h2>${townName(gtSel.g)} Gym · gym ${gtSel.g + 1}</h2>
     <p>${cur ? `${tname(cur.id)} holds this place now and is let go when you pick someone else (back to the circuit, or retired if over 45 with ten years behind them).` : 'This place is empty.'} A gym trainer holds up to ${GT_HOLD} Pokémon, fields one fewer than the leader at each challenger's stage, and must share a type with ${dn(L)} (${typeLabel(L)}).</p>
     ${inc != null ? incomingLine(inc, 'this place') : ''}
-    <div class="confirm-row"><button class="btn" data-act="nav" data-v="staff">Back to your staff</button></div>${bidRow()}</section>
+    <div class="confirm-row"><button class="btn" data-act="nav" data-v="staff">Back to your staff</button></div>${bidRow()}${conRow('gymtrainer')}</section>
   <section class="panel"><div class="ph"><h2>Candidates</h2><span class="muted">${rows.length} trainers who fit: challengers on the circuit, recent retirees, outsiders, your other gym trainers, and Gym Leaders and Elite Four members (their post opens). A challenger gets an <b>offer</b>, which they can turn down; one out on a run who accepts finishes it first, for up to ${HIRE_NOTICE} weeks, while ${cur ? cur.name : 'the place'} stays${cur ? ' until then' : ' empty'}. Outsiders nobody picks join the circuit.</span></div>
-  ${pickTable(rows.map(c => hireRowOf(c, c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '', askFor(c.t, 'gymtrainer', 0))), 'gtplace')}</section>`;
+  ${pickTable(rows.map(c => hireRowOf(c, c.from === 'leader' || c.from === 'e4' ? 'their post opens' : '', askFor(c.t, 'gymtrainer', 0), 'gymtrainer')), 'gtplace')}</section>`;
 }
 // a table of trainers to pick from: type, age, OVR and the five ratings, with a button per row
 function pickTable(rows, act) {
@@ -19346,8 +19502,45 @@ function viewPosts() {
   return `<section class="panel">${head}${body}
     <p class="fine">${postsMode === 'year' ? `Who held each post at the end of each year; the top row is now. A gold edge marks a post that changed hands that year, +N anyone else who held it during the year (hover for names). Gym columns are named by where each gym is now.` : 'Each post\'s holders at the end of each year, newest first; the highlighted row holds it now.'} Use the League buttons above to see another League.</p></section>`;
 }
+// ---------- contracts (0.52.0) ----------
+// the length picked on the hiring pages (null: whatever each candidate prefers)
+let hireLen = null;
+function conRow(post) {
+  const opts = conOpts(post), cur = opts.includes(hireLen) ? hireLen : null;
+  return `<div class="segs conlen"><button class="seg${cur == null ? ' on' : ''}" data-act="hirelen" data-v="" aria-pressed="${cur == null}">Their preference</button>${opts.map(w => `<button class="seg${cur === w ? ' on' : ''}" data-act="hirelen" data-v="${w}" aria-pressed="${cur === w}">${conWords(w)}</button>`).join('')}</div><p class="small muted">Contract length for anyone new to your staff (staff you move keep theirs). Each trainer prefers a length: stay-put types long deals, those after a bigger post short ones. Every step away from it makes an offer likelier to be turned down and adds ${CON_PAY * 100}% to their pay.</p>`;
+}
+const conPrefTag = (t, post) => { const w = conPref(t, post, true), miss = conOpts(post).includes(hireLen) ? conMiss(t, post, hireLen) : 0; return ` <span class="tag small${miss ? ' notice' : ''}" title="${miss ? `${miss} step${miss === 1 ? '' : 's'} from what they want: less likely to accept, ${CON_PAY * 100 * miss}% more pay` : 'The length they would rather sign for'}">Prefers ${conWords(w)}</span>`; };
+// set the length on a candidate before an offer or install (true, so it can sit in an && chain)
+function hireLenFor(id, post) { const t = T(id); if (t) setConAsk(id, conOpts(post).includes(hireLen) ? hireLen : conPref(t, post, true)); return true; }
+// a staff row's contract: its end, and its renewal state
+function conInfo(t) {
+  const c = t && t.con; if (!c || t.acting || !handOn()) return '';
+  const win = !conShort(c.post) && c.win != null && c.from <= S.turn && S.turn < c.until;
+  const st = win ? (c.will === 'no' ? ' <span class="tag notice small">Won\'t renew</span>' : c.will === 'more' ? ` <span class="tag notice small">Asks +${CON_MORE * 100}% to renew</span>` : ' <span class="tag notice small">Up for renewal</span>') : c.go ? ' <span class="tag small">Goes at the end</span>' : '';
+  return ` · contract to ${turnDate(c.until)}${c.from > S.turn ? ' (renewed)' : ''}${st}`;
+}
+function conActs(t) {
+  const c = t && t.con; if (!c || t.acting || !handOn() || (S.lg || 0) !== ME()) return '';
+  if (conShort(c.post)) return ` <button class="btn small" data-act="congo" data-id="${t.id}" title="${c.go ? 'Keep them on: the contract renews as usual' : 'Let them go when the contract ends'}">${c.go ? 'Keep on' : 'Let it run out'}</button>`;
+  if (c.win == null || c.from > S.turn || S.turn >= c.until || c.will === 'no') return '';
+  return `<div class="segs small">${CON_SENIOR.map(w => `<button class="seg" data-act="conrenew" data-id="${t.id}" data-v="${w}">Renew ${conWords(w)}</button>`).join('')}</div>`;
+}
+function conNotice(list) {
+  if (!list.length) return '';
+  return `<div class="eyebrow">Contracts up for renewal</div><ul class="mini">${list.map(t => `<li><span>${tname(t.id)}&nbsp;· ${postName(t)} <span class="small">${t.con.will === 'no' ? 'won\'t renew' : t.con.will === 'more' ? `restless: asks ${CON_MORE * 100}% more pay` : 'happy to renew'}</span></span><span class="small">ends ${turnDate(t.con.until)}</span></li>`).join('')}</ul><p class="muted small">Renew from Your staff (prefers ${list.filter(t => t.con.will !== 'no').map(t => `${esc(t.name)} ${conWords(conPref(t, t.con.post))}`).join(', ') || 'nobody willing'}). A contract not renewed ends on its date: they return to the circuit (unhappy if restless) or retire, and the post opens.</p>`;
+}
+GLOSS_TERMS.league.push(['Contracts', `Everyone who takes a post signs a contract: Gym Leaders, the Elite Four and the Champion for 1 to 4 years, gym trainers for 3, 6 or 9 months. You pick the length when you hire (Their preference by default). Each trainer prefers one: those who want to stay put like long deals, those after a bigger post short ones; every step away from it makes an offer likelier to be turned down and adds ${CON_PAY * 100}% to their pay. Staff you move between posts keep their contract (a gym trainer moving up signs a new one). A contract holds against ambition: a member of staff tired of waiting for promotion, or asking for another run, stays until it ends, though their restlessness shows. For the last ${CON_WINDOW} weeks only your League can renew it, from Your staff: a content member renews at the length you pick; a restless one asks ${CON_MORE * 100}% more pay (and starts their wait afresh) or won't renew. A contract not renewed ends on its date: they go back to the circuit, holding a grudge if they were restless, or retire, and the post opens. Gym trainers renew quietly unless you mark them to go (Let it run out) or they are restless. You can still let anyone go early (severance), and staff still leave when unpaid in the red, take a bigger post in another League, step down after a long career, or (the Champion) step down. Rival Leagues renew by aim, and the multi-year sim renews yours.`]); // (0.52.0)
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 52, ver: '0.52.0', date: 'November 23, 2026', time: '7:30 PM ET', title: 'Contracts', items: [
+    "Staff now sign contracts. Gym Leaders, the Elite Four and the Champion sign for 1 to 4 years, gym trainers for 3, 6 or 9 months. Your current staff start with staggered lengths, so they don't all come up at once.",
+    "Pick the length when you hire, on the hiring pages (Their preference by default). Each candidate shows the length they'd rather have: stay-put types like long deals, those after a bigger post short ones. Every step away from it makes an offer likelier to be turned down and adds 5% to their pay. Staff you move between posts keep their contract.",
+    "A contract holds against ambition. A member of staff tired of waiting for promotion, or asking for another run, no longer gives notice and walks out: they stay until the contract ends, and their restlessness shows.",
+    "For the last 4 weeks of a senior contract, only you can renew it, from Your staff (the game stops when one comes up). A content member renews at the length you pick. A restless one asks for 25% more pay (and their wait starts afresh) or won't renew at all. A contract you don't renew ends on its date: they go back to the circuit, holding a grudge if they were restless, or retire, and the post opens.",
+    "Gym trainers' contracts renew on their own unless you mark them Let it run out, or they're restless.",
+    "Letting someone go early still costs severance. Staff still leave when unpaid in the red, when another League gives them a bigger post, or when they step down after a long career, and a Champion who wants to step down still can. Rival Leagues renew by their aim, and the multi-year sim renews your contracts for you.",
+    "Coming next: open talks, where Leagues compete for stars and staff whose contracts end.",
+  ] },
   { id: 51, ver: '0.51.0', date: 'November 23, 2026', time: '6:45 PM ET', title: 'Sort by egg group', items: [
     "The ranch's Pool tab can be sorted by egg group (Sort → Egg group). Each Pokémon's egg groups then show under its type, Ditto comes first and Pokémon that can't breed (Undiscovered) come last, so lines that can pair sit together.",
     "The Day Care's breeding pool has a Sort switch, Line or Egg group, and the two parent pickers follow the same order.",
@@ -20261,7 +20454,10 @@ document.addEventListener('click', ev => {
     case 'repyear': repYear = el.dataset.v === 'latest' ? null : +el.dataset.v; go('recap'); break;
     case 'hire': hireIdx = +el.dataset.v; hireFit = false; go('hire'); break;
     case 'hirefit': hireFit = !hireFit; render(); break;
-    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
+    case 'hirepick': { const v = (S.vacancies || [])[hireIdx], name = v && vacancyName(v), id = +el.dataset.id; if (v) hireLenFor(id, v.post); hireResult(v && hireForVacancy(v, id, hireBid), id, name); break; }
+    case 'hirelen': hireLen = el.dataset.v ? +el.dataset.v : null; render(); break;
+    case 'conrenew': { const t = T(+el.dataset.id), err = renewContract(+el.dataset.id, +el.dataset.v); if (err) toast(err); else { save(); render(); toast(`${t.name} renewed to ${turnDate(t.con.until)}.`); } break; }
+    case 'congo': { const t = T(+el.dataset.id); if (t && conLetRun(t.id, !t.con.go)) { save(); render(); toast(t.con.go ? `${t.name} goes when their contract ends, ${turnDate(t.con.until)}.` : `${t.name} renews as usual.`); } break; }
     case 'hirebid': hireBid = +el.dataset.v; render(); break;
     case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
     case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
@@ -20277,7 +20473,7 @@ document.addEventListener('click', ev => {
     case 'staffswap': staffSwap = el.dataset.id ? +el.dataset.id : null; staffAsk = null; render(); break;
     case 'staffswapto': { const a = staffSwap; staffSwap = null; if (a != null && swapStaff(a, +el.dataset.id)) { save(); toast(`${T(a).name} and ${T(+el.dataset.id).name} swapped posts.`); } render(); break; }
     case 'gtpick': gtSel = { g: +el.dataset.g, k: +el.dataset.k }; gymOutsiders(gtSel.g); save(); go('gtpick'); break;
-    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireForGymTrainer(gtSel.g, gtSel.k, id, hireBid); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
+    case 'gtplace': { const id = +el.dataset.id, name = gtSel && `gym trainer at ${townName(gtSel.g)} Gym`, o = gtSel && hireLenFor(id, 'gymtrainer') && hireForGymTrainer(gtSel.g, gtSel.k, id, hireBid); if (o && o.res === 'now' && o.r) gtSel = null; hireResult(o, id, name); break; }
     case 'watchgym': { const g = S.gyms[+el.dataset.g], r = g && (g.watch || [])[+el.dataset.i]; if (r) { modal = { kind: 'battle', r }; renderModal(); } break; }
     case 'nav': navOpen = null; modal = null; renderModal(); go(el.dataset.v); break;
     case 'navgrp': navOpen = navOpen === el.dataset.k ? null : el.dataset.k; syncNav(); break;
