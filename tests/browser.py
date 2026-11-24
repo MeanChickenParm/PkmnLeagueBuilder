@@ -31,6 +31,13 @@ async def run(path):
           if (!document.querySelector('.speed-est.red')) log.push('FAIL no warning for a 36-League world');
           while (+document.querySelector('.setleaguesn').textContent > 3) click('[data-act=setleagues][data-v="' + (+document.querySelector('.setleaguesn').textContent - 1) + '"]');
           if (!document.querySelector('.speed-est') || document.querySelector('.speed-est.amber, .speed-est.red')) log.push('FAIL the speed estimate for three Leagues');
+          // 0.55.0: the growth pace (8 by default, 12 picked) and Leagues can open in new regions (on by default; off and back on)
+          if (!document.querySelector('[data-act=setpace][data-v="8"].on')) log.push('FAIL the growth pace does not default to 8');
+          click('[data-act=setpace][data-v="12"]'); if (!document.querySelector('[data-act=setpace][data-v="12"].on')) log.push('FAIL could not pick a 12-year pace');
+          click('[data-act=setuppage][data-v=advanced]');
+          { const nr = () => document.querySelector('[data-act=advtoggle][data-k=newRegions]'); if (!nr() || nr().getAttribute('aria-checked') !== 'true') log.push('FAIL Leagues can open in new regions is not on by default');
+            else { click('[data-act=advtoggle][data-k=newRegions]'); if (nr().getAttribute('aria-checked') !== 'false') log.push('FAIL new regions did not switch off'); click('[data-act=advtoggle][data-k=newRegions]'); } }
+          click('[data-act=setuppage][data-v=main]');
           // Advanced: rival 2 starts in Hoenn, the region this test picks for the player's League
           click('[data-act=setuppage][data-v=advanced]');
           { const sels = document.querySelectorAll('.rivalsel'); if (sels.length !== 2) log.push('FAIL the rival picker lists ' + sels.length + ' rivals'); else { sels[1].value = '2'; sels[1].dispatchEvent(new Event('change', { bubbles: true })); } }
@@ -128,6 +135,7 @@ async def run(path):
           if (/Defending/.test((document.querySelector('#main') || {}).textContent || '') || eachLeague(() => dn(T(S.champion))).some(x => /Defending/.test(x))) log.push('FAIL a Champion is still titled Defending');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
+          if (S.cfg.pace !== 12 || S.cfg.newRegions !== true) log.push('FAIL the world did not keep the growth pace and new regions: ' + S.cfg.pace + ' ' + S.cfg.newRegions);
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League' || nm[0] !== 'Browser Home Cup' || nm[1] !== 'Browser Rival Cup') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
           // 0.41.0: the regional field: the Circuit page shows the whole region's field (both Hoenn Leagues), the League
           // table each League's challengers and share

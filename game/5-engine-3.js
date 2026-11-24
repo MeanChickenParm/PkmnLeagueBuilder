@@ -1269,7 +1269,7 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, renameAny: !!cfg.renameAny, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, renameAny: !!cfg.renameAny, newRegions: cfg.newRegions !== false, pace: [4, 8, 12].includes(cfg.pace) ? cfg.pace : 8, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good

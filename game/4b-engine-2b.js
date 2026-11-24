@@ -330,7 +330,7 @@ function openNewLeague(f, r) {
   inLeague(i, () => news(`The ${lgName} opens in Year ${S.season}, with its own gyms, Elite Four and Champion.`, 'league'));
   return i;
 }
-// (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years have passed since the last
+// (0.17.0, stage 5) each New Year, with the growth option on: once LEAGUE_MIN_GAP years (0.55.0: growthPace()) have passed since the last
 // opening and there is room, the most prestigious recent retiree over PRESTIGE_BAR may found a League, likelier the
 // higher their prestige (FOUNDER_ODDS at the bar, rising to 0.9). No founder, no League.
 // (0.18.0) a founder's bar rose with the Leagues already open in the world. (0.41.0, design doc 6.19) it is per region
@@ -339,26 +339,51 @@ function openNewLeague(f, r) {
 // still needs PRESTIGE_BAR. Provisional.
 const FOUNDER_BARS = [30, 30, 50, 70];
 const founderBar = r => FOUNDER_BARS[Math.min(FOUNDER_BARS.length - 1, regionCount(r == null ? nextRegion() : r))];
-// regions with room for a rival League, in the order nextRegion prefers (yours, then empty ones, then any)
+// (0.55.0, design update Nov 24: where new Leagues open) a founder opens anywhere with room whose bar they clear, by a
+// weighted draw: GROWTH_W by the Leagues already in the region (none, one, two, three; a region with none only while
+// S.cfg.newRegions, the Advanced option Leagues can open in new regions, on by default), × GROWTH_HOME for the
+// founder's own region (the region of the League they retired from, else their hometown's). Your region has no edge.
+// The pace: at most one opening every S.cfg.pace years (GROWTH_PACES, setup; default LEAGUE_MIN_GAP). Provisional.
+const GROWTH_W = [4, 3, 2, 1], GROWTH_HOME = 2, GROWTH_PACES = [4, 8, 12];
+const growthPace = () => (S && S.cfg && GROWTH_PACES.includes(S.cfg.pace) ? S.cfg.pace : LEAGUE_MIN_GAP);
+const newRegionsOn = () => !(S && S.cfg && S.cfg.newRegions === false);
+const GROWTH_LOG = { opened: 0, empty: 0, home: 0, mine: 0, noRoom: 0 };
+function founderRegion(f) {
+  const r = f && f.lg != null ? lgRegion(f.lg) : null;
+  return r != null ? r : f && f.home ? f.home.r : null;
+}
+// regions with room for a founder's League (any order; a region with no League only with new regions on)
 function growthRegions() {
-  const home = regionsUsed()[ME()], ok = x => rivalOk(x) && regionCount(x) < REGION_CAP;
-  const out = ok(home) ? [home] : [];
-  for (const x of regionOrder()) if (!out.includes(x) && ok(x) && !regionCount(x)) out.push(x);
-  for (const x of regionOrder()) if (!out.includes(x) && ok(x)) out.push(x);
-  return out;
+  return regionOrder().filter(x => rivalOk(x) && regionCount(x) < REGION_CAP && (regionCount(x) > 0 || newRegionsOn()));
+}
+// [{ r, w }] for founder f: the regions whose bar they clear, weighted
+function growthWeights(f) {
+  const p = trainerPrestige(f), home = founderRegion(f);
+  return growthRegions().filter(x => p >= founderBar(x)).map(r => ({ r, w: GROWTH_W[Math.min(GROWTH_W.length - 1, regionCount(r))] * (r === home ? GROWTH_HOME : 1) }));
 }
 function worldGrowth() {
   if (!S.cfg || !S.cfg.growth) return;
-  if (S.season - (S.lastOpen || 0) < LEAGUE_MIN_GAP) return;
-  const f = pickFounder(), p = trainerPrestige(f);
+  if (S.season - (S.lastOpen || 0) < growthPace()) return;
+  const f = pickFounder();
   if (!f) return;
-  const r = growthRegions().find(x => p >= founderBar(x)); if (r == null) return;
-  const bar = founderBar(r);
-  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) openNewLeague(f, r);
+  const ws = growthWeights(f); if (!ws.length) { GROWTH_LOG.noRoom++; return; }
+  let x = rand() * ws.reduce((a, o) => a + o.w, 0), r = ws[ws.length - 1].r;
+  for (const o of ws) { x -= o.w; if (x < 0) { r = o.r; break; } }
+  const bar = founderBar(r), p = trainerPrestige(f);
+  if (rand() < Math.min(0.9, FOUNDER_ODDS + (p - bar) / bar)) {
+    const empty = !regionCount(r), home = r === founderRegion(f), mine = r === regionsUsed()[ME()];
+    if (openNewLeague(f, r) != null) { GROWTH_LOG.opened++; if (empty) GROWTH_LOG.empty++; if (home) GROWTH_LOG.home++; if (mine) GROWTH_LOG.mine++; }
+  }
 }
 // ---------- god mode: open a League by hand, and edit any trainer ----------
 const godOn = () => !!(S && S.cfg && S.cfg.god);
-function godOpenLeague() { if (!godOn()) return 'God mode is off.'; if (nextRegion() == null) return 'The world is full.'; return openNewLeague() == null ? 'Could not open a League.' : null; }
+// (0.55.0) god mode's League opens where a founder's would, by the same weights (no bar), not in your region first
+function godRegion() {
+  const ws = growthRegions().map(r => ({ r, w: GROWTH_W[Math.min(GROWTH_W.length - 1, regionCount(r))] }));
+  if (!ws.length) return nextRegion();
+  let x = rand() * ws.reduce((a, o) => a + o.w, 0); for (const o of ws) { x -= o.w; if (x < 0) return o.r; } return ws[ws.length - 1].r;
+}
+function godOpenLeague() { if (!godOn()) return 'God mode is off.'; const r = godRegion(); if (r == null) return 'The world is full.'; return openNewLeague(undefined, r) == null ? 'Could not open a League.' : null; }
 function godEdit(id, field, v) {
   if (!godOn()) return 'God mode is off.';
   const t = T(id); if (!t) return 'No such trainer.';
