@@ -2,6 +2,9 @@
 
 Things left over from the seed, and ideas tabled for later. Remove an item once it is done.
 
+## Broken tests
+- **The browser test's year-2 staffing step fails (found Nov 24 at 0.58.0, also on an unchanged 0.57.0 build):** `nobody to pick at once`, `vacancies left open: 2`, `posts not filled properly`, or `posts left open after the move`, varying by run. Find which change caused it (0.57.0's famous share or the talks changes are suspects), fix the game or the test, and remove this item.
+
 ## Left over from the seed (0.1.0)
 - **Unused styles.** `game/1-page.html` still has the CSS for the screens that were cut (office, party, draft, ranch, trade desk, tournament, villain banner, team marks). It does no harm; prune it when the new screens are built and it is clear what they reuse.
 - **Traits and temperaments that lost their effect.** The Mentor and Hero traits were removed (they acted on teammates and villains). The Naive, Quiet and Docile natures have no temperament now (theirs were about trades and the ranch), and Lonely, Adamant, Relaxed and Naughty lost half of theirs. To revisit when staff and gym trainers exist.

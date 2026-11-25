@@ -588,7 +588,7 @@ function viewCustom() {
         ${field('Name', inp('cf-name', d.name, 'maxlength="30" placeholder="e.g. Mario"'))}
         ${field('Title', inp('cf-cls', d.cls, 'maxlength="30" placeholder="e.g. Plumber Hero"'))}
         ${field('Gender', sel('cf-g', d.g, [['m', 'Male'], ['f', 'Female'], ['n', 'Neither']]))}
-        ${field('Age', `<input id="cf-age" class="cf-in" type="number" min="8" max="90" value="${esc(d.age)}">`)}
+        ${field('Age', `<input id="cf-age" class="cf-in" type="number" min="0" max="90" value="${esc(d.age)}">`)}
         ${field('Main type', sel('cf-spec', d.spec, tys('None (mixed team)')))}
         ${field('Second type', sel('cf-spec2', d.spec2, tys('None')))}
         ${field('Trait', sel('cf-trait', d.trait, [['', 'Random'], ...Object.entries(TRAITS).map(([k, t]) => [k, t.name])]))}

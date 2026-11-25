@@ -844,7 +844,8 @@ function checkCustom(d, target, editing = null) {
   else if (dupe) errs.push(`${dupe.p.name} already has a trainer called ${dupe.f.name}.`);
   else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds of famous trainers.');
   if (!cls) errs.push('Give them a title, like Gym Leader or Movie Star.'); else if (cls.length > 30) errs.push('Titles can be up to 30 characters.');
-  if (!(age >= 8 && age <= 90)) errs.push('Age must be between 8 and 90.');
+  // (0.58.0) no minimum age for custom trainers (the owner): any whole age from 0 up to 90
+  if (!(age >= 0 && age <= 90)) errs.push('Age must be a number up to 90.');
   const g = ['m', 'f', 'n'].includes(d.g) ? d.g : 'm';
   const spec = TYPES.includes(d.spec) ? d.spec : null, spec2 = spec && TYPES.includes(d.spec2) && d.spec2 !== spec ? d.spec2 : null;
   if (d.spec2 && !spec) errs.push('Pick a main type before a second type.');
