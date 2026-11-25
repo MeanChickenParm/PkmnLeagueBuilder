@@ -3,6 +3,7 @@
 Things left over from the seed, and ideas tabled for later. Remove an item once it is done.
 
 ## Broken tests
+- **Hand-placed sim flake (seen Nov 24 at 0.59.0, a UI-only change):** `talks you were in closed with no result` failed once in one hand-placed run (`1 0 12 0 1`); some way of closing talks you had an offer in skips `talkDone`. Not traced.
 - **The browser test's year-2 staffing step fails (found Nov 24 at 0.58.0, also on an unchanged 0.57.0 build):** `nobody to pick at once`, `vacancies left open: 2`, `posts not filled properly`, or `posts left open after the move`, varying by run. Find which change caused it (0.57.0's famous share or the talks changes are suspects), fix the game or the test, and remove this item.
 
 ## Left over from the seed (0.1.0)

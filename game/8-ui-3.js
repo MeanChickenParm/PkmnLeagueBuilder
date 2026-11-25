@@ -31,6 +31,8 @@ GLOSS_TERMS.league.push(['Contracts', `Everyone who takes a post signs a contrac
 // The Talks page (Manage): open talks for stars, for staff whose contracts ran out, and rivals going after your staff
 // (the Retention stop). One offer per talks, changed any week; Scouting decides how much of other offers you see.
 let talkDraft = {};
+// (0.59.0) what came of your last offer in each talks, shown on its panel until the next try (a toast is easy to miss)
+let talkNote = {};
 const TALK_KINDS = { star: 'Star', expiry: 'Contract ran out', poach: 'Under contract', champ: 'Wants a bigger seat' };
 const bidWords = b => b ? `+${Math.round(b * 100)}% pay` : 'their asking pay';
 const bonusWords = w => w ? `${w} weeks' pay up front` : 'no bonus';
@@ -79,9 +81,11 @@ function talkPanel(k, sight) {
     <p class="small"><b>Other offers:</b> ${others.length ? others.map(x => seenOffer(t, k, x, sight, need)).join('; ') : 'none yet'}${others.length && lead != null && lead !== me ? `. The ${esc(leagueName(lead))} leads` : ''}.</p>
     ${mine ? `<p class="small"><b>Your offer:</b> ${offerWords(mine)}, ${bidWords(mine.bid)} (${money(talkPay(t, mine))} a week), ${bonusWords(mine.bonus)}${mine.bonus ? ` (${money(talkBonus(t, mine))})` : ''}, ${conWords(mine.len)}${mine.prom.length ? `; you promise: ${mine.prom.map(x => PROMISES[x].toLowerCase()).join('; ')}` : ''} ${status}</p>` : ''}
     ${!opts.length && t.role === 'champion' && k.home !== me ? '<p class="small muted">Only a League whose Champion is leaving (stepping down or under notice) can offer its seat to a Champion.</p>' : ''}
+    ${!talkSigns(t, k, me) ? `<p class="small warn">They won't sign for your League: ${esc(prestBlock(t, me) || 'not open to your offers')}. An offer can't be made until your prestige reaches their minimum.${others.length ? '' : ' No other League has made an offer either, most likely for the same reason.'}</p>` : ''}
     ${opts.length ? `<div class="confirm-row">${sel('post', opts, d.post)} ${sel('bid', TALK_BIDS.map(b => [b, bidWords(b)]), d.bid)} ${sel('bonus', TALK_BONUS.map(w => [w, bonusWords(w)]), d.bonus)} ${lens.length ? sel('len', lens, d.len) : ''}</div>
     <div class="confirm-row">${promBox}</div>
     <p class="small muted">${dp ? `They ask ${money(talkAsk(t, o))} a week for it: this offer pays ${money(pay)}${bonus ? ` and ${money(bonus)} up front` : ''}.` : ''}</p>
+    ${talkNote[k.id] ? `<p class="small ${talkNote[k.id].bad ? 'warn' : 'good'}">${esc(talkNote[k.id].text)}</p>` : ''}
     <div class="confirm-row"><button class="btn small" data-act="talkoffer" data-k="${k.id}">${mine ? 'Change your offer' : k.home === me ? 'Offer to keep them' : 'Make an offer'}</button>${mine ? ` <button class="btn small ghost" data-act="talkwd" data-k="${k.id}">Withdraw</button>` : ''}</div>` : ''}</section>`;
 }
 function viewTalks() { return inLeague(ME(), viewTalks0); }
@@ -108,14 +112,23 @@ function viewTalks1() {
 }
 function talkAction(a, el) {
   const k = talkList().find(x => x.id === +el.dataset.k);
-  if (a === 'talkoffer') { if (!k) return; const t = T(k.tid), d = talkDraftOf(k, t), err = makeOffer(k, draftOffer(d)); if (err) toast(err); else { delete talkDraft[k.id]; save(); toast(`Offer made to ${t.name}: ${k.lead === ME() ? 'you lead the talks' : 'another League leads'}.`); } render(); return; }
-  if (a === 'talkwd') { if (k && withdrawTalkOffer(k, ME())) { delete talkDraft[k.id]; save(); toast('Offer withdrawn.'); } render(); return; }
+  if (a === 'talkoffer') { if (!k) { toast('Those talks are over.'); render(); return; } const t = T(k.tid), d = talkDraftOf(k, t), err = makeOffer(k, draftOffer(d));
+    if (err) { talkNote[k.id] = { bad: true, text: `Offer not made: ${err}` }; toast(talkNote[k.id].text, 6000); }
+    else { delete talkDraft[k.id]; save(); talkNote[k.id] = { bad: k.lead !== ME(), text: `Offer made to ${t.name}: ${k.lead === ME() ? 'you lead the talks' : 'another League leads, so raise it to get ahead'}.` }; toast(talkNote[k.id].text); }
+    render(); return; }
+  if (a === 'talkwd') { if (k && withdrawTalkOffer(k, ME())) { delete talkDraft[k.id]; delete talkNote[k.id]; save(); toast('Offer withdrawn.'); } else toast('There is no offer of yours to withdraw.'); render(); return; }
   if (a === 'talkmatch') { const err = talkMatch(+el.dataset.id); if (err) toast(err); else { save(); toast('You matched the offer.'); } render(); return; }
   if (a === 'talklet') { const t = T(+el.dataset.id), err = talkLetGo(+el.dataset.id); if (err) toast(err); else { save(); toast(`${t.name} leaves for the ${leagueName(homeLeague(t))}.`); } render(); }
 }
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 59, ver: '0.59.0', date: 'November 24, 2026', time: '10:45 PM ET', title: 'Talks messages you can see', items: [
+    "Fixed: on the Talks page, pressing Make an offer (or Change, Withdraw, Match, Let them go) showed its message and wiped it at once, so you never saw whether the offer went in or why it was refused (at most 3 talks at once, not enough money for the bonus, in the red, a post you can't offer). Messages now stay up.",
+    "Each talks now shows what came of your last offer on its own panel: offer made (and whether you lead), or why it wasn't made, until you try again.",
+    "A talks whose trainer won't sign for your League (their prestige minimum is above yours) now says so on its panel before you make an offer, and notes when no other League has offered either, which is usually why.",
+    "The hiring pages now say so when an offer couldn't be made at all, or when a trainer who turned you down can't be asked again yet, instead of doing nothing.",
+  ] },
   { id: 58, ver: '0.58.0', date: 'November 24, 2026', time: '9:50 PM ET', title: 'Custom trainers of any age', items: [
     "Custom trainers in your trainer packs no longer have a minimum age: any age up to 90 is accepted, in the editor and on import. Young trainers grow quickly, like any other young trainer.",
   ] },
@@ -737,7 +750,10 @@ function receiveFromEmbed() {
   window.addEventListener('message', onMsg);
   try { window.opener.postMessage({ type: 'plb-ready' }, location.origin); } catch (e) {}
 }
-function render() {
+// (0.59.0) a redraw rebuilds the toast's element, so a message shown just before it (the Talks page's offers, the
+// hiring pages' talks) was wiped at once: render() puts a message still showing back on the new element
+function render() { render0(); keepToast(); }
+function render0() {
   if (!S) dexPreview = setupPage === 'region' && rgDraft ? regionDex(rgRec()) : null; // (0.31.0) the region editor's own Pokémon
   applyDex(dexWanted());
   ensureCustom();
@@ -826,7 +842,9 @@ function lgBar() {
   if (nLeagues() < 2 || !LG_VIEWS.includes(view)) return '';
   return `<nav class="lgbar segs" aria-label="League">${Array.from({ length: nLeagues() }, (_, i) => `<button class="seg${i === viewLg ? ' on' : ''}" data-act="lgview" data-v="${i}" aria-pressed="${i === viewLg}">${leagueName(i)}</button>`).join('')}</nav>`;
 }
-function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3400); }
+let toastMsg = null;
+function keepToast() { const el = $('#toast'); if (!el || toastMsg == null) return; el.textContent = toastMsg; el.hidden = false; }
+function toast(msg, ms = 3400) { toastMsg = msg; keepToast(); clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastMsg = null; const el = $('#toast'); if (el) el.hidden = true; }, ms); }
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // a view that no longer fits (a year in review before the first New Year, god mode in a world without it) falls back to the circuit
 function fixView() { if (!VIEWS.includes(view) || (view === 'recap' && !S.history.some(x => x.titles != null)) || (view === 'god' && !godOn()) || (['staff', 'gtpick', 'contenders', 'plans', 'talks'].includes(view) && !handOn()) || (view === 'gtpick' && !gtSel)) view = 'circuit'; }
@@ -840,13 +858,14 @@ function afterMove(r, msg) {
 // what came of picking someone on a hiring page (0.9.0): taken at once, accepted for after their run, or turned down
 function hireResult(o, id, name) {
   const t = T(id);
-  if (!o || !o.res || (o.res === 'now' && !o.r)) { render(); return; }
+  if (!o || !o.res || (o.res === 'now' && !o.r)) { render(); if (t) toast(`No offer was made to ${t.name}: they can't be offered that post now.`, 6000); return; } // (0.59.0) say so
   save();
   if (o.res === 'now') afterMove(o.r, `${dn(t)} takes the post: ${name}.`);
   else if (o.res === 'later') { go('staff'); toast(`${t.name} accepted (${name}) and comes after their run, by ${turnDate(t.hired.by)} at the latest.`); }
   else if (o.res === 'refused') { render(); toast(`${t.name} turned the offer down.`); }
-  else if (o.res === 'talks') { if (o.err) toast(o.err); else { talkDraft = {}; go('talks'); toast(`Talks are open for ${t.name} with your offer: see Talks.`); } if (o.err) render(); }
+  else if (o.res === 'talks') { if (o.err) { render(); toast(`No talks opened with ${t.name}: ${o.err}`, 6000); } else { talkDraft = {}; go('talks'); toast(`Talks are open for ${t.name} with your offer: see Talks.`); } }
   else if (o.res === 'broke') { render(); toast('The League is in the red: nobody new can be hired until it is back above zero.'); }
+  else if (o.res === 'cool') { render(); toast(`${t.name} turned you down lately: ask again ${turnDate(t.refusedAt + REFUSED_WEEKS)}.`); }
   else render();
 }
 // ---------- actions ----------
