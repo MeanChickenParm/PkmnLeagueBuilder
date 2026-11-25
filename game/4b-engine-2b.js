@@ -1076,6 +1076,7 @@ function makeOffer(k, o) {
   const old = k.offers.find(x => x.lg === o.lg);
   const n = { lg: o.lg, post: o.post, slot: o.slot, bid: o.bid, bonus: o.bonus, len: o.len, prom: (o.prom || []).slice(), at: S.turn, raised: old ? (old.raised || 0) + 1 : 0, ai: !!o.ai };
   if (old) k.offers[k.offers.indexOf(old)] = n; else k.offers.push(n);
+  if (handOn() && o.lg === ME()) k.mine = ME(); // (0.62.0) you were in these talks from the moment your offer went in, not only once a week had passed with it
   TALK_LOG.offers++; if (o.ai) TALK_LOG.aiOffers++; if (old) TALK_LOG.raises++;
   talkLead(k, true);
   return null;
@@ -1374,6 +1375,7 @@ function talkSign(t, o, k, n) {
   const mineO = k.offers.find(x => x.lg === ME()), to = leagueName(o.lg), terms = offerWords(o);
   if (k.home === ME()) talkDone(k, k.letGo ? 'released' : 'left', `${t.name} ${k.letGo ? 'was let go to' : 'left your League for'} the ${to} (${terms}).`, o.lg);
   else if (mineO) talkDone(k, 'lost', `${t.name} signed for the ${to} (${terms}) instead of your offer of ${offerWords(mineO)}.`, o.lg);
+  else if (talkMine(k)) talkDone(k, 'lost', `${t.name} signed for the ${to} (${terms}). Your offer was no longer in: withdrawn, or it fell through while you were in the red.`, o.lg); // (0.62.0) an offer you had in once still gets a result
 }
 // (0.54.0) a Champion signing for another League leaves their own seat as one stepping down would: the strongest
 // Elite Four member (by the seat rule's heir) moves up, and that seat gets a stand-in and a vacancy (yours) or is
@@ -1407,7 +1409,7 @@ function talksForMe() { return talkList().filter(k => T(k.tid)); }
 // open talks with your offer: a star or another League's member of staff picked on a hiring page (instead of an
 // instant offer). Returns { res: 'talks', err }.
 function talkFromHire(t, post, slot, bid) {
-  let k = talkOf(t);
+  let k = talkOf(t); const fresh = !k;
   if (!k) {
     const home = STAFF_ROLES.includes(t.role) ? homeLeague(t) : null;
     if (!canTalk(t)) return { res: false };
@@ -1417,7 +1419,7 @@ function talkFromHire(t, post, slot, bid) {
   const o = { lg: ME(), post, slot, bid: TALK_BIDS.includes(bid) ? bid : 0, bonus: 0, len: t.conAsk && conOpts(post).includes(t.conAsk) ? t.conAsk : conPref(t, post, true), prom: [] };
   t.conAsk = null;
   const err = makeOffer(k, o);
-  if (err && !k.offers.length) closeTalk(k);
+  if (err && fresh && !k.offers.length) closeTalk(k); // (0.62.0) only talks this offer opened: talks already open stay open for other Leagues
   return { res: 'talks', err };
 }
 // your League answers a rival going after one of your staff: match its pay and bonus in their post, or let them go now
