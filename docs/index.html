@@ -674,6 +674,8 @@ details.hist .it-bag { padding: 0 12px 8px; margin: 0; }
 .cf-newpack { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 12px 0 4px; }
 .cf-newpack .cf-field { flex: 1 1 220px; max-width: 360px; }
 .adv-opt.mini { padding: 8px 12px; align-items: center; }
+.adv-opt.static { cursor: default; }
+.adv-opt.static .segs { margin-top: 8px; }
 .cf-export { margin: 8px 0 12px; }
 .cf-export .box { margin-top: 6px; }
 .cf-imp-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
@@ -5784,7 +5786,15 @@ function rollTrait() { return rand() < TRAIT_CHANCE ? pick(Object.keys(TRAITS)) 
 // trainers from older saves get a trait the first time it's needed
 function traitOf(t) { if (!t) return null; if (t.trait === undefined) t.trait = (t.famous && FAMOUS_TRAITS[famBase(t)]) || rollTrait(); return t.trait; }
 const hasTrait = (t, k) => traitOf(t) === k;
-function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false }) {
+// (0.57.0) the famous share (Advanced → Rules): 0 keeps the normal chances (a few famous newcomers and outside hires);
+// 25 to 100 makes that share of every trainer the game creates a famous trainer (gym trainers, the founding pool,
+// stand-ins and outsiders too; only legacy trainers, a famous trainer's child, are never famous). FAM_SHARES are the steps.
+const FAM_SHARES = [0, 25, 50, 75, 100];
+const famShare = () => (S.cfg && S.cfg.famShare) || 0;
+const famRoll = () => famShare() >= 100 || (famShare() > 0 && rand() < famShare() / 100);
+// how much being famous still counts for pay and prestige: in full against ordinary trainers, not at all when everyone is
+const famPremium = () => 1 - famShare() / 100;
+function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null }) {
   const id = S.nextId++;
   const r = {};
   for (const k of RK) r[k] = clamp(Math.round(quality + (rand() - 0.5) * 34), 8, 96);
@@ -5795,13 +5805,15 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     seasonHist: [], joined: S.season,
   };
   assignClass(t, age, true);
-  // advanced option: every trainer the game creates is a famous trainer, while any are free
-  const f = S.cfg && S.cfg.allFamous && !noFamous ? chooseFamous(role, t.specialty) : null;
+  // (0.57.0) the famous share: this trainer is a famous one, while any are free (famNeed: types one must share, for a gym)
+  const f = !noFamous && famRoll() ? chooseFamous(role, t.specialty, famNeed) : null;
   if (f) {
     const ver = chooseFamous.ver || 1;
     t.name = famName(f, ver); t.famKey = f.name; if (ver > 1) t.famVer = ver;
     t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
     if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; t.spec2 = f.spec2 || null; }
+    // (0.57.0) a famous gym trainer keeps only the types they share with their leader
+    if (famNeed && famNeed.length) { const ty = [f.spec, f.spec2].filter(x => x && famNeed.includes(x)); t.specialty = ty[0]; t.spec2 = ty[1] || null; }
     S.famousUsed.push(t.name);
   }
   t.trait = (t.famous && (f && f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[famBase(t)])) || rollTrait();
@@ -5811,21 +5823,25 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
   S.trainers[id] = t;
   return t;
 }
-// v176: in an all-famous league, once every famous trainer has debuted the whole roster comes round again as V2
+// v176: in an all-famous league (0.57.0: at any famous share), once every famous trainer has debuted the whole roster comes round again as V2
 // (Kanto Leader Misty V2), then V3 and so on, rather than falling back to generated trainers. Each version is its own
 // trainer with its own record; a name is never reused.
 const famName = (f, ver) => ver > 1 ? `${f.name} V${ver}` : f.name;
 const famBase = t => t.famKey || t.name;
 // pick a free famous trainer for a role, preferring a fitting title and type
-function chooseFamous(role, spec) {
+function chooseFamous(role, spec, need = null) {
   ensureCustom();
   S.famousUsed = S.famousUsed || [];
   S.famousGen = S.famousGen || 1;
-  const freeAt = ver => FAMOUS.filter(f => famousOn(f) && !S.famousUsed.includes(famName(f, ver)) && famousNameFree({ name: famName(f, ver), cls: f.cls }));
+  // (0.57.0) need: a gym trainer (or a gym's outsider) must share a type with the leader, so only famous trainers of
+  // one of those types will do; none free means an ordinary trainer, and such a pick never opens a new round on its own
+  const fits = need && need.length ? f => [f.spec, f.spec2].some(x => x && need.includes(x)) : () => true;
+  const freeAt = (ver, all) => FAMOUS.filter(f => famousOn(f) && (all || fits(f)) && !S.famousUsed.includes(famName(f, ver)) && famousNameFree({ name: famName(f, ver), cls: f.cls }));
   // fill the earliest round with a free name first: a newcomer who found no place frees their name up again
   let ver = 1, free = freeAt(1);
   while (!free.length && ver < S.famousGen) free = freeAt(++ver);
-  while (!free.length && S.famousGen < 99 && FAMOUS.some(famousOn)) { ver = ++S.famousGen; free = freeAt(ver); if (free.length) news(`Every famous trainer has now debuted. From here on they return as V${ver}: new trainers carrying a famous name and style, each with a record of their own.`, 'league'); }
+  const anyFree = () => { for (let v = 1; v <= S.famousGen; v++) if (freeAt(v, true).length) return true; return false; };
+  if (!free.length && !anyFree() && S.famousGen < 99 && FAMOUS.some(famousOn)) { ver = ++S.famousGen; free = freeAt(ver); news(`Every famous trainer has now debuted. From here on they return as V${ver}: new trainers carrying a famous name and style, each with a record of their own.`, 'league'); }
   if (!free.length) return null;
   chooseFamous.ver = ver;
   // a V2 waits for the earlier version to retire where it can, so there's rarely two Mistys on the circuit at once
@@ -6151,7 +6167,7 @@ function fillGymTrainer(i, k, L) {
   const r = hireRetirees(x => gymFits(x, L) && !(x.letGoAt != null && S.turn - x.letGoAt < YEAR_WEEKS)).sort((x, y) => ovr(y) - ovr(x))[0];
   if (r) { unretire(r); takeGymTrainer(r, i, k, `${dn(r)} came out of retirement to become a gym trainer at ${townName(i)} Gym.`); return; }
   const ty = specTypes(L);
-  const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), famNeed: ty });
   t.lg = S.lg || 0;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');
@@ -9016,7 +9032,7 @@ function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <=
 // a new Elite Four member from outside the circuit (sometimes a famous trainer)
 function outsiderE4(i) {
   const q = capQ(66); // (0.23.0) no stronger than the League's prestige can attract
-  const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
+  const fam = !famShare() && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
   const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(q), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(q), role: 'e4' });
   installElite(nt, 'e4', i);
   return nt;
@@ -9617,7 +9633,8 @@ function steerSwap(t, slot, s) {
   if (s === 'keep') {
     // a famous trainer works one signature Pokémon back in, in place of the weakest Pokémon that isn't one
     const sig = signatureLines(t); if (!sig) return;
-    const missing = signaturePicks(t.famousTeam).find(sp => SP[sp] && !t.team.some(m => LINE[m.sp] === LINE[sp]) && !bannedIn(sp, S.lg || 0));
+    // (0.57.0) a gym trainer only works back in a signature Pokémon of their own type (famous gym trainers are common now)
+    const missing = signaturePicks(t.famousTeam).find(sp => SP[sp] && !t.team.some(m => LINE[m.sp] === LINE[sp]) && !bannedIn(sp, S.lg || 0) && !(t.role === 'gymtrainer' && t.specialty && !specFit(t, formAt(sp, slot.lvl, t.specialty))));
     const drop = t.team.filter(m => !sig.has(LINE[m.sp]) && !isSpecial(m)).sort((a, b) => SP[a.sp].bst - SP[b.sp].bst)[0];
     if (missing && drop) swapMon(t, drop, stamp(makeMon(missing, slot.lvl, t.specialty), 'starter'), 'swapped out for a signature Pokémon');
     return;
@@ -9814,13 +9831,13 @@ function actingLeader(i) {
   const g = S.gyms[i], ts = (g.trainers || []).map(T).filter(Boolean).sort((a, b) => ovr(b) - ovr(a));
   let a = ts[0];
   if (a) { g.trainers[g.trainers.indexOf(a.id)] = null; closePost(a); a.role = 'leader'; g.leader = a.id; openPost(a, 'leader'); relevelElite(a); }
-  else { a = newTrainer({ age: ri(26, 44), quality: staffQ(48 + i * 2), role: 'leader', noFamous: true }); installElite(a, 'leader', i); }
+  else { a = newTrainer({ age: ri(26, 44), quality: staffQ(48 + i * 2), role: 'leader' }); installElite(a, 'leader', i); }
   a.acting = true; g.acting = true;
   staffGym(i); // a gym that had only one gym trainer left (an acting leader stepping down) takes one on (0.7.0)
   return a;
 }
 function actingE4(i) {
-  const a = newTrainer({ age: ri(30, 50), quality: staffQ(64 + i), role: 'e4', noFamous: true });
+  const a = newTrainer({ age: ri(30, 50), quality: staffQ(64 + i), role: 'e4' });
   a.acting = true; installElite(a, 'e4', i);
   return a;
 }
@@ -9834,7 +9851,7 @@ function openVacancy(post, slot) {
   const q = capQ(post === 'leader' ? 52 + slot * 2 : 66) + (playerLeague() ? 2 * scoutLv() : 0);
   const outsiders = [];
   for (let k = 0; k < VACANCY_OUTSIDERS + (playerLeague() ? scoutLv() : 0); k++) {
-    const fam = famousOk(q) && rand() < FAMOUS_POST_CHANCE && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 18) : [];
+    const fam = famousOk(q) && rand() < FAMOUS_POST_CHANCE && !famShare() ? famousAvailable(f => f.age >= 18) : [];
     const t = fam.length ? makeFamous(pick(fam), 'prospect', staffQ(q), 30) : newTrainer({ age: ri(24, 46), quality: staffQ(q), role: 'prospect', specialty: rand() < 0.06 ? null : pick(TYPES) });
     if (!fam.length) fieldTeam(t, 5);
     t.outsider = true; outsiders.push(t.id);
@@ -10156,7 +10173,7 @@ function hungry(t) {
 function prestMin(t, lg) {
   if (!t || !t.r) return 0;
   if (lg == null) lg = S.lg || 0;
-  let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
+  let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS * famPremium() : 0);
   if (hungry(t)) m *= PM_HUNGRY * (1 - SEAT_HUNGRY * seatOpen(lg)); // (0.43.0) a seat they could win
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
   const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
@@ -10287,7 +10304,7 @@ function gymOutsiders(i) {
     g.outs = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
     const ty = specTypes(L);
     while (g.outs.length < GT_OUTSIDERS + scoutLv()) {
-      const t = newTrainer({ age: ri(18, 34), quality: staffQ(capQ(46 + i * 2) + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+      const t = newTrainer({ age: ri(18, 34), quality: staffQ(capQ(46 + i * 2) + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), famNeed: ty });
       fieldTeam(t, 4); t.outsider = true; g.outs.push(t.id);
     }
     return g.outs.slice();
@@ -10436,7 +10453,7 @@ function fillGym(i, changes) {
   } else {
     // sometimes the outsider is a famous trainer of the right type
     const q = capQ(52 + i * 2); // (0.23.0) no stronger than the League's prestige can attract
-    const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
+    const fam = !famShare() && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
     nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(q), GYM_LV[GYM_TOP]) : newTrainer({ age: ri(26, 44), quality: staffQ(q), role: 'leader' });
     changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
     installElite(nl, 'leader', i);
@@ -12985,7 +13002,7 @@ function checkCustom(d, target, editing = null) {
   const dupe = customLib.filter(p => p.key === target).flatMap(p => p.trainers.map((f, i) => ({ p, f, i }))).find(x => !(editing && x.p.key === editing.key && x.i === editing.i) && x.f.name.toLowerCase() === name.toLowerCase());
   if (!name) errs.push('Give them a name.'); else if (name.length > 30) errs.push('Names can be up to 30 characters.');
   else if (dupe) errs.push(`${dupe.p.name} already has a trainer called ${dupe.f.name}.`);
-  else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds in all-famous leagues.');
+  else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds of famous trainers.');
   if (!cls) errs.push('Give them a title, like Gym Leader or Movie Star.'); else if (cls.length > 30) errs.push('Titles can be up to 30 characters.');
   if (!(age >= 8 && age <= 90)) errs.push('Age must be between 8 and 90.');
   const g = ['m', 'f', 'n'].includes(d.g) ? d.g : 'm';
@@ -13099,7 +13116,7 @@ function makeNewcomers(n) {
     const q = ri(28, 52) + Math.min(14, Math.max(0, age - 14)) * 0.8 + (rand() < 0.15 ? ri(6, 14) : 0);
     const ctrs = metaCounters();
     const spec = featOn('meta') && ctrs.length && rand() < 0.3 ? pick(ctrs) : null;
-    const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_NEWCOMER_CHANCE ? famousAvailable(f => f.age <= 40 || f.tags.includes('prof')) : [];
+    const fam = !famShare() && rand() < FAMOUS_NEWCOMER_CHANCE ? famousAvailable(f => f.age <= 40 || f.tags.includes('prof')) : [];
     if (fam.length) {
       const f = pick(fam);
       const t = makeFamous(f, 'prospect', ri(50, 60) + Math.min(14, Math.max(0, f.age - 14)) * 0.8, 9);
@@ -13412,7 +13429,7 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, renameAny: !!cfg.renameAny, newRegions: cfg.newRegions !== false, pace: [4, 8, 12].includes(cfg.pace) ? cfg.pace : 8, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, famShare: FAM_SHARES.includes(+cfg.famShare) ? +cfg.famShare : cfg.allFamous ? 100 : 0, renameAny: !!cfg.renameAny, newRegions: cfg.newRegions !== false, pace: [4, 8, 12].includes(cfg.pace) ? cfg.pace : 8, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good
@@ -13643,7 +13660,7 @@ function foundingCands() {
   const n = ri(FOUND_STANDOUTS[0], FOUND_STANDOUTS[1]), out = [];
   for (let i = 0; i < FOUND_CANDS; i++) {
     const o = i < n ? ri(FOUND_STANDOUT_OVR[0], FOUND_STANDOUT_OVR[1]) : ri(FOUND_OVR[0], FOUND_OVR[1]);
-    const t = newTrainer({ age: ri(20, 48), quality: o, role: 'free', specialty: rand() < 0.06 ? null : pick(TYPES), noFamous: true });
+    const t = newTrainer({ age: ri(20, 48), quality: o, role: 'free', specialty: rand() < 0.06 ? null : pick(TYPES) });
     setOvr(t, staffQ(o)); fieldTeam(t, 5); out.push(t.id);
   }
   return shuffle(out);
@@ -13769,7 +13786,7 @@ const playerFin = () => (S && handOn() ? inLeague(ME(), () => S.fin) : null);
 function payBase(post, slot) { return post === 'gymtrainer' ? PAY_BASE.gymtrainer : post === 'leader' ? PAY_BASE.leader + PAY_BASE.leaderStep * (slot || 0) : post === 'e4' ? PAY_BASE.e4 + PAY_BASE.e4Step * (slot || 0) : PAY_BASE.champion; }
 function payFor(t, post, slot, o) {
   const v = o != null ? o : ovr(t);
-  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? PAY_FAMOUS : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
+  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? 1 + (PAY_FAMOUS - 1) * famPremium() : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
 }
 function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1) * (t.storeMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
@@ -17318,7 +17335,7 @@ function speedNote(n) {
   const s = speedEst(n), lvl = s > SPEED_RED ? 'red' : s > SPEED_AMBER ? 'amber' : '';
   return `<p class="small speed-est${lvl ? ' ' + lvl : ' muted'}">${lvl ? `<b>${lvl === 'red' ? 'A very big world.' : 'A big world.'}</b> ` : ''}About ${s} second${s === 1 ? '' : 's'} a simulated year on a fast computer (a phone or an older computer may be slower)${lvl ? ', and slower as the world ages. Fewer Leagues play faster.' : '.'}</p>`;
 }
-let setupPage = 'main', setupAdv = { allFamous: false, newRegions: true }, setupBaseOff = false, setupPacks = {}, setupPackOpen = {}, setupOff = {};
+let setupPage = 'main', setupAdv = { newRegions: true }, setupFam = 0, setupBaseOff = false, setupPacks = {}, setupPackOpen = {}, setupOff = {};
 // every section on the Advanced page folds; folded sections show a one-line summary
 let setupFold = {};
 function foldSec(key, title, sub, summary, body, extra = '') {
@@ -17348,10 +17365,11 @@ function viewAdvanced() {
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>Advanced options</h1>
     <p>Optional rules for the new world. These aren't balanced; they're here for fun.</p>
     <div class="confirm-row"><button class="btn small" data-act="advfoldall" data-v="${anyOpen ? 1 : 0}">${anyOpen ? 'Collapse all' : 'Expand all'}</button></div></section>
-    ${foldSec('rules', 'Rules', 'Optional league rules', [setupAdv.allFamous && 'All-famous league on', setupAdv.renameAny && 'Rename rival Leagues on', !setupAdv.newRegions && 'New regions closed'].filter(Boolean).join(' · ') || 'Nothing on', `<div class="adv-list">
+    ${foldSec('rules', 'Rules', 'Optional league rules', [setupFam && (setupFam === 100 ? 'All-famous' : `Famous trainers ${setupFam}%`), setupAdv.renameAny && 'Rename rival Leagues on', !setupAdv.newRegions && 'New regions closed'].filter(Boolean).join(' · ') || 'Nothing on', `<div class="adv-list">
       ${opt('newRegions', 'Leagues can open in new regions', 'On: a founder can open a League in a region that has no League yet, which brings its own field of challengers there. Off: new Leagues open only in regions that already have one. New Leagues never favour your region either way.')}
       ${opt('renameAny', 'Rename rival Leagues', 'Rename any League from the League table during play, not only your own (rival Leagues are always nameable here at setup, under Where rival Leagues start).')}
-      ${opt('allFamous', 'All-famous league', `Every trainer is a famous trainer from the games and anime: Gym Leaders, Elite Four, Champions, rivals and newcomers. Draws from ${famousCount} famous trainers${famousCount ? '' : ' (none are switched on, so the league will use ordinary trainers)'}; once every one has debuted, they come round again as V2 (Kanto Leader Misty V2), then V3, and so on.`)}
+      <div class="adv-opt static"><span class="adv-text"><b>Famous trainers</b><span class="muted small">How many of the trainers the game creates are famous trainers from the games and anime: Gym Leaders, Elite Four, Champions, gym trainers, the founding pool, rivals and newcomers. Normal keeps the usual few (some newcomers and outside hires); 100% is an all-famous world. Gym trainers are famous ones of their leader's type, and famous trainers in the founding pool start at founding strength, like everyone there. The more famous the world, the less being famous counts for pay and prestige. Draws from ${famousCount} famous trainers${famousCount ? '' : ' (none are switched on, so the world will use ordinary trainers)'}; once every one has debuted, they come round again as V2 (Kanto Leader Misty V2), then V3, and so on.</span>
+        <span class="segs setup-segs">${FAM_SHARES.map(n => `<button class="seg${setupFam === n ? ' on' : ''}" data-act="setfam" data-v="${n}" aria-pressed="${setupFam === n}">${n ? n + '%' : 'Normal'}</button>`).join('')}</span></span></div>
     </div>`)}
     ${rivalsSection()}
     ${foldSec('features', 'Game features', 'Everything is on by default. Settings are fixed once the league starts.', offCount ? `${offCount} feature${offCount === 1 ? '' : 's'} off` : 'Everything on', groups + (offCount ? '<div class="confirm-row"><button class="btn small" data-act="featreset">Turn everything back on</button></div>' : ''))}
@@ -17955,7 +17973,7 @@ function viewSetup() {
   if (setupPage === 'custom') return viewCustom();
   if (setupPage === 'import') return viewImport();
   const offNames = FEATURES.flatMap(g => g.items).filter(i => setupOff[i[0]]).map(i => i[1]);
-  const advOn = Object.entries(setupAdv).filter(([k, v]) => k !== 'newRegions' && v).map(([k]) => ({ allFamous: 'All-famous league', renameAny: 'Rename rival Leagues' }[k])).concat(setupAdv.newRegions ? [] : ['No Leagues in new regions']).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []).concat(setupChoices().map(c => `${c.rec.name}: ${useLabel(setupCustom[c.rec.id]).toLowerCase()}`));
+  const advOn = Object.entries(setupAdv).filter(([k, v]) => k !== 'newRegions' && v).map(([k]) => ({ renameAny: 'Rename rival Leagues' }[k])).concat(setupFam ? [setupFam === 100 ? 'All-famous' : `Famous trainers ${setupFam}%`] : []).concat(setupAdv.newRegions ? [] : ['No Leagues in new regions']).concat(setupBaseOff ? ['Pokémon famous trainers off'] : []).concat(Object.keys(setupPacks).filter(k => setupPacks[k] && FAMOUS_PACKS[k]).map(k => FAMOUS_PACKS[k].name)).concat(offNames.length ? [`${offNames.length} feature${offNames.length === 1 ? '' : 's'} off`] : []).concat(dexLib.on && dexHas(dexLib) ? ['My Pokédex'] : []).concat(setupChoices().map(c => `${c.rec.name}: ${useLabel(setupCustom[c.rec.id]).toLowerCase()}`));
   const opt = (act, v, cur, label) => `<button class="seg${cur === v ? ' on' : ''}" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${label}</button>`;
   return `<main class="wrap setup"><section class="panel callout"><div class="eyebrow">New world</div><h1>${GAME_NAME}</h1>
     <p>You run a Pokémon League and try to let nobody through. After you choose a region you place its first staff by hand: a Champion, four Elite Four members and eight Gym Leaders. It is one continuous world with no seasons: ${CIRCUIT_SIZE} challengers set out at the start and more follow every year, each travelling the badge circuit on their own clock, and the League's Gym Leaders, Elite Four and Champion try to stop them.</p>
@@ -20200,6 +20218,12 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 57, ver: '0.57.0', date: 'November 24, 2026', time: '9:15 PM ET', title: 'How famous the world is', items: [
+    "The All-famous league switch is now a Famous trainers setting in Advanced options → Rules: Normal, 25%, 50%, 75% or 100%. Normal keeps the usual few famous trainers; at the other steps that share of every trainer the game creates is famous, and 100% really is everyone.",
+    "Famous trainers can now turn up everywhere the game makes a trainer: gym trainers (always one sharing a type with their leader), the founding pool, stand-ins for empty seats and outsiders, as well as newcomers. Legacy trainers stay ordinary. Before, an all-famous world was only about 40% famous, because none of these were.",
+    "Famous trainers in the founding pool start at founding strength like everyone there, so you still build your League up from modest beginnings. The more famous the world, the less being famous adds to pay and to the prestige a trainer asks of a League (in an all-famous world, nothing).",
+    "Once every famous trainer has debuted they come round again as V2, then V3, at any share, as before.",
+  ] },
   { id: 56, ver: '0.56.0', date: 'November 24, 2026', time: '8:45 PM ET', title: 'Talks results', items: [
     "When talks you were in end, you now always find out how they went. The sim stops (even on Next week), the Talks page opens, and a new Results list at the top says Won or Kept (green), Lost or Left (red), Let go, Walked away, No deal or Closed, with who they signed for and on what terms. New results are marked until you've seen them, and the Talks menu item counts them.",
     "This covers every kind of talks you're in: stars you bid on, your own staff whose contracts ran out, rivals going after your staff (Kept or Left), and talks that close early because the trainer took another post, retired or their League folded.",
@@ -21057,6 +21081,7 @@ document.addEventListener('click', ev => {
     case 'setleagues': setupLeagues = Math.max(1, Math.min(maxStartLeagues(), +el.dataset.v)); render(); break;
     case 'setgrowth': setupGrowth = el.dataset.v === '1'; render(); break;
     case 'setpace': setupPace = +el.dataset.v; render(); break;
+    case 'setfam': setupFam = +el.dataset.v; render(); break;
     case 'setgod': setupGod = el.dataset.v === '1'; render(); break;
     case 'godleague': { const why = godOpenLeague(); save(); render(); toast(why || `The ${leagueName(nLeagues() - 1)} is open.`); break; }
     case 'lgview': viewLg = +el.dataset.v; boardSel = null; render(); break;
@@ -21114,7 +21139,7 @@ document.addEventListener('click', ev => {
     case 'packall': { const on = el.dataset.v === '1'; setupBaseOff = !on; setupPacks = { ...setupPacks, ...Object.fromEntries(Object.keys(FAMOUS_PACKS).filter(k => !FAMOUS_PACKS[k].custom).map(k => [k, on])) }; render(); break; }
     case 'advfold': setupFold[el.dataset.k] = !setupFold[el.dataset.k]; render(); break;
     case 'advfoldall': { const shut = el.dataset.v === '1'; setupFold = Object.fromEntries(['rules', 'features', 'packs', 'mypacks', 'dex', 'images', 'load', ...FEATURES.map(g => 'feat-' + g.group)].map(k => [k, shut])); render(); break; }
-    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), seatRule: setupSeat, posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, newRegions: setupAdv.newRegions, pace: setupPace, region: +el.dataset.v, growth: setupGrowth, god: setupGod, allFamous: setupAdv.allFamous, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
+    case 'newworld': viewLg = 0; newWorld({ hand: true, regions: setupChoices(), leagues: setupLeagues, rivals: setupRivals.slice(0, setupLeagues - 1), names: setupNames.slice(0, setupLeagues), seatRule: setupSeat, posts: [setupPosts].concat(Array.from({ length: setupLeagues - 1 }, (_, i) => setupRivalThemes[i] ? { theme: setupRivalThemes[i] } : null)), renameAny: setupAdv.renameAny, newRegions: setupAdv.newRegions, pace: setupPace, region: +el.dataset.v, growth: setupGrowth, god: setupGod, famShare: setupFam, baseOff: setupBaseOff, packs: Object.keys(setupPacks).filter(k => setupPacks[k]), off: Object.keys(setupOff).filter(k => setupOff[k]) }); setupPage = 'main'; view = 'circuit'; foundSel = { post: 'champion', slot: 0 }; foundShow = 'all'; save(); render(); window.scrollTo(0, 0); break;
     case 'foundsel': foundSel = { post: el.dataset.k, slot: +el.dataset.v }; render(); { const p = $('#found-pool'); if (p) p.scrollIntoView({ block: 'start' }); } break;
     case 'foundshow': foundShow = el.dataset.v; render(); break;
     case 'foundpick': if (foundSel && foundPlace(foundSel.post, foundSel.slot, +el.dataset.id)) { const nx = foundPosts().find(p => p.id == null); foundSel = nx ? { post: nx.post, slot: nx.slot } : null; save(); } render(); break;

@@ -35,6 +35,10 @@ async def run(path):
           if (!document.querySelector('[data-act=setpace][data-v="8"].on')) log.push('FAIL the growth pace does not default to 8');
           click('[data-act=setpace][data-v="12"]'); if (!document.querySelector('[data-act=setpace][data-v="12"].on')) log.push('FAIL could not pick a 12-year pace');
           click('[data-act=setuppage][data-v=advanced]');
+          // (0.57.0) the famous share: Normal by default, the steps pick, and back to Normal for the rest of the test
+          if (!document.querySelector('[data-act=setfam][data-v="0"].on')) log.push('FAIL the famous share does not default to Normal');
+          click('[data-act=setfam][data-v="75"]'); if (!document.querySelector('[data-act=setfam][data-v="75"].on') || document.querySelector('[data-act=setfam][data-v="0"].on')) log.push('FAIL could not pick a 75% famous share');
+          click('[data-act=setfam][data-v="0"]');
           { const nr = () => document.querySelector('[data-act=advtoggle][data-k=newRegions]'); if (!nr() || nr().getAttribute('aria-checked') !== 'true') log.push('FAIL Leagues can open in new regions is not on by default');
             else { click('[data-act=advtoggle][data-k=newRegions]'); if (nr().getAttribute('aria-checked') !== 'false') log.push('FAIL new regions did not switch off'); click('[data-act=advtoggle][data-k=newRegions]'); } }
           click('[data-act=setuppage][data-v=main]');

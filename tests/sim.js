@@ -3,8 +3,10 @@
 const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'));
 // HAND (0.6.0): League 0 is founded by hand (best available), staff are made to leave, and vacancies wait with acting
 // holders until they are filled
-const [L, G, N, GOD, HAND] = process.argv.slice(2).map(Number);
-g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND });
+// FAM (0.57.0): a sixth argument sets the famous share (0, 25, 50, 75 or 100)
+const [L, G, N, GOD, HAND, FAM] = process.argv.slice(2).map(Number);
+g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND, famShare: FAM || 0 });
+if (g.S.cfg.famShare !== (FAM || 0)) { console.log('FAIL the famous share was not kept: ' + g.S.cfg.famShare); process.exit(1); }
 // (0.30.0) the world's regions are in the save: nine built-in records, neighbours two-way, every legendary home and port
 // kept; and where Leagues start (startRegions): picks honoured within room, your region only by a pick or a full world
 { const S0 = g.S, R = S0.regions, nb = g.NEIGHBOURS, fail = m => { console.log('FAIL ' + m); process.exit(1); };
@@ -828,7 +830,16 @@ console.log('prestige gating', 'senior OVR at founding', PG.start.join('/'), 'fa
 g.eachLeague(i => { const blocked = g.challengers().filter(t => t && !g.willSign(t)); for (const t of blocked.slice(0, 5)) if (g.acceptsOffer(t, 'leader')) { console.log('FAIL a blocked trainer accepted an offer'); process.exitCode = 1; }
   if (i !== g.ME()) { const c = g.rivalHire(0, [], 'leader'); if (c && !g.willSign(c)) { console.log('FAIL rival hiring picked a blocked trainer'); process.exitCode = 1; } if (c) c.bidMul = null; PG.blocked = (PG.blocked || 0) + blocked.length; } });
 console.log('prestige gating', 'blocked on rival circuits', PG.blocked || 0, 'blocked offers tried by hand', PGH.blocked);
-if (PG.famous) { console.log('FAIL a famous trainer on a founding staff'); process.exitCode = 1; }
+if (PG.famous && !FAM) { console.log('FAIL a famous trainer on a founding staff'); process.exitCode = 1; }
+// (0.57.0) the famous share: the share of active trainers who are famous, by role; a famous gym trainer shares a type
+// with their leader (the wall checks already cover every gym trainer); at 100% nearly everyone is famous
+{ const all = Object.values(S().trainers).filter(t => t.role !== 'retired'), by = {};
+  for (const t of all) { const b = by[t.role] = by[t.role] || [0, 0]; b[1]++; if (t.famous) b[0]++; }
+  const share = all.filter(t => t.famous).length / Math.max(1, all.length);
+  console.log('famous share', FAM || 0, 'famous', Math.round(share * 100) + '%', 'gen', S().famousGen || 1, Object.entries(by).map(([k, b]) => k + ' ' + b[0] + '/' + b[1]).join(' '));
+  if (!FAM && share > 0.35) { console.log('FAIL too many famous trainers at the normal share: ' + share.toFixed(2)); process.exitCode = 1; }
+  if (FAM >= 100 && share < 0.85) { console.log('FAIL an all-famous world is only ' + Math.round(share * 100) + '% famous'); process.exitCode = 1; }
+  if (FAM && FAM < 100 && Math.abs(share - FAM / 100) > 0.25) { console.log('FAIL a ' + FAM + '% world is ' + Math.round(share * 100) + '% famous'); process.exitCode = 1; } }
 if (PG.start.some(x => x > 64)) { console.log('FAIL a founding staff far above the founding pool'); process.exitCode = 1; }
 // (0.24.0) growth: every trainer knows when their career began, potential never below OVR, and OVR by age band
 { let bad = 0; const band = {}; for (const t of Object.values(S().trainers)) { if (t.start == null || t.start > t.age || t.pot < g.ovr(t)) bad++;

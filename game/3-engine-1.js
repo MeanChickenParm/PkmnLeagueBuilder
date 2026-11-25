@@ -633,7 +633,15 @@ function rollTrait() { return rand() < TRAIT_CHANCE ? pick(Object.keys(TRAITS)) 
 // trainers from older saves get a trait the first time it's needed
 function traitOf(t) { if (!t) return null; if (t.trait === undefined) t.trait = (t.famous && FAMOUS_TRAITS[famBase(t)]) || rollTrait(); return t.trait; }
 const hasTrait = (t, k) => traitOf(t) === k;
-function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false }) {
+// (0.57.0) the famous share (Advanced → Rules): 0 keeps the normal chances (a few famous newcomers and outside hires);
+// 25 to 100 makes that share of every trainer the game creates a famous trainer (gym trainers, the founding pool,
+// stand-ins and outsiders too; only legacy trainers, a famous trainer's child, are never famous). FAM_SHARES are the steps.
+const FAM_SHARES = [0, 25, 50, 75, 100];
+const famShare = () => (S.cfg && S.cfg.famShare) || 0;
+const famRoll = () => famShare() >= 100 || (famShare() > 0 && rand() < famShare() / 100);
+// how much being famous still counts for pay and prestige: in full against ordinary trainers, not at all when everyone is
+const famPremium = () => 1 - famShare() / 100;
+function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null }) {
   const id = S.nextId++;
   const r = {};
   for (const k of RK) r[k] = clamp(Math.round(quality + (rand() - 0.5) * 34), 8, 96);
@@ -644,13 +652,15 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     seasonHist: [], joined: S.season,
   };
   assignClass(t, age, true);
-  // advanced option: every trainer the game creates is a famous trainer, while any are free
-  const f = S.cfg && S.cfg.allFamous && !noFamous ? chooseFamous(role, t.specialty) : null;
+  // (0.57.0) the famous share: this trainer is a famous one, while any are free (famNeed: types one must share, for a gym)
+  const f = !noFamous && famRoll() ? chooseFamous(role, t.specialty, famNeed) : null;
   if (f) {
     const ver = chooseFamous.ver || 1;
     t.name = famName(f, ver); t.famKey = f.name; if (ver > 1) t.famVer = ver;
     t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
     if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; t.spec2 = f.spec2 || null; }
+    // (0.57.0) a famous gym trainer keeps only the types they share with their leader
+    if (famNeed && famNeed.length) { const ty = [f.spec, f.spec2].filter(x => x && famNeed.includes(x)); t.specialty = ty[0]; t.spec2 = ty[1] || null; }
     S.famousUsed.push(t.name);
   }
   t.trait = (t.famous && (f && f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[famBase(t)])) || rollTrait();
@@ -660,21 +670,25 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
   S.trainers[id] = t;
   return t;
 }
-// v176: in an all-famous league, once every famous trainer has debuted the whole roster comes round again as V2
+// v176: in an all-famous league (0.57.0: at any famous share), once every famous trainer has debuted the whole roster comes round again as V2
 // (Kanto Leader Misty V2), then V3 and so on, rather than falling back to generated trainers. Each version is its own
 // trainer with its own record; a name is never reused.
 const famName = (f, ver) => ver > 1 ? `${f.name} V${ver}` : f.name;
 const famBase = t => t.famKey || t.name;
 // pick a free famous trainer for a role, preferring a fitting title and type
-function chooseFamous(role, spec) {
+function chooseFamous(role, spec, need = null) {
   ensureCustom();
   S.famousUsed = S.famousUsed || [];
   S.famousGen = S.famousGen || 1;
-  const freeAt = ver => FAMOUS.filter(f => famousOn(f) && !S.famousUsed.includes(famName(f, ver)) && famousNameFree({ name: famName(f, ver), cls: f.cls }));
+  // (0.57.0) need: a gym trainer (or a gym's outsider) must share a type with the leader, so only famous trainers of
+  // one of those types will do; none free means an ordinary trainer, and such a pick never opens a new round on its own
+  const fits = need && need.length ? f => [f.spec, f.spec2].some(x => x && need.includes(x)) : () => true;
+  const freeAt = (ver, all) => FAMOUS.filter(f => famousOn(f) && (all || fits(f)) && !S.famousUsed.includes(famName(f, ver)) && famousNameFree({ name: famName(f, ver), cls: f.cls }));
   // fill the earliest round with a free name first: a newcomer who found no place frees their name up again
   let ver = 1, free = freeAt(1);
   while (!free.length && ver < S.famousGen) free = freeAt(++ver);
-  while (!free.length && S.famousGen < 99 && FAMOUS.some(famousOn)) { ver = ++S.famousGen; free = freeAt(ver); if (free.length) news(`Every famous trainer has now debuted. From here on they return as V${ver}: new trainers carrying a famous name and style, each with a record of their own.`, 'league'); }
+  const anyFree = () => { for (let v = 1; v <= S.famousGen; v++) if (freeAt(v, true).length) return true; return false; };
+  if (!free.length && !anyFree() && S.famousGen < 99 && FAMOUS.some(famousOn)) { ver = ++S.famousGen; free = freeAt(ver); news(`Every famous trainer has now debuted. From here on they return as V${ver}: new trainers carrying a famous name and style, each with a record of their own.`, 'league'); }
   if (!free.length) return null;
   chooseFamous.ver = ver;
   // a V2 waits for the earlier version to retire where it can, so there's rarely two Mistys on the circuit at once
@@ -1000,7 +1014,7 @@ function fillGymTrainer(i, k, L) {
   const r = hireRetirees(x => gymFits(x, L) && !(x.letGoAt != null && S.turn - x.letGoAt < YEAR_WEEKS)).sort((x, y) => ovr(y) - ovr(x))[0];
   if (r) { unretire(r); takeGymTrainer(r, i, k, `${dn(r)} came out of retirement to become a gym trainer at ${townName(i)} Gym.`); return; }
   const ty = specTypes(L);
-  const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  const t = newTrainer({ age: ri(16, 34), quality: staffQ(42 + i * 2), role: 'gymtrainer', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), famNeed: ty });
   t.lg = S.lg || 0;
   g.trainers[k] = t.id;
   openPost(t, 'gymtrainer');

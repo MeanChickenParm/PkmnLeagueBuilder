@@ -1490,7 +1490,7 @@ function depthName(d) { return d <= 8 ? `${d} badge${d === 1 ? '' : 's'}` : d <=
 // a new Elite Four member from outside the circuit (sometimes a famous trainer)
 function outsiderE4(i) {
   const q = capQ(66); // (0.23.0) no stronger than the League's prestige can attract
-  const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
+  const fam = !famShare() && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && f.age >= 18 && (/Elite Four|Kahuna|Master/.test(f.cls) || f.tags.includes('brain')) && !S.e4.some((x, j) => j !== i && x && T(x) && T(x).specialty === f.spec)) : [];
   const nt = fam.length ? makeFamous(pick(fam), 'e4', staffQ(q), E4_LV[i]) : newTrainer({ age: ri(30, 45), quality: staffQ(q), role: 'e4' });
   installElite(nt, 'e4', i);
   return nt;
@@ -2091,7 +2091,8 @@ function steerSwap(t, slot, s) {
   if (s === 'keep') {
     // a famous trainer works one signature Pokémon back in, in place of the weakest Pokémon that isn't one
     const sig = signatureLines(t); if (!sig) return;
-    const missing = signaturePicks(t.famousTeam).find(sp => SP[sp] && !t.team.some(m => LINE[m.sp] === LINE[sp]) && !bannedIn(sp, S.lg || 0));
+    // (0.57.0) a gym trainer only works back in a signature Pokémon of their own type (famous gym trainers are common now)
+    const missing = signaturePicks(t.famousTeam).find(sp => SP[sp] && !t.team.some(m => LINE[m.sp] === LINE[sp]) && !bannedIn(sp, S.lg || 0) && !(t.role === 'gymtrainer' && t.specialty && !specFit(t, formAt(sp, slot.lvl, t.specialty))));
     const drop = t.team.filter(m => !sig.has(LINE[m.sp]) && !isSpecial(m)).sort((a, b) => SP[a.sp].bst - SP[b.sp].bst)[0];
     if (missing && drop) swapMon(t, drop, stamp(makeMon(missing, slot.lvl, t.specialty), 'starter'), 'swapped out for a signature Pokémon');
     return;
@@ -2288,13 +2289,13 @@ function actingLeader(i) {
   const g = S.gyms[i], ts = (g.trainers || []).map(T).filter(Boolean).sort((a, b) => ovr(b) - ovr(a));
   let a = ts[0];
   if (a) { g.trainers[g.trainers.indexOf(a.id)] = null; closePost(a); a.role = 'leader'; g.leader = a.id; openPost(a, 'leader'); relevelElite(a); }
-  else { a = newTrainer({ age: ri(26, 44), quality: staffQ(48 + i * 2), role: 'leader', noFamous: true }); installElite(a, 'leader', i); }
+  else { a = newTrainer({ age: ri(26, 44), quality: staffQ(48 + i * 2), role: 'leader' }); installElite(a, 'leader', i); }
   a.acting = true; g.acting = true;
   staffGym(i); // a gym that had only one gym trainer left (an acting leader stepping down) takes one on (0.7.0)
   return a;
 }
 function actingE4(i) {
-  const a = newTrainer({ age: ri(30, 50), quality: staffQ(64 + i), role: 'e4', noFamous: true });
+  const a = newTrainer({ age: ri(30, 50), quality: staffQ(64 + i), role: 'e4' });
   a.acting = true; installElite(a, 'e4', i);
   return a;
 }
@@ -2308,7 +2309,7 @@ function openVacancy(post, slot) {
   const q = capQ(post === 'leader' ? 52 + slot * 2 : 66) + (playerLeague() ? 2 * scoutLv() : 0);
   const outsiders = [];
   for (let k = 0; k < VACANCY_OUTSIDERS + (playerLeague() ? scoutLv() : 0); k++) {
-    const fam = famousOk(q) && rand() < FAMOUS_POST_CHANCE && !(S.cfg && S.cfg.allFamous) ? famousAvailable(f => f.age >= 18) : [];
+    const fam = famousOk(q) && rand() < FAMOUS_POST_CHANCE && !famShare() ? famousAvailable(f => f.age >= 18) : [];
     const t = fam.length ? makeFamous(pick(fam), 'prospect', staffQ(q), 30) : newTrainer({ age: ri(24, 46), quality: staffQ(q), role: 'prospect', specialty: rand() < 0.06 ? null : pick(TYPES) });
     if (!fam.length) fieldTeam(t, 5);
     t.outsider = true; outsiders.push(t.id);
@@ -2630,7 +2631,7 @@ function hungry(t) {
 function prestMin(t, lg) {
   if (!t || !t.r) return 0;
   if (lg == null) lg = S.lg || 0;
-  let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS : 0);
+  let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS * famPremium() : 0);
   if (hungry(t)) m *= PM_HUNGRY * (1 - SEAT_HUNGRY * seatOpen(lg)); // (0.43.0) a seat they could win
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
   const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
@@ -2761,7 +2762,7 @@ function gymOutsiders(i) {
     g.outs = (g.outs || []).filter(x => T(x) && T(x).role === 'prospect');
     const ty = specTypes(L);
     while (g.outs.length < GT_OUTSIDERS + scoutLv()) {
-      const t = newTrainer({ age: ri(18, 34), quality: staffQ(capQ(46 + i * 2) + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+      const t = newTrainer({ age: ri(18, 34), quality: staffQ(capQ(46 + i * 2) + 2 * scoutLv()), role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), famNeed: ty });
       fieldTeam(t, 4); t.outsider = true; g.outs.push(t.id);
     }
     return g.outs.slice();
@@ -2910,7 +2911,7 @@ function fillGym(i, changes) {
   } else {
     // sometimes the outsider is a famous trainer of the right type
     const q = capQ(52 + i * 2); // (0.23.0) no stronger than the League's prestige can attract
-    const fam = !(S.cfg && S.cfg.allFamous) && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
+    const fam = !famShare() && famousOk(q) && rand() < FAMOUS_POST_CHANCE ? famousAvailable(f => f.spec && (/Leader|Kahuna|Captain|Elite Four/.test(f.cls) || f.tags.includes('brain')) && f.age >= 14) : [];
     nl = fam.length ? makeFamous(pick(fam), 'leader', staffQ(q), GYM_LV[GYM_TOP]) : newTrainer({ age: ri(26, 44), quality: staffQ(q), role: 'leader' });
     changes.push(`Outsider ${nl.name} was appointed leader of ${townName(i)} Gym (${typeLabel(nl)}).`);
     installElite(nl, 'leader', i);

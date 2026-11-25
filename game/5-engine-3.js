@@ -842,7 +842,7 @@ function checkCustom(d, target, editing = null) {
   const dupe = customLib.filter(p => p.key === target).flatMap(p => p.trainers.map((f, i) => ({ p, f, i }))).find(x => !(editing && x.p.key === editing.key && x.i === editing.i) && x.f.name.toLowerCase() === name.toLowerCase());
   if (!name) errs.push('Give them a name.'); else if (name.length > 30) errs.push('Names can be up to 30 characters.');
   else if (dupe) errs.push(`${dupe.p.name} already has a trainer called ${dupe.f.name}.`);
-  else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds in all-famous leagues.');
+  else if (/ V\d+$/.test(name)) errs.push('Names can\'t end in V2, V3 and so on: those mark repeat rounds of famous trainers.');
   if (!cls) errs.push('Give them a title, like Gym Leader or Movie Star.'); else if (cls.length > 30) errs.push('Titles can be up to 30 characters.');
   if (!(age >= 8 && age <= 90)) errs.push('Age must be between 8 and 90.');
   const g = ['m', 'f', 'n'].includes(d.g) ? d.g : 'm';
@@ -956,7 +956,7 @@ function makeNewcomers(n) {
     const q = ri(28, 52) + Math.min(14, Math.max(0, age - 14)) * 0.8 + (rand() < 0.15 ? ri(6, 14) : 0);
     const ctrs = metaCounters();
     const spec = featOn('meta') && ctrs.length && rand() < 0.3 ? pick(ctrs) : null;
-    const fam = !(S.cfg && S.cfg.allFamous) && rand() < FAMOUS_NEWCOMER_CHANCE ? famousAvailable(f => f.age <= 40 || f.tags.includes('prof')) : [];
+    const fam = !famShare() && rand() < FAMOUS_NEWCOMER_CHANCE ? famousAvailable(f => f.age <= 40 || f.tags.includes('prof')) : [];
     if (fam.length) {
       const f = pick(fam);
       const t = makeFamous(f, 'prospect', ri(50, 60) + Math.min(14, Math.max(0, f.age - 14)) * 0.8, 9);
@@ -1269,7 +1269,7 @@ function startWorld() {
 function newWorld(cfg = {}) {
   S = { version: SAVE_VERSION, season: 0, week: 0, turn: 0, phase: 'season', trainers: {}, nextId: 1, nextUid: 1, usedNames: {}, famousUsed: [], dex: {}, dexSeason: {}, gyms: [], e4: [], champion: null, challengers: [], freeAgents: [], news: [], history: [], hof: [], stats: { ko: {}, use: {} }, meta: null, cities: {}, nextCity: 0 };
   customFor = undefined; useCustom(customLib);
-  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, allFamous: !!cfg.allFamous, renameAny: !!cfg.renameAny, newRegions: cfg.newRegions !== false, pace: [4, 8, 12].includes(cfg.pace) ? cfg.pace : 8, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
+  S.cfg = { leagues: Number.isInteger(cfg.leagues) && cfg.leagues >= 1 ? cfg.leagues : 1, growth: !!cfg.growth, god: !!cfg.god, famShare: FAM_SHARES.includes(+cfg.famShare) ? +cfg.famShare : cfg.allFamous ? 100 : 0, renameAny: !!cfg.renameAny, newRegions: cfg.newRegions !== false, pace: [4, 8, 12].includes(cfg.pace) ? cfg.pace : 8, baseOff: !!cfg.baseOff, packs: (cfg.packs || []).filter(k => FAMOUS_PACKS[k]), off: Object.fromEntries((cfg.off || []).filter(k => FEATURES.some(g => g.items.some(i => i[0] === k))).map(k => [k, true])) };
   // the wall report only: every staff member the game creates is this many rating points better or worse
   if (typeof cfg.staffBoost === 'number') S.cfg.staffBoost = cfg.staffBoost;
   // v185: the league's Pokédex is fixed now, for good
@@ -1500,7 +1500,7 @@ function foundingCands() {
   const n = ri(FOUND_STANDOUTS[0], FOUND_STANDOUTS[1]), out = [];
   for (let i = 0; i < FOUND_CANDS; i++) {
     const o = i < n ? ri(FOUND_STANDOUT_OVR[0], FOUND_STANDOUT_OVR[1]) : ri(FOUND_OVR[0], FOUND_OVR[1]);
-    const t = newTrainer({ age: ri(20, 48), quality: o, role: 'free', specialty: rand() < 0.06 ? null : pick(TYPES), noFamous: true });
+    const t = newTrainer({ age: ri(20, 48), quality: o, role: 'free', specialty: rand() < 0.06 ? null : pick(TYPES) });
     setOvr(t, staffQ(o)); fieldTeam(t, 5); out.push(t.id);
   }
   return shuffle(out);
@@ -1626,7 +1626,7 @@ const playerFin = () => (S && handOn() ? inLeague(ME(), () => S.fin) : null);
 function payBase(post, slot) { return post === 'gymtrainer' ? PAY_BASE.gymtrainer : post === 'leader' ? PAY_BASE.leader + PAY_BASE.leaderStep * (slot || 0) : post === 'e4' ? PAY_BASE.e4 + PAY_BASE.e4Step * (slot || 0) : PAY_BASE.champion; }
 function payFor(t, post, slot, o) {
   const v = o != null ? o : ovr(t);
-  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? PAY_FAMOUS : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
+  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? 1 + (PAY_FAMOUS - 1) * famPremium() : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
 }
 function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1) * (t.storeMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
