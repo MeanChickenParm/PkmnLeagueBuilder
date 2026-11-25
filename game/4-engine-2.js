@@ -2183,7 +2183,9 @@ function growAges(t) {
   return { peak, decline };
 }
 const talent = t => GROW_TALENT[0] + (((t.id * 40503) >>> 0) % 101) / 100 * (GROW_TALENT[1] - GROW_TALENT[0]);
-const stepAt = (tbl, age) => tbl.find(([a]) => age <= a)[1];
+// (0.61.0) past the table's last age (a trainer of 100+, e.g. Opal or an old custom trainer kept on staff) the last
+// row holds; it used to crash the birthday ("tbl.find(...) is undefined")
+const stepAt = (tbl, age) => (tbl.find(([a]) => age <= a) || tbl[tbl.length - 1])[1];
 // whose Training speeds t's growth
 function coachOf(t) {
   if (!STAFF_ROLES.includes(t.role)) return t;
