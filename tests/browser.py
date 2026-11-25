@@ -280,7 +280,10 @@ async def run(path):
                         set(k.id, 'post', 'e4:' + vac); set(k.id, 'bid', 0.75); set(k.id, 'bonus', 24); set(k.id, 'prom', 'nodemote'); click('[data-act=talkoffer][data-k="' + k.id + '"]');
                         k.offers = k.offers.filter(x => x.lg === 0); k.until = S.turn; c.age = 40; const m0 = S.fin.money, bonus = inLeague(0, () => talkBonus(c, k.offers[0])), old = T(S.e4[vac]);
                         talksWeek(); if (talkList().includes(k) || c.talk != null) log.push('FAIL the talks did not end at the deadline');
-                        else if (c.role === 'e4' && S.e4[vac] === c.id) { if (S.fin.money > m0 - bonus || !promOn(c, 'nodemote', 0) || (old && old.role === 'e4' && S.e4.includes(old.id))) log.push('FAIL signing after talks: bonus, promise or the old holder'); else log.push('signed after talks'); }
+                        else if (c.role === 'e4' && S.e4[vac] === c.id) { if (S.fin.money > m0 - bonus || !promOn(c, 'nodemote', 0) || (old && old.role === 'e4' && S.e4.includes(old.id))) log.push('FAIL signing after talks: bonus, promise or the old holder'); else log.push('signed after talks');
+                          // 0.56.0: the result is recorded and shown on the Talks page (Won, marked new, then seen)
+                          const r = (S.talkDone || [])[0]; if (!r || r.id !== k.id || r.res !== 'won' || r.seen) log.push('FAIL no Won result after signing in talks');
+                          else { go('talks'); const li = m().querySelector('.talkreslist li.won'); if (!li || !/Won/.test(li.textContent) || !r.seen || /undefined|NaN/.test(li.textContent)) log.push('FAIL the Talks page does not show the Won result'); else log.push('talks result shown'); } }
                         else log.push('talks ended without signing (' + c.role + ')'); } }
                     if (nLeagues() > 1) { const L = inLeague(0, () => S.gyms.map(g => T(g.leader)).reverse().find(t => t && !t.acting && canTalk(t))); // the last gyms: later steps use gym 1
                       const kp = L && inLeague(0, () => openTalks(L, 'poach', 0));
@@ -288,7 +291,7 @@ async def run(path):
                         if (err) { closeTalk(kp); log.push('retention skipped: ' + err); }
                         else { go('talks'); if (!m().querySelector('[data-act=talklet][data-id="' + L.id + '"]')) log.push('FAIL no Let them go button');
                           const t0 = (S.fin.yr && S.fin.yr.in.transfers) || 0; click('[data-act=talklet][data-id="' + L.id + '"]');
-                          if (homeLeague(L) !== 1 || L.role !== 'e4' || !(((S.fin.yr && S.fin.yr.in.transfers) || 0) > t0)) log.push('FAIL letting a Gym Leader go to a rival in talks'); else log.push('retention let go');
+                          if (homeLeague(L) !== 1 || L.role !== 'e4' || !(((S.fin.yr && S.fin.yr.in.transfers) || 0) > t0)) log.push('FAIL letting a Gym Leader go to a rival in talks'); else if (!(S.talkDone || []).some(x => x.tid === L.id && x.res === 'released')) log.push('FAIL no Let go result'); else log.push('retention let go');
                           inLeague(0, fillAllVacancies); } } }
                     go('staff'); }
                   // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books

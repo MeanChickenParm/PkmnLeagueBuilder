@@ -58,7 +58,8 @@ const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first se
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 const ctrlStats = { cities: 0, tiers: [0, 0, 0, 0], renown: 0, slice: 0, homed: 0 }; // (0.40.0)
 const fieldStats = { rebuildWeeks: 0, crowdMax: 0, regionMax: 0, minShare: 1, loyal: 0 }; // (0.41.0)
-const TALKS = { weeks: 0, most: 0, maxOffers: 0, hand: 0, handErr: 0, refused: 0, cap: 0, red: 0, matched: 0, letGo: 0, bonusOk: 0, withdrawn: 0, fromHire: 0, promised: 0 };
+const TALK_MINE = { me: null, ids: [] }; // (0.56.0)
+const TALKS = { results: 0, weeks: 0, most: 0, maxOffers: 0, hand: 0, handErr: 0, refused: 0, cap: 0, red: 0, matched: 0, letGo: 0, bonusOk: 0, withdrawn: 0, fromHire: 0, promised: 0 };
 function check(tag) {
   { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
@@ -382,6 +383,12 @@ function check(tag) {
     for (let i = 0; i < g.nLeagues(); i++) { const n = (s.talks || []).filter(k => k.home !== i && k.offers.some(o => o.lg === i)).length; if (n > g.TALK_MAX) bad('a League in too many talks: ' + n); }
     for (const t of Object.values(s.trainers)) if (t.talk != null && !(s.talks || []).some(k => k.id === t.talk)) bad('a trainer in talks that are over: ' + t.name);
     if ((s.talks || []).length > TALKS.most) TALKS.most = s.talks.length;
+    // (0.56.0) talks you were in that closed since last week left a result; results well-formed and capped
+    const done = s.talkDone || [];
+    if (done.length > g.TALK_DONE_KEEP) bad('too many talks results kept');
+    for (const x of done) { if (!g.TALK_RES[x.res] || typeof x.text !== 'string' || !x.text || x.at > s.turn) bad('a strange talks result'); if (!g.handOn()) bad('a talks result in a world with no player'); }
+    if (TALK_MINE.me === g.ME() && !s.founding) for (const id of TALK_MINE.ids) if (!(s.talks || []).some(k => k.id === id)) { TALKS.results++; if (!done.some(x => x.id === id)) bad('talks you were in closed with no result: ' + id); }
+    TALK_MINE.me = s.founding ? null : g.ME(); TALK_MINE.ids = (s.talks || []).filter(k => g.talkMine(k)).map(k => k.id);
   }
   // a save must survive a round trip
   if (tag.startsWith('s')) { const copy = JSON.parse(JSON.stringify(s)); if (Object.keys(copy.trainers).length !== Object.keys(s.trainers).length) bad('save round trip'); }
@@ -802,6 +809,7 @@ console.log('hall and memory', 'Hall entries', (S().hof || []).length, 'Hall of 
 console.log('conditions', JSON.stringify(CON));
 console.log('contracts', JSON.stringify(CTR), JSON.stringify(g.CON_LOG));
 console.log('talks', JSON.stringify(TALKS), JSON.stringify(g.TALK_LOG));
+console.log('talks results', JSON.stringify(g.TALK_DONE_LOG));
 console.log('talks by aim', JSON.stringify(g.TALK_AIM_LOG), 'tempers', JSON.stringify(Array.from({ length: g.nLeagues() }, (_, i) => g.inLeague(i, () => S().fin ? (S().fin.aim || 'you') + ':' + S().fin.temper : '-'))));
 console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));

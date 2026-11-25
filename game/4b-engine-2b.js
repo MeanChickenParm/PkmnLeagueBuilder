@@ -1248,6 +1248,26 @@ function champUpTalks(t) {
 }
 // ---- the week ----
 function closeTalk(k) { const t = T(k.tid); if (t && t.talk === k.id) t.talk = null; S.talks = talkList().filter(x => x !== k); }
+// (0.56.0) how talks you were in came out, kept for the Talks page's Results (world field S.talkDone, newest first,
+// TALK_DONE_KEEP). Each result is news in your League that leads with the outcome, and a 'talks' stop.
+const TALK_RES = { won: 'Won', kept: 'Kept', lost: 'Lost', left: 'Left', released: 'Let go', walked: 'Walked away', nodeal: 'No deal', closed: 'Closed' };
+const TALK_RES_GOOD = ['won', 'kept'], TALK_RES_BAD = ['lost', 'left'];
+const TALK_DONE_KEEP = 12;
+const TALK_DONE_LOG = { won: 0, kept: 0, lost: 0, left: 0, released: 0, walked: 0, nodeal: 0, closed: 0 };
+// were you in these talks: an offer of yours, or one of your staff?
+const talkMine = k => handOn() && (k.home === ME() || k.mine === ME() || k.offers.some(o => o.lg === ME())); // k.mine: you had an offer in (it may have fallen through)
+function talkDone(k, res, text, to) {
+  if (!talkMine(k) || !TALK_RES[res]) return;
+  const t = T(k.tid), my = k.offers.find(o => o.lg === ME());
+  (S.talkDone = S.talkDone || []).unshift({ id: k.id, tid: k.tid, name: t ? t.name : '', kind: k.kind, res, text, to: to == null ? null : to, at: S.turn, mine: my ? offerWords(my) : null, seen: false });
+  if (S.talkDone.length > TALK_DONE_KEEP) S.talkDone.length = TALK_DONE_KEEP;
+  TALK_DONE_LOG[res]++;
+  const msg = `Talks ${TALK_RES[res].toLowerCase()}: ${text}`;
+  inLeague(ME(), () => { news(msg, 'move', k.tid); stopFor('talks', msg); });
+}
+// talks closed before their deadline (the trainer took another post, retired, or their League folded)
+function talkGone(k, why) { closeTalk(k); talkDone(k, 'closed', why); }
+const talkUnseen = () => (S.talkDone || []).filter(x => !x.seen).length;
 // is the trainer still where the talks found them?
 function talkValid(k) {
   const t = T(k.tid); if (!t) return false;
@@ -1257,8 +1277,9 @@ function talkValid(k) {
 }
 function talksWeek() {
   for (const k of talkList().slice()) {
-    if (!talkValid(k)) { const t = T(k.tid); TALK_LOG.gone++; closeTalk(k); if (k.kind === 'expiry' && t && STAFF_ROLES.includes(t.role) && t.con && S.turn >= t.con.until && t.stepDown == null && !t.quit) inLeague(homeLeague(t), () => { if (postOf(t)) conEnd(t); }); continue; }
+    if (!talkValid(k)) { const t = T(k.tid); TALK_LOG.gone++; closeTalk(k); talkDone(k, 'closed', `${t ? t.name : 'The trainer'} took a post, retired or left before the deadline.`); if (k.kind === 'expiry' && t && STAFF_ROLES.includes(t.role) && t.con && S.turn >= t.con.until && t.stepDown == null && !t.quit) inLeague(homeLeague(t), () => { if (postOf(t)) conEnd(t); }); continue; }
     k.offers = k.offers.filter(o => o.lg >= 0 && o.lg < nLeagues());
+    if (handOn() && k.offers.some(o => o.lg === ME())) k.mine = ME(); // (0.56.0)
     for (const o of k.offers.slice()) if (inLeague(o.lg, () => S.fin && S.fin.money < 0)) { k.offers.splice(k.offers.indexOf(o), 1); TALK_LOG.broke++; } // in the red: the offer falls through
     if (k.kind === 'poach') aiRetain(k);
     for (const lg of shuffle(Array.from({ length: nLeagues() }, (_, i) => i))) aiTalkMove(k, lg);
@@ -1273,14 +1294,22 @@ function settleTalk(k) {
   const t = T(k.tid), r = talkRank(k), need = talkNeed(t, k), win = r.find(x => x.v >= need && inLeague(x.o.lg, () => !S.fin || S.fin.money >= talkBonus(t, x.o)));
   closeTalk(k);
   if (k.kind === 'star') { TALK_AIM_LOG.starTalks++; TALK_AIM_LOG.starRival[Math.min(3, k.offers.filter(o => !(handOn() && o.lg === ME())).length)]++; for (const w of Object.values(k.miss || {})) TALK_AIM_LOG.miss[w]++; }
-  const tell = (lg, msg) => inLeague(lg, () => { news(msg, 'move', t.id); noteChange(msg); });
+  // (0.56.0) news in your League about talks you were in comes from talkDone, outcome first
+  const mineK = talkMine(k), tell = (lg, msg) => inLeague(lg, () => { if (!(mineK && lg === ME())) news(msg, 'move', t.id); noteChange(msg); });
+  const mineO = k.offers.find(o => o.lg === ME()), why = mineO ? ` Your offer was ${offerWords(mineO)}.` : '';
   if (!win) {
     const walked = k.offers.length && rand() < TALK_WALK;
     if (walked) { t.walkAt = S.turn; TALK_LOG.walked++; } else TALK_LOG.none++;
-    if (k.kind === 'expiry') { inLeague(k.home, () => conEnd(t)); return 'ended'; }
-    if (k.kind === 'champ') { inLeague(k.home, () => staffQuits(t)); return 'ended'; } // the old way: to a bigger League's circuit
-    if (walked) { const msg = `${dn(t)} walked away from talks: no offer was what they wanted.`; tell(k.home != null ? k.home : lgOf(t), msg); if (k.offers.some(o => o.lg === ME()) && handOn() && k.home !== ME()) tell(ME(), msg); }
-    else if (k.kind === 'poach' && k.home === ME() && handOn()) tell(ME(), `${dn(t)} stays: no offer was enough to take them from your League.`);
+    if (k.kind === 'expiry' || k.kind === 'champ') {
+      const was = inLeague(k.home, () => postName(t));
+      if (k.kind === 'expiry') inLeague(k.home, () => conEnd(t)); else inLeague(k.home, () => staffQuits(t)); // the champ: the old way, to a bigger League's circuit
+      if (k.home === ME()) talkDone(k, 'left', `no deal for ${t.name}: no offer was enough, so they leave ${was}.${why}`);
+      else talkDone(k, walked ? 'walked' : 'nodeal', `${t.name} ${walked ? 'walked away from every offer' : 'took no offer'}.${why}`);
+      return 'ended';
+    }
+    if (walked) tell(k.home != null ? k.home : lgOf(t), `${dn(t)} walked away from talks: no offer was what they wanted.`);
+    if (k.kind === 'poach' && k.home === ME()) talkDone(k, 'kept', `${t.name} stays as your ${inLeague(ME(), () => postName(t))}: no offer was enough to take them.`);
+    else talkDone(k, walked ? 'walked' : 'nodeal', `${t.name} ${walked ? 'walked away from every offer' : 'took no offer and stays on the circuit'}: none was what they wanted.${why}`);
     return walked ? 'walked' : 'none';
   }
   const o = win.o, n = k.offers.length;
@@ -1293,8 +1322,11 @@ function settleTalk(k) {
       const b = talkBonus(t, o); if (b) book(-b, 'signing', `Signing bonus: ${t.name} (${postName(t)}) stays`);
       if (o.prom.length) t.prom = { lg: o.lg, until: S.turn + PROM_WEEKS, k: o.prom.slice() };
       TALK_LOG.home++;
-      tell(o.lg, `${dn(t)} stays as ${postName(t)} after talks${n > 1 ? ` with ${n} Leagues` : ''}${k.kind === 'expiry' ? `, to ${turnDate(t.con.until)}` : ''}.`);
+      const msg = `${dn(t)} stays as ${postName(t)} after talks${n > 1 ? ` with ${n} Leagues` : ''}${k.kind === 'expiry' ? `, to ${turnDate(t.con.until)}` : ''}.`;
+      tell(o.lg, msg);
+      if (o.lg === ME()) talkDone(k, 'kept', `${t.name} stays as your ${postName(t)}${k.kind === 'expiry' || k.kind === 'champ' ? `, signed to ${turnDate(t.con.until)}` : ''}${n > 1 ? ` (${n} Leagues bid)` : ''}.`, o.lg);
     });
+    if (o.lg !== ME()) talkDone(k, 'lost', `${t.name} stayed with the ${leagueName(o.lg)} instead.${why}`, o.lg);
     return 'stayed';
   }
   talkSign(t, o, k, n);
@@ -1334,9 +1366,14 @@ function talkSign(t, o, k, n) {
     if (o.prom.includes('legend')) { const e = (S.vault || []).filter(x => x.m).sort((a, b) => monPower(b.m) - monPower(a.m))[0]; if (e && !vaultGive(e.uid, t.id)) TALK_LOG.legend++; }
     TALK_LOG.signed++; TALK_LOG.byKind[k.kind] = (TALK_LOG.byKind[k.kind] || 0) + 1;
     const msg = `${dn(t)}${from ? ` left the ${from} and` : ''} signed for the ${S.lgName} as ${postName(t)} after talks${n > 1 ? ` with ${n} Leagues` : ''}.${replaced}`;
-    news(msg, 'move', t.id); noteChange(msg);
+    if (!(talkMine(k) && o.lg === ME())) news(msg, 'move', t.id); // (0.56.0) yours comes from talkDone
+    noteChange(msg);
+    if (o.lg === ME() && handOn()) { t.talkSigned = S.turn; talkDone(k, 'won', `${t.name} signed for your League as ${postName(t)}${n > 1 ? `, ahead of ${n - 1} other League${n > 2 ? 's' : ''}` : ''}.${replaced}`, o.lg); }
   });
-  if (handOn() && k.offers.some(x => x.lg === ME()) && o.lg !== ME()) inLeague(ME(), () => { const msg = `${dn(t)} chose the ${leagueName(o.lg)} over your offer.`; news(msg, 'move', t.id); stopFor('talks', msg); });
+  if (o.lg === ME()) return;
+  const mineO = k.offers.find(x => x.lg === ME()), to = leagueName(o.lg), terms = offerWords(o);
+  if (k.home === ME()) talkDone(k, k.letGo ? 'released' : 'left', `${t.name} ${k.letGo ? 'was let go to' : 'left your League for'} the ${to} (${terms}).`, o.lg);
+  else if (mineO) talkDone(k, 'lost', `${t.name} signed for the ${to} (${terms}) instead of your offer of ${offerWords(mineO)}.`, o.lg);
 }
 // (0.54.0) a Champion signing for another League leaves their own seat as one stepping down would: the strongest
 // Elite Four member (by the seat rule's heir) moves up, and that seat gets a stand-in and a vacancy (yours) or is
@@ -1393,7 +1430,7 @@ function talkMatch(id) {
 function talkLetGo(id) {
   const t = T(id), k = talkOf(t); if (!k || k.home !== ME()) return 'Nobody is in talks for them.';
   const best = talkRank(k).find(x => x.o.lg !== ME()); if (!best) return 'There is no offer to take.';
-  closeTalk(k); TALK_LOG.letGo++;
+  closeTalk(k); TALK_LOG.letGo++; k.letGo = true;
   talkSign(t, best.o, k, k.offers.length);
   return null;
 }

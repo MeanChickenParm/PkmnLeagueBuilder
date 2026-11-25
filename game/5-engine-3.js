@@ -2668,7 +2668,9 @@ function removeLeague(k, info) {
     if (c.ctrl != null) { if (c.ctrl === k) c.tier = null; c.ctrl = c.ctrl === k ? null : rm(c.ctrl); }
   }
   for (const x of S.talks || []) { x.offers = x.offers.filter(o => o.lg !== k); x.offers.forEach(o => { o.lg = rm(o.lg); }); if (x.home != null) x.home = rm(x.home); if (x.lead != null) x.lead = x.lead === k ? null : rm(x.lead); } // (0.53.0)
-  for (const x of (S.talks || []).filter(x => x.home != null && x.home < 0)) closeTalk(x);
+  for (const x of S.talks || []) if (x.mine != null) x.mine = rm(x.mine); // (0.56.0)
+  for (const r of S.talkDone || []) if (r.to != null) r.to = rm(r.to);
+  for (const x of (S.talks || []).filter(x => x.home != null && x.home < 0)) talkGone(x, `${T(x.tid) ? T(x.tid).name : 'The trainer'}'s League folded.`);
   rmArr(S.news); rmArr(S.myLeagues); rmArr(S.chalPending); rmArr(S.distress, 'from'); rmArr(S.hof); rmArr(S.hof, 'spon'); // (0.21.0) Hall entries keep a folded League's name
   for (const w of S.worldHist || []) { w.winnerLg = rm(w.winnerLg); w.runnerLg = rm(w.runnerLg); }
   const hists = [S.history].concat(S.leagues.map((L, i) => i === (S.lg || 0) ? null : L.history));

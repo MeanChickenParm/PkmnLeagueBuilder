@@ -1021,7 +1021,7 @@ function postPlace(t, role) {
 const curSeason = () => S.season || 1;
 function closePost(t) { const p = (t.posts || []).find(x => x.to == null); if (p) { p.to = Math.max(p.from, S.season || 1); t.leftAt = S.turn; t.leftLg = p.lg; } }
 // (0.13.0) a move within the League's staff this week costs no signing fee
-function openPost(t, role) { if (t.talk != null) { const k = talkOf(t); if (k) closeTalk(k); } if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
+function openPost(t, role) { if (t.talk != null) { const k = talkOf(t); if (k) talkGone(k, `${t.name} took another post before the deadline.`); } if (t.spon) { endContract(t, 'took a post'); t.sponFrom = null; } const was = (t.posts || []).some(x => x.to == null) || (t.leftAt === S.turn && t.leftLg === (S.lg || 0)); closePost(t); (t.posts = t.posts || []).push({ role, place: postPlace(t, role), from: curSeason(), to: null, lg: S.lg || 0 }); setAmbition(t, role); postPay(t, was); setContract(t, role, was); storeHire(t, role, was); }
 // year points: 1 per badge, 3 for reaching the League, 2 per Elite Four win, 10 for the title, added up over
 // every run of the year as they happen (yearOf(t).pts)
 function trainerPoints(t) { return t.yr && t.yr.season === S.season ? t.yr.pts : 0; }
@@ -1505,7 +1505,7 @@ const founderProtected = t => !!t.foundingChamp && (S.season || 0) < FOUNDER_SEA
 // a Gym Leader who came back to the circuit is guaranteed five seasons there, whatever their age
 const comebackProtected = t => t.noRetireUntil != null && (S.season || 0) < t.noRetireUntil;
 function retireHere(t, why) {
-  if (t.talk != null && t.role !== 'champion') { const k = talkOf(t); if (k) closeTalk(k); } // (0.53.0)
+  if (t.talk != null && t.role !== 'champion') { const k = talkOf(t); if (k) talkGone(k, `${t.name} retired before the deadline.`); } // (0.53.0)
   if (t.spon) { endContract(t, 'retired'); t.sponFrom = null; } // (0.17.0) a contender's contract ends with their career
   // the reigning Champion never retires; the title only changes hands in battle
   if (t.id === S.champion && t.role === 'champion') return;
