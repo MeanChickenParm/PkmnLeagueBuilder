@@ -34,6 +34,7 @@ const PG = { start: [], famous: 0 }, PGH = { blocked: 0 };
 g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x => x.leader)]; for (const id of ids) { const t = g.T(id); if (t.famous && !t.founded) PG.famous++; } PG.start.push(Math.round(ids.reduce((a, id) => a + g.ovr(g.T(id)), 0) / ids.length)); });
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
+const CB = { overTier: 0, feed: 0, grandfathered: false }; // (0.63.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
@@ -336,7 +337,10 @@ function check(tag) {
     for (const id of g.staffIds()) { const t = g.T(id); if (t && !(t.payOvr > 0)) bad('staff with no pay ' + t.name); if (t && t.quit && t.quit.k === 'pay' && z.fin.money >= 0 && z.fin.redAt == null) bad('a pay notice out of the red'); }
     if (g.paidBans().length > g.BAN_PAID_MAX) bad('too many paid bans');
     if ((z.banBallot || null) && z.banBallot.cands && z.banBallot.cands.length) bad('a ban vote in a League with books');
-    for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat) || (g.UPGRADES[x.k].site && p.seat)) bad('bad building in ' + p.name); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
+    for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat) || (g.UPGRADES[x.k].site && p.seat) || (g.UPGRADES[x.k].city && p.seat)) bad('bad building in ' + p.name);
+      // (0.63.0) the seat's Stadium from its founding; levels within the city's size; Berry Farm plots fed within the plots
+      for (const x of p.b) { if (x.base && (x.k !== 'stadium' || !p.seat || x.lv < x.base)) bad('a base level off the seat Stadium in ' + p.name); const U = g.UPGRADES[x.k]; if (U && U.tierAt && !p.seat && !p.none && x.lv - 1 >= 0 && U.tierAt[x.lv - 1] > g.citySize(p.c)) bad('a ' + x.k + ' level past its city size in ' + p.name); if (x.k === 'berry' && !((x.feed || 0) >= 0 && (x.feed || 0) <= g.BERRY_PLOTS[x.lv - 1])) bad('Berry Farm plots fed out of range in ' + p.name); }
+      if (p.seat && !p.b.some(x => x.k === 'stadium' && x.lv >= g.SEAT_STADIUM)) bad('a seat with no Stadium'); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
   });
   // (0.15.0) at most REGION_CAP Leagues a region (four since 0.41.0); standing only for Leagues with a gym in the city; control by one of them
@@ -347,7 +351,7 @@ function check(tag) {
       if (c.tier != null && !(c.tier >= 0 && c.tier <= 3)) bad('a bad control tier in ' + c.name);
       for (const [k, v] of Object.entries(c.rn || {})) { if (!(+k >= 0 && +k < g.nLeagues())) bad('renown for no League in ' + c.name); if (!(v > 0)) bad('renown not positive in ' + c.name); }
       if (lgs.length) { const st = g.cityState(c, lgs); if (st.slice < 0 || st.slice > g.RN_SLICE + 1e-9) bad('a renown slice out of range in ' + c.name); for (const x of st.rn) if (lgs.includes(x.lg) || x.eff > Math.max(0, st.lead) * g.RN_CAP + 1e-9) bad('renown counted past its cap in ' + c.name);
-        const inc = g.CITY_INCOME[g.citySlots(c) - 1], tot = lgs.concat(st.rn.map(x => x.lg)).reduce((a, i) => a + g.cityShare(c, lgs, i), 0); if (Math.abs(tot - inc) > lgs.length + st.rn.length + 1) bad('city income shares add to ' + tot + ' of ' + inc + ' in ' + c.name);
+        const inc = g.cityPool(c), tot = lgs.concat(st.rn.map(x => x.lg)).reduce((a, i) => a + g.cityShare(c, lgs, i), 0); if (Math.abs(tot - inc) > lgs.length + st.rn.length + 1) bad('city income shares add to ' + tot + ' of ' + inc + ' in ' + c.name);
         if (tag.startsWith('step') && s.week === 1) { ctrlStats.cities++; ctrlStats.tiers[st.tier]++; if (st.rn.length) ctrlStats.renown++; if (st.slice) ctrlStats.slice++; } } }
     for (const t of Object.values(s.trainers)) if (t.role !== 'retired' && t.home && !(t.home.r >= 0 && t.home.i >= 0)) bad('a bad hometown: ' + t.name);
     // (0.41.0) the regional field: loyalty to a real League; how full each region is; the thinnest share of a field
@@ -389,8 +393,9 @@ function check(tag) {
     const done = s.talkDone || [];
     if (done.length > g.TALK_DONE_KEEP) bad('too many talks results kept');
     for (const x of done) { if (!g.TALK_RES[x.res] || typeof x.text !== 'string' || !x.text || x.at > s.turn) bad('a strange talks result'); if (!g.handOn()) bad('a talks result in a world with no player'); }
-    if (TALK_MINE.me === g.ME() && !s.founding) for (const id of TALK_MINE.ids) if (!(s.talks || []).some(k => k.id === id)) { TALKS.results++; if (!done.some(x => x.id === id)) bad('talks you were in closed with no result: ' + id); }
-    TALK_MINE.me = s.founding ? null : g.ME(); TALK_MINE.ids = (s.talks || []).filter(k => g.talkMine(k)).map(k => k.id);
+    const nFold = Object.keys(s.folded || {}).length; // (0.63.0) talks of a League of yours that just folded go with it, no result
+    if (TALK_MINE.me === g.ME() && !s.founding && TALK_MINE.folded === nFold) for (const id of TALK_MINE.ids) if (!(s.talks || []).some(k => k.id === id)) { TALKS.results++; if (!done.some(x => x.id === id)) bad('talks you were in closed with no result: ' + id); }
+    TALK_MINE.folded = nFold; TALK_MINE.me = s.founding ? null : g.ME(); TALK_MINE.ids = (s.talks || []).filter(k => g.talkMine(k)).map(k => k.id);
   }
   // a save must survive a round trip
   if (tag.startsWith('s')) { const copy = JSON.parse(JSON.stringify(s)); if (Object.keys(copy.trainers).length !== Object.keys(s.trainers).length) bad('save round trip'); }
@@ -571,7 +576,11 @@ for (let i = 0; i < N; i++) {
         if (!g.buildCheck('seat', 'sanct').why) fail.push('a sanctuary allowed at the seat');
         const off = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !g.siteOn(z.cities[z.gyms[i].city])); if (off != null && !g.buildCheck(off, 'sanct').why) fail.push('a sanctuary allowed off a site'); }
       if (r < 0.4) { const where = rnd(['seat', 0, 1, 2, 3, 4, 5, 6, 7]), k = rnd(Object.keys(g.UPGRADES)), ck = g.buildCheck(where, k), m0 = z.fin.money, w = g.build(where, k);
-        if (!w) { money.built++; if (z.fin.money !== m0 - ck.cost) fail.push('build cost wrong'); } else if (!ck.why && z.fin.money >= ck.cost) fail.push('build refused: ' + w); }
+        if (!w) { money.built++; if (z.fin.money !== m0 - ck.cost) fail.push('build cost wrong'); } else if (!ck.why && z.fin.money >= ck.cost) fail.push('build refused: ' + w);
+        // (0.63.0) set a Berry Farm's plots, and check a city building is refused at the seat
+        if (!g.berryFarms().length) { const gi = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !g.buildCheck(i, 'berry').why && z.fin.money >= g.buildCheck(i, 'berry').cost); if (gi != null) { const m1 = z.fin.money, c1 = g.buildCheck(gi, 'berry').cost; if (g.build(gi, 'berry') || z.fin.money !== m1 - c1) fail.push('Berry Farm build wrong'); } }
+        const fs = g.berryFarms(); if (fs.length) { const f = rnd(fs), n = Math.floor(Math.random() * (f.plots + 1)); if (g.setBerryFeed(f.gi, n) || f.x.feed !== n) fail.push('Berry Farm plots not set'); else CB.feed++; }
+        if (!g.buildCheck('seat', 'hotel').why) fail.push('a Hotel allowed at the seat'); }
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
       else if (r < 0.85) { const t = g.staffIds().map(g.T).find(x => x && g.canRaise(x)); if (t && !g.giveRaise(t.id)) money.raises++; }
       else if (r < 0.9) { const free = g.myPlaces().filter(p => p.none); if (free.length && !g.moveGym(rnd([0, 1, 2, 3, 4, 5, 6, 7]), rnd(free).c.id)) money.moved++; }
@@ -822,6 +831,10 @@ console.log('safari', JSON.stringify(SAF), JSON.stringify(g.SAFARI_LOG));
 console.log('breeding', JSON.stringify(BRD), JSON.stringify(g.BREED_LOG));
 console.log('regions', JSON.stringify(REG), 'moves', g.REGION_LOG.moves, 'released on moving', g.REGION_LOG.released, 'species a region', g.regionLines().size.join('/'), 'lines', g.regionLines().sets.map(x => x.size).join('/'));
 console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.join('/'));
+// (0.63.0) city buildings part 1: sizes, tickets, Hotels, Berry Farms, Centers by League at the end
+{ const sizes = Object.values(S().cities).map(c => g.citySize(c)), by = {}; for (const k of sizes) by[g.sizeName(k)] = (by[g.sizeName(k)] || 0) + 1;
+  const lgs = g.eachLeague(i => { const f = S().fin; if (!f) return null; const y = f.last || f.yr || { in: {} }, n = k => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0); return `L${i}(${f.aim || 'you'}) tix ${y.in.tickets || 0} hotels ${y.in.hotels || 0} berries ${y.in.berries || 0} cities ${y.in.cities || 0} | stadiums ${n('stadium')} hotels ${n('hotel')} centers ${n('center')} farms ${n('berry')}`; }).filter(Boolean);
+  console.log('city buildings', JSON.stringify(by), 'tickets', JSON.stringify(g.TIX_LOG), 'over-tier', CB.overTier, 'berry sets', CB.feed, '\n  ' + lgs.join('\n  ')); }
 console.log('regional field', JSON.stringify(fieldStats), 'draws', JSON.stringify(g.FIELD_LOG), 'rebuild', JSON.stringify(g.REBUILD_LOG), 'regions', [...new Set(g.eachLeague(() => g.S.region))].map(r => `${g.LEAGUE_SETS[r].name}: ${g.fieldSize(r)} of ${g.fieldTarget(r)} (${g.regionLgs(r).map(i => g.inLeague(i, () => g.S.challengers.length)).join('/')})`).join('; '));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));

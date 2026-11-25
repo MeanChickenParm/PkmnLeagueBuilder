@@ -1551,6 +1551,7 @@ function initBooks() {
   const mine = !!(S.cfg && S.cfg.hand) && (S.lg || 0) === ME();
   S.fin = { money: START_FUND, log: [], yr: null, last: null, raised: 0, aim: mine ? null : pickAim(), aimAt: S.season || 0, redAt: null };
   S.ranch = newRanch(); // (0.25.0) every League with books keeps a ranch
+  seatStadium(); // (0.63.0) the seat's Stadium at level 2
   S.fin.temper = pick(BID_TEMPER_KEYS); // (0.54.0) how boldly it bids in talks
   if (S.fin.aim) { drawTheme(); drawSeatRule(); } // (0.42.0) a rival's theme, by its aim and region (unless set at setup); (0.43.0) its seat rule
   finYear();
@@ -1578,19 +1579,22 @@ function severance(t, was, free) {
   const fee = severanceFee(t);
   if (fee) book(-fee, 'severance', `Severance: ${t.name} (${was})`);
 }
-// once a week for every League with books: salaries, attractions, city income, paid bans that run out, and the red
+// once a week for every League with books: salaries, Hotels and Berry Farms (0.63.0, replacing attractions), city income, paid bans that run out, and the red
 function moneyWeek() {
   const all = eachLeague(() => S.fin ? S.fin.money : null).filter(x => x != null);
   if (!all.length) return;
   S.moneyAvg = Math.round(all.reduce((a, b) => a + b, 0) / all.length); // world-level: the catch-up rules read it
+  visitorsWeek(); // (0.63.0) who is in which city this week, and the Hotels' guests
   eachLeague(() => {
     if (!S.fin) return;
-    // (0.18.0) in the red, upkeep goes unpaid and every building lapses: attractions earn nothing, and the rest stop
+    // (0.18.0) in the red, upkeep goes unpaid and every building lapses: Hotels and Farms earn nothing, and the rest stop
     // working (lapsed()); every DECAY_WEEKS unpaid in a row the costliest level is lost (decayWeek)
     const lap = lapsed();
     for (const t of staffIds().map(T).filter(Boolean)) t.lastPay = payOf(t);
     const w = wageBill(); if (w) book(-w, 'salaries');
-    if (!lap) { const a = attractionIncome(); if (a) book(a, 'attractions'); const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
+    if (!lap) { const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
+    // (0.63.0) the Hotels' guests and the Berry Farms' harvest (tickets are sold in each battle)
+    if (!lap) { const h = hotelIncome(); if (h) book(h, 'hotels'); berryWeek(); }
     const ci = cityIncome(); if (ci) book(ci, 'cities');
     const sh = S.ranch ? showcase().income : 0; if (sh) book(sh, 'showcase'); // (0.36.0) conditioned Pokémon at the seat draw a crowd
     expirePaidBans();
@@ -1643,290 +1647,6 @@ function giveRaise(id) {
     return null;
   });
 }
-// ---------- cities ----------
-// A region has its 8 gym cities and three more without a gym (LEAGUE_SETS extra); a League also has its seat (the Elite Four and the
-// Champion). A League builds only where it has a gym (and at its seat). A city's slots grow with what all Leagues have
-// spent there (1, then 2 at CITY_GROW[0], 3 at CITY_GROW[1]); the seat has SEAT_SLOTS. Each upgrade has 3 levels.
-// (0.16.0) training halls and gym features go to level 5 (UP_COST[3], [4]); the youth academy is a League-level
-// purchase at the seat that takes no slot and has its own prices. Every level owned costs UPKEEP of its price a year.
-const CITY_GROW = [60000, 180000], SEAT_SLOTS = 3, UP_COST = [25000, 50000, 100000, 200000, 400000], MOVE_FEE = 40000, UPKEEP = 0.05;
-const UPGRADES = {
-  hall:    { name: 'Training hall',   text: 'Staff here grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', max: 5 },
-  feature: { name: 'Gym feature',     text: 'A home edge: staff here fight at +1.5% per level in their own battles.', max: 5 },
-  attract: { name: 'Attraction',      text: 'Brings in income every week.', income: [120, 240, 360] },
-  scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
-  // (0.20.0) only in a gym city that is a legendary site: earns more than an attraction while the site lasts, and adds prestige
-  sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in more than an attraction every week while the site lasts (an attraction\'s income after), and a point of prestige a level each New Year while it lasts.', site: true, income: [250, 500, 800] },
-  // (0.25.0) the Ranch: how many Pokémon the League's ranch holds
-  ranch:   { name: 'Ranch',           text: 'Seat only, takes no slot. Each level lets your ranch hold more Pokémon (60 with none, then 80, 105, 135, 170, 210).', seat: true, slotless: true, max: 5, cost: [30000, 60000, 120000, 240000, 480000] },
-  // (0.27.0) a port city's shipping lane (Goldenrod's railway): a source region's Pokémon on trips and at the market
-  lane:    { name: 'Shipping lane',   text: 'Only in a port city (Goldenrod: the railway). Choose a region on the Ranch page: its Pokémon can then be caught on your targeted trips and turn up at your market all the time. 400 a week on top of upkeep; changing the route costs 10,000.', port: true, max: 1, cost: [60000] },
-  // (0.27.0) the safari: one per League, in a gym city; foreign Pokémon for its own trips, changing every few months
-  safari:  { name: 'Safari Zone',     text: 'One per League, in a gym city. Holds 10 Pokémon from other regions (13, 16 at levels 2 and 3), changing every 12 weeks, that only your targeted trips can catch; each level also makes those finds better.', one: true },
-  // (0.45.0) the Day Care: breeds from the League's breeding pool (the Ranch page's Day Care tab)
-  daycare: { name: 'Day Care',        text: 'Seat only, takes no slot. Breeds Pokémon from your breeding pool (Ranch page, Day Care tab): 1 pair at once, then 2, 3, 4, 5, with an egg every 10 weeks, down to 6 at level 5, and slightly better odds of a condition each level.', seat: true, slotless: true, max: 5, cost: [40000, 80000, 160000, 320000, 640000] },
-  academy: { name: 'Youth academy',   text: 'Seat only, takes no slot. Each level raises a young prospect a year who sets out on your circuit as one of your own: likelier to take your offers and cheaper to hire.', seat: true, slotless: true, cost: [100000, 200000, 400000] },
-};
-const upMax = k => UPGRADES[k].max || 3;
-const upCost = (k, lv) => (UPGRADES[k].cost || UP_COST)[lv];
-// what a building has cost so far (every level paid), for upkeep and the economy report
-const slotsUsed = b => b.filter(x => !UPGRADES[x.k].slotless).length;
-const builtCost = x => { let c = 0; for (let n = 0; n < x.lv; n++) c += upCost(x.k, n); return c; };
-const cityLg = () => S.lg || 0;
-function cityB(c, i = cityLg()) { c.b = c.b || {}; return c.b[i] = c.b[i] || []; }
-const citySpent = c => Object.values(c.spent || {}).reduce((a, b) => a + b, 0);
-const citySlots = c => 1 + (citySpent(c) >= CITY_GROW[0]) + (citySpent(c) >= CITY_GROW[1]);
-const seatPlace = () => S.seatName || LEAGUE_SETS[S.region].seat;
-function seatB() { return S.seatB = S.seatB || []; }
-// the League's places: its seat, then the gym cities in gym order, then the region's cities where it has no gym
-function myPlaces() {
-  const all = regionCities(S.region), gymC = S.gyms.map(g => g.city);
-  return [{ seat: true, name: seatPlace(), slots: SEAT_SLOTS, b: seatB() }]
-    .concat(S.gyms.map((g, i) => { const c = S.cities[g.city]; return { c, gym: i, name: c.name, slots: citySlots(c), b: cityB(c) }; }))
-    .concat(all.filter(c => !gymC.includes(c.id)).map(c => ({ c, gym: null, name: c.name, slots: citySlots(c), b: cityB(c), none: true })));
-}
-const upLevel = (b, k) => (b.find(x => x.k === k) || { lv: 0 }).lv;
-// the level of upgrade k at gym i ('seat' for the seat), in the bound League
-function placeLv(where, k) { if (where === 'seat') return upLevel(seatB(), k); const g = S.gyms[where]; return g && S.cities[g.city] ? upLevel(cityB(S.cities[g.city]), k) : 0; }
-// what the next level of upgrade k costs at a place, or a reason it can't be built
-function buildCheck(where, k) {
-  const U = UPGRADES[k]; if (!U) return { why: 'No such upgrade.' };
-  if (U.seat && where !== 'seat') return { why: 'Only at the seat.' };
-  if (U.site && (where === 'seat' || !siteOn(S.cities[(S.gyms[where] || {}).city]))) return { why: 'Only at a legendary site.' };
-  // (0.27.0) lanes only in ports (and only with regional encounters), one safari a League
-  if (U.port && (where === 'seat' || !isPort(S.cities[(S.gyms[where] || {}).city]) || !homeSet(S.region))) return { why: 'Only in a port city (or Goldenrod, for its railway).' };
-  if ((U.one || U.port) && !homeSet(S.region)) return { why: 'Every species is found everywhere (National Dex rules).' };
-  if (U.one && (where === 'seat' || S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k)))) return { why: where === 'seat' ? 'Only in a gym city.' : 'Your League already has one.' };
-  const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
-  if (!pl) return { why: 'Your League has no gym there.' };
-  const lv = upLevel(pl.b, k);
-  if (lv >= upMax(k)) return { why: 'Fully built.' };
-  if (!lv && !U.slotless && slotsUsed(pl.b) >= pl.slots) return { why: 'No free slot.' };
-  // (0.19.0) a level the League lost here (sold or decayed) is restored at RESTORE_SHARE of its price
-  const ru = ruinsAt(where, k) > 0;
-  return { cost: Math.round(upCost(k, lv) * (ru ? RESTORE_SHARE : 1)), lv: lv + 1, restore: ru };
-}
-function build(where, k, lg = ME()) {
-  return inLeague(lg, () => {
-    if (!booksOn()) return 'Money is off.';
-    const ck = buildCheck(where, k); if (ck.why) return ck.why;
-    if (!canSpend(ck.cost)) return 'Not enough money.';
-    const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : { k, lv: 1 });
-    if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
-    const name = where === 'seat' ? seatPlace() : townName(where);
-    if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
-    book(-ck.cost, 'building', `${UPGRADES[k].name} ${ck.lv > 1 ? `to level ${ck.lv}` : 'built'} in ${name}${ck.restore ? ' (restored)' : ''}`);
-    news(`The League ${ck.restore ? `restored its ${UPGRADES[k].name.toLowerCase()} in ${name}${ck.lv > 1 ? ` to level ${ck.lv}` : ''}` : ck.lv > 1 ? `raised its ${UPGRADES[k].name.toLowerCase()} in ${name} to level ${ck.lv}` : `built a ${UPGRADES[k].name.toLowerCase()} in ${name}`}.`, 'league');
-    return null;
-  });
-}
-// a gym moves to a city of the region where the League has no gym: the fee, and everything the League built in the
-// old city is lost (the city keeps its size)
-function moveGym(i, cityId, lg = ME()) {
-  return inLeague(lg, () => {
-    if (!booksOn()) return 'Money is off.';
-    const g = S.gyms[i], to = S.cities[cityId];
-    if (!g || !to || to.region !== S.region || S.gyms.some(x => x.city === cityId)) return 'That city is not free.';
-    if (!canSpend(MOVE_FEE)) return 'Not enough money.';
-    const from = S.cities[g.city], lost = cityB(from).length;
-    from.b[cityLg()] = []; if (from.st) delete from.st[cityLg()]; from.tier = from.ctrl === cityLg() ? null : from.tier;
-    if (S.fin && S.fin.ruins) delete S.fin.ruins[from.id];
-    g.city = cityId;
-    safariTrim(); // (0.44.0) a safari left behind sends its stock back
-    book(-MOVE_FEE, 'building', `Moved ${from.name} Gym to ${to.name}`);
-    const text = `${from.name} Gym moved to ${to.name}${lost ? `; what the League had built in ${from.name} is lost` : ''}.`;
-    news(text, 'league'); noteChange(text);
-    return null;
-  });
-}
-// ---------- city standing, control and income (0.15.0, stage 4; reworked in 0.40.0, design doc 6.19) ----------
-// Standing is a League's local reputation in a city where it has a gym. Each New Year it gains from how its gym held
-// against the region's average (a point per percentage point), from its presence (a point a year per PRESENCE_PER of
-// buildings standing there, nothing while they have lapsed), from prestige spillover (SPILL of its prestige in every
-// home city) and from local heroes (staff whose hometown it is: HERO_PTS by post). A League under CATCHUP_UNDER of the
-// leader's standing gains CATCHUP_MUL as fast. Then all standing fades by STAND_FADE.
-// Renown (c.rn) is what a League with no gym in a city earns there: spillover in other regions' cities (SPILL_AWAY of
-// the home rate), its contenders' badges and titles, and World titles. It counts at RN_WEIGHT, capped at RN_CAP of the
-// leader's standing: it narrows the leader's lead and takes up to RN_SLICE of the city's income. It never controls.
-// Control is graded by the leader's lead over the second (another League's standing or the strongest renown):
-// Contested, Leaning, Held, Stronghold (TIER_AT). The controller takes TIER_SHARE of the city's income (Contested:
-// split by standing), Held and Stronghold earn prestige (TIER_PREST × SIZE_PREST by slots), and a Stronghold gives its
-// gym a crowd edge (STRONG_EDGE), its hometown trainers a lower prestige minimum (STRONG_RECRUIT) and first refusal on
-// a rival's distress sale there. All numbers provisional.
-const STAND_FADE = 0.25, CITY_INCOME = [250, 350, 500];
-const PRESENCE_PER = 10000, SPILL = 0.1, SPILL_AWAY = 0.25, HERO_PTS = { champion: 6, e4: 4, leader: 3, gymtrainer: 1 }, CATCHUP_UNDER = 0.5, CATCHUP_MUL = 1.5;
-const RN_WEIGHT = 1 / 3, RN_CAP = 0.5, RN_FADE = 0.25, RN_BADGE = 1, RN_TITLE = 4, RN_WORLD = 5, RN_SLICE = 0.1;
-const TIER_AT = [1.1, 1.5, 2], TIER_NAMES = ['Contested', 'Leaning', 'Held', 'Stronghold'], TIER_SHARE = [0, 0.4, 0.5, 0.6], TIER_PREST = [0, 0, 0.5, 1], SIZE_PREST = [1, 1.25, 1.5];
-const STRONG_EDGE = 0.01, STRONG_RECRUIT = 0.8;
-// which Leagues have a gym in each city: { cityId: [league, …] }, read from every League without binding
-function gymMap() {
-  const out = {};
-  for (let i = 0; i < nLeagues(); i++) { const L = i === (S.lg || 0) ? S : S.leagues[i]; for (const g of (L && L.gyms) || []) (out[g.city] = out[g.city] || []).push(i); }
-  return out;
-}
-const r1 = n => Math.round(n * 10) / 10;
-function addStanding(c, n, lg = cityLg()) { c.st = c.st || {}; c.st[lg] = r1((c.st[lg] || 0) + n); }
-const standing = (c, lg = cityLg()) => (c.st && c.st[lg]) || 0;
-function addRenown(c, lg, n) { if (!c || lg == null || lg < 0 || !(n > 0)) return; c.rn = c.rn || {}; c.rn[lg] = r1((c.rn[lg] || 0) + n); }
-const renown = (c, lg = cityLg()) => (c && c.rn && c.rn[lg]) || 0;
-// the League with most standing among those with a gym in city c (a tie keeps the controller); lgs: those Leagues
-function cityCtrl(c, lgs) {
-  if (!lgs || !lgs.length) return null;
-  if (lgs.length === 1) return lgs[0];
-  const best = Math.max(...lgs.map(i => standing(c, i)));
-  return lgs.includes(c.ctrl) && standing(c, c.ctrl) >= best ? c.ctrl : lgs.find(i => standing(c, i) === best);
-}
-// city c now: { ctrl, tier (0 Contested … 3 Stronghold), lead, second, rn: [{ lg, eff }] (renown that counts), slice }
-function cityState(c, lgs) {
-  const out = { ctrl: null, tier: 0, lead: 0, second: 0, rn: [], slice: 0 };
-  if (!c || !lgs || !lgs.length) return out;
-  const ctrl = out.ctrl = cityCtrl(c, lgs), lead = out.lead = standing(c, ctrl), cap = Math.max(0, lead) * RN_CAP;
-  out.rn = Object.keys(c.rn || {}).map(Number).filter(j => !lgs.includes(j) && c.rn[j] > 0).map(j => ({ lg: j, eff: Math.min(cap, c.rn[j] * RN_WEIGHT) })).filter(x => x.eff > 0);
-  const second = out.second = Math.max(0, ...lgs.filter(i => i !== ctrl).map(i => standing(c, i)), ...out.rn.map(x => x.eff));
-  if (lead <= 0) out.tier = lgs.length > 1 ? 0 : 2;
-  else if (second <= 0) out.tier = 3;
-  else { const r = lead / second; out.tier = r < TIER_AT[0] ? 0 : r < TIER_AT[1] ? 1 : r <= TIER_AT[2] ? 2 : 3; }
-  const sum = out.rn.reduce((a, x) => a + x.eff, 0);
-  out.slice = lead > 0 && sum > 0 ? Math.min(RN_SLICE, RN_SLICE * sum / (lead * RN_CAP)) : 0;
-  return out;
-}
-// League lg's share of city c's weekly income (the bound League by default): by tier for those with a gym there, by
-// renown out of the slice for those without
-function cityShare(c, lgs, lg = cityLg()) {
-  if (!c || !lgs || !lgs.length) return 0;
-  const inc = CITY_INCOME[citySlots(c) - 1], s = cityState(c, lgs);
-  if (!lgs.includes(lg)) { const x = s.rn.find(y => y.lg === lg), sum = s.rn.reduce((a, y) => a + y.eff, 0); return x && sum ? Math.round(inc * s.slice * x.eff / sum) : 0; }
-  const rest = inc * (1 - s.slice);
-  if (lgs.length === 1) return Math.round(rest);
-  const split = ids => { const tot = ids.reduce((a, i) => a + Math.max(0, standing(c, i)), 0); return tot > 0 ? Math.max(0, standing(c, lg)) / tot : 1 / ids.length; };
-  if (s.tier === 0) return Math.round(rest * split(lgs));
-  if (lg === s.ctrl) return Math.round(rest * TIER_SHARE[s.tier]);
-  return Math.round(rest * (1 - TIER_SHARE[s.tier]) * split(lgs.filter(i => i !== s.ctrl)));
-}
-// the bound League's city income: its gym cities, plus its renown's slice where it has no gym
-function cityIncome() {
-  const m = gymMap(), lg = cityLg();
-  let a = S.gyms.reduce((x, g) => x + cityShare(S.cities[g.city], m[g.city]), 0);
-  for (const c of Object.values(S.cities)) if (c.rn && c.rn[lg] > 0 && m[c.id] && !m[c.id].includes(lg)) a += cityShare(c, m[c.id], lg);
-  return a;
-}
-// a Stronghold of League lg (as set at the last New Year)
-const strongholdOf = (c, lg) => !!c && c.tier === 3 && c.ctrl === lg;
-// ---------- hometowns (0.40.0) ----------
-// Every trainer has a hometown, drawn evenly (from the id, so no random draw is used) from the cities and towns of the region they were made in: t.home =
-// { r, i } (the region, and the index in its towns then its places with no gym). homeCity(t) is its city id, once that
-// region's cities exist.
-let homeCache = null;
-function setHome(t, r = S.region) {
-  const L = r != null && LEAGUE_SETS[r]; if (!t || !L) return;
-  t.home = { r, i: ((t.id * 2246822519) >>> 0) % (L.towns.length + (L.extra || []).length) }; // even, a stable draw from the id
-}
-function homeCity(t) {
-  if (!t || !t.home || !S.cities) return null;
-  if (!homeCache || homeCache.of !== S.cities || homeCache.n !== S.nextCity) {
-    const by = {}; for (const c of Object.values(S.cities).sort((a, b) => a.id - b.id)) (by[c.region] = by[c.region] || []).push(c.id);
-    homeCache = { of: S.cities, n: S.nextCity, by };
-  }
-  const ids = homeCache.by[t.home.r]; return ids && ids[t.home.i] != null ? ids[t.home.i] : null;
-}
-const homeName = t => { const id = homeCity(t); if (id != null) return S.cities[id].name; const L = t && t.home && LEAGUE_SETS[t.home.r]; return L ? L.towns.concat(L.extra || [])[t.home.i] || null : null; };
-// New Year, before the gyms' year is reset: each League's gains in its gym cities (the gym's record, presence,
-// spillover, local heroes; catch-up for the far behind), renown elsewhere, the fade, then control and its tier (news
-// when control changes hands in a shared city)
-function cityNewYear() {
-  const held = g => g.w + g.l ? g.w / (g.w + g.l) : null, byRegion = {}, avg = a => a.reduce((x, y) => x + y, 0) / a.length;
-  eachLeague(() => S.gyms.forEach(g => { const h = held(g); if (h != null) (byRegion[S.region] = byRegion[S.region] || []).push(h); }));
-  const m = gymMap(), gain = {}, add = (c, i, n) => { const g = gain[c.id] = gain[c.id] || {}; g[i] = (g[i] || 0) + n; };
-  const wl = nLeagues() > 1 && S.worlds && S.worlds.winner != null && S.worlds.season === S.season ? lgOf(T(S.worlds.winner)) : null;
-  eachLeague(i => {
-    const lap = !!S.fin && lapsed(), pr = Math.max(0, S.prest || 0), rs = byRegion[S.region] || [];
-    S.gyms.forEach(g => {
-      const c = S.cities[g.city], h = held(g);
-      if (h != null && rs.length) add(c, i, (h - avg(rs)) * 100);
-      if (!lap) { const v = cityB(c).reduce((a, x) => a + builtCost(x), 0); if (v) add(c, i, v / PRESENCE_PER); }
-      if (pr) add(c, i, pr * SPILL);
-    });
-    for (const t of staffIds().map(T).filter(Boolean)) { const hc = homeCity(t); if (hc != null && (m[hc] || []).includes(i) && HERO_PTS[t.role] && !t.acting) add(S.cities[hc], i, HERO_PTS[t.role]); }
-    for (const c of Object.values(S.cities)) if (c.region !== S.region && (m[c.id] || []).length) {
-      if (pr) addRenown(c, i, pr * SPILL * SPILL_AWAY);
-      if (wl === i) addRenown(c, i, RN_WORLD);
-    }
-  });
-  for (const c of Object.values(S.cities)) {
-    const lgs = m[c.id] || [], g = gain[c.id] || {}, top = Math.max(0, ...lgs.map(i => standing(c, i)));
-    for (const i of lgs) { let n = g[i] || 0; if (n > 0 && top > 0 && standing(c, i) < top * CATCHUP_UNDER) n *= CATCHUP_MUL; if (n) addStanding(c, n, i); }
-    if (c.st) for (const k of Object.keys(c.st)) { if (!lgs.includes(+k)) delete c.st[k]; else c.st[k] = r1(c.st[k] * (1 - STAND_FADE)); }
-    if (c.rn) { for (const k of Object.keys(c.rn)) { const v = r1(c.rn[k] * (1 - RN_FADE)); if (lgs.includes(+k) || +k >= nLeagues() || v < 0.1) delete c.rn[k]; else c.rn[k] = v; } if (!Object.keys(c.rn).length) delete c.rn; }
-    const was = c.ctrl, s = cityState(c, lgs);
-    c.ctrl = s.ctrl; c.tier = lgs.length ? s.tier : null;
-    if (was != null && s.ctrl != null && was !== s.ctrl && lgs.length > 1) { const text = `The ${leagueName(s.ctrl)} took control of ${c.name} from the ${leagueName(was)} (${TIER_NAMES[s.tier]}).`; inLeague(s.ctrl, () => { news(text, 'league'); noteChange(text); }); }
-  }
-}
-// prestige from the cities the bound League controls (Held and Stronghold), by size; read at New Year
-function cityPrestige(i = S.lg || 0) {
-  return S.gyms.reduce((a, g) => { const c = S.cities[g.city]; return a + (c && c.ctrl === i && c.tier != null ? TIER_PREST[c.tier] * SIZE_PREST[citySlots(c) - 1] : 0); }, 0);
-}
-// a contender's badge at a gym of the bound League, and a title won here: renown for the sponsor
-function contenderRenown(t, gi) {
-  const s = t && t.spon; if (!s || s.lg === (S.lg || 0)) return;
-  if (gi != null) addRenown(S.cities[S.gyms[gi].city], s.lg, RN_BADGE);
-  else for (const g of S.gyms) addRenown(S.cities[g.city], s.lg, RN_TITLE);
-}
-// (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
-// UPKEEP of that a year, so a large estate costs to hold
-function estateCost() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + p.b.reduce((c, x) => c + builtCost(x), 0), 0); }
-const upkeepWeek = () => Math.round(Math.max(0, estateCost() - sealedCost()) * UPKEEP / YEAR_WEEKS); // (0.37.0) sealed Sanctuaries cost nothing
-// (0.16.0) the youth academy: each level raises a young prospect a year (in week ACADEMY_WEEK), a little better than
-// an ordinary newcomer, who sets out on the League's circuit tagged as its own (t.academy = the League). The League
-// pays them ACADEMY_PAY of the usual wage and they are ACADEMY_LOYAL likelier to take its offers. Stage 5 can later
-// let a League send its own at other Leagues; nothing does yet.
-const ACADEMY_WEEK = 20, ACADEMY_PAY = 0.85, ACADEMY_LOYAL = 0.25, ACADEMY_Q = 6;
-const academyLv = () => S.seatB ? upLevel(S.seatB, 'academy') : 0;
-const ownAcademy = t => !!t && t.academy != null && t.academy === (S.lg || 0);
-function academyWeek() {
-  if (S.week !== ACADEMY_WEEK) return;
-  eachLeague(i => {
-    if (lapsed()) return; // (0.18.0) a lapsed academy raises nobody
-    for (let n = 0; n < academyLv(); n++) {
-      const t = newTrainer({ age: ri(13, 16), quality: ri(36, 52) + ACADEMY_Q, role: 'prospect' });
-      starterTeam(t, 9);
-      t.academy = i;
-      joinCircuit(t, i); t.rest = S.turn + ri(1, 3); t.early = 0;
-      news(`${dn(t)} has come up through the ${S.lgName}'s youth academy and is setting out as a challenger.`, 'circuit', t.id);
-    }
-  });
-}
-// upgrade effects in the bound League
-function homeEdge(where) {
-  if (lapsed()) return 1;
-  // (0.40.0) a gym in a city that is the League's Stronghold fights with a crowd behind it
-  const c = where !== 'seat' && S.gyms[where] ? S.cities[S.gyms[where].city] : null;
-  return 1 + 0.015 * placeLv(where, 'feature') + (strongholdOf(c, S.lg || 0) ? STRONG_EDGE : 0);
-}
-function attractionIncome() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === 'attract') ? UPGRADES.attract.income[upLevel(p.b, 'attract') - 1] : 0), 0); }
-// ---------- (0.20.0) legendary sites and sanctuaries ----------
-// A gym city where a legendary appeared or was caught becomes a legendary site (c.site = { sp, from, sps } since 0.37.0),
-// on the world's city object, so every League with a gym there shares it. A League with a gym in a site can build a
-// Sanctuary there (a slot, 3 levels at the usual prices): it earns UPGRADES.sanct.income a week and SANCT_PRESTIGE a level
-// each New Year while open.
-// (0.37.0, ranch part 3) the site timer is gone: a site lasts while its legendaries are in the world (one is), and keeps
-// the last SITE_KEEP legendaries found there (c.site.sps). A Sanctuary is open while one of them is with the League
-// (sanctOpen, 5-engine-4) and sealed otherwise: no income, upkeep or prestige.
-const SANCT_PRESTIGE = 1, SITE_KEEP = 4;
-const siteOn = c => !!(c && c.site);
-function noteSite(gi, sp) {
-  const g = S.gyms[gi]; const c = g && S.cities[g.city]; if (!c) return;
-  const was = siteOn(c), sps = was ? (c.site.sps || [c.site.sp]).filter(x => lineOf(x) !== lineOf(sp)) : [];
-  c.site = { sp, from: was ? c.site.from : S.season, sps: sps.concat(sp).slice(-SITE_KEEP) };
-  if (!was) news(`${c.name} is now a legendary site, where ${sp} was found. Leagues with a gym there can build a Sanctuary, open while ${sp} is with them.`, 'league');
-}
-function sanctIncome() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + UPGRADES.sanct.income[s.lv - 1], 0); }
-// open Sanctuary levels, for prestige
-function sanctLevels() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + s.lv, 0); }
-const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
-// where a member of staff works, for the training hall: their gym, or the seat
-function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
 // ---------- the paid banlist (League 0) ----------
 // Any family seen on the circuit in the meta log can be banned, in any week, for 1 to 3 years; the price per year
 // rises with its meta rank (×3 for the top, down to ×1). Up to BAN_PAID_MAX at once; a lapsed ban protects the family
@@ -1984,9 +1704,10 @@ function expirePaidBans() {
 // its aim at least AIM_MIN_YEARS; then one in the red turns money-maker, and a money-maker far ahead (AIM_RICH times the
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds gym features and pays for bans.', reserve: 60000, build: [['seat', 'feature'], ['gyms', 'feature'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'attract'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['seat', 'hall'], ['seat', 'academy'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'attract'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds attractions and holds a reserve.', reserve: 120000, build: [['seat', 'attract'], ['gyms', 'sanct'], ['gyms', 'attract'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  // (0.63.0, owner: by aim) wall-builders buy Stadiums first (the home edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['gyms', 'center'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['seat', 'academy'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'stadium'], ['gyms', 'sanct'], ['gyms', 'center'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -2039,7 +1760,7 @@ function aimMonth() {
     // a star-maker lets its gyms build freely and has only its Elite Four and Champion counter the year
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
-  if (aim) { aimRanch(aim); aimSpend(aim); } // (0.25.0) the ranch first
+  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); } // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
   if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff; (0.54.0) or another League's, by aim
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
@@ -2065,11 +1786,13 @@ function aimSpend(aim) {
     const c = banCands().find(x => !x.banned && !x.prot && x.rank <= 3);
     if (c && spare >= c.price + UP_COST[0]) { payBan(c.sp, 1, lg); return; }
   }
-  // (0.16.0) never take on more upkeep than last year's running balance can carry (attractions pay their own way)
-  const net = runningNet();
+  // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
+  // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
+  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1 };
+  const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
-    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : S.gyms.map((_, i) => i).reverse();
-    for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && (k === 'attract' || k === 'sanct' || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
+    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' ? busy : S.gyms.map((_, i) => i).reverse();
+    for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && aimWorth(where, k) && (earns[k] || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
   }
 }
 // New Year in a rival League: a change of aim when the books call for it
@@ -2309,7 +2032,7 @@ function placeOf(where) {
 // every building's top level in the bound League (seat and gym cities), with what that level cost
 function topLevels() {
   const out = [], spots = ['seat'].concat(S.gyms.map((_, i) => i));
-  for (const where of spots) { const pl = placeOf(where); if (pl) for (const x of pl.b) if (x.lv > 0) out.push({ where, k: x.k, lv: x.lv, cost: upCost(x.k, x.lv - 1), name: pl.name }); }
+  for (const where of spots) { const pl = placeOf(where); if (pl) for (const x of pl.b) if (x.lv > (x.base || 0)) out.push({ where, k: x.k, lv: x.lv, cost: upCost(x.k, x.lv - 1), name: pl.name }); }
   return out;
 }
 // take the top level off a building (since 0.40.0 its presence stops counting at the next New Year); returns what that level cost
@@ -2337,22 +2060,23 @@ function ruinsAt(where, k) {
   const place = where === 'seat' ? 'seat' : S.gyms[where] ? S.gyms[where].city : null;
   return place != null && f.ruins[place] ? f.ruins[place][k] || 0 : 0;
 }
-const sellValue = (where, k) => { const pl = placeOf(where), lv = pl ? upLevel(pl.b, k) : 0; return lv ? Math.round(upCost(k, lv - 1) * SELL_SHARE) : 0; };
+const sellValue = (where, k) => { const pl = placeOf(where), x = pl ? pl.b.find(y => y.k === k) : null; return x && x.lv > (x.base || 0) ? Math.round(upCost(k, x.lv - 1) * SELL_SHARE) : 0; };
 // what the bound League's buildings would fetch if all were sold (for folding)
 const salvage = () => Math.round(estateCost() * SELL_SHARE);
 function sellBuilding(where, k, lg = ME()) {
   return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
     const pl = placeOf(where), lv = pl ? upLevel(pl.b, k) : 0; if (!lv) return 'Nothing to sell.';
+    const bx = pl.b.find(x => x.k === k); if (lv <= (bx.base || 0)) return 'That level came with the seat.'; // (0.63.0)
     const got = Math.round(dropLevel(pl, k) * SELL_SHARE), nm = UPGRADES[k].name.toLowerCase();
     book(got, 'sales', `Sold ${nm} level ${lv} in ${pl.name}`);
     news(`The ${S.lgName} sold ${lv > 1 ? `a level of its ${nm} in ${pl.name} (now level ${lv - 1})` : `its ${nm} in ${pl.name}`} for ${money(got)}.`, 'league');
     return null;
   });
 }
-// (AI) in the red: sell the costliest level, halls, features, the scouting office and the academy before attractions
+// (AI) in the red: sell the costliest level first
 function aiSell() {
-  const x = topLevels().sort((a, b) => ((a.k === 'attract') - (b.k === 'attract')) || b.cost - a.cost)[0];
+  const x = topLevels().sort((a, b) => b.cost - a.cost)[0];
   if (x) sellBuilding(x.where, x.k, S.lg || 0);
 }
 // a distress sale: another League with a gym in the city (an AI League, not in the red, with money above its reserve

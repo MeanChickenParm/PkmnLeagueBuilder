@@ -19,6 +19,7 @@ function newYear() {
   settleBanVote();
   for (const t of Object.values(S.trainers)) if (t.role !== 'retired' && t.role !== 'prospect') { t.seasons = (t.seasons || 0) + 1; t.weekLog = []; }
   cityNewYear(); // (0.15.0) city standing from the year's gym records, fading, and who controls each city
+  cityYearRoll(); // (0.63.0) last year's visitors and tickets
   prestigeNewYear(); // (0.17.0) each League's prestige
   S.season++; S.week = 0; S.dexSeason = {};
   eachLeague(() => {

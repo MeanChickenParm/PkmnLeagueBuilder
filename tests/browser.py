@@ -298,21 +298,33 @@ async def run(path):
                           if (homeLeague(L) !== 1 || L.role !== 'e4' || !(((S.fin.yr && S.fin.yr.in.transfers) || 0) > t0)) log.push('FAIL letting a Gym Leader go to a rival in talks'); else if (!(S.talkDone || []).some(x => x.tid === L.id && x.res === 'released')) log.push('FAIL no Let go result'); else log.push('retention let go');
                           inLeague(0, fillAllVacancies); } } }
                     go('staff'); }
-                  // 0.13.0: money and cities. Build an attraction at the seat, ban a Pokémon from the Meta page, read the books
+                  // 0.63.0: city sizes, the seat's Stadium (its base levels can't be sold), a Hotel and a Berry Farm from the Cities page, the Farm's plots set
+                  { S.fin.money = 200000; go('cities'); const main = document.querySelector('#main').textContent;
+                    if (!/Town|City|Metropolis/.test(main) || !/Visitors/.test(main) || !/Stadium/.test(main)) log.push('FAIL the Cities page shows no size, visitors or Stadium');
+                    if (document.querySelector('[data-act=sellb][data-w=seat][data-k=stadium]')) log.push('FAIL the seat Stadium offered for sale');
+                    const hb = document.querySelector('[data-act=build][data-w="1"][data-k=hotel]'), m3 = S.fin.money;
+                    if (!hb) log.push('FAIL no Hotel to build'); else { hb.click(); if (inLeague(0, () => placeLv(1, 'hotel')) !== 1 || S.fin.money !== m3 - 20000) log.push('FAIL building a Hotel'); else log.push('built a Hotel'); }
+                    go('cities'); const fb = document.querySelector('[data-act=build][data-w="2"][data-k=berry]'), m4 = S.fin.money;
+                    if (!fb) log.push('FAIL no Berry Farm to build'); else { fb.click(); if (inLeague(0, () => placeLv(2, 'berry')) !== 1 || S.fin.money !== m4 - 15000) log.push('FAIL building a Berry Farm'); else log.push('built a Berry Farm'); }
+                    go('cities'); const sel = document.querySelector('select.berryfeed');
+                    if (!sel) log.push('FAIL no Berry Farm plot picker'); else { sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); const f = inLeague(0, () => berryFarms())[0]; if (!f || f.feed !== 1) log.push('FAIL setting Berry Farm plots'); else log.push('set Berry Farm plots'); }
+                    if (!inLeague(0, () => buildCheck('seat', 'hotel')).why) log.push('FAIL a Hotel allowed at the seat');
+                    inLeague(0, () => { sellBuilding(1, 'hotel'); sellBuilding(2, 'berry'); }); S.fin.money = 200000; } // their slots back for the later steps
+                  // 0.13.0: money and cities. Build a scouting office at the seat (0.63.0: attractions are gone), ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
-                    go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
-                    if (!b) log.push('FAIL no attraction to build at the seat'); else if (!b.disabled) { b.click(); if (!(S.seatB || []).some(x => x.k === 'attract') || S.fin.money !== m0 - 25000) log.push('FAIL building an attraction'); else log.push('built an attraction'); }
+                    go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=scout]');
+                    if (!b) log.push('FAIL no scouting office to build at the seat'); else if (!b.disabled) { b.click(); if (!(S.seatB || []).some(x => x.k === 'scout') || S.fin.money !== m0 - 25000) log.push('FAIL building a scouting office'); else log.push('built a scouting office'); }
                     // 0.18.0: sell it back for half from the Cities page
-                    { const sb = document.querySelector('[data-act=sellb][data-w=seat][data-k=attract]'), m1 = S.fin.money;
-                      if (!(S.seatB || []).some(x => x.k === 'attract')) {} else if (!sb) log.push('FAIL no sell button for the attraction'); else { sb.click(); if ((S.seatB || []).some(x => x.k === 'attract') || S.fin.money !== m1 + 12500) log.push('FAIL selling the attraction'); else log.push('sold the attraction'); } }
+                    { const sb = document.querySelector('[data-act=sellb][data-w=seat][data-k=scout]'), m1 = S.fin.money;
+                      if (!(S.seatB || []).some(x => x.k === 'scout')) {} else if (!sb) log.push('FAIL no sell button for the scouting office'); else { sb.click(); if ((S.seatB || []).some(x => x.k === 'scout') || S.fin.money !== m1 + 12500) log.push('FAIL selling the scouting office'); else log.push('sold the scouting office'); } }
                     // 0.19.0: a level sold in the red can be restored at 30%; a distress offer can be bought from the Cities page
-                    { const keep = S.fin.money; S.fin.money = 100000; go('cities'); const b2 = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
-                      if (b2 && !b2.disabled) { b2.click(); S.fin.money = -1000; inLeague(0, () => sellBuilding('seat', 'attract')); S.fin.money = 100000; go('cities');
-                        const rb = document.querySelector('[data-act=build][data-w=seat][data-k=attract]');
+                    { const keep = S.fin.money; S.fin.money = 100000; go('cities'); const b2 = document.querySelector('[data-act=build][data-w=seat][data-k=scout]');
+                      if (b2 && !b2.disabled) { b2.click(); S.fin.money = -1000; inLeague(0, () => sellBuilding('seat', 'scout')); S.fin.money = 100000; go('cities');
+                        const rb = document.querySelector('[data-act=build][data-w=seat][data-k=scout]');
                         if (!rb || !/Restore/.test(rb.textContent)) log.push('FAIL no Restore button after a sale in the red');
-                        else { rb.click(); if (S.fin.money !== 100000 - 7500 || !(S.seatB || []).some(x => x.k === 'attract')) log.push('FAIL restoring the attraction'); else log.push('restored the attraction'); } }
-                      const ck = inLeague(0, () => buildCheck(0, 'attract'));
-                      if (!ck.why) { S.distress = [{ city: S.gyms[0].city, k: 'attract', lv: ck.lv, from: -1, price: 7500, due: S.turn + 4, at: S.turn }]; go('cities');
+                        else { rb.click(); if (S.fin.money !== 100000 - 7500 || !(S.seatB || []).some(x => x.k === 'scout')) log.push('FAIL restoring the scouting office'); else log.push('restored the scouting office'); } }
+                      const ck = inLeague(0, () => buildCheck(0, 'stadium'));
+                      if (!ck.why) { S.distress = [{ city: S.gyms[0].city, k: 'stadium', lv: ck.lv, from: -1, price: 7500, due: S.turn + 4, at: S.turn }]; go('cities');
                         const db = document.querySelector('[data-act=distbuy]'), m2 = S.fin.money;
                         if (!db || !/Distress sales/.test(document.querySelector('#main').textContent)) log.push('FAIL no distress sales panel');
                         else { db.click(); if (S.fin.money !== m2 - 7500 || (S.distress || []).length) log.push('FAIL buying a distress offer'); else log.push('bought a distress offer'); } }

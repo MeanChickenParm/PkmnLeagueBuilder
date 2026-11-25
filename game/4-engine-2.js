@@ -1128,7 +1128,7 @@ function endRun(t, entry, stage) {
   if (t.spon && sponMove(t)) { if (!t.spon) t.sponFrom = null; t.rest = S.turn + ri(REST_QUICK[0], REST_QUICK[1]); return; }
   // (0.41.0) a challenger staying in the region draws which of its Leagues to take on next (regionDraw)
   const moved = leagueMove(t, stage != null && rand() < TOUR_CHANCE) || regionDraw(t);
-  t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0));
+  t.rest = S.turn + (moved && stage != null ? ri(REST_QUICK[0], REST_QUICK[1]) : Math.max(2, ri(REST_WEEKS[0], REST_WEEKS[1]) + (t.age >= REST_OLDER ? 2 : 0) - (moved ? 0 : centerCut()))); // (0.63.0) less at your Pokémon Centers
   starTalks(t, stage); // (0.53.0) a star's run is over: talks may open
 }
 const MOVE_CROWD = 1.25;
@@ -1289,6 +1289,7 @@ function gymTry(t, entry) {
   setTeamLevel(t, lvl);
   entry.gym = g; entry.b = b; entry.won = true; entry.tryNo = triesAt(t, g) + 1;
   const mem = gmemAt(t, g); // (0.21.0) what beat them here before
+  gymTickets(g, t); // (0.63.0) the crowd at its Stadium
   const yg = yearGym(g), band = stageBand(b);
   yg.sb = yg.sb || [[0, 0], [0, 0], [0, 0]]; yg.sb[band][0]++; // (0.32.0) tries and holds by the challenger's stage
   let res = null;
@@ -1365,6 +1366,7 @@ function leagueRun(q, entry) {
     const foe = T(S.e4[i]);
     setTeamLevel(q, E4_LV[i]);
     if (itemsOn()) autoEquip(q, foe);
+    seatTickets(q, foe, i); // (0.63.0) the seat's Stadium
     const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`, undefined, homeEdge('seat'));
     if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
     y.pts += 2; noteDepth(q, 9 + i);
@@ -1374,6 +1376,7 @@ function leagueRun(q, entry) {
     const champ = T(S.champion);
     setTeamLevel(q, champLv());
     if (itemsOn()) autoEquip(q, champ);
+    seatTickets(q, champ, 4);
     const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`, undefined, homeEdge('seat'));
     r.when = { season: S.season, week: S.week };
     L.logs.push(r); if (L.logs.length > TITLE_LOGS) L.logs.shift();
