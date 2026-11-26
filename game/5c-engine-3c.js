@@ -267,6 +267,7 @@ function aimItems(aim) {
 function buildings2Week(lap) {
   if (!S.fin) return;
   if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
+  fanWeek(lap); // (0.71.0) the Fan Clubs' members
   cornerWeek(lap); // (0.70.0) the Game Corner's take and its prize counter
   schoolWeek(); tutorWeek(); labWeek();
   buildings3Week(lap); // (0.65.0) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
@@ -788,3 +789,230 @@ function aiCorner(aim) {
 const aimCorner = where => placeLv(where, 'corner') > 0 || !corners().length;
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { CORNER_SEATS, CORNER_PRIZES, CORNER_MARKUP, CORNER_OFF, CORNER_LOG, CORNER_SPEND_AT, CORNER_RESIDENTS_AT, corners, cornerPool, cornerStock, cornerNext, prizePrice, buyPrize, cornerSwing, cornerYear });
+
+// ================= THE BANK AND THE FAN CLUB (0.71.0) =================
+// (0.71.0, the owner, design docs claude/design-update-bank.md and claude/design-update-fan-club.md; every answer of
+// both question rounds the recommended one). The UPGRADES entries are in 5b-engine-3b. All numbers provisional.
+
+// ---------- the Bank ----------
+// One per League, in any gym city (level 3 needs a City); it earns nothing. While the League is in the red its
+// buildings keep working for BANK_GRACE weeks (by level) before they lapse (lapsed() in 5-engine-3 reads graceOn());
+// the grace refills only after BANK_REFILL weeks back out of the red. It doesn't cover wages: unpaid staff still leave.
+// A credit line: up to BANK_LIMIT of the League's buildings at cost, borrowed at a rate by the League's place on the
+// table by wealth (BANK_RATE_TOP at the top to BANK_RATE_LOW at the bottom: catch-up), simple interest over 48 or 96
+// weeks, paid weekly. A week it can't pay (money short of the payment) is missed; every BANK_SEIZE missed weeks in a
+// row the Bank takes the League's lowest building level at the distress value against the loan (no ruin is left).
+// S.fin.bank = { left (grace weeks left), out (weeks out of the red), loan: { owed, pay, left, rate, missed, from, amt } }
+const BANK_GRACE = [4, 8, 12], BANK_REFILL = 12, BANK_LIMIT = [0.2, 0.3, 0.4], BANK_RATE_TOP = 0.08, BANK_RATE_LOW = 0.04, BANK_TERMS = [48, 96], BANK_SEIZE = 4, BANK_MIN = 1000;
+const BANK_LOG = { graceWeeks: 0, graces: 0, loans: 0, lent: 0, paid: 0, missed: 0, seized: 0, seizedValue: 0, aiLoans: 0, aiGrowth: 0, refused: 0 };
+// the League's Bank (bound League, without checking the red): { gi, c, x } or null
+function bankAt() {
+  for (let gi = 0; gi < S.gyms.length; gi++) { const c = S.cities[S.gyms[gi].city], x = c && (c.b && c.b[S.lg || 0] || []).find(y => y.k === 'bank'); if (x) return { gi, c, x }; }
+  return null;
+}
+const bankBuilt = () => { const a = S.gyms && S.cities ? bankAt() : null; return a ? a.x.lv : 0; };
+function bankState() { const f = S.fin; if (!f) return null; return f.bank = f.bank || { left: null, out: BANK_REFILL, loan: null }; }
+const graceFull = () => { const lv = bankBuilt(); return lv ? BANK_GRACE[lv - 1] : 0; };
+// grace weeks still to come in the red (the bound League)
+function graceLeft() { const B = S.fin && S.fin.bank; if (!B || !bankBuilt()) return 0; return B.left == null ? graceFull() : Math.min(B.left, graceFull()); }
+// in the red, but the Bank's grace still holds the buildings up
+const graceOn = () => !!(S.fin && S.fin.money < 0 && graceLeft() > 0 && !fixedStaff());
+// a building level comes and goes: a new or raised Bank while solvent starts with its full grace
+function bankBuiltNow() { const B = bankState(); if (B && S.fin.money >= 0) { B.left = graceFull(); B.out = BANK_REFILL; } }
+// what the bound League can borrow: the limit, what is owed, and the room left (0 while the Bank isn't working)
+function creditLimit() { const lv = bankBuilt(); return lv ? Math.round(estateCost() * BANK_LIMIT[lv - 1]) : 0; }
+const loanOwed = () => { const B = S.fin && S.fin.bank; return B && B.loan ? B.loan.owed : 0; };
+const creditRoom = () => Math.max(0, creditLimit() - loanOwed());
+// the rate for League lg (the bound one by default): its place by wealth (money + buildings at cost) among the Leagues
+// with books, the richest paying BANK_RATE_TOP and the poorest BANK_RATE_LOW
+function loanRate(lg = S.lg || 0) {
+  const w = []; for (let j = 0; j < nLeagues(); j++) { const v = inLeague(j, () => S.fin ? S.fin.money + estateCost() - loanOwed() : null); if (v != null) w.push({ j, v }); }
+  if (w.length < 2) return (BANK_RATE_TOP + BANK_RATE_LOW) / 2;
+  w.sort((a, b) => b.v - a.v); const r = Math.max(0, w.findIndex(x => x.j === lg));
+  return Math.round((BANK_RATE_TOP - (BANK_RATE_TOP - BANK_RATE_LOW) * r / (w.length - 1)) * 1000) / 1000;
+}
+// what a loan of amt over n weeks would be (refinancing whatever is owed): { total, pay, rate }
+function loanTerms(amt, n, lg = S.lg || 0) { const rate = loanRate(lg), total = loanOwed() + Math.round(amt * (1 + rate * n / YEAR_WEEKS)); return { total, pay: Math.ceil(total / n), rate }; }
+function borrowCheck(amt, n) {
+  if (!booksOn()) return 'Money is off.';
+  if (!bankBuilt()) return 'You need a Bank.';
+  if (lapsed()) return 'The Bank lends nothing once your buildings have lapsed.';
+  if (!BANK_TERMS.includes(n)) return 'Loans run 48 or 96 weeks.';
+  if (!(Number.isInteger(amt) && amt >= BANK_MIN)) return `Borrow at least ${money(BANK_MIN)}.`;
+  if (amt > creditRoom()) return `You can borrow up to ${money(creditRoom())} more.`;
+  return null;
+}
+// borrow amt over n weeks (refinances any loan): an error or null. In the red the money clears the debt first (it is
+// simply booked).
+function borrow(amt, n, lg = ME()) {
+  return inLeague(lg, () => {
+    const err = borrowCheck(amt, n); if (err) { BANK_LOG.refused++; return err; }
+    const B = bankState(), t = loanTerms(amt, n), had = !!B.loan;
+    B.loan = { owed: t.total, pay: t.pay, left: n, rate: t.rate, missed: 0, from: S.turn, amt: (had ? B.loan.amt : 0) + amt };
+    book(amt, 'loan', `Bank loan of ${money(amt)} over ${n} weeks at ${(t.rate * 100).toFixed(1)}%${had ? ' (refinancing the old one)' : ''}`);
+    BANK_LOG.loans++; BANK_LOG.lent += amt; if (S.fin.aim) BANK_LOG.aiLoans++;
+    if (playerLeague()) news(`The ${S.lgName} borrowed ${money(amt)} from its Bank: ${money(t.pay)} a week for ${n} weeks.`, 'league');
+    return null;
+  });
+}
+// pay the loan off now: an error or null
+function payOffLoan(lg = ME()) {
+  return inLeague(lg, () => {
+    const B = S.fin && S.fin.bank, L = B && B.loan; if (!L) return 'No loan to pay off.';
+    if (!canSpend(L.owed)) return 'Not enough money.';
+    book(-L.owed, 'bank', `Paid off the Bank loan (${money(L.owed)})`); BANK_LOG.paid += L.owed; B.loan = null;
+    return null;
+  });
+}
+// the Bank takes the League's lowest building level (the Bank itself last) at the distress value
+function bankSeize() {
+  const B = S.fin.bank, L = B.loan;
+  const x = topLevels().sort((a, b) => (a.k === 'bank') - (b.k === 'bank') || a.lv - b.lv || a.cost - b.cost)[0]; if (!x) return;
+  const pl = placeOf(x.where), val = Math.round(x.cost * DISTRESS_SHARE), nm = UPGRADES[x.k].name.toLowerCase();
+  const red = lapsed(); dropLevel(pl, x.k); if (red) addRuin(pl.c ? pl.c.id : 'seat', x.k, -1); // taken, not ruined
+  L.owed -= val; BANK_LOG.seized++; BANK_LOG.seizedValue += val;
+  const text = `The ${S.lgName} missed ${BANK_SEIZE} loan payments: the Bank took ${x.lv > 1 ? `a level of its ${nm}` : `its ${nm}`} in ${pl.name}, worth ${money(val)} against the loan.`;
+  news(text, 'league'); noteChange(text); if (playerLeague()) stopFor('money', text);
+  if (L.owed <= 0) { if (L.owed < 0) book(-L.owed, 'sales', 'What the Bank owed back after taking a building'); B.loan = null; }
+}
+// once a week for every League with books (from moneyWeek, after the red's checks): the grace counts down in the red
+// and refills after BANK_REFILL weeks out; then the loan's payment
+function bankWeek(lap) {
+  const f = S.fin, B = bankState(); if (!B) return;
+  const lv = bankBuilt();
+  if (f.money < 0) {
+    f.wasRed = true; B.out = 0;
+    if (lv && !lap && graceLeft() > 0) { if (B.left == null) B.left = graceFull(); if (B.left === graceFull()) BANK_LOG.graces++; B.left--; BANK_LOG.graceWeeks++;
+      if (!B.left && playerLeague()) { const text = `The Bank's grace is used up: unless the ${S.lgName} is back out of the red, its buildings lapse from next week.`; news(text, 'league'); stopFor('money', text); } }
+  } else { B.out = Math.min(BANK_REFILL, (B.out || 0) + 1); if (B.out >= BANK_REFILL || B.left == null) B.left = graceFull(); }
+  const L = B.loan; if (!L) return;
+  const pay = Math.min(L.pay, L.owed);
+  if (f.money >= pay) { book(-pay, 'bank'); L.owed -= pay; L.left = Math.max(0, L.left - 1); L.missed = 0; BANK_LOG.paid += pay; if (L.owed <= 0) { B.loan = null; if (playerLeague()) news(`The ${S.lgName} has paid off its Bank loan.`, 'league'); } return; }
+  L.missed++; BANK_LOG.missed++;
+  if (L.missed === 1 && playerLeague()) { const text = `The ${S.lgName} missed a Bank loan payment of ${money(pay)}. After ${BANK_SEIZE} missed in a row the Bank takes a building.`; news(text, 'league'); stopFor('money', text); }
+  if (L.missed % BANK_SEIZE === 0) bankSeize();
+}
+// a rival's (and the managed sim's) monthly look at the Bank, from aimMonth / autoMonth: in the red with the Bank still
+// working, borrow enough to clear the debt and a month's wages (true if it did); a money-maker solvent with room and a
+// running surplus borrows to expand now and then. Returns true when it borrowed to cover the red.
+const BANK_AI_GROW = 0.25, BANK_AI_SHARE = 0.5;
+function aiBank(aim) {
+  const f = S.fin; if (!f || !bankBuilt() || fixedStaff()) return false;
+  if (f.money < 0) {
+    if (lapsed()) return false;
+    const need = Math.min(creditRoom(), -f.money + 4 * wageBill()), amt = Math.round(need / 1000) * 1000;
+    return amt >= BANK_MIN && !borrow(amt, 96, S.lg || 0);
+  }
+  if (aim === 'money' && !loanOwed() && rand() < BANK_AI_GROW) {
+    const net = runningNet(), amt = Math.round(Math.min(creditRoom() * BANK_AI_SHARE, Math.max(0, net) * 0.5) / 1000) * 1000;
+    if (net > 0 && amt >= BANK_MIN * 10 && loanTerms(amt, 96).pay * YEAR_WEEKS < net * 0.5 && !borrow(amt, 96, S.lg || 0)) BANK_LOG.aiGrowth++;
+  }
+  return false;
+}
+// a rival builds a Bank early as a wall-builder, otherwise only after a spell in the red (aimWorth)
+const aimBank = () => aimOf() === 'wall' || !!(S.fin && S.fin.wasRed);
+
+// (0.71.0) a Ranch level lost (sold, decayed or taken by the Bank) leaves the ranch over its new room: the cheapest
+// spares (by the ranch rules' test) are sold back, then the cheapest unfielded, then the cheapest of all (TODO flake)
+function ranchTrim() {
+  if (!S.ranch || !ranchOn()) return;
+  ranchSync();
+  const r = ranchRules(), cheap = a => a.sort((x, y) => entryValue(x) - entryValue(y))[0];
+  for (let n = 0; n < 300 && S.ranch.mons.length > ranchCap(); n++) {
+    const pl = x => plannedRefs(x.uid).length > 0, m = S.ranch.mons;
+    const e = cheap(m.filter(x => rrSpare(x, r))) || cheap(m.filter(x => x.at == null && !pl(x))) || cheap(m.filter(x => !pl(x))) || cheap(m.slice());
+    if (!e || sellMon(e.uid)) break;
+  }
+}
+// ---------- the Fan Club ----------
+// One per gym city (any size; level 3 needs a City), backing that gym. Its members (x.fans, best x.best) grow monthly
+// with the gym's record against the region's average this year (FAN_REC), its local heroes (staff from the city at
+// the gym: FAN_HERO; the League's Elite Four and Champion from the city too) and a small trickle a level (FAN_BASE),
+// up to its cap (FAN_CAP by level × (1 + FAN_SIZE a city size)). Losses come off at FAN_DOWN of the rate, and a loyal
+// core (FAN_CORE of its best) never leaves while it stands. Each New Year it adds standing in its city (FAN_STAND a
+// member, cityNewYear), it fills the gym's Stadium (up to FAN_FILL at a full level 3 club, ticketSale) and, at half its
+// cap or more, trainers from the city need less prestige to sign (FAN_PULL, with a Stronghold's at most FAN_PULL_MAX
+// together: homePull, read by prestMin). A hometown hero poached by another League takes FAN_POACH of the members
+// (never the core); half join that League's club there, if it has one. Lapsed in the red (nothing works, nothing lost).
+const FAN_CAP = [2000, 5000, 12000], FAN_SIZE = 0.25, FAN_REC = 4000, FAN_BASE = 30, FAN_HERO = { leader: 150, gymtrainer: 50, e4: 100, champion: 150 };
+const FAN_DOWN = 0.5, FAN_CORE = 0.2, FAN_STAND = 1 / 1000, FAN_FILL = 0.1, FAN_PULL = [0.1, 0.1, 0.15], FAN_PULL_MAX = 0.3, FAN_POACH = { leader: 0.15, gymtrainer: 0.05, e4: 0.2, champion: 0.2 };
+const FAN_LOG = { months: 0, grown: 0, lost: 0, poached: 0, poachedFans: 0, joined: 0, pulls: 0, standing: 0 };
+// the bound League's Fan Clubs: [{ gi, c, x }]
+function fanClubs() {
+  const out = [], lg = S.lg || 0;
+  S.gyms.forEach((g, gi) => { const c = S.cities[g.city], x = c && (c.b && c.b[lg] || []).find(y => y.k === 'fanclub'); if (x) out.push({ gi, c, x }); });
+  return out;
+}
+const fanCap = (x, c) => Math.round(FAN_CAP[x.lv - 1] * (1 + FAN_SIZE * citySize(c)));
+// League lg's club in city c (read without binding), or null
+const fanClubOf = (c, lg) => (c && c.b && c.b[lg] || []).find(y => y.k === 'fanclub') || null;
+// the gym's record this year against the average of every gym in its region (null with too few tries yet)
+function regionHeld() {
+  const a = []; for (let j = 0; j < nLeagues(); j++) { const L = j === (S.lg || 0) ? S : S.leagues[j]; if (L && L.region === S.region) for (const g of L.gyms || []) if (g.w + g.l) a.push(g.w / (g.w + g.l)); }
+  return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+}
+// the month's change for the club at gym gi (before the cap and the core)
+function fanGain(gi, x, c, avg) {
+  const g = S.gyms[gi];
+  let n = FAN_BASE * x.lv;
+  if (avg != null && g.w + g.l >= 4) n += (g.w / (g.w + g.l) - avg) * FAN_REC;
+  const hero = t => t && !t.acting && homeCity(t) === c.id;
+  if (hero(T(g.leader))) n += FAN_HERO.leader;
+  for (const id of g.trainers || []) if (hero(T(id))) n += FAN_HERO.gymtrainer;
+  for (const id of S.e4) if (hero(T(id))) n += FAN_HERO.e4;
+  if (hero(T(S.champion))) n += FAN_HERO.champion;
+  return n;
+}
+// monthly, for every League with books (from buildings2Week): the clubs grow or shrink
+function fanWeek(lap) {
+  if (lap || S.week % 4 !== 1 || fixedStaff()) return;
+  const cs = fanClubs(); if (!cs.length) return;
+  const avg = regionHeld();
+  for (const { gi, c, x } of cs) {
+    const cap = fanCap(x, c), was = x.fans || 0; let d = fanGain(gi, x, c, avg);
+    if (d < 0) d *= FAN_DOWN;
+    const core = Math.round((x.best || 0) * FAN_CORE);
+    x.fans = Math.round(clamp(was + d, core, cap)); x.best = Math.max(x.best || 0, x.fans);
+    FAN_LOG.months++; if (x.fans > was) FAN_LOG.grown += x.fans - was; else FAN_LOG.lost += was - x.fans;
+  }
+}
+// New Year (cityNewYear): standing a club adds in its city
+const fanStanding = x => Math.round((x.fans || 0) * FAN_STAND * 10) / 10;
+// the Stadium's crowd lift at gym `where` (ticketSale): up to FAN_FILL at a full level 3 club
+function fanFill(where) {
+  if (where === 'seat' || lapsed()) return 0;
+  const c = S.cities[(S.gyms[where] || {}).city], x = fanClubOf(c, S.lg || 0); if (!x || !x.fans) return 0;
+  return Math.min(FAN_FILL, FAN_FILL * x.fans / Math.round(FAN_CAP[2] * (1 + FAN_SIZE * citySize(c))));
+}
+// how far a hometown League's pull lowers trainer t's prestige minimum for League lg (prestMin): a Stronghold's
+// (0.40.0) and a Fan Club at half its cap or more (0.71.0), at most FAN_PULL_MAX off together
+function homePull(t, lg) {
+  const hc = homeCity(t); if (hc == null) return 1;
+  const c = S.cities[hc]; let off = strongholdOf(c, lg) ? 1 - STRONG_RECRUIT : 0;
+  const x = fanClubOf(c, lg);
+  if (x && (x.fans || 0) >= fanCap(x, c) / 2 && !inLeague(lg, () => !!S.fin && lapsed())) { off += FAN_PULL[x.lv - 1]; FAN_LOG.pulls++; }
+  return 1 - Math.min(FAN_PULL_MAX, off);
+}
+// a member of staff leaves their League for a post at League `toName` (leaveForPost): if their hometown has their old
+// League's club, a share of its members leaves with them (never the core) and half join the new League's club there
+function fanPoach(t, toName) {
+  const from = homeLeague(t), hc = homeCity(t), to = [...Array(nLeagues()).keys()].find(j => leagueName(j) === toName);
+  if (from == null || from < 0 || hc == null || to == null || to === from) return;
+  const c = S.cities[hc], x = fanClubOf(c, from), share = FAN_POACH[t.role]; if (!x || !x.fans || !share) return;
+  const core = Math.round((x.best || 0) * FAN_CORE), n = Math.max(0, Math.min(x.fans - core, Math.round(x.fans * share))); if (!n) return;
+  x.fans -= n; FAN_LOG.poached++; FAN_LOG.poachedFans += n;
+  const y = fanClubOf(c, to); if (y) { const add = Math.round(n / 2); y.fans = Math.min(fanCap(y, c), (y.fans || 0) + add); y.best = Math.max(y.best || 0, y.fans); FAN_LOG.joined += add; }
+  const text = `${n.toLocaleString()} members of the ${leagueName(from)}'s Fan Club in ${c.name} followed ${t.name} to the ${toName}.`;
+  inLeague(from, () => { if (playerLeague()) news(text, 'league'); });
+  inLeague(to, () => { if (playerLeague()) news(text, 'league'); });
+}
+// a rival builds a Fan Club where control of the city is close (Contested or Leaning against it), and a money-maker
+// also in its Stadium cities (aimWorth)
+function aimFan(where) {
+  const c = S.cities[(S.gyms[where] || {}).city]; if (!c) return false;
+  const lgs = gymMap()[c.id] || [], lg = S.lg || 0;
+  if (lgs.length > 1 && (c.tier == null || c.tier <= 1 || c.ctrl !== lg)) return true;
+  return aimOf() === 'money' && placeLv(where, 'stadium') > 0 && placeLv(where, 'fanclub') < 2;
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { BANK_GRACE, BANK_REFILL, BANK_LIMIT, BANK_TERMS, BANK_SEIZE, BANK_MIN, BANK_LOG, bankAt, bankBuilt, bankState, graceLeft, graceOn, graceFull, creditLimit, creditRoom, loanOwed, loanRate, loanTerms, borrowCheck, borrow, payOffLoan, bankWeek, aiBank, FAN_CAP, FAN_LOG, FAN_PULL, FAN_PULL_MAX, FAN_FILL, FAN_CORE, fanClubs, fanCap, fanClubOf, fanWeek, fanFill, fanStanding, homePull, fanPoach });

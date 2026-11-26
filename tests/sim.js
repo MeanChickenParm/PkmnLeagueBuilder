@@ -40,6 +40,7 @@ const CB3 = { built: {}, refused: 0, routes: 0, keep: 0, airports: 0, finds: 0, 
 const ADD = { built: 0 }; // (0.68.0)
 const WX = { built: 0, set: 0, refused: 0, raised: 0, seen: 0, terrainSeen: 0 }; // (0.69.0)
 const GC = { seen: 0, built: 0, raised: 0, bought: 0, refused: 0 }; // (0.70.0)
+const BK = { keep: null, seen: 0, graceSeen: 0, loansSeen: 0, built: 0, borrowed: 0, refused: 0, paidOff: 0, forcedRed: 0, fanBuilt: 0, fanRaised: 0, clubs: 0, fansMax: 0 }; // (0.71.0)
 const RR2 = { set: 0, listedMax: 0 }; // (0.66.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
@@ -368,6 +369,17 @@ function check(tag) {
       if (pz.length > g.CORNER_PRIZES[x.lv - 1]) bad('more prizes than the Game Corner holds'); if (new Set(pz.map(q => q.b)).size !== pz.length) bad('a prize line twice on one counter');
       for (const q of pz) { if (!g.ranchable(q.b)) bad('a prize that is not ranchable: ' + q.b); if (!(q.g >= 2 && q.g <= 5)) bad('a prize of grade ' + q.g); if (!(q.price > 0)) bad('a prize with no price'); }
       if (x.prize && !g.lapsed() && z.turn - x.at > g.QUARTER_WEEKS) bad('a prize counter past its quarter'); }
+    // (0.71.0) the Bank: one a League, level 3 in a City; its grace within its level, the red's lapse following it, and
+    // a well-formed loan. The Fan Club: members within the cap and at or above the loyal core, best at least the members
+    { const bk = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'bank')); if (bk.length > 1) bad('two Banks in one League'); if (bk.some(p => p.b.find(x => x.k === 'bank').lv >= 3 && g.citySize(p.c) < 1)) bad('a level 3 Bank in a Town');
+      if (bk.length) BK.seen++;
+      const B = z.fin && z.fin.bank; if (B) { if (B.left != null && !(B.left >= 0 && B.left <= Math.max(...g.BANK_GRACE))) bad('bad Bank grace ' + B.left);
+        if (z.fin.money < 0 && g.graceLeft() > 0) { BK.graceSeen++; if (g.lapsed()) bad('lapsed during the Bank grace'); }
+        if (z.fin.money < 0 && !g.graceLeft() && !g.lapsed()) bad('not lapsed in the red without grace');
+        const L = B.loan; if (L) { BK.loansSeen++; if (!(L.owed > 0) || !(L.pay > 0) || !(L.rate >= 0.04 && L.rate <= 0.08) || !(L.missed >= 0) || !(L.left >= 0 && L.left <= 96) || !Number.isInteger(L.owed)) bad('a bad loan ' + JSON.stringify(L)); } }
+      for (const p of g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'fanclub'))) { const x = p.b.find(y => y.k === 'fanclub'), cap = g.fanCap(x, p.c), f = x.fans || 0; BK.clubs++; BK.fansMax = Math.max(BK.fansMax, f);
+        if (f > cap || f < 0) bad('Fan Club members outside the cap ' + f + '/' + cap); if (f < Math.round((x.best || 0) * g.FAN_CORE) - 1) bad('Fan Club below its loyal core'); if ((x.best || 0) < f) bad('Fan Club best below its members');
+        if (x.lv >= 3 && g.citySize(p.c) < 1) bad('a level 3 Fan Club in a Town'); } }
     { const air = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'airport')); if (air.length > 1) bad('two Airports in one League'); CB3.airports = Math.max(CB3.airports, air.length);
       const a = g.airportAt(i); if (a) { if (a.routes.length > g.routeCount(a.x.lv) || a.routes.some(r => r === z.region || !(r >= 0 && r < g.nRegionsBuilt())) || new Set(a.routes).size !== a.routes.length) bad('bad Airport routes ' + JSON.stringify(a.x.routes)); if (a.c.region !== z.region) bad('an Airport outside its region'); }
       if (z.fin && z.fin.keepB) for (const [k, v] of Object.entries(z.fin.keepB)) if (!['contest', 'pier', 'fossil'].includes(k) || !(v >= 1 && v <= 5)) bad('a bad keep grade ' + k + ' ' + v);
@@ -652,6 +664,19 @@ for (let i = 0; i < N; i++) {
           const q = a.x.prize[i3]; z.fin.money += q.price; const m9 = z.fin.money, n9 = z.ranch.mons.length;
           const err = g.buyPrize(a.gi, i3); if (err) fail.push('a Game Corner prize refused: ' + err);
           else { GC.bought++; if (z.fin.money !== m9 - q.price || z.ranch.mons.length !== n9 + 1 || !q.sold || z.ranch.mons[z.ranch.mons.length - 1].b !== q.b) fail.push('a Game Corner prize bought wrong'); if (!g.buyPrize(a.gi, i3)) fail.push('a Game Corner prize taken twice'); else GC.refused++; } }
+        // (0.71.0) the Bank from year 2 (a second refused), loans at random (over the room refused, the money and the
+        // payment checked), paid off now and then, a forced spell in the red that its grace holds up; Fan Clubs built
+        // and raised at random gyms (the cost checked)
+        if (z.season >= 2 && !g.bankAt()) { const gi = [7, 5, 4].find(i2 => !g.buildCheck(i2, 'bank').why); // away from the gyms the Airport (2), Corner (3) and Institute steps use if (!g.buildCheck('seat', 'bank').why) fail.push('a Bank allowed at the seat');
+          if (gi != null) { const ck = g.buildCheck(gi, 'bank'); z.fin.money += ck.cost; const m0 = z.fin.money; if (g.build(gi, 'bank') || z.fin.money !== m0 - ck.cost) fail.push('Bank build wrong'); else { BK.built++; if (g.graceLeft() !== g.BANK_GRACE[0]) fail.push('a new Bank without its grace'); if ([0, 1, 2, 3, 4, 5, 6, 7].some(i2 => i2 !== gi && !g.buildCheck(i2, 'bank').why)) fail.push('a second Bank allowed'); } } }
+        if (g.bankAt() && !g.lapsed() && Math.random() < 0.15) { const room = g.creditRoom(), n = Math.random() < 0.5 ? 48 : 96, amt = Math.max(g.BANK_MIN, Math.round(room * Math.random() / 1000) * 1000), m1 = z.fin.money, ow = g.loanOwed(), tm = g.loanTerms(amt, n);
+          if (!g.borrow(amt + room + 1000, n)) fail.push('a loan over the credit room taken'); if (!g.borrow(amt, 50)) fail.push('a loan of a strange length taken');
+          if (amt <= room) { const w = g.borrow(amt, n); if (w) fail.push('a loan refused: ' + w); else { BK.borrowed++; const L = z.fin.bank.loan; if (z.fin.money !== m1 + amt || L.owed !== tm.total || L.pay !== tm.pay || L.owed <= ow) fail.push('a loan booked wrong'); } } else BK.refused++; }
+        if (g.loanOwed() && Math.random() < 0.05) { z.fin.money += g.loanOwed(); const m2 = z.fin.money, ow = g.loanOwed(); if (g.payOffLoan() || z.fin.money !== m2 - ow || g.loanOwed()) fail.push('loan pay-off wrong'); else BK.paidOff++; }
+        if (BK.keep != null) { if (z.fin.money < 0) z.fin.money = BK.keep; BK.keep = null; } // the week in the red is over
+        if (g.bankAt() && z.season >= 3 && !BK.forcedRed && z.fin.money >= 0 && g.graceLeft() > 1) { BK.forcedRed++; BK.keep = z.fin.money; z.fin.money = -150000; if (g.lapsed()) fail.push('lapsed at once with the Bank grace'); }
+        if (z.season >= 2 && Math.random() < 0.1) { const gi = [4, 5, 7][Math.floor(Math.random() * 3)], ck = g.buildCheck(gi, 'fanclub'); if (!ck.why) { z.fin.money += ck.cost; const m3 = z.fin.money, had = g.placeLv(gi, 'fanclub'); if (g.build(gi, 'fanclub') || z.fin.money !== m3 - ck.cost) fail.push('Fan Club build wrong'); else if (had) BK.fanRaised++; else BK.fanBuilt++; } }
+        if (!g.buildCheck('seat', 'fanclub').why) fail.push('a Fan Club allowed at the seat');
         { const a = g.airportAt(); if (a && a.routes.length && Math.random() < 0.3) { const to = [...Array(g.nRegionsBuilt()).keys()].find(r => r !== z.region && !a.routes.includes(r)), m6 = z.fin.money; if (to != null) { const w6 = g.setAirRoute(0, to); if (!w6) { CB3.routes++; if (z.fin.money !== m6 - g.AIR_ROUTE || g.airRoutes()[0] !== to) fail.push('Airport route change wrong'); if (!g.laneSet().size && g.homeSet(z.region)) fail.push('an Airport route brings no Pokémon'); } else if (m6 >= g.AIR_ROUTE) fail.push('route change refused: ' + w6); } if (!g.setAirRoute(0, z.region)) fail.push('an Airport route home allowed'); } }
         { const ks = g.shelfItems().filter(k => g.ITEMS[k].tier >= 2); if (ks.length) { const k = rnd(ks), pr = g.itemPrice(k), m3 = z.fin.money, n0 = g.bagOf()[k] || 0, w3 = g.buyItem(k); if (!w3) { CB2.items++; if (z.fin.money !== m3 - pr || g.bagOf()[k] !== n0 + 1) fail.push('item purchase wrong'); } else CB2.itemRefused++; }
           if (!g.storeFloors() && !g.buyItem('leftovers')) fail.push('an item bought with no Store'); } }
@@ -918,6 +943,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 // (0.69.0) the Weather Institute
 { const n = g.eachLeague(() => { const a = g.wxAt(); return a ? 'L' + a.x.lv + (S().fin.wx ? ' ' + Object.keys(S().fin.wx.g || {}).length + 'g' + (S().fin.wx.seat ? '+s' : '') : '') : '-'; }).join('/');
   console.log('weather institute', JSON.stringify(WX), 'log', JSON.stringify(g.WX_LOG), '| by League', n); }
+// (0.71.0) the Bank and the Fan Club
+{ const n = g.eachLeague(() => { const a = g.bankAt(), c = g.fanClubs(); return (a ? 'B' + a.x.lv : '-') + (g.loanOwed() ? '$' : '') + '/' + c.length + 'fc ' + c.reduce((s2, y) => s2 + (y.x.fans || 0), 0); }).join(' | ');
+  console.log('bank and fan club', JSON.stringify(BK), 'bank log', JSON.stringify(g.BANK_LOG), 'fan log', JSON.stringify(g.FAN_LOG), '| by League', n); }
 // (0.70.0) the Game Corner
 { const n = g.eachLeague(() => { const a = g.corners(); return a.length ? a.map(x => 'L' + x.x.lv).join('+') : '-'; }).join('/');
   console.log('game corner', JSON.stringify(GC), 'log', JSON.stringify(g.CORNER_LOG), '| by League', n); }

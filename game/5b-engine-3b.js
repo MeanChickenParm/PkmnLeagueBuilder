@@ -33,6 +33,9 @@ const UPGRADES = {
   wx:      { name: 'Weather Institute', text: 'One per League, in a gym city that is at least a City; it works League-wide. On this page choose each gym\'s field and the seat\'s (Elite Four and title battles): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never both. It replaces the gym\'s own weather; a terrain powers its type\'s moves 20% for both sides. Level 1: only the fields a place\'s types bring (a weather-themed trainer on your staff opens them all). Level 2: any field anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field and the sharp ones plan for it.', city: true, oneLg: true, max: 2, cost: [50000, 100000], tierAt: [1, 1] },
   // (0.70.0) the Game Corner: takings that swing, and a prize counter of the region's rarest lines (5c)
   corner:  { name: 'Game Corner',     text: 'Gym cities only, and only in a City (level 3 a Metropolis). The city\'s visitors and residents play each week (10, 20, 34 seats by level; every Game Corner in the city shares them, the controlling League a little more), each spending by the city\'s size. The take swings: most weeks within 30% of its average, now and then a jackpot week of about three times as much, and very rarely a losing week. Its prize counter holds 2, 3, then 4 of your region\'s rarest Pokémon (no legendaries), grade 2 or better, changing every quarter; each can be taken once a quarter, for money, straight into your ranch. Level 3 takes 10% off the prizes. Closed while you are in the red.', city: true, max: 3, cost: [40000, 80000, 160000], tierAt: [1, 1, 2] },
+  // (0.71.0) the Bank: grace in the red and a credit line (5c); the Fan Club: local loyalty for one gym (5c)
+  bank:    { name: 'Bank',            text: 'One per League, in a gym city (level 3 needs a City); it earns nothing and works League-wide. In the red your buildings keep working for 4, 8 or 12 weeks by level before they lapse (spending is still blocked and unpaid staff still leave); the grace comes back after 12 weeks out of the red. A credit line of up to 20%, 30% or 40% of your buildings at cost, paid back weekly over 48 or 96 weeks, at 4% to 8% a year: the further down the League table by wealth, the cheaper. Miss 4 payments in a row and the Bank takes your lowest building level at a distress value against the loan. Lapses last.', city: true, oneLg: true, max: 3, cost: [40000, 80000, 160000], tierAt: [0, 0, 1] },
+  fanclub: { name: 'Fan Club',        text: 'Gym cities only, one each, backing that gym (level 3 needs a City). Members join while the gym holds better than the region\'s gyms and while staff from this city work at it (your Elite Four and Champion from here too), up to 2,000, 5,000 or 12,000 by level (more in bigger cities); a bad year loses them at half the speed, and a loyal core never leaves. Each New Year they add standing in the city; they fill the Stadium (up to +10%); and once the club is half full, trainers from this city need 10% less prestige to sign with you (15% at level 3). When a rival poaches a hometown hero, some members follow them.', city: true, max: 3, cost: [15000, 30000, 60000], tierAt: [0, 0, 1] },
   contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
   fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
@@ -121,6 +124,7 @@ function build(where, k, lg = ME()) {
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
     const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
     if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
+    if (k === 'bank') bankBuiltNow(); // (0.71.0) a full grace
     if (k === 'corner') cornerStock(b.find(x => x.k === k), false); // (0.70.0) the prize counter stocks at once (a new level adds a slot)
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
@@ -255,6 +259,7 @@ function cityNewYear() {
       if (h != null && rs.length) add(c, i, (h - avg(rs)) * 100);
       if (!lap) { const v = cityB(c).reduce((a, x) => a + builtCost(x), 0); if (v) add(c, i, v / PRESENCE_PER); }
       if (pr) add(c, i, pr * SPILL);
+      if (!lap) { const fc = fanClubOf(c, i); if (fc && fc.fans) { const n = fanStanding(fc); add(c, i, n); FAN_LOG.standing += n; } } // (0.71.0) the Fan Club
     });
     for (const t of staffIds().map(T).filter(Boolean)) { const hc = homeCity(t); if (hc != null && (m[hc] || []).includes(i) && HERO_PTS[t.role] && !t.acting) add(S.cities[hc], i, HERO_PTS[t.role]); }
     for (const c of Object.values(S.cities)) if (c.region !== S.region && (m[c.id] || []).length) {
@@ -452,7 +457,7 @@ function ticketSale(where, hype) {
   if (!booksOn() || fixedStaff()) return 0;
   const c = where === 'seat' ? null : S.cities[(S.gyms[where] || {}).city];
   const size = where === 'seat' ? seatSize() : citySize(c), seats = stadiumSeats(where);
-  const crowd = Math.round(CROWD_AT(size) * hype), sold = Math.min(seats, crowd), amt = Math.round(sold * TICKET_AT(size));
+  const crowd = Math.round(CROWD_AT(size) * hype * (1 + fanFill(where))), sold = Math.min(seats, crowd), amt = Math.round(sold * TICKET_AT(size));
   fillNow = { lg: S.lg || 0, where, turn: S.turn, v: seats ? sold / seats : 0 }; // (0.68.0) for the Home stand
   if (!amt) return 0;
   book(amt, 'tickets');
@@ -534,6 +539,8 @@ function aimWorth(where, k) {
   if (k === 'pier' && aimOf() === 'money') return placeLv(where, k) < 1;
   if (k === 'pier' && aimOf() === 'wall') { const ld = T(S.gyms[where].leader); return !!ld && specTypes(ld).includes('Water'); }
   if (k === 'store') return placeLv(where, k) === storeBuilt();
-  if (k === 'corner') return aimCorner(where); // (0.70.0) one Game Corner, in the busiest City
+  if (k === 'corner') return aimCorner(where);
+  if (k === 'bank') return aimBank(); // (0.71.0) early for a wall-builder, otherwise after a spell in the red
+  if (k === 'fanclub') return aimFan(where); // (0.71.0) where control is close; a money-maker's Stadium cities // (0.70.0) one Game Corner, in the busiest City
   return true;
 }

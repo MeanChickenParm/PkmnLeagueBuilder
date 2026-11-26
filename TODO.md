@@ -16,7 +16,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 ## The Game Corner (0.70.0)
 - **Every number is a first guess:** seats, residents and spend by size, the swing (±30%, a jackpot ×3 about 1 in 12, a losing week of half an average about 1 in 50), prize slots, the 1.25 markup, the rarest quarter of the region's lines as the pool, prizes at grade 2+. Measured once at about 900 a week a Corner in a hand-placed run.
 - **Open (design doc):** whether a jackpot week also brings turnout or prestige; a "suggested" tag for prizes that fill your steer gaps; a yearly cap on rivals' prize buys.
-- **A flake seen once (Nov 26, hand-placed `1 0 12 0 1`):** `the ranch over its cap`. Prize buys check for room, so likely a Ranch level lost in the red (decay or a sale) leaving the ranch over its new cap; the rerun passed. Find out whether losing a Ranch level should release or sell the excess.
+
+## The Bank and the Fan Club (0.71.0)
+- **Every number is a first guess:** Bank costs, grace 4/8/12 weeks, the 12-week refill, credit 20/30/40% of buildings, rates 8% to 4% by wealth rank, 48/96-week terms, seizure after 4 missed weeks at 30%; rivals' loan sizes (clear the red plus four weeks' wages; a money-maker's growth loan a quarter of the time). Fan Club caps 2,000/5,000/12,000 × (1 + 0.25 a city size), the monthly record gain (4,000 × held above the region's average), heroes (leader 150, gym trainer 50, Elite Four 100, Champion 150 a month), the 30-a-level trickle (not in the design: added so an average gym's club grows), standing 1 per 1,000 members, Stadium fill up to 10%, poach shares.
+- **Rival loans in the red are often missed** (in a 7-League 12-year sim: 7 loans, 27 missed payments, 3 levels seized): a rival borrows over 96 weeks in the red and then can't pay while still in debt. Check with the economy retune whether rivals should borrow smaller or only once the books turn.
+- **Not measured:** whether the grace speeds crash recovery (`econ.js` doesn't build Banks for L1 on purpose); whether Fan Clubs make control change hands more often.
+- **Upkeep is still paid during the grace** (the buildings work, so they cost), which deepens the debt a little; the design didn't say either way.
 
 ## City buildings part 3 (0.65.0)
 - **Every number is a first guess:** Airport costs, fee, landing income, visitors a route and the renown boost, the movers' pull (`AIR_GAIN`, `AIR_DRAW`); Contest prize grades, gate and crowd; Pier and Fossil Lab prices and cadence; fossil weights; rivals' keep grades.

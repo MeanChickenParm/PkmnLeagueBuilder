@@ -2640,7 +2640,7 @@ function prestMin(t, lg) {
   let m = Math.max(0, ovr(t) - PM_FREE) * PM_PER + Math.min(PM_REC_MAX, trainerPrestige(t) * PM_REC) + (t.famous ? PM_FAMOUS * famPremium() : 0);
   if (hungry(t)) m *= PM_HUNGRY * (1 - SEAT_HUNGRY * seatOpen(lg)); // (0.43.0) a seat they could win
   if (t.grudge != null && t.grudgeLg != null && t.grudgeLg !== lg) m *= PM_GRUDGE;
-  const hc = homeCity(t); if (hc != null && strongholdOf(S.cities[hc], lg)) m *= STRONG_RECRUIT; // (0.40.0) a hometown League's Stronghold
+  m *= homePull(t, lg); // (0.40.0) a hometown Stronghold; (0.71.0) a Fan Club
   return Math.round(m);
 }
 // would t sign for League lg now? (always in the report's fixed tiers)
@@ -2840,6 +2840,7 @@ function otherCircuits(fit) {
   return out;
 }
 function leaveForPost(t, toName) {
+  fanPoach(t, toName); // (0.71.0)
   POACH_DEPTH++;
   try {
     inLeague(homeLeague(t), () => {

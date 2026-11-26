@@ -353,6 +353,17 @@ async def run(path):
                         if (!q.sold || S.fin.money !== m0 - q.price || S.ranch.mons.length !== n0 + 1 || S.ranch.mons[S.ranch.mons.length - 1].b !== q.b) log.push('FAIL taking a Game Corner prize'); else log.push('took ' + q.b + ' from the Game Corner');
                         go('cities'); if (!/Game Corner<\/b> level 1/.test(document.querySelector('#main').innerHTML) || document.querySelector(`[data-act=cornerbuy][data-g="6"][data-i="${i}"]`)) log.push('FAIL the Game Corner line after taking a prize'); }
                       inLeague(0, () => sellBuilding(6, 'corner')); }
+                    // (0.71.0) a Bank at gym 6 (refused at the seat): its grace, a loan from the form (money and payment), paid off
+                    // from its button, a spell in the red its grace holds up; a Fan Club beside it, its line on the page; both sold back
+                    if (!inLeague(0, () => buildCheck('seat', 'bank')).why) log.push('FAIL a Bank allowed at the seat');
+                    if (bld(5, 'bank', 40000, 1)) { if (inLeague(0, () => graceLeft()) !== 4) log.push('FAIL a new Bank without its grace');
+                      go('cities'); const amt = document.querySelector('#bankamt'), bb = document.querySelector('[data-act=bankborrow]');
+                      if (!amt || !bb) log.push('FAIL no Bank borrow form'); else { amt.value = '10000'; document.querySelector('#bankterm').value = '48'; const m0 = S.fin.money, tm = inLeague(0, () => loanTerms(10000, 48)); bb.click();
+                        const L = S.fin.bank && S.fin.bank.loan; if (!L || S.fin.money !== m0 + 10000 || L.owed !== tm.total || L.pay !== tm.pay) log.push('FAIL borrowing from the Bank'); else log.push('borrowed 10000 from the Bank');
+                        go('cities'); const po = document.querySelector('[data-act=bankpayoff]'), m1 = S.fin.money, ow = L ? L.owed : 0; if (!po) log.push('FAIL no Pay it off button'); else { po.click(); if (S.fin.bank.loan || S.fin.money !== m1 - ow) log.push('FAIL paying off the loan'); else log.push('paid off the loan'); } }
+                      const keep = S.fin.money; S.fin.money = -5000; if (inLeague(0, () => lapsed())) log.push('FAIL lapsed during the Bank grace'); go('cities'); if (!/grace keeps every building working/.test(document.querySelector('#main').textContent)) log.push('FAIL no grace note on the Cities page'); S.fin.money = keep;
+                      inLeague(0, () => sellBuilding(5, 'bank')); }
+                    if (bld(5, 'fanclub', 15000, 1)) { go('cities'); if (!/Fan Club<\/b> level 1/.test(document.querySelector('#main').innerHTML) || !/members \(a loyal core/.test(document.querySelector('#main').textContent)) log.push('FAIL the Fan Club line on the Cities page'); inLeague(0, () => sellBuilding(5, 'fanclub')); }
                     bld(4, 'lab', 25000, 1); if (!inLeague(0, () => buildCheck(4, 'fossil')).why) log.push('FAIL a Fossil Lab allowed beside a level 1 Lab');
                     bld(4, 'lab', 50000, 2); bld(4, 'fossil', 30000, 1);
                     go('cities'); const kg = document.querySelector('select.keepgsel[data-k=fossil]');
