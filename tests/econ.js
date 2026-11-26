@@ -28,12 +28,13 @@ function runWorlds(list) {
     g.foundingFill(); g.finishFounding(); g.S.simRun = true; // (0.52.0) the passive player renews contracts
     // (0.41.0) a region holds four Leagues now: keep L1 in the player's region and the others each in a region of its own
     for (let i = 1; i < L; i++) { const used = g.eachLeague(() => g.S.region); g.openNewLeague(undefined, i === 1 ? used[0] : g.LEAGUE_SETS.findIndex((_, r) => !used.includes(r))); }
-    let shockAt = null, back = null;
+    let shockAt = null, back = null, folded = false; const nF = (g.S.folded || []).length;
     for (let y = 1; y <= N; y++) {
       g.approveAllChallenges(); g.fillAllVacancies();
       g.simYear();
       // (0.18.0) a League can fold: the world's figures stop there (it no longer has four Leagues)
-      if (g.nLeagues() < L) { folds.push({ w, y, lg: g.S.folded[g.S.folded.length - 1].name }); break; }
+      // (0.65.0) your League folding keeps four Leagues (a fresh one opens to be founded by hand), so count any new fold
+      if (g.nLeagues() < L || g.S.founding || (g.S.folded || []).length > nF) { const fl = g.S.folded[g.S.folded.length - 1]; folds.push({ w, y, lg: fl.name + (g.S.founding ? ', yours' : '') }); folded = true; break; }
       g.approveAllChallenges(); g.fillAllVacancies();
       // the shock (0.16.0, the owner's choice: a relative crash): League 1's wealth is cut to 40% of L2 and L3's
       // average by taking cash (which goes as far below zero as needed); its buildings stay
@@ -53,7 +54,7 @@ function runWorlds(list) {
       if (y % 5 === 0) { const ai = wl.slice(1), a = ai.reduce((x, z) => x + z, 0) / 3; (marks[y] = marks[y] || []).push({ low: Math.min(...ai) / a, high: Math.max(...ai) / a, avg: a }); }
       if (shockAt != null && back == null && y > shockAt) { const oa = (wl[2] + wl[3]) / 2; if (wl[1] >= 0.8 * oa) back = y - shockAt; }
     }
-    if (g.nLeagues() < L) { if (shockAt != null) recov.push('folded'); continue; }
+    if (folded) { if (shockAt != null) recov.push('folded'); continue; }
     if (shockAt != null) recov.push(back);
     const wl = g.eachLeague(() => g.S.fin.money + estate()), ai = wl.slice(1), a = ai.reduce((x, z) => x + z, 0) / 3;
     ends.push({ low: Math.min(...ai) / a, high: Math.max(...ai) / a, spread: Math.max(...ai) - Math.min(...ai), p0: wl[0] / a });
