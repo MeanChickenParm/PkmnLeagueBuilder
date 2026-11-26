@@ -357,17 +357,19 @@ function tripsWeek() {
     const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
       : tr.k === 'outbreak' ? Array.from({ length: 2 + (rand() < 0.5) }, () => tr.b)
       : Array.from({ length: 1 + (rand() < 0.5) + (sc >= 65 && rand() < 0.5) }, () => findSpecies(here));
-    const got = [], lost = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
+    const got = [], lost = [], sold = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
     // (0.36.0) every find rolls the wild odds for a condition (an outbreak's at outbreak odds); a hunt's find has its own
     const obMul = { alpha: OUTBREAK_ALPHA, delta: OUTBREAK_ALPHA, shiny: OUTBREAK_SHINY, radiant: OUTBREAK_SHINY };
     for (const b of finds) {
       const e = newEntry(b, Math.max(tr.floor || 1, labFloor(), gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
       const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : tr.cond ? 1 : labCond())))];
       if (ks.length) condEntry(e, ks);
-      (ranchAdd(e) ? got : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
+      const res = ranchTake(e); // (0.66.0) the ranch rules: the grade floor and making room
+      (res === 'kept' ? got : res === 'sold' ? sold : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
     }
     const what = tr.cond ? `${COND_NAME[tr.cond].toLowerCase()} ${tr.b}` : tr.b, oddsW = tr.odds != null ? ` (${Math.round(tr.odds * 100)}% odds)` : '';
-    tripLog(tr, what, got, lost); // (0.44.0)
+    tripLog(tr, what, got, lost, sold); // (0.44.0)
+    if (mine && sold.length) news(`Sold back below your grade floor: ${sold.join(', ')}.`, 'league');
     if (mine && tr.k === 'charter') news(`The charter from ${regionName(tr.r)} came in${got.length ? ` with ${got.join(', ')}` : ' empty'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (mine && tr.k === 'outbreak') news(`The trip to the ${tr.b} outbreak came back with ${got.length ? got.join(', ') : 'nothing it could keep'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (mine) news(tr.k === 'target' ? (got.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back with one (${got[0]}).` : lost.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} found one, but the ranch was full and it was let go.` : `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back empty-handed${oddsW}.`)
@@ -440,7 +442,7 @@ function buyListing(k, id) {
   if (ranchRoom() <= 0) return 'The ranch is full.';
   const price = e.sale.price, buyer = S.lgName;
   if (!canSpend(price)) return 'Not enough money.';
-  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); ranchLog('sold', `Sold to the ${buyer}`, { cost: -Math.round(price * SALE_SHARE), got: [entryWords(e)] }); });
+  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (e.sale.rule) { RR_LOG.listSold++; rrNote(Math.round(price * SALE_SHARE)); } if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); ranchLog('sold', `Sold to the ${buyer}`, { cost: -Math.round(price * SALE_SHARE), got: [entryWords(e)] }); });
   book(-price, 'ranchbuy', `Bought ${e.sp} ${gradeStars(e.g)} from the ${leagueName(k)}`);
   ranchLog('lbuy', `Bought from the ${leagueName(k)}`, { cost: price, got: [entryWords(e)] }); // (0.44.0)
   ranchAdd(Object.assign({}, e, { at: null, res: null, lock: false, of: null, sale: null, from: 'league', got: S.turn }));
@@ -479,6 +481,7 @@ function ranchWeek() {
   const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
   safariWeek(); tripsWeek(); shopWeek(); vaultWeek(); // (0.37.0)
   breedWeek(); // (0.45.0)
+  rulesWeek(); // (0.66.0) the ranch rules: listings they made, and once a month idle clear-out
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -876,10 +879,10 @@ function safariFind() {
   for (let i = 0; i < ls.length; i++) { r -= w[i]; if (r <= 0) { b = ls[i]; break; } }
   const sc = ranchScout(), e = newEntry(b, Math.max(Math.max(1, stockFloor(b) - 1), gradeRoll(sc)), 'safari');
   const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
-  const ok = ranchAdd(e), wd = entryWords(e);
+  const res = ranchTake(e), ok = res === 'kept', wd = entryWords(e); // (0.66.0) the ranch rules
   if (ok) SAFARI_LOG.finds++; else SAFARI_LOG.lost++;
-  ranchLog('safari', 'Turned up in the Safari Zone', ok ? { got: [wd] } : { lost: [wd] });
-  if (playerLeague()) news(ok ? `A young ${wd} turned up in the Safari Zone and joined the ranch.` : `A young ${wd} turned up in the Safari Zone, but the ranch was full.`, 'league');
+  ranchLog('safari', 'Turned up in the Safari Zone', ok ? { got: [wd] } : res === 'sold' ? { sold: [wd], why: 'below your grade floor' } : { lost: [wd] });
+  if (playerLeague()) news(ok ? `A young ${wd} turned up in the Safari Zone and joined the ranch.` : res === 'sold' ? `A young ${wd} turned up in the Safari Zone and was sold back (below your grade floor).` : `A young ${wd} turned up in the Safari Zone, but the ranch was full.`, 'league');
 }
 // a rival keeps, at each change, the safari lines that fit its posts' types best
 function aiSafariKeep() {
@@ -898,10 +901,10 @@ function ranchLog(k, text, o) {
   R.log.unshift(Object.assign({ t: S.turn || 0, k, text }, o || {}));
   if (R.log.length > RANCH_LOG) R.log.length = RANCH_LOG;
 }
-function tripLog(tr, what, got, lost) {
+function tripLog(tr, what, got, lost, sold) {
   const k = tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k;
   const text = tr.k === 'target' ? `${tr.cond ? 'Hunt' : 'Catching trip'} for ${what}${tr.safari ? ' in the Safari Zone' : ''}` : tr.k === 'charter' ? `Charter from ${regionName(tr.r)}` : tr.k === 'outbreak' ? `Trip to the ${tr.b} outbreak` : 'Area catching trip';
-  ranchLog(k, text, { cost: tr.cost, odds: tr.odds, at: tr.at, got, lost });
+  ranchLog(k, text, Object.assign({ cost: tr.cost, odds: tr.odds, at: tr.at, got, lost }, sold && sold.length ? { sold, why: 'below your grade floor' } : {}));
 }
 
 // ---------- what the bound League can get ----------
@@ -2063,7 +2066,9 @@ function breedYoung(a, b) {
 function hatch(p) {
   const D = dcState(), a = parentOf(p.a), b = parentOf(p.b); if (!a || !b) return;
   const e = breedYoung(a, b), wd = entryWords(e); p.n++; BREED_LOG.eggs++;
-  if (ranchAdd(e)) { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
+  const res = ranchTake(e); // (0.66.0) the ranch rules
+  if (res === 'sold') { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { sold: [wd], why: 'below your grade floor' }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, sold back (below your grade floor).`, 'league'); }
+  else if (res === 'kept') { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
   else { D.wait.push({ e, until: S.turn + HATCH_WAIT }); BREED_LOG.waited++; if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, but the ranch is full. It waits ${HATCH_WAIT} weeks for room.`, 'league'); }
 }
 // once a week (from ranchWeek): parents whose years are up are sold, pairs lay eggs, young ones waiting for room join
@@ -2077,7 +2082,7 @@ function breedWeek() {
   if (!dcLv()) { for (const p of D.pairs) p.due++; }
   else for (const p of D.pairs.slice()) if (p.due <= S.turn) { hatch(p); p.due = S.turn + dcWeeks(); }
   for (const w of D.wait.slice()) {
-    if (ranchAdd(w.e)) { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
+    if (ranchTake(w.e, 0) === 'kept') { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
     else if (w.until <= S.turn) { D.wait = D.wait.filter(x => x !== w); BREED_LOG.lost++; ranchLog('bred', 'Let go from the Day Care: the ranch stayed full', { lost: [entryWords(w.e)] }); if (playerLeague()) news(`${entryWords(w.e)} waited at the Day Care, but the ranch stayed full: it was let go.`, 'league'); }
   }
 }

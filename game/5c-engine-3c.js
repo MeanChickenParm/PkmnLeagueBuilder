@@ -296,22 +296,109 @@ function condWhy(gi, k) {
   return null;
 }
 
-// ---------- the keep-grade rule ----------
-// Finds from the Contest, the Pier and the Fossil Lab below the League's keep grade, and any for a full ranch, are sold
-// back at once (SELL_BACK of their value); both go in the ranch log. Rivals keep by aim (provisional).
+// ---------- ranch rules and the keep grade (0.66.0; the keep grade 0.65.0) ----------
+// The League's ranch rules (S.fin.rr; the Ranch page), each its own toggle: a grade floor for everything that comes in
+// on its own (trips, hunts, charters, outbreak trips, Safari finds, the Day Care's young, the catching buildings),
+// finds below it sold back at once; make room (a find for a full ranch replaces the weakest spare by value when it is
+// worth more, no margin); idle clear-out (spares unfielded idleN weeks sold, keeping the best idleK of each line);
+// list first (idle clear-outs, and the weakest spares once the ranch is within RR_NEAR of full, go on the market as
+// League sales for RR_LIST_WEEKS before selling back). "Spare": not fielded, reserved, locked, named in a team plan or
+// benched by one, and not conditioned unless rr.cond. The Contest, the Pier and the Fossil Lab use the floor unless
+// the Cities page sets their own (S.fin.keepB). Rivals: the floor by aim (AI_KEEPG), make room on, their own clear-out
+// in aimRanch; conditioned Pokémon protected except by money-makers. All numbers provisional.
 const AI_KEEPG = { wall: 2, star: 3, money: 1 };
+const RR_DEFAULT = { floor: 2, room: true, idle: false, idleN: 16, idleK: 2, list: false, cond: false };
+const RR_LIST_WEEKS = 4, RR_LIST_MAX = 3, RR_NEAR = 3, RR_IDLE_N = [4, 52], RR_IDLE_K = [0, 6];
+const RR_LOG = { floor: 0, room: 0, roomNo: 0, idle: 0, listed: 0, listSold: 0, listBack: 0 };
 const FIND_LOG = { contest: 0, pier: 0, fossil: 0, kept: 0, sold: 0, full: 0, gate: 0 };
-function keepGrade() { const f = S.fin; if (!f) return 1; if (f.keepG) return f.keepG; return (f.aim && AI_KEEPG[f.aim]) || 1; }
-function setKeepGrade(n) { if (!S.fin) return 'Money is off.'; n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.'; S.fin.keepG = n; return null; }
+function ranchRules() {
+  const f = S.fin; if (!f) return null;
+  if (f.aim) return { floor: AI_KEEPG[f.aim] || 1, room: true, idle: false, idleN: 0, idleK: 0, list: false, cond: f.aim === 'money', ai: true };
+  return Object.assign({}, RR_DEFAULT, f.rr || {});
+}
+// a patch of the player's rules: an error or null
+function setRanchRules(p) {
+  const f = S.fin; if (!f) return 'Money is off.'; if (f.aim) return 'A rival League sets its own.';
+  const r = Object.assign({}, RR_DEFAULT, f.rr || {});
+  for (const [k, v] of Object.entries(p || {})) {
+    if (k === 'floor') { const n = Math.round(+v); if (!(n >= 0 && n <= 5)) return 'Pick a grade floor from 1 to 5, or off.'; r.floor = n; }
+    else if (k === 'idleN') { const n = Math.round(+v); if (!(n >= RR_IDLE_N[0] && n <= RR_IDLE_N[1])) return `Pick ${RR_IDLE_N[0]} to ${RR_IDLE_N[1]} weeks.`; r.idleN = n; }
+    else if (k === 'idleK') { const n = Math.round(+v); if (!(n >= RR_IDLE_K[0] && n <= RR_IDLE_K[1])) return `Keep ${RR_IDLE_K[0]} to ${RR_IDLE_K[1]} of each line.`; r.idleK = n; }
+    else if (['room', 'idle', 'list', 'cond'].includes(k)) r[k] = !!v;
+    else return 'No such rule.';
+  }
+  f.rr = r; return null;
+}
+// the keep grade of a catching building k: its own (S.fin.keepB[k]) or the League's floor (1 = keep everything)
+function keepGrade(k) { const f = S.fin; if (!f) return 1; const o = k && f.keepB && f.keepB[k]; if (o) return o; const r = ranchRules(); return (r && r.floor) || 1; }
+function setKeepGrade(k, n) {
+  if (!S.fin) return 'Money is off.'; if (!['contest', 'pier', 'fossil'].includes(k)) return 'No such building.';
+  if (n == null || n === '' || +n === 0) { if (S.fin.keepB) delete S.fin.keepB[k]; return null; }
+  n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.';
+  (S.fin.keepB = S.fin.keepB || {})[k] = n; return null;
+}
+// a spare the rules may sell
+const rrSpare = (e, r) => e.at == null && !e.res && !e.lock && e.bench == null && !(e.c && !r.cond) && !plannedRefs(e.uid).length;
+// this year's sales by the rules (the Ranch page)
+function rrNote(v) { const f = S.fin; if (!f) return; if (!f.rrY || f.rrY.season !== S.season) f.rrY = { season: S.season, n: 0, money: 0 }; f.rrY.n++; f.rrY.money += v; }
+function rrBack(e, why, text) {
+  const v = Math.round(entryValue(e) * SELL_BACK), wd = entryWords(e);
+  S.ranch.mons = S.ranch.mons.filter(x => x !== e);
+  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} back (${why})`);
+  rrNote(v); ranchLog('rules', text, { cost: -v, sold: [wd], why });
+  return v;
+}
+// make room for find e: sell back the weakest spare by value if e is worth more; true if room was made
+function makeRoom(e) {
+  const r = ranchRules(); if (!r || !r.room || !ranchOn()) return false;
+  const v = entryValue(e); let w = null, wv = Infinity;
+  for (const x of S.ranch.mons) if (rrSpare(x, r)) { const xv = entryValue(x); if (xv < wv) { w = x; wv = xv; } }
+  if (!w || wv >= v) { RR_LOG.roomNo++; return false; }
+  RR_LOG.room++; rrBack(w, `to make room for ${entryWords(e)}`, 'Make room: sold back');
+  return ranchRoom() > 0;
+}
+// a find that comes in on its own: 'kept', 'sold' (below the floor; booked and counted here) or 'lost' (no room;
+// the caller lets it go or sells it). floor: a building's keep grade (null: the League's floor; 0: none)
+function ranchTake(e, floor) {
+  if (!ranchOn()) return 'lost';
+  const r = ranchRules(), fl = floor != null ? floor : (r && r.floor) || 0;
+  if (fl > 1 && e.g < fl) { const v = Math.round(entryValue(e) * SELL_BACK); if (booksOn() && v) book(v, 'ranchsale', `Sold ${entryWords(e)} back (below your grade floor)`); rrNote(v); RR_LOG.floor++; return 'sold'; }
+  if (ranchAdd(e)) return 'kept';
+  if (makeRoom(e) && ranchAdd(e)) return 'kept';
+  return 'lost';
+}
+// once a month (your League; from ranchWeek): idle clear-out and list first
+function rulesMonth() {
+  const r = ranchRules(); if (!r || r.ai || !ranchOn()) return;
+  ranchSync();
+  const R = S.ranch, canList = r.list && nLeagues() > 1;
+  let listed = R.mons.filter(e => e.sale && e.sale.rule).length;
+  const list = e => { e.sale = { price: entryValue(e), at: S.turn, rule: true }; listed++; RR_LOG.listed++; ranchLog('rules', 'Listed for other Leagues by your rules', { got: [entryWords(e)], why: `sold back after ${RR_LIST_WEEKS} weeks if nobody buys` }); };
+  if (r.idle) {
+    const by = {}; for (const e of R.mons) if (rrSpare(e, r) && !e.sale) (by[e.b] = by[e.b] || []).push(e);
+    for (const l of Object.values(by)) for (const e of l.sort((x, y) => entryValue(y) - entryValue(x)).slice(r.idleK)) {
+      if (S.turn - (e.idle ?? S.turn) < r.idleN) continue;
+      if (canList) { if (listed < RR_LIST_MAX) list(e); } // the rest wait for room on the market
+      else { RR_LOG.idle++; rrBack(e, `unfielded ${r.idleN}+ weeks`, 'Idle clear-out: sold back'); }
+    }
+  }
+  if (canList && ranchRoom() <= RR_NEAR) for (const e of R.mons.filter(e => rrSpare(e, r) && !e.sale).sort((x, y) => entryValue(x) - entryValue(y))) { if (listed >= RR_LIST_MAX) break; list(e); }
+}
+// every week: a listing the rules made that nobody bought sells back
+function rulesWeek() {
+  if (!ranchOn()) return;
+  for (const e of S.ranch.mons.slice()) if (e.sale && e.sale.rule && S.turn - e.sale.at >= RR_LIST_WEEKS) { RR_LOG.listBack++; rrBack(e, 'nobody bought it', 'Listing ran out: sold back'); }
+  if (S.fin && !S.fin.aim && S.week % 4 === 0) rulesMonth();
+}
 // a find e from building k ('contest', 'pier', 'fossil'): into the ranch, or sold. Returns 'kept' or 'sold'.
 function autoFind(e, k, text) {
-  const wd = entryWords(e), low = e.g < keepGrade();
+  const wd = entryWords(e), kg = keepGrade(k), res = ranchTake(e, kg);
   FIND_LOG[k]++;
-  if (!low && ranchAdd(e)) { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
-  const v = Math.round(entryValue(e) * SELL_BACK);
-  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
+  if (res === 'kept') { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
+  const low = res === 'sold', v = Math.round(entryValue(e) * SELL_BACK);
+  if (!low && booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
   FIND_LOG.sold++; if (!low) FIND_LOG.full++;
-  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below your keep grade' : 'the ranch was full' });
+  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below its keep grade' : 'the ranch was full' });
   return 'sold';
 }
 const findNews = (k, wd, res) => { if (playerLeague()) news(res === 'kept' ? `${wd} came to the ranch from ${k}.` : `${wd} came from ${k} and was sold.`, 'league'); };
@@ -479,4 +566,4 @@ function buildings3Week(lap) {
   contestWeek(); pierWeek(); fossilWeek();
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
+if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, ranchRules, setRanchRules, RR_DEFAULT, RR_LOG, RR_LIST_WEEKS, RR_LIST_MAX, RR_NEAR, rrSpare, ranchTake, makeRoom, rulesMonth, rulesWeek, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });

@@ -332,8 +332,20 @@ async def run(path):
                       if (!inLeague(0, () => buildCheck(7, 'airport')).why) log.push('FAIL a second Airport allowed'); }
                     bld(4, 'lab', 25000, 1); if (!inLeague(0, () => buildCheck(4, 'fossil')).why) log.push('FAIL a Fossil Lab allowed beside a level 1 Lab');
                     bld(4, 'lab', 50000, 2); bld(4, 'fossil', 30000, 1);
-                    go('cities'); const kg = document.querySelector('select.keepgsel');
-                    if (!kg) log.push('FAIL no keep grade picker'); else { kg.value = '3'; kg.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => keepGrade()) !== 3) log.push('FAIL setting the keep grade'); else log.push('set the keep grade'); }
+                    go('cities'); const kg = document.querySelector('select.keepgsel[data-k=fossil]');
+                    if (!kg) log.push('FAIL no keep grade picker'); else { kg.value = '3'; kg.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => keepGrade('fossil')) !== 3) log.push('FAIL setting the keep grade');
+                      else { const k2 = document.querySelector('select.keepgsel[data-k=fossil]'); k2.value = '0'; k2.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => keepGrade('fossil')) !== Math.max(1, inLeague(0, () => ranchRules().floor))) log.push('FAIL a keep grade back to the League floor'); else log.push('set the keep grade'); } }
+                    // 0.66.0: the ranch rules from the Pool tab (the floor, idle clear-out), then make room and the floor on a full ranch
+                    { go('ranch'); ranchTab = 'pool'; render(); const fl = document.querySelector('select.rrf[data-f=floor]'), ic = document.querySelector('input.rrf[data-f=idle]');
+                      if (!fl || !ic) log.push('FAIL no ranch rules panel'); else { fl.value = '3'; fl.dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('input.rrf[data-f=idle]').click();
+                        const r = inLeague(0, () => ranchRules()); if (r.floor !== 3 || !r.idle || !r.room) log.push('FAIL setting the ranch rules ' + JSON.stringify(r)); else log.push('set the ranch rules');
+                        inLeague(0, () => { const R = S.ranch, cap = ranchCap(); const b0 = ranchSpecies().filter(b => lineTop(b) < 420)[0], b1 = ranchSpecies().filter(b => lineTop(b) >= 600)[0];
+                          while (R.mons.length < cap) R.mons.push(newEntry(b0, 3, 'trip'));
+                          const n0 = R.mons.length, m0 = S.fin.money, hi = newEntry(b1, 4, 'trip'), lo = newEntry(b0, 1, 'trip');
+                          if (ranchTake(lo) !== 'sold' || S.fin.money <= m0) log.push('FAIL a find below the floor kept or not sold');
+                          if (ranchTake(hi) !== 'kept' || R.mons.length !== n0 || !R.mons.includes(hi)) log.push('FAIL make room'); else log.push('made room for a better find');
+                          const rr = ranchRules(), w = R.mons.filter(x => rrSpare(x, rr)).sort((x, y) => entryValue(x) - entryValue(y))[0]; if (w && ranchTake(Object.assign({}, w, { uid: uid() })) !== 'lost') log.push('FAIL make room for a find no better than every spare');
+                          R.mons = R.mons.filter(e => e.at != null || e.from !== 'trip' || e === hi); setRanchRules({ floor: 2, idle: false }); }); } go('cities'); }
                     const nb = [0, 1, 2, 3, 4, 5, 6, 7].find(i => inLeague(0, () => condWhy(i, 'contest'))); if (nb != null && !/Bug/.test(inLeague(0, () => buildCheck(nb, 'contest')).why || '')) log.push('FAIL a Contest allowed without a Bug gym or class');
                     if (!/Fossil Lab/.test(document.querySelector('#main').textContent)) log.push('FAIL the Fossil Lab is not on the Cities page');
                     inLeague(0, () => { sellBuilding(6, 'airport'); sellBuilding(4, 'fossil'); sellBuilding(4, 'lab'); sellBuilding(4, 'lab'); }); S.fin.money = 200000; }

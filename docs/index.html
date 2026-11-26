@@ -15339,17 +15339,19 @@ function tripsWeek() {
     const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
       : tr.k === 'outbreak' ? Array.from({ length: 2 + (rand() < 0.5) }, () => tr.b)
       : Array.from({ length: 1 + (rand() < 0.5) + (sc >= 65 && rand() < 0.5) }, () => findSpecies(here));
-    const got = [], lost = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
+    const got = [], lost = [], sold = [], gsc = sc + (tr.safari ? SAFARI_SCOUT * safariLv() : 0);
     // (0.36.0) every find rolls the wild odds for a condition (an outbreak's at outbreak odds); a hunt's find has its own
     const obMul = { alpha: OUTBREAK_ALPHA, delta: OUTBREAK_ALPHA, shiny: OUTBREAK_SHINY, radiant: OUTBREAK_SHINY };
     for (const b of finds) {
       const e = newEntry(b, Math.max(tr.floor || 1, labFloor(), gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
       const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : tr.cond ? 1 : labCond())))];
       if (ks.length) condEntry(e, ks);
-      (ranchAdd(e) ? got : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
+      const res = ranchTake(e); // (0.66.0) the ranch rules: the grade floor and making room
+      (res === 'kept' ? got : res === 'sold' ? sold : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
     }
     const what = tr.cond ? `${COND_NAME[tr.cond].toLowerCase()} ${tr.b}` : tr.b, oddsW = tr.odds != null ? ` (${Math.round(tr.odds * 100)}% odds)` : '';
-    tripLog(tr, what, got, lost); // (0.44.0)
+    tripLog(tr, what, got, lost, sold); // (0.44.0)
+    if (mine && sold.length) news(`Sold back below your grade floor: ${sold.join(', ')}.`, 'league');
     if (mine && tr.k === 'charter') news(`The charter from ${regionName(tr.r)} came in${got.length ? ` with ${got.join(', ')}` : ' empty'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (mine && tr.k === 'outbreak') news(`The trip to the ${tr.b} outbreak came back with ${got.length ? got.join(', ') : 'nothing it could keep'}${lost.length ? `; no room in the ranch for ${lost.join(', ')}` : ''}.`, 'league');
     else if (mine) news(tr.k === 'target' ? (got.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back with one (${got[0]}).` : lost.length ? `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} found one, but the ranch was full and it was let go.` : `The ${tr.cond ? 'hunt' : 'catching trip'} for ${what} came back empty-handed${oddsW}.`)
@@ -15422,7 +15424,7 @@ function buyListing(k, id) {
   if (ranchRoom() <= 0) return 'The ranch is full.';
   const price = e.sale.price, buyer = S.lgName;
   if (!canSpend(price)) return 'Not enough money.';
-  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); ranchLog('sold', `Sold to the ${buyer}`, { cost: -Math.round(price * SALE_SHARE), got: [entryWords(e)] }); });
+  inLeague(k, () => { S.ranch.mons = S.ranch.mons.filter(x => x !== e); if (e.sale.rule) { RR_LOG.listSold++; rrNote(Math.round(price * SALE_SHARE)); } if (S.fin) book(Math.round(price * SALE_SHARE), 'ranchsale', `Sold ${e.sp} ${gradeStars(e.g)} to the ${buyer}`); ranchLog('sold', `Sold to the ${buyer}`, { cost: -Math.round(price * SALE_SHARE), got: [entryWords(e)] }); });
   book(-price, 'ranchbuy', `Bought ${e.sp} ${gradeStars(e.g)} from the ${leagueName(k)}`);
   ranchLog('lbuy', `Bought from the ${leagueName(k)}`, { cost: price, got: [entryWords(e)] }); // (0.44.0)
   ranchAdd(Object.assign({}, e, { at: null, res: null, lock: false, of: null, sale: null, from: 'league', got: S.turn }));
@@ -15461,6 +15463,7 @@ function ranchWeek() {
   const lf = laneFee(); if (lf && booksOn()) book(-lf, 'lanes'); // (0.27.0)
   safariWeek(); tripsWeek(); shopWeek(); vaultWeek(); // (0.37.0)
   breedWeek(); // (0.45.0)
+  rulesWeek(); // (0.66.0) the ranch rules: listings they made, and once a month idle clear-out
   for (const e of S.ranch.mons) if (e.sale && S.turn - e.sale.at >= SALE_WEEKS) e.sale = null;
 }
 // the posts fielding stopgaps (the Ranch page and the AI read it)
@@ -15858,10 +15861,10 @@ function safariFind() {
   for (let i = 0; i < ls.length; i++) { r -= w[i]; if (r <= 0) { b = ls[i]; break; } }
   const sc = ranchScout(), e = newEntry(b, Math.max(Math.max(1, stockFloor(b) - 1), gradeRoll(sc)), 'safari');
   const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
-  const ok = ranchAdd(e), wd = entryWords(e);
+  const res = ranchTake(e), ok = res === 'kept', wd = entryWords(e); // (0.66.0) the ranch rules
   if (ok) SAFARI_LOG.finds++; else SAFARI_LOG.lost++;
-  ranchLog('safari', 'Turned up in the Safari Zone', ok ? { got: [wd] } : { lost: [wd] });
-  if (playerLeague()) news(ok ? `A young ${wd} turned up in the Safari Zone and joined the ranch.` : `A young ${wd} turned up in the Safari Zone, but the ranch was full.`, 'league');
+  ranchLog('safari', 'Turned up in the Safari Zone', ok ? { got: [wd] } : res === 'sold' ? { sold: [wd], why: 'below your grade floor' } : { lost: [wd] });
+  if (playerLeague()) news(ok ? `A young ${wd} turned up in the Safari Zone and joined the ranch.` : res === 'sold' ? `A young ${wd} turned up in the Safari Zone and was sold back (below your grade floor).` : `A young ${wd} turned up in the Safari Zone, but the ranch was full.`, 'league');
 }
 // a rival keeps, at each change, the safari lines that fit its posts' types best
 function aiSafariKeep() {
@@ -15880,10 +15883,10 @@ function ranchLog(k, text, o) {
   R.log.unshift(Object.assign({ t: S.turn || 0, k, text }, o || {}));
   if (R.log.length > RANCH_LOG) R.log.length = RANCH_LOG;
 }
-function tripLog(tr, what, got, lost) {
+function tripLog(tr, what, got, lost, sold) {
   const k = tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k;
   const text = tr.k === 'target' ? `${tr.cond ? 'Hunt' : 'Catching trip'} for ${what}${tr.safari ? ' in the Safari Zone' : ''}` : tr.k === 'charter' ? `Charter from ${regionName(tr.r)}` : tr.k === 'outbreak' ? `Trip to the ${tr.b} outbreak` : 'Area catching trip';
-  ranchLog(k, text, { cost: tr.cost, odds: tr.odds, at: tr.at, got, lost });
+  ranchLog(k, text, Object.assign({ cost: tr.cost, odds: tr.odds, at: tr.at, got, lost }, sold && sold.length ? { sold, why: 'below your grade floor' } : {}));
 }
 
 // ---------- what the bound League can get ----------
@@ -17045,7 +17048,9 @@ function breedYoung(a, b) {
 function hatch(p) {
   const D = dcState(), a = parentOf(p.a), b = parentOf(p.b); if (!a || !b) return;
   const e = breedYoung(a, b), wd = entryWords(e); p.n++; BREED_LOG.eggs++;
-  if (ranchAdd(e)) { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
+  const res = ranchTake(e); // (0.66.0) the ranch rules
+  if (res === 'sold') { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { sold: [wd], why: 'below your grade floor' }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, sold back (below your grade floor).`, 'league'); }
+  else if (res === 'kept') { ranchLog('bred', `Hatched at the Day Care (${a.sp} × ${b.sp})`, { got: [wd] }); if (playerLeague()) news(`An egg hatched at the Day Care: ${wd} joined the ranch.`, 'league'); }
   else { D.wait.push({ e, until: S.turn + HATCH_WAIT }); BREED_LOG.waited++; if (playerLeague()) news(`An egg hatched at the Day Care: ${wd}, but the ranch is full. It waits ${HATCH_WAIT} weeks for room.`, 'league'); }
 }
 // once a week (from ranchWeek): parents whose years are up are sold, pairs lay eggs, young ones waiting for room join
@@ -17059,7 +17064,7 @@ function breedWeek() {
   if (!dcLv()) { for (const p of D.pairs) p.due++; }
   else for (const p of D.pairs.slice()) if (p.due <= S.turn) { hatch(p); p.due = S.turn + dcWeeks(); }
   for (const w of D.wait.slice()) {
-    if (ranchAdd(w.e)) { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
+    if (ranchTake(w.e, 0) === 'kept') { D.wait = D.wait.filter(x => x !== w); ranchLog('bred', 'Joined the ranch from the Day Care', { got: [entryWords(w.e)] }); }
     else if (w.until <= S.turn) { D.wait = D.wait.filter(x => x !== w); BREED_LOG.lost++; ranchLog('bred', 'Let go from the Day Care: the ranch stayed full', { lost: [entryWords(w.e)] }); if (playerLeague()) news(`${entryWords(w.e)} waited at the Day Care, but the ranch stayed full: it was let go.`, 'league'); }
   }
 }
@@ -17396,22 +17401,109 @@ function condWhy(gi, k) {
   return null;
 }
 
-// ---------- the keep-grade rule ----------
-// Finds from the Contest, the Pier and the Fossil Lab below the League's keep grade, and any for a full ranch, are sold
-// back at once (SELL_BACK of their value); both go in the ranch log. Rivals keep by aim (provisional).
+// ---------- ranch rules and the keep grade (0.66.0; the keep grade 0.65.0) ----------
+// The League's ranch rules (S.fin.rr; the Ranch page), each its own toggle: a grade floor for everything that comes in
+// on its own (trips, hunts, charters, outbreak trips, Safari finds, the Day Care's young, the catching buildings),
+// finds below it sold back at once; make room (a find for a full ranch replaces the weakest spare by value when it is
+// worth more, no margin); idle clear-out (spares unfielded idleN weeks sold, keeping the best idleK of each line);
+// list first (idle clear-outs, and the weakest spares once the ranch is within RR_NEAR of full, go on the market as
+// League sales for RR_LIST_WEEKS before selling back). "Spare": not fielded, reserved, locked, named in a team plan or
+// benched by one, and not conditioned unless rr.cond. The Contest, the Pier and the Fossil Lab use the floor unless
+// the Cities page sets their own (S.fin.keepB). Rivals: the floor by aim (AI_KEEPG), make room on, their own clear-out
+// in aimRanch; conditioned Pokémon protected except by money-makers. All numbers provisional.
 const AI_KEEPG = { wall: 2, star: 3, money: 1 };
+const RR_DEFAULT = { floor: 2, room: true, idle: false, idleN: 16, idleK: 2, list: false, cond: false };
+const RR_LIST_WEEKS = 4, RR_LIST_MAX = 3, RR_NEAR = 3, RR_IDLE_N = [4, 52], RR_IDLE_K = [0, 6];
+const RR_LOG = { floor: 0, room: 0, roomNo: 0, idle: 0, listed: 0, listSold: 0, listBack: 0 };
 const FIND_LOG = { contest: 0, pier: 0, fossil: 0, kept: 0, sold: 0, full: 0, gate: 0 };
-function keepGrade() { const f = S.fin; if (!f) return 1; if (f.keepG) return f.keepG; return (f.aim && AI_KEEPG[f.aim]) || 1; }
-function setKeepGrade(n) { if (!S.fin) return 'Money is off.'; n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.'; S.fin.keepG = n; return null; }
+function ranchRules() {
+  const f = S.fin; if (!f) return null;
+  if (f.aim) return { floor: AI_KEEPG[f.aim] || 1, room: true, idle: false, idleN: 0, idleK: 0, list: false, cond: f.aim === 'money', ai: true };
+  return Object.assign({}, RR_DEFAULT, f.rr || {});
+}
+// a patch of the player's rules: an error or null
+function setRanchRules(p) {
+  const f = S.fin; if (!f) return 'Money is off.'; if (f.aim) return 'A rival League sets its own.';
+  const r = Object.assign({}, RR_DEFAULT, f.rr || {});
+  for (const [k, v] of Object.entries(p || {})) {
+    if (k === 'floor') { const n = Math.round(+v); if (!(n >= 0 && n <= 5)) return 'Pick a grade floor from 1 to 5, or off.'; r.floor = n; }
+    else if (k === 'idleN') { const n = Math.round(+v); if (!(n >= RR_IDLE_N[0] && n <= RR_IDLE_N[1])) return `Pick ${RR_IDLE_N[0]} to ${RR_IDLE_N[1]} weeks.`; r.idleN = n; }
+    else if (k === 'idleK') { const n = Math.round(+v); if (!(n >= RR_IDLE_K[0] && n <= RR_IDLE_K[1])) return `Keep ${RR_IDLE_K[0]} to ${RR_IDLE_K[1]} of each line.`; r.idleK = n; }
+    else if (['room', 'idle', 'list', 'cond'].includes(k)) r[k] = !!v;
+    else return 'No such rule.';
+  }
+  f.rr = r; return null;
+}
+// the keep grade of a catching building k: its own (S.fin.keepB[k]) or the League's floor (1 = keep everything)
+function keepGrade(k) { const f = S.fin; if (!f) return 1; const o = k && f.keepB && f.keepB[k]; if (o) return o; const r = ranchRules(); return (r && r.floor) || 1; }
+function setKeepGrade(k, n) {
+  if (!S.fin) return 'Money is off.'; if (!['contest', 'pier', 'fossil'].includes(k)) return 'No such building.';
+  if (n == null || n === '' || +n === 0) { if (S.fin.keepB) delete S.fin.keepB[k]; return null; }
+  n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.';
+  (S.fin.keepB = S.fin.keepB || {})[k] = n; return null;
+}
+// a spare the rules may sell
+const rrSpare = (e, r) => e.at == null && !e.res && !e.lock && e.bench == null && !(e.c && !r.cond) && !plannedRefs(e.uid).length;
+// this year's sales by the rules (the Ranch page)
+function rrNote(v) { const f = S.fin; if (!f) return; if (!f.rrY || f.rrY.season !== S.season) f.rrY = { season: S.season, n: 0, money: 0 }; f.rrY.n++; f.rrY.money += v; }
+function rrBack(e, why, text) {
+  const v = Math.round(entryValue(e) * SELL_BACK), wd = entryWords(e);
+  S.ranch.mons = S.ranch.mons.filter(x => x !== e);
+  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} back (${why})`);
+  rrNote(v); ranchLog('rules', text, { cost: -v, sold: [wd], why });
+  return v;
+}
+// make room for find e: sell back the weakest spare by value if e is worth more; true if room was made
+function makeRoom(e) {
+  const r = ranchRules(); if (!r || !r.room || !ranchOn()) return false;
+  const v = entryValue(e); let w = null, wv = Infinity;
+  for (const x of S.ranch.mons) if (rrSpare(x, r)) { const xv = entryValue(x); if (xv < wv) { w = x; wv = xv; } }
+  if (!w || wv >= v) { RR_LOG.roomNo++; return false; }
+  RR_LOG.room++; rrBack(w, `to make room for ${entryWords(e)}`, 'Make room: sold back');
+  return ranchRoom() > 0;
+}
+// a find that comes in on its own: 'kept', 'sold' (below the floor; booked and counted here) or 'lost' (no room;
+// the caller lets it go or sells it). floor: a building's keep grade (null: the League's floor; 0: none)
+function ranchTake(e, floor) {
+  if (!ranchOn()) return 'lost';
+  const r = ranchRules(), fl = floor != null ? floor : (r && r.floor) || 0;
+  if (fl > 1 && e.g < fl) { const v = Math.round(entryValue(e) * SELL_BACK); if (booksOn() && v) book(v, 'ranchsale', `Sold ${entryWords(e)} back (below your grade floor)`); rrNote(v); RR_LOG.floor++; return 'sold'; }
+  if (ranchAdd(e)) return 'kept';
+  if (makeRoom(e) && ranchAdd(e)) return 'kept';
+  return 'lost';
+}
+// once a month (your League; from ranchWeek): idle clear-out and list first
+function rulesMonth() {
+  const r = ranchRules(); if (!r || r.ai || !ranchOn()) return;
+  ranchSync();
+  const R = S.ranch, canList = r.list && nLeagues() > 1;
+  let listed = R.mons.filter(e => e.sale && e.sale.rule).length;
+  const list = e => { e.sale = { price: entryValue(e), at: S.turn, rule: true }; listed++; RR_LOG.listed++; ranchLog('rules', 'Listed for other Leagues by your rules', { got: [entryWords(e)], why: `sold back after ${RR_LIST_WEEKS} weeks if nobody buys` }); };
+  if (r.idle) {
+    const by = {}; for (const e of R.mons) if (rrSpare(e, r) && !e.sale) (by[e.b] = by[e.b] || []).push(e);
+    for (const l of Object.values(by)) for (const e of l.sort((x, y) => entryValue(y) - entryValue(x)).slice(r.idleK)) {
+      if (S.turn - (e.idle ?? S.turn) < r.idleN) continue;
+      if (canList) { if (listed < RR_LIST_MAX) list(e); } // the rest wait for room on the market
+      else { RR_LOG.idle++; rrBack(e, `unfielded ${r.idleN}+ weeks`, 'Idle clear-out: sold back'); }
+    }
+  }
+  if (canList && ranchRoom() <= RR_NEAR) for (const e of R.mons.filter(e => rrSpare(e, r) && !e.sale).sort((x, y) => entryValue(x) - entryValue(y))) { if (listed >= RR_LIST_MAX) break; list(e); }
+}
+// every week: a listing the rules made that nobody bought sells back
+function rulesWeek() {
+  if (!ranchOn()) return;
+  for (const e of S.ranch.mons.slice()) if (e.sale && e.sale.rule && S.turn - e.sale.at >= RR_LIST_WEEKS) { RR_LOG.listBack++; rrBack(e, 'nobody bought it', 'Listing ran out: sold back'); }
+  if (S.fin && !S.fin.aim && S.week % 4 === 0) rulesMonth();
+}
 // a find e from building k ('contest', 'pier', 'fossil'): into the ranch, or sold. Returns 'kept' or 'sold'.
 function autoFind(e, k, text) {
-  const wd = entryWords(e), low = e.g < keepGrade();
+  const wd = entryWords(e), kg = keepGrade(k), res = ranchTake(e, kg);
   FIND_LOG[k]++;
-  if (!low && ranchAdd(e)) { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
-  const v = Math.round(entryValue(e) * SELL_BACK);
-  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
+  if (res === 'kept') { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
+  const low = res === 'sold', v = Math.round(entryValue(e) * SELL_BACK);
+  if (!low && booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
   FIND_LOG.sold++; if (!low) FIND_LOG.full++;
-  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below your keep grade' : 'the ranch was full' });
+  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below its keep grade' : 'the ranch was full' });
   return 'sold';
 }
 const findNews = (k, wd, res) => { if (playerLeague()) news(res === 'kept' ? `${wd} came to the ranch from ${k}.` : `${wd} came from ${k} and was sold.`, 'league'); };
@@ -17579,7 +17671,7 @@ function buildings3Week(lap) {
   contestWeek(); pierWeek(); fossilWeek();
 }
 
-if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
+if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, ranchRules, setRanchRules, RR_DEFAULT, RR_LOG, RR_LIST_WEEKS, RR_LIST_MAX, RR_NEAR, rrSpare, ranchTake, makeRoom, rulesMonth, rulesWeek, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -19412,7 +19504,7 @@ function viewRanch0() {
     ${stops.length ? `<p class="warn">Fielding stopgaps (weak stand-ins, because nothing in the ranch fits): ${stops.map(t => `${esc(postName(t))} (${t.team.filter(m => m.stop).length})`).join(', ')}. Catch or buy Pokémon of their type.</p>` : ''}
     ${backs.length ? `<p class="small">Filling with backup types (used only where the ranch has none of their own type left): ${backs.map(t => `${esc(postName(t))} (${t.team.filter(m => m.backup).length})`).join(', ')}. They swap one back as soon as the ranch has one of their type.</p>` : ''}
     ${tabs}</section>${planGapNote()}`;
-  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'daycare' ? dayCarePanel(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + ranchPool(R);
+  const body = ranchTab === 'teams' ? ranchTeams(sen) : ranchTab === 'trips' ? ranchTrips(R, sc) : ranchTab === 'market' ? ranchMarket(R) : ranchTab === 'daycare' ? dayCarePanel(R) : ranchTab === 'region' ? regionPanel() + safariPanel() + vaultPanel() : storagePanel() + rulesPanel() + ranchPool(R);
   return head + body;
 }
 function ranchPool(R) {
@@ -19467,7 +19559,7 @@ function ranchTrips(R, sc) {
   const trips = R.trips.map(x => `<li>${x.k === 'target' ? `For <b>${x.cond ? COND_NAME[x.cond] + ' ' : ''}${esc(x.b)}</b> (${Math.round(x.odds * 100)}% odds${x.safari ? ', the safari' : ''}${x.floor ? `, at least ${gradeStars(x.floor)}` : ''})` : x.k === 'outbreak' ? `To the <b>${esc(x.b)}</b> outbreak` : x.k === 'charter' ? `A charter from ${esc(regionName(x.r))}` : 'An area trip'}: back ${turnDate(x.due)} <span class="muted small">(${money(x.cost)})</span></li>`).join('');
   return `<section class="panel"><div class="ph"><h2>Catching trips</h2><span class="muted">${R.trips.length} of ${tripMax()} out (one more a scouting office level)</span></div>
     ${trips ? `<ul>${trips}</ul>` : '<p class="muted">None out.</p>'}
-    <p class="small">A <b>targeted trip</b> goes after one line and costs more the rarer and stronger it is; your Scouting sets the odds and the grade. An <b>area trip</b> (${money(AREA_COST)}, two weeks) brings back one to three Pokémon at random. A find that comes back to a full ranch is let go. ${homeSet(S.region) ? `Trips catch what ${esc(regionName(S.region))} has, plus any migration, your lanes' regions and your Safari Zone (the list shows only those).` : 'Every species can be caught (National Dex rules).'} Trips through the Safari Zone are cheaper and likelier with each of its levels, and likelier still for a line you stocked there.</p>
+    <p class="small">A <b>targeted trip</b> goes after one line and costs more the rarer and stronger it is; your Scouting sets the odds and the grade. An <b>area trip</b> (${money(AREA_COST)}, two weeks) brings back one to three Pokémon at random. A find that comes back to a full ranch is let go, unless your ranch rules make room for it (the Pool tab); one below your grade floor is sold back. ${homeSet(S.region) ? `Trips catch what ${esc(regionName(S.region))} has, plus any migration, your lanes' regions and your Safari Zone (the list shows only those).` : 'Every species can be caught (National Dex rules).'} Trips through the Safari Zone are cheaper and likelier with each of its levels, and likelier still for a line you stocked there.</p>
     <div class="confirm-row"><select class="ranchtypesel" aria-label="Type">${TYPES.map(ty => `<option${ty === ranchType ? ' selected' : ''}>${ty}</option>`).join('')}</select>
       <select class="ranchcondsel" aria-label="Condition"><option value="">Any (a plain trip)</option>${COND_KINDS.filter(featOn).map(k => `<option value="${k}"${k === ranchCond ? ' selected' : ''}>${COND_NAME[k]} (×${COND_MUL[k]})</option>`).join('')}</select>
       <select class="ranchspsel" aria-label="Pokémon">${species.map(b => `<option value="${esc(b)}"${b === ranchSp ? ' selected' : ''}>${esc(b)} (to ${lineTop(b)} base stats${srcTag(b)}${dset.has(b) ? ', Delta line' : ''})</option>`).join('')}</select>
@@ -20485,12 +20577,32 @@ function viewCities0() {
     <p class="small">${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></section>
     ${distressPanel()}${keepPanel()}${bagPanel()}${places.map(card).join('')}`;
 }
-// (0.65.0) the keep grade for the catching buildings
+// (0.65.0) the keep grade for the catching buildings; (0.66.0) each the League's grade floor unless set here
 function keepPanel() {
-  const has = myPlaces().some(p => !p.none && p.b.some(x => ['contest', 'pier', 'fossil'].includes(x.k))); if (!has) return '';
-  const kg = keepGrade();
-  return `<section class="panel"><div class="ph"><h2>Keep grade</h2><span class="muted">Bug Catching Contests, Fishing Piers and Fossil Labs</span></div>
-    <p class="small">Finds below this grade, and any that come to a full ranch, are sold back at once for a third of their value; both show in the ranch log. <select class="keepgsel" aria-label="Keep grade">${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === kg ? ' selected' : ''}>Keep grade ${n} and up ${gradeStars(n)}</option>`).join('')}</select></p></section>`;
+  const ks = [['contest', 'Bug Catching Contests'], ['pier', 'Fishing Piers'], ['fossil', 'Fossil Labs']].filter(([k]) => myPlaces().some(p => !p.none && p.b.some(x => x.k === k))); if (!ks.length) return '';
+  const r = ranchRules(), fl = (r && r.floor) || 1, own = (S.fin.keepB || {});
+  const sel = (k, n) => `<label class="small">${n} <select class="keepgsel" data-k="${k}" aria-label="Keep grade: ${n}"><option value="0"${own[k] ? '' : ' selected'}>League floor (${fl > 1 ? gradeStars(fl) + ' and up' : 'keep everything'})</option>${[1, 2, 3, 4, 5].map(g => `<option value="${g}"${own[k] === g ? ' selected' : ''}>Keep ${gradeStars(g)} and up</option>`).join('')}</select></label>`;
+  return `<section class="panel"><div class="ph"><h2>Keep grade</h2><span class="muted">${ks.map(x => x[1]).join(', ')}</span></div>
+    <p class="small">Finds below the keep grade are sold back at once for a third of their value. Each building uses your League's grade floor (set under Ranch rules on the <button class="tlink" data-act="nav" data-v="ranch">Ranch</button> page) unless you give it its own here. A find for a full ranch makes room if your rules say so, else it is sold back. Both show in the ranch log.</p>
+    <div class="confirm-row">${ks.map(([k, n]) => sel(k, n)).join(' ')}</div></section>`;
+}
+// (0.66.0) the ranch rules (the Pool tab of the Ranch page)
+function rulesPanel() {
+  const r = ranchRules(); if (!r || r.ai) return '';
+  const y = S.fin.rrY && S.fin.rrY.season === S.season ? S.fin.rrY : { n: 0, money: 0 }, two = nLeagues() > 1;
+  const chk = (f, label, title) => `<label class="small" title="${esc(title)}"><input type="checkbox" class="rrf" data-f="${f}"${r[f] ? ' checked' : ''}> ${label}</label>`;
+  const num = (f, lo, hi, label) => `<label class="small">${label} <input type="number" class="rrf" data-f="${f}" min="${lo}" max="${hi}" value="${r[f]}" style="width:4.5em"${r.idle ? '' : ' disabled'}></label>`;
+  return `<section class="panel"><div class="ph"><h2>Ranch rules</h2><span class="muted">This year: ${y.n} sold by the rules for ${money(y.money)}</span></div>
+    <p class="small">What the ranch does on its own. A <b>spare</b> is any ranch Pokémon nobody fields, reserves, locks or names in a team plan${r.cond ? '' : ', and not an alpha, Delta, shiny or Radiant'}; the rules only ever sell spares. Weakest means lowest value (line strength, grade, rarity, condition and your League's meta), so a rare line or a meta favourite survives a low grade.</p>
+    <div class="confirm-row" id="rrrules">
+      <label class="small" title="Trips, hunts, charters, outbreak trips, Safari finds, the Day Care's young and the catching buildings">Grade floor <select class="rrf" data-f="floor" aria-label="Grade floor"><option value="0"${r.floor > 1 ? '' : ' selected'}>Off</option>${[2, 3, 4, 5].map(g => `<option value="${g}"${r.floor === g ? ' selected' : ''}>Keep ${gradeStars(g)} and up</option>`).join('')}</select></label>
+      ${chk('room', 'Make room for better finds', 'A find for a full ranch replaces your weakest spare if it is worth more (the spare is sold back)')}
+      ${chk('idle', 'Idle clear-out', 'Sell spares nobody has fielded for a while, keeping your best of each line')}
+      ${num('idleN', RR_IDLE_N[0], RR_IDLE_N[1], 'after weeks')}${num('idleK', RR_IDLE_K[0], RR_IDLE_K[1], 'keep of each line')}
+      ${chk('list', 'List first', `Idle clear-outs, and your weakest spares once the ranch is within ${RR_NEAR} of full, are listed for other Leagues (you get ${Math.round(SALE_SHARE * 100)}%) for ${RR_LIST_WEEKS} weeks, up to ${RR_LIST_MAX} at once, then sold back`)}
+      ${chk('cond', 'Conditioned too', 'Let the rules sell alphas, Deltas, shinies and Radiants like any other spare')}
+    </div>
+    <p class="small muted">Finds below the floor sell back at once for a third of their value. Make room sells the spare back at once. ${two ? '' : 'List first needs another League to sell to. '}Every sale the rules make is in the ranch log with its reason.</p></section>`;
 }
 // (0.64.0) the item bag and the Department Stores' shelves
 const SHELF_NAMES = ['Poké Mart', '2F', '3F', '4F'];
@@ -20647,7 +20759,8 @@ GLOSS_TERMS.league.push(['Airport', `A gym-city building, one a League, in a Cit
   ['Bug Catching Contest', `A gym-city building (3 levels; 3 needs a City) where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff. Every ${CONTEST_WEEKS} weeks it brings your ranch 1, 2 or 3 of your region's Bug Pokémon (migrants in season too), the first, the prize, at grade ${CONTEST_PRIZE.join(', ')} or better by level, at a little better than the wild odds for a condition, plus ${CONTEST_VISIT} visitors a level and a gate of ${money(CONTEST_GATE)} a level. If the condition is lost it keeps running but can't be raised.`],
   ['Fishing Pier', `A gym-city building (3 levels: the rods; the Super Rod needs a City) in a port, where the gym is a Water gym, or with a Fisherman on your staff. One Water Pokémon of your region every ${PIER_WEEKS} weeks: the Old Rod the weakest third of the region's Water lines by their final form's strength, the Good Rod the middle third too, the Super Rod all of them. If the condition is lost it keeps running but can't be raised.`],
   ['Fossil Lab', `A gym-city building (3 levels; 3 needs a City) where your Research Lab is at level 2 or more. It revives a fossil Pokémon from any region (your region's own ${FOSSIL_HOME} times as often) every ${FOSSIL_WEEKS.slice(0, 3).join(', ')} weeks by level, at a grade no lower than its level; a Ruin Maniac on your staff counts as one more level (every ${FOSSIL_WEEKS[3]} weeks at the most). If the condition is lost it keeps running but can't be raised.`],
-  ['Keep grade', 'The grade (1 to 5) a find from a Bug Catching Contest, Fishing Pier or Fossil Lab must reach to join your ranch, set on the Cities page; finds below it, and any for a full ranch, are sold back at once for a third of their value. Rival Leagues keep by aim: wall-builders grade 2 and up, star-makers 3, money-makers everything.']); // (0.65.0)
+  ['Keep grade', 'The grade (1 to 5) a find from a Bug Catching Contest, Fishing Pier or Fossil Lab must reach to join your ranch. Each building uses your League\'s grade floor (Ranch rules) unless the Cities page gives it its own; finds below it are sold back at once for a third of their value, and a find for a full ranch makes room if your rules allow, else it is sold back.'],
+  ['Ranch rules', 'Set on the Ranch page\'s Pool tab, each on or off. Grade floor: anything that comes in on its own (trips, hunts, charters, outbreak trips, Safari finds, the Day Care\'s young, the catching buildings) below the floor is sold back at once. Make room: a find for a full ranch replaces your weakest spare (by value) if it is worth more. Idle clear-out: spares nobody has fielded for a number of weeks are sold, keeping your best few of each line. List first: idle clear-outs, and your weakest spares when the ranch is nearly full, are listed for other Leagues for 4 weeks before selling back. A spare is a ranch Pokémon nobody fields, reserves, locks or plans for; alphas, Deltas, shinies and Radiants only with Conditioned too. A new League starts with the floor at two stars and make room on. Rival Leagues keep a floor and make room by their aim.']);
 GLOSS_TERMS.league.push(['Trainer\'s School', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Each level graduates one young trainer a year (16 to 20, from that city, of a class that fits the gym), a little stronger each level than the field's typical gym trainer; a Pokémon Professor anywhere on your staff counts as one more level. A graduate takes an open gym trainer place at that gym, else at another of your gyms they fit; otherwise they set out on the region's field from that city, ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers, and your gym trainer picker lists them first. Rival Leagues also let a weaker gym trainer go at the end of a contract to take one on. Your graduates are paid ${SCHOOL_PAY.map(x => Math.round((1 - x) * 100) + '%').join(', ')} less by you, by the School's level when they graduated. The School is also that gym's training hall: its Gym Leader and gym trainers grow 12% faster a level and decline more slowly. The training hall itself is at the seat only now (the Elite Four and Champion). In the red a School lapses: no graduates, no growth bonus.`],
   ['Move Tutor', `A building in a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion), 3 levels. A tutored Pokémon learns all three of its line's coverage types instead of two, each ${TUTOR_SOONER} levels sooner, in an order its trainer's Strategy picks (a sharp strategist puts the types that answer the year's meta first). The lesson stays with the Pokémon for good, in the ranch and on whoever fields it next. Level 1 teaches ${TUTOR_FEW} Pokémon a post (planned ones first, then the strongest), level 2 the whole team; level 3 (needs a City) makes a backup-type Pokémon's coverage hit its trainer's own threats first. Lessons are given once a month; in the red, none, but lessons already taught stay.`],
   ['Research Lab', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Catching trips aren't tied to a city, so your best Lab works League-wide, and a Scientist on your staff counts as one more level: +${LAB_SCOUT} Scouting a level for catching trips; finds of grade 2 or better from level 2 and grade 3 or better from level 4; one more trip out at a time from level 3; condition hunts ${Math.round(LAB_HUNT * 100)}% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of ${LAB_GRANT} × its level for every new species of your region your ranch takes in (until the regional Pokédex comes, the ranch's own register).`],
@@ -20906,6 +21019,13 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 66, ver: '0.66.0', date: 'November 25, 2026', time: '11:30 PM ET', title: 'Ranch rules: a grade floor, making room, idle clear-out and listing first', items: [
+    "Ranch rules on the Ranch page's Pool tab, each on or off. Grade floor: anything that comes in on its own (trips, hunts, charters, outbreak trips, Safari finds, the Day Care's young and the catching buildings) below the floor is sold back at once for a third of its value.",
+    "Make room for better finds: when a find comes back to a full ranch, your weakest spare (by value) is sold back to make room for it if the find is worth more, instead of the find being let go.",
+    "Idle clear-out: spares nobody has fielded for a number of weeks you choose are sold, keeping the best few of each line. List first: idle clear-outs, and your weakest spares when the ranch is nearly full, are listed for other Leagues for 4 weeks (85% of their value) before selling back.",
+    "The rules only sell spares: never a Pokémon someone fields, a reserved, locked or planned one, or (unless you tick Conditioned too) an alpha, Delta, shiny or Radiant. A new League starts with the floor at two stars and make room on. Every sale they make is in the ranch log with its reason, and the panel shows this year's total.",
+    "Bug Catching Contests, Fishing Piers and Fossil Labs now use your League's grade floor, unless you give one its own keep grade on the Cities page. Rival Leagues keep a floor and make room by their aim.",
+  ] },
   { id: 65, ver: '0.65.0', date: 'November 25, 2026', time: '9:30 PM ET', title: 'City buildings, part 3: Airports, Bug Catching Contests, Fishing Piers and Fossil Labs', items: [
     "The Airport (one per League, in a gym city that is at least a City, 3 levels): each route to another region works like a shipping lane for its Pokémon and brings people, with challengers moving out of that region leaning toward your League and landing in its city, and a few visitors a month arriving from there (more with your renown there). It costs 1,000 a week to run and earns 150 for every arrival. Level 2 adds a second route; level 3 makes charters cheaper and faster and gives your contenders more renown abroad.",
     "The Bug Catching Contest (where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff): every 8 weeks it brings 1 to 3 of your region's Bug Pokémon by level, the prize at a good grade, plus visitors and a gate.",
@@ -22081,7 +22201,8 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('airsel')) { const w = setAirRoute(+e.target.dataset.i, +e.target.value); save(); render(); toast(w || 'The Airport\'s route has changed.'); return; } // (0.65.0)
-  if (e.target && e.target.classList && e.target.classList.contains('keepgsel')) { const w = inLeague(ME(), () => setKeepGrade(+e.target.value)); save(); render(); toast(w || 'Keep grade set.'); return; } // (0.65.0)
+  if (e.target && e.target.classList && e.target.classList.contains('keepgsel')) { const w = inLeague(ME(), () => setKeepGrade(e.target.dataset.k, +e.target.value)); save(); render(); toast(w || 'Keep grade set.'); return; } // (0.65.0); (0.66.0) per building
+  if (e.target && e.target.classList && e.target.classList.contains('rrf')) { const f = e.target.dataset.f, v = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; const w = inLeague(ME(), () => setRanchRules({ [f]: v })); save(); render(); toast(w || 'Ranch rules set.'); return; } // (0.66.0)
   if (e.target && e.target.classList && e.target.classList.contains('berryfeed')) { const err = inLeague(ME(), () => setBerryFeed(+e.target.dataset.g, +e.target.value)); save(); render(); toast(err || 'Berry Farm plots set.'); return; } // (0.63.0)
   if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(ME(), () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
   if (e.target && e.target.id === 'imgfile' && e.target.files && e.target.files[0]) { imgPickFile(e.target.files[0]); return; }
