@@ -39,6 +39,7 @@ const CB2 = { built: {}, items: 0, itemRefused: 0, gradTag: 0, tutored: 0, bagMa
 const CB3 = { built: {}, refused: 0, routes: 0, keep: 0, airports: 0, finds: 0, forcedCity: 0 }; // (0.65.0)
 const ADD = { built: 0 }; // (0.68.0)
 const WX = { built: 0, set: 0, refused: 0, raised: 0, seen: 0, terrainSeen: 0 }; // (0.69.0)
+const GC = { seen: 0, built: 0, raised: 0, bought: 0, refused: 0 }; // (0.70.0)
 const RR2 = { set: 0, listedMax: 0 }; // (0.66.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
@@ -360,6 +361,13 @@ function check(tag) {
     { const wx = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'wx')); if (wx.length > 1) bad('two Weather Institutes in one League'); if (wx.some(p => g.citySize(p.c) < 1)) bad('a Weather Institute in a Town');
       const pk = z.fin.wx; if (pk) { for (const [k, v] of Object.entries(pk.g || {})) { if (!(+k >= 0 && +k < 8) || !g.FIELDS[v]) bad('a bad gym field ' + k + ':' + v); } if (pk.seat != null && !g.FIELDS[pk.seat]) bad('a bad seat field ' + pk.seat); }
       for (const w of ['seat', 0, 1, 2, 3, 4, 5, 6, 7]) { const f = g.fieldOf(w); if (f) { WX.seen++; if (f.t) WX.terrainSeen++; if (f.w && f.t) bad('a weather and a terrain together'); if (!wx.length) bad('a field working with no Institute'); if (f.lock && g.wxLv() < 2) bad('a field held below level 2'); if (g.wxLv() < 2 && !g.wxClassOn() && !g.fieldOpts(w).includes(f.key)) bad('a field off its types at level 1'); } } }
+    // (0.70.0) the Game Corner: only in a City (level 3 a Metropolis), its counter within its slots, no line twice, real
+    // ranchable prizes at grade 2 to 5 with a price, and a counter no older than a quarter while the League is solvent
+    for (const p of g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'corner'))) { const x = p.b.find(y => y.k === 'corner'), pz = x.prize || [];
+      GC.seen++; if (g.citySize(p.c) < 1) bad('a Game Corner in a Town'); if (x.lv >= 3 && g.citySize(p.c) < 2) bad('a level 3 Game Corner below a Metropolis');
+      if (pz.length > g.CORNER_PRIZES[x.lv - 1]) bad('more prizes than the Game Corner holds'); if (new Set(pz.map(q => q.b)).size !== pz.length) bad('a prize line twice on one counter');
+      for (const q of pz) { if (!g.ranchable(q.b)) bad('a prize that is not ranchable: ' + q.b); if (!(q.g >= 2 && q.g <= 5)) bad('a prize of grade ' + q.g); if (!(q.price > 0)) bad('a prize with no price'); }
+      if (x.prize && !g.lapsed() && z.turn - x.at > g.QUARTER_WEEKS) bad('a prize counter past its quarter'); }
     { const air = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'airport')); if (air.length > 1) bad('two Airports in one League'); CB3.airports = Math.max(CB3.airports, air.length);
       const a = g.airportAt(i); if (a) { if (a.routes.length > g.routeCount(a.x.lv) || a.routes.some(r => r === z.region || !(r >= 0 && r < g.nRegionsBuilt())) || new Set(a.routes).size !== a.routes.length) bad('bad Airport routes ' + JSON.stringify(a.x.routes)); if (a.c.region !== z.region) bad('an Airport outside its region'); }
       if (z.fin && z.fin.keepB) for (const [k, v] of Object.entries(z.fin.keepB)) if (!['contest', 'pier', 'fossil'].includes(k) || !(v >= 1 && v <= 5)) bad('a bad keep grade ' + k + ' ' + v);
@@ -634,6 +642,16 @@ for (let i = 0; i < N; i++) {
         if (g.wxLv()) for (let n = 0; n < 2; n++) { const w = rnd(['seat', 0, 1, 2, 3, 4, 5, 6, 7]), k = Math.random() < 0.15 ? null : rnd(g.FIELD_KEYS), ok = k == null || g.fieldOpts(w).includes(k), err = g.setField(w, k);
           if (ok && err) fail.push('a field refused: ' + err); if (!ok && !err) fail.push('an off-type field taken at level 1'); if (!ok) WX.refused++; else if (g.fieldPick(w) !== k) fail.push('a field not set'); else WX.set++; }
         if (g.wxLv() && !g.setField(0, 'hail')) fail.push('a made-up field taken');
+        // (0.70.0) a Game Corner once a gym city is a City (made one if needed; refused in a Town first), raised now and then;
+        // prizes taken at random (the price, the ranch and the Sold mark checked; a second take refused)
+        if (z.season >= 2 && !g.corners().length) { const c = z.cities[z.gyms[3].city]; if (g.citySize(c) < 1) { if (!g.buildCheck(3, 'corner').why) fail.push('a Game Corner allowed in a Town'); c.spent = c.spent || {}; c.spent[z.lg || 0] = (c.spent[z.lg || 0] || 0) + 100000; }
+          if (!g.buildCheck('seat', 'corner').why) fail.push('a Game Corner allowed at the seat');
+          const ck = g.buildCheck(3, 'corner'); if (!ck.why) { z.fin.money += ck.cost + 20000; const m8 = z.fin.money; if (g.build(3, 'corner') || z.fin.money !== m8 - ck.cost) fail.push('Game Corner build wrong'); else GC.built++; } }
+        if (g.corners().length && z.season >= 3 && Math.random() < 0.2) { const a = g.corners()[0], ck = g.buildCheck(a.gi, 'corner'); if (!ck.why) { z.fin.money += ck.cost; if (g.build(a.gi, 'corner')) fail.push('Game Corner raise refused'); else GC.raised++; } }
+        if (!g.lapsed() && Math.random() < 0.8) for (const a of g.corners()) { const i3 = (a.x.prize || []).findIndex(q => !q.sold); if (i3 < 0) { GC.none = (GC.none || 0) + 1; continue; } if (g.ranchRoom() <= 0) { GC.full = (GC.full || 0) + 1; if (!g.buyPrize(a.gi, i3)) fail.push('a Game Corner prize taken into a full ranch'); continue; }
+          const q = a.x.prize[i3]; z.fin.money += q.price; const m9 = z.fin.money, n9 = z.ranch.mons.length;
+          const err = g.buyPrize(a.gi, i3); if (err) fail.push('a Game Corner prize refused: ' + err);
+          else { GC.bought++; if (z.fin.money !== m9 - q.price || z.ranch.mons.length !== n9 + 1 || !q.sold || z.ranch.mons[z.ranch.mons.length - 1].b !== q.b) fail.push('a Game Corner prize bought wrong'); if (!g.buyPrize(a.gi, i3)) fail.push('a Game Corner prize taken twice'); else GC.refused++; } }
         { const a = g.airportAt(); if (a && a.routes.length && Math.random() < 0.3) { const to = [...Array(g.nRegionsBuilt()).keys()].find(r => r !== z.region && !a.routes.includes(r)), m6 = z.fin.money; if (to != null) { const w6 = g.setAirRoute(0, to); if (!w6) { CB3.routes++; if (z.fin.money !== m6 - g.AIR_ROUTE || g.airRoutes()[0] !== to) fail.push('Airport route change wrong'); if (!g.laneSet().size && g.homeSet(z.region)) fail.push('an Airport route brings no Pokémon'); } else if (m6 >= g.AIR_ROUTE) fail.push('route change refused: ' + w6); } if (!g.setAirRoute(0, z.region)) fail.push('an Airport route home allowed'); } }
         { const ks = g.shelfItems().filter(k => g.ITEMS[k].tier >= 2); if (ks.length) { const k = rnd(ks), pr = g.itemPrice(k), m3 = z.fin.money, n0 = g.bagOf()[k] || 0, w3 = g.buyItem(k); if (!w3) { CB2.items++; if (z.fin.money !== m3 - pr || g.bagOf()[k] !== n0 + 1) fail.push('item purchase wrong'); } else CB2.itemRefused++; }
           if (!g.storeFloors() && !g.buyItem('leftovers')) fail.push('an item bought with no Store'); } }
@@ -900,6 +918,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 // (0.69.0) the Weather Institute
 { const n = g.eachLeague(() => { const a = g.wxAt(); return a ? 'L' + a.x.lv + (S().fin.wx ? ' ' + Object.keys(S().fin.wx.g || {}).length + 'g' + (S().fin.wx.seat ? '+s' : '') : '') : '-'; }).join('/');
   console.log('weather institute', JSON.stringify(WX), 'log', JSON.stringify(g.WX_LOG), '| by League', n); }
+// (0.70.0) the Game Corner
+{ const n = g.eachLeague(() => { const a = g.corners(); return a.length ? a.map(x => 'L' + x.x.lv).join('+') : '-'; }).join('/');
+  console.log('game corner', JSON.stringify(GC), 'log', JSON.stringify(g.CORNER_LOG), '| by League', n); }
 // (0.65.0) city buildings part 3
 { const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0)).join('/');
   console.log('ranch rules', JSON.stringify(RR2), JSON.stringify(g.RR_LOG));

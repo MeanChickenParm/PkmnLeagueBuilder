@@ -13911,7 +13911,7 @@ const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (0.68.0: and their add-ons, the home side's edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
   wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums and their add-ons (Home stands, Video rooms, Field crews, Warm-up rooms) and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['seat', 'stand'], ['gyms', 'stadium'], ['gyms', 'stand'], ['seat', 'video'], ['gyms', 'video'], ['seat', 'crew'], ['gyms', 'crew'], ['seat', 'warmup'], ['gyms', 'warmup'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'wx'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
   star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['seat', 'video'], ['gyms', 'stand'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'wx'], ['gyms', 'safari'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms, a Game Corner and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'corner'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -13964,7 +13964,7 @@ function aimMonth() {
     // a star-maker lets its gyms build freely and has only its Elite Four and Champion counter the year
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
-  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); aimItems(aim); aiWx(aim); } // (0.64.0) an item for the bag by aim // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
+  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); aimItems(aim); aiWx(aim); aiCorner(aim); } // (0.70.0) prizes from its own Game Corners // (0.64.0) an item for the bag by aim // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
   if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff; (0.54.0) or another League's, by aim
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
@@ -13992,10 +13992,10 @@ function aimSpend(aim) {
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
   // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
-  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1 };
+  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1, corner: 1 };
   const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
-    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' ? busy : S.gyms.map((_, i) => i).reverse();
+    const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' || k === 'corner' ? busy : S.gyms.map((_, i) => i).reverse();
     for (const where of spots) { const ck = buildCheck(where, k); if (!ck.why && ck.cost <= spare && aimWorth(where, k) && (earns[k] || net >= ck.cost * UPKEEP)) { build(where, k, lg); return; } }
   }
 }
@@ -14540,6 +14540,8 @@ const UPGRADES = {
   airport: { name: 'Airport',         text: 'One per League, in a gym city that is at least a City. Each route works like a shipping lane (that region\'s Pokémon on your targeted trips and at your market) and also brings people: challengers moving out of a routed region lean toward your League and land here, and a few visitors from there arrive every month (more with your renown there), spending in this city. 1,000 a week to run plus 150 for every arrival; changing a route costs 25,000. Level 1 one route; level 2 a second (needs a Metropolis); level 3 makes charters 40% cheaper and a week faster, and your contenders win 25% more renown in other regions (needs a Megalopolis).', city: true, oneLg: true, max: 3, cost: [150000, 300000, 600000], tierAt: [1, 2, 3] },
   // (0.69.0) the Weather Institute: one per League (needs a City), League-wide; each gym's and the seat's field (5c)
   wx:      { name: 'Weather Institute', text: 'One per League, in a gym city that is at least a City; it works League-wide. On this page choose each gym\'s field and the seat\'s (Elite Four and title battles): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never both. It replaces the gym\'s own weather; a terrain powers its type\'s moves 20% for both sides. Level 1: only the fields a place\'s types bring (a weather-themed trainer on your staff opens them all). Level 2: any field anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field and the sharp ones plan for it.', city: true, oneLg: true, max: 2, cost: [50000, 100000], tierAt: [1, 1] },
+  // (0.70.0) the Game Corner: takings that swing, and a prize counter of the region's rarest lines (5c)
+  corner:  { name: 'Game Corner',     text: 'Gym cities only, and only in a City (level 3 a Metropolis). The city\'s visitors and residents play each week (10, 20, 34 seats by level; every Game Corner in the city shares them, the controlling League a little more), each spending by the city\'s size. The take swings: most weeks within 30% of its average, now and then a jackpot week of about three times as much, and very rarely a losing week. Its prize counter holds 2, 3, then 4 of your region\'s rarest Pokémon (no legendaries), grade 2 or better, changing every quarter; each can be taken once a quarter, for money, straight into your ranch. Level 3 takes 10% off the prizes. Closed while you are in the red.', city: true, max: 3, cost: [40000, 80000, 160000], tierAt: [1, 1, 2] },
   contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
   fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
@@ -14628,6 +14630,7 @@ function build(where, k, lg = ME()) {
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
     const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
     if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
+    if (k === 'corner') cornerStock(b.find(x => x.k === k), false); // (0.70.0) the prize counter stocks at once (a new level adds a slot)
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
@@ -15040,6 +15043,7 @@ function aimWorth(where, k) {
   if (k === 'pier' && aimOf() === 'money') return placeLv(where, k) < 1;
   if (k === 'pier' && aimOf() === 'wall') { const ld = T(S.gyms[where].leader); return !!ld && specTypes(ld).includes('Water'); }
   if (k === 'store') return placeLv(where, k) === storeBuilt();
+  if (k === 'corner') return aimCorner(where); // (0.70.0) one Game Corner, in the busiest City
   return true;
 }
 // ================= THE RANCH (0.25.0, design doc 6.5, part 1: the core) =================
@@ -17434,13 +17438,14 @@ function aimItems(aim) {
 function buildings2Week(lap) {
   if (!S.fin) return;
   if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
+  cornerWeek(lap); // (0.70.0) the Game Corner's take and its prize counter
   schoolWeek(); tutorWeek(); labWeek();
   buildings3Week(lap); // (0.65.0) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
   // staff equipped before the League kept books (a League founded by hand) or by another path re-equip under the bag rule
   if (bagRule()) { const lg = S.lg || 0; for (const id of staffIds()) { const t = T(id); if (t && t.team.some(m => m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg !== lg)) { eliteItems(t); ITEM_LOG.fixed = (ITEM_LOG.fixed || 0) + 1; } } }
 }
 // world-level, from visitorsWeek
-function buildings2World() { shoppersWeek(); bagSync(); }
+function buildings2World() { shoppersWeek(); cornerPlayersWeek(); bagSync(); }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { SCHOOL_PAY, SCHOOL_LOG, schoolLv, ownSchool, ownYouth, schoolPay, schoolRank, schoolGrads, graduate, isProfessor, TUTOR_LOG, TUTOR_SOONER, tutorAt, tutorCov, teach, LAB_LOG, labLv, labBuilt, labScout, labFloor, labTrips, labHunt, labCond, LAB_GRANT, ITEM_LOG, STORE_SHELF, ITEM_PRICE, shelfOf, bagRule, itemFreeOk, storeFloors, storeBuilt, bagOf, itemPrice, shelfItems, bagUsed, bagFree, buyItem, equipSenior, storeIncome, SHOP_SPEND_AT, aimItems });
 
@@ -17830,6 +17835,130 @@ function aiWx(aim) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { FIELDS, FIELD_KEYS, FIELD_TERRAIN, FIELD_PREP, WX_LOG, wxAt, wxLv, wxPicks, wxClassOn, placeTypes, fieldOpts, fieldPick, fieldWhy, setField, fieldOf, fieldSeen, fieldFit, fieldRoute, aiWx });
+
+// ================= THE GAME CORNER (0.70.0) =================
+// (0.70.0, the owner, design doc claude/design-update-game-corner.md) Gym cities that are at least a City (level 3 a
+// Metropolis), one a city per League. Players each week: the city's visitors plus residents by size, shared by every
+// Corner in the city by level × the Hotel's gentle control weights, up to CORNER_SEATS a Corner; each spends
+// CORNER_SPEND_AT(size). The take swings week by week (the owner: a very rare losing week, but it makes money far more
+// often than not): usually ±CORNER_SWING, a jackpot week (×CORNER_JACKPOT) 1 in CORNER_JACK_N, a losing week
+// (−CORNER_LOSS of an average week) 1 in CORNER_LOSS_N. The prize counter: CORNER_PRIZES slots by level, drawn each
+// quarter from the region's rarest lines (the bottom CORNER_POOL share by how often they turn up; never a legendary or
+// Paradox), each at grade 2 or better, priced at the market value × CORNER_MARKUP (× (1 − CORNER_OFF) at level 3);
+// one of each per quarter, not repeating last quarter's lines while the pool allows. Prizes go straight to the ranch.
+// Closed in the red. Rivals: money-makers build one in their busiest City; wall-builders and star-makers buy prizes
+// that fit a senior post's type from Corners they own. All numbers provisional.
+const CORNER_SEATS = [10, 20, 34], CORNER_PRIZES = [2, 3, 4], CORNER_MARKUP = 1.25, CORNER_OFF = 0.1, CORNER_POOL = 0.25;
+const CORNER_SWING = 0.3, CORNER_JACKPOT = 3, CORNER_JACK_N = 12, CORNER_LOSS = 0.5, CORNER_LOSS_N = 50, CORNER_MIN_G = 2;
+const CORNER_AI_SHARE = 0.35;
+const CORNER_RESIDENTS_AT = k => Math.round(6 * Math.pow(1.8, k)), CORNER_SPEND_AT = k => Math.round(30 * Math.pow(1.5, k));
+const CORNER_LOG = { weeks: 0, take: 0, jackpots: 0, losses: 0, lossAmt: 0, rotations: 0, prizes: 0, prizeSpend: 0, aiPrizes: 0 };
+// world-level, from buildings2World: each city's players shared among its Corners (c.cg[lg])
+function cornerPlayersWeek() {
+  const m = gymMap();
+  for (const c of Object.values(S.cities || {})) {
+    c.cg = null;
+    const st = (m[c.id] || []).filter(i => !lgLapsed(i)).map(i => ({ i, lv: upLevel(cityB(c, i), 'corner') })).filter(x => x.lv);
+    if (!st.length) continue;
+    let left = (c.vw || 0) + CORNER_RESIDENTS_AT(citySize(c));
+    for (const s of st) { s.cap = CORNER_SEATS[s.lv - 1]; s.w = s.lv * (c.ctrl === s.i && c.tier != null ? HOTEL_CTRL[c.tier] : 1); s.g = 0; }
+    for (let pass = 0; pass < 3 && left > 0; pass++) {
+      const open = st.filter(s => s.g < s.cap), tw = open.reduce((a, s) => a + s.w, 0); if (!tw) break;
+      let given = 0;
+      for (const s of open) { const n = Math.min(s.cap - s.g, Math.floor(left * s.w / tw + 1e-9) || (pass === 2 ? 1 : 0)); s.g += n; given += n; }
+      left -= given; if (!given) break;
+    }
+    c.cg = {}; for (const s of st) if (s.g) c.cg[s.i] = s.g;
+  }
+}
+// the bound League's Corners: [{ gi, c, x }]
+function corners() {
+  const out = [];
+  S.gyms.forEach((g, gi) => { const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'corner'); if (x) out.push({ gi, c, x }); });
+  return out;
+}
+// a week's swing on an average take: [take, 'jackpot' | 'loss' | null]
+function cornerSwing(avg) {
+  const r = rand();
+  if (r < 1 / CORNER_LOSS_N) return [-Math.round(avg * CORNER_LOSS), 'loss'];
+  if (r < 1 / CORNER_LOSS_N + 1 / CORNER_JACK_N) return [Math.round(avg * CORNER_JACKPOT), 'jackpot'];
+  return [Math.round(avg * (1 - CORNER_SWING + 2 * CORNER_SWING * rand())), null];
+}
+function cornerYear(f) { if (!f.gc || f.gc.season !== S.season) { const o = f.gc; f.gc = { season: S.season, take: 0, jack: 0, loss: 0, last: o ? { season: o.season, take: o.take, jack: o.jack, loss: o.loss } : null }; } return f.gc; }
+// the region's prize pool: the rarest share of its lines (as findSpecies weighs them), strongest first among equals
+function cornerPool() {
+  const all = hereLines().filter(b => ranchable(b));
+  const w = b => (SP[b].rare ? 0.25 : 1) * (SP[b].starter ? 0.4 : 1) * (lineTop(b) > 540 ? 0.35 : 1);
+  return all.sort((a, b) => w(a) - w(b) || lineTop(b) - lineTop(a) || (a < b ? -1 : 1)).slice(0, Math.max(1, Math.ceil(all.length * CORNER_POOL)));
+}
+const prizePrice = (b, g, lv) => Math.round(monValue(b, g) * CORNER_MARKUP * (lv >= 3 ? 1 - CORNER_OFF : 1) / 50) * 50;
+// fill a Corner's counter: a new quarter draws every slot; a level raised mid-quarter adds slots
+function cornerStock(x, fresh) {
+  const want = CORNER_PRIZES[x.lv - 1] || 0, pool = cornerPool(); if (!pool.length) return;
+  const sc = ranchScout() + labScout();
+  if (fresh || !x.prize) { x.lastLines = x.prize ? x.prize.map(p => p.b) : x.lastLines || []; x.prize = []; x.at = S.turn; CORNER_LOG.rotations++; }
+  const taken = new Set(x.prize.map(p => p.b)), avoid = new Set(x.lastLines || []);
+  while (x.prize.length < want) {
+    let cand = pool.filter(b => !taken.has(b) && !avoid.has(b));
+    if (!cand.length) cand = pool.filter(b => !taken.has(b));
+    if (!cand.length) break;
+    const b = cand[Math.floor(rand() * cand.length)], g = Math.max(CORNER_MIN_G, gradeRoll(sc));
+    x.prize.push({ b, g, price: prizePrice(b, g, x.lv), sold: false }); taken.add(b);
+  }
+  for (const p of x.prize) if (!p.sold) p.price = prizePrice(p.b, p.g, x.lv);
+}
+const cornerNext = x => (x.at || 0) + QUARTER_WEEKS;
+// per League, from buildings2Week: the take (not in the red) and the counter
+function cornerWeek(lap) {
+  const cs = corners(); if (!cs.length || lap || !S.fin) return;
+  const f = S.fin, y = cornerYear(f), lg = S.lg || 0;
+  for (const { c, x } of cs) {
+    if (!x.prize || S.turn >= cornerNext(x)) cornerStock(x, true); else cornerStock(x, false);
+    const players = (c.cg && c.cg[lg]) || 0, avg = players * CORNER_SPEND_AT(citySize(c));
+    if (!avg) { x.wk = { t: S.turn, amt: 0, tag: null, players }; continue; }
+    const [amt, tag] = cornerSwing(avg);
+    x.wk = { t: S.turn, amt, tag, players };
+    if (amt) book(amt, 'corner', tag === 'loss' ? `A losing week at the Game Corner in ${c.name}` : tag === 'jackpot' ? `A jackpot week at the Game Corner in ${c.name}` : null);
+    y.take += amt; CORNER_LOG.weeks++; CORNER_LOG.take += amt;
+    if (tag === 'jackpot') { y.jack++; CORNER_LOG.jackpots++; if (playerLeague()) news(`A jackpot week at the Game Corner in ${c.name}: ${money(amt)} taken.`, 'league'); }
+    if (tag === 'loss') { y.loss++; CORNER_LOG.losses++; CORNER_LOG.lossAmt -= amt; if (playerLeague()) news(`The house lost this week at the Game Corner in ${c.name} (${money(-amt)}).`, 'league'); }
+  }
+}
+// buy prize i at the Corner in gym city gi: an error or null
+function buyPrize(gi, i, lg = ME()) {
+  return inLeague(lg, () => {
+    if (!booksOn()) return 'Money is off.';
+    if (lapsed()) return 'The Game Corner is closed while you are in the red.';
+    const c = S.cities[(S.gyms[gi] || {}).city], x = c && cityB(c).find(y => y.k === 'corner');
+    if (!x || !x.prize) return 'No Game Corner there.';
+    const p = x.prize[i]; if (!p) return 'No such prize.'; if (p.sold) return 'Already taken this quarter.';
+    if (!ranchOn() || ranchRoom() <= 0) return 'Your ranch is full.';
+    if (!canSpend(p.price)) return 'Not enough money.';
+    const e = newEntry(p.b, p.g, 'corner'); if (!ranchAdd(e)) return 'Your ranch is full.';
+    p.sold = true;
+    book(-p.price, 'ranchbuy', `${entryWords(e)} from the Game Corner in ${c.name}`);
+    ranchLog('corner', `Game Corner prize in ${c.name}`, { cost: p.price, got: [entryWords(e)] });
+    CORNER_LOG.prizes++; CORNER_LOG.prizeSpend += p.price; if (S.fin.aim) CORNER_LOG.aiPrizes++;
+    return null;
+  });
+}
+// a rival's monthly look at its own counters (from aimMonth): a wall-builder or star-maker takes one prize whose line
+// fits a senior post's type and that it holds no better of, within CORNER_AI_SHARE of its money above its reserve
+function aiCorner(aim) {
+  if (aim === 'money' || !S.fin || S.fin.money < 0 || !ranchOn() || ranchRoom() <= 0) return;
+  const spare = (S.fin.money - AIMS[aim].reserve) * CORNER_AI_SHARE; if (spare <= 0) return;
+  const types = new Set(); for (const id of seniorIds()) { const t = T(id); if (t && !t.acting) for (const ty of specTypes(t)) types.add(ty); }
+  for (const { gi, x } of corners()) for (let i = 0; i < (x.prize || []).length; i++) {
+    const p = x.prize[i]; if (p.sold || p.price > spare) continue;
+    if (types.size && ![...lineTypes(p.b)].some(ty => types.has(ty))) continue;
+    if (S.ranch.mons.some(e => e.b === p.b && e.g >= p.g)) continue;
+    if (!buyPrize(gi, i, S.lg || 0)) return;
+  }
+}
+// a money-maker's one Corner: wherever it has one, else the busiest place it can build (aimSpend tries busiest first)
+const aimCorner = where => placeLv(where, 'corner') > 0 || !corners().length;
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { CORNER_SEATS, CORNER_PRIZES, CORNER_MARKUP, CORNER_OFF, CORNER_LOG, CORNER_SPEND_AT, CORNER_RESIDENTS_AT, corners, cornerPool, cornerStock, cornerNext, prizePrice, buyPrize, cornerSwing, cornerYear });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -19532,7 +19661,7 @@ function viewMeta() {
 }
 // ---------- money and cities (0.13.0) ----------
 // the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
-const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', shops: 'Department Stores', grants: 'Research grants', items: 'Items (Department Store)', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying', airport: 'Airport', contests: 'Bug Catching Contests' };
+const FIN_NAMES = { corner: 'Game Corners', bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', shops: 'Department Stores', grants: 'Research grants', items: 'Items (Department Store)', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying', airport: 'Airport', contests: 'Bug Catching Contests' };
 function finTable(y) {
   if (!y) return '<p class="muted">Nothing yet.</p>';
   const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
@@ -19632,7 +19761,7 @@ function viewRanch() { return inLeague(ME(), viewRanch0); }
 // (0.44.0) the Ranch page in tabs; the pool's filters; the teams as one row a Pokémon
 let ranchTab = 'pool', ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }, teamShow = 'all';
 const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['daycare', 'Day Care'], ['region', 'Region & safari']];
-const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care', contest: 'a Bug Catching Contest', pier: 'the Fishing Pier', fossil: 'the Fossil Lab' };
+const FROM_NAMES = { corner: 'the Game Corner', stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care', contest: 'a Bug Catching Contest', pier: 'the Fishing Pier', fossil: 'the Fossil Lab' };
 const RANCH_SHOW = [['free', 'Not fielded'], ['fielded', 'Fielded'], ['all', 'Everything'], ['sale', 'Listed for sale'], ['held', 'Locked or reserved']];
 const RANCH_SORT = [['value', 'Value'], ['grade', 'Grade'], ['name', 'Name'], ['new', 'Newest'], ['type', 'Type'], ['egg', 'Egg group']];
 // (0.51.0) sorting by egg group: by the groups' names, Ditto first, Undiscovered (can't breed) last
@@ -20702,6 +20831,11 @@ function cityBuilt(p, x, where) {
     what = `${(a ? a.routes : []).map((r, k) => `Route ${k + 1}: <select class="airsel" data-i="${k}" aria-label="Airport route ${k + 1}">${others.map(o => `<option value="${o}"${o === r ? ' selected' : ''}>${esc(regionName(o))}</option>`).join('')}</select>`).join(' ')} Arrivals this year: ${y.m} mover${y.m === 1 ? '' : 's'}, ${y.v} visitor${y.v === 1 ? '' : 's'} (${money(AIR_LAND)} each). Runs ${money(AIR_WEEK)} a week; changing a route ${money(AIR_ROUTE)}.${x.lv >= 3 ? ` Charters ${money(charterCost())}, ${charterWeeks()} weeks.` : ''}`; }
   // (0.69.0) the Weather Institute: a field picker for the seat and every gym
   else if (x.k === 'wx') what = wxPanel();
+  // (0.70.0) the Game Corner: this week's take and its prize counter
+  else if (x.k === 'corner') { const y = S.fin.gc && S.fin.gc.season === S.season ? S.fin.gc : { take: 0, jack: 0, loss: 0 }, wk = x.wk && x.wk.t === S.turn ? x.wk : null;
+    const tag = wk && wk.tag ? ` <span class="tag${wk.tag === 'loss' ? ' notice' : ' gold'}">${wk.tag === 'loss' ? 'Losing week' : 'Jackpot'}</span>` : '';
+    const prizes = (x.prize || []).map((pz, i) => `<li>${esc(pz.b)} ${gradeStars(pz.g)} <span class="muted">(${[...lineTypes(pz.b)].join('/')})</span> ${pz.sold ? '<span class="tag">Sold</span>' : `<button class="btn small" data-act="cornerbuy" data-g="${p.gym}" data-i="${i}"${!lap && canSpend(pz.price) ? '' : ' disabled'}>Take it (${money(pz.price)})</button>`}</li>`).join('');
+    what = `${CORNER_SEATS[x.lv - 1]} seats; ${wk ? wk.players : 0} playing this week, taking ${money(wk ? wk.amt : 0)}${tag}. This year ${money(y.take)}${y.jack ? `, ${y.jack} jackpot week${y.jack === 1 ? '' : 's'}` : ''}${y.loss ? `, ${y.loss} losing week${y.loss === 1 ? '' : 's'}` : ''}.${lap ? ' Closed while you are in the red.' : ''} Prize counter${x.lv >= 3 ? ' (10% off)' : ''}, until ${esc(turnDate(cornerNext(x)))}:<ul class="mini cornerprizes">${prizes || '<li class="muted">Stocks next week.</li>'}</ul>`; }
   else if (x.k === 'contest') { const w = condWhy(p.gym, 'contest'); what = `Every ${CONTEST_WEEKS} weeks: ${x.lv} Bug find${x.lv === 1 ? '' : 's'}, the prize at grade ${CONTEST_PRIZE[x.lv - 1]} or better, ${CONTEST_VISIT * x.lv} visitors and a ${money(CONTEST_GATE * x.lv)} gate.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'pier') { const w = condWhy(p.gym, 'pier'), ls = rodLines(x.lv); what = `${['Old', 'Good', 'Super'][x.lv - 1]} Rod: one Water Pokémon every ${PIER_WEEKS} weeks from ${ls.length} line${ls.length === 1 ? '' : 's'} (${ls.slice(0, 8).map(esc).join(', ')}${ls.length > 8 ? '…' : ''}).${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'fossil') { const w = condWhy(p.gym, 'fossil'), eff = fossilEff(x.lv); what = `A revival every ${FOSSIL_WEEKS[eff - 1]} weeks at grade ${eff} or better${eff > x.lv ? ' (a Ruin Maniac on your staff adds a level)' : ''}${x.next != null ? `; next ${esc(turnDate(x.next))}` : ''}.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
@@ -20766,7 +20900,7 @@ function viewCities0() {
   const last = S.fin.last || {}, li = last.in || {};
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>${red}
     <p>Build in your gym cities and at your League's seat. Spending grows a city (Town, City at ${money(sizeAt(1))}, Metropolis at ${money(sizeAt(2))}…) and its slots; bigger cities pay more and unlock top building levels.</p>
-<p class="small">Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, Bug Catching Contests ${money(li.contests || 0)}, Airport ${money((li.airport || 0) - ((last.out || {}).airport || 0))}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
+<p class="small">Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, Bug Catching Contests ${money(li.contests || 0)}, Game Corners ${money((li.corner || 0) - ((last.out || {}).corner || 0))}, Airport ${money((li.airport || 0) - ((last.out || {}).airport || 0))}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
     <details class="hist"><summary class="small"><b>How cities and buildings work</b></summary><div class="citymore-in">
     <p class="small"><b>Size:</b> everything every League has spent in a city makes it a Town, then a City at ${money(sizeAt(1))}, a Metropolis at ${money(sizeAt(2))}, a Megalopolis at ${money(sizeAt(3))} and on (three times as much each). Bigger cities pay more city income, their visitors spend more, their crowds are bigger and their tickets dearer, and the top levels of Stadiums, Hotels and Pokémon Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at ${money(slotAt(0))}, ${money(slotAt(1))}, ${money(slotAt(2))} and every doubling after; the seat has ${SEAT_SLOTS}. Stadiums take no slot. <b>Visitors:</b> each week every challenger heading for a city's gym, or resting at a Pokémon Center there, is a visitor: they spend in town (part of its city income) and fill its Hotels.</p>
     <ul class="small">${Object.values(UPGRADES).map(u => `<li><b>${u.name}:</b> ${u.text}</li>`).join('')}</ul><p class="small">Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></div></details></section>
@@ -20775,7 +20909,7 @@ function viewCities0() {
 // (0.67.0) a line on what each building is for, on the Cities page's build list (the full text is its tooltip)
 const BUILD_BLURB = { stadium: 'Seats for ticket income; opens its add-ons', stand: 'A home edge from the crowd', crew: 'The gym\'s type hits harder', video: 'Better picks against the challenger', warmup: 'Lead Pokémon start a stage up', hotel: 'Rooms for challengers in town', center: 'Draws challengers, shorter rests', berry: 'Sells berries or feeds the ranch', hall: 'Elite Four and Champion grow faster',
   school: 'Raises gym trainers of this gym\'s type', tutor: 'Teams learn coverage moves sooner', lab: 'Better trips and finds, League-wide', store: 'Held items for your staff', airport: 'A lane and visitors from another region', wx: 'Each gym\'s weather or terrain',
-  contest: 'Bug finds and a gate every 8 weeks', pier: 'Steady Water finds', fossil: 'Revives fossils', scout: 'Better finds and more hiring storage', sanct: 'Income and prestige while its legendary is yours',
+  corner: 'Takings that swing, and rare prize Pokémon', contest: 'Bug finds and a gate every 8 weeks', pier: 'Steady Water finds', fossil: 'Revives fossils', scout: 'Better finds and more hiring storage', sanct: 'Income and prestige while its legendary is yours',
   ranch: 'More ranch room', lane: 'Migration from another region', safari: 'Quarterly finds from kept lines', daycare: 'Breeds from your pool', academy: 'A loyal prospect a year' };
 // (0.67.0) the region's towns where you have no gym, in one panel, each with the move-a-gym control
 function townsPanel(ps, gm, gymOpts) {
@@ -20966,6 +21100,7 @@ const GLOSS_TERMS = {
 GLOSS_TERMS.league.push(['Stadium add-ons', `A Stadium's levels add seats (ticket income) and open its add-ons, which take no slot and work for your staff in that Stadium's battles (at the seat: the Elite Four, the Champion and title claims) while the Stadium is at least the level they open at, and not while you are in the red. Home stand (Stadium level 1): a home edge of up to +${(STAND_EDGE * 100).toFixed(1)}% a level at a full house, less with empty seats. Field crew (level 2): Pokémon of the gym's type (every Pokémon at an untyped gym; at the seat, the battling trainer's type) hit ${Math.round(CREW_HIT * 100)}% harder a level. Video room (level 3): +${VIDEO_STR} Strategy a level when your staff choose which Pokémon to field against a challenger and when to send them out. Warm-up room (level 4): the first Pokémon of the team goes out a stage up in its better attacking stat, the first two at level 2, the first three at level 3. 3 levels each.`]); // (0.68.0)
 GLOSS_TERMS.league.push(['Weather Institute', `One per League, in a gym city that is at least a City, built from the Cities page; it works League-wide. It sets the field for each of your gyms' battles and for the seat's (the Elite Four, the Champion and title claims): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never a weather and a terrain together. The field replaces the gym's own weather (a gym left unset keeps the weather of its leader's type). A terrain powers its type's moves 20% for both sides. At level 1 a place can only use the fields its types bring (a Water gym rain, an Electric gym Electric Terrain); a weather-themed trainer on your staff opens them all. At level 2 any field works anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field, and the sharper ones (Strategy) pick their Pokémon and their next gym with it in mind. It stops working in the red.`]); // (0.69.0)
 GLOSS_TERMS.league.push(['Airport', `A gym-city building, one a League, in a City or bigger (3 levels: a second route needs a Metropolis, level 3 a Megalopolis). Each route to another region works like a shipping lane (its Pokémon on your targeted trips and at your market) and brings people: challengers moving out of that region lean toward your League and land in the Airport's city (a few weeks as visitors there), and about ${AIR_VISITS} visitors a month arrive from there (up to twice as many with your renown in its cities). Visitors spend in the city like any other (Hotels, where level 3 counts them twice, Department Stores). It costs ${money(AIR_WEEK)} a week to run and earns ${money(AIR_LAND)} for every arrival; changing a route costs ${money(AIR_ROUTE)}. Level 3 makes charters ${Math.round(AIR_CHARTER * 100)}% cheaper and a week faster, and your contenders win 25% more renown in other regions. In the red it lapses: no routes, no arrivals, no fee.`],
+  ['Game Corner', `A gym-city building (3 levels) that needs a City (level 3 a Metropolis). The city's visitors and residents play there each week, up to ${CORNER_SEATS.join(', ')} seats by level (every Game Corner in a city shares them; the controlling League's a little more), each spending by the city's size. The take swings: most weeks within 30% of its average, about 1 week in ${CORNER_JACK_N} a jackpot of about ${CORNER_JACKPOT} times as much, and about 1 week in ${CORNER_LOSS_N} a losing week, when the house pays out more than it takes. Its prize counter holds ${CORNER_PRIZES.join(', ')} of your region's rarest Pokémon by level (never a legendary or Paradox Pokémon), grade ${CORNER_MIN_G} or better, at ${Math.round(CORNER_MARKUP * 100)}% of their market value (10% off at level 3); it changes every quarter, each prize can be taken once, and it goes straight into your ranch. Closed in the red. Money-making rival Leagues build one in their busiest City; the others take prizes that fit their staff's types.`],
   ['Bug Catching Contest', `A gym-city building (3 levels; 3 needs a City) where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff. Every ${CONTEST_WEEKS} weeks it brings your ranch 1, 2 or 3 of your region's Bug Pokémon (migrants in season too), the first, the prize, at grade ${CONTEST_PRIZE.join(', ')} or better by level, at a little better than the wild odds for a condition, plus ${CONTEST_VISIT} visitors a level and a gate of ${money(CONTEST_GATE)} a level. If the condition is lost it keeps running but can't be raised.`],
   ['Fishing Pier', `A gym-city building (3 levels: the rods; the Super Rod needs a City) in a port, where the gym is a Water gym, or with a Fisherman on your staff. One Water Pokémon of your region every ${PIER_WEEKS} weeks: the Old Rod the weakest third of the region's Water lines by their final form's strength, the Good Rod the middle third too, the Super Rod all of them. If the condition is lost it keeps running but can't be raised.`],
   ['Fossil Lab', `A gym-city building (3 levels; 3 needs a City) where your Research Lab is at level 2 or more. It revives a fossil Pokémon from any region (your region's own ${FOSSIL_HOME} times as often) every ${FOSSIL_WEEKS.slice(0, 3).join(', ')} weeks by level, at a grade no lower than its level; a Ruin Maniac on your staff counts as one more level (every ${FOSSIL_WEEKS[3]} weeks at the most). If the condition is lost it keeps running but can't be raised.`],
@@ -21229,6 +21364,13 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 70, ver: '0.70.0', date: 'November 26, 2026', time: '1:45 PM ET', title: 'The Game Corner', items: [
+    "A new building, the Game Corner: in a gym city that is at least a City (40,000, 80,000, then 160,000 for level 3, which needs a Metropolis).",
+    "The city's visitors and residents play there each week, up to 10, 20 or 34 seats by level. Every Game Corner in a city shares the players; the League that controls the city gets a few more. Each player spends more in a bigger city.",
+    "The take swings week by week: most weeks within 30% of its average, about one week in 12 a jackpot of about three times as much, and very rarely (about one week in 50) a losing week, when the house pays out more than it takes. Jackpots and losing weeks show in the news and on the Cities page.",
+    "Its prize counter holds 2, 3, then 4 of your region's rarest Pokémon (never legendaries or Paradox Pokémon), grade 2 or better, at a quarter over their market value (10% off at level 3). It changes every quarter, each prize can be taken once, and a prize goes straight into your ranch. Take them from the Game Corner's line on the Cities page.",
+    "Closed while you are in the red. Money-making rival Leagues build one in their busiest City; wall-builders and star-makers take prizes that fit their staff's types.",
+  ] },
   { id: 69, ver: '0.69.0', date: 'November 26, 2026', time: '11:45 AM ET', title: 'The Weather Institute', items: [
     "A new building, the Weather Institute: one per League, in a gym city that is at least a City (50,000, then 100,000 for level 2). It works for your whole League.",
     "From its line on the Cities page, choose each gym's field and the seat's (the Elite Four, the Champion and title claims): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies. Never a weather and a terrain together. The field replaces the gym's own weather; a gym you leave unset keeps the weather of its leader's type.",
@@ -22278,6 +22420,7 @@ document.addEventListener('click', ev => {
     case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
     case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
     case 'distno': { declineDistress(+el.dataset.v); save(); render(); break; }
+    case 'cornerbuy': { const gi = +el.dataset.g, x = (cityB(S.cities[S.gyms[gi].city]).find(y => y.k === 'corner') || {}), pz = (x.prize || [])[+el.dataset.i], w = buyPrize(gi, +el.dataset.i); save(); render(); toast(w || `${pz.b} came to the ranch from the Game Corner.`, w ? 6000 : undefined); break; } // (0.70.0)
     case 'buyitem': { const w = buyItem(el.dataset.k); save(); render(); toast(w || `Bought a ${itemName(el.dataset.k)} for the item bag.`); break; } // (0.64.0)
     case 'sellb': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = sellBuilding(wh, el.dataset.k); save(); render(); toast(w || `Sold a level of ${UPGRADES[el.dataset.k].name.toLowerCase()}.`); break; }
     case 'build': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = build(wh, el.dataset.k); save(); render(); toast(w || `${UPGRADES[el.dataset.k].name} built.`); break; }

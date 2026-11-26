@@ -13,6 +13,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The multi-year sim managing your League** doesn't set your Berry Farm plots (it leaves your settings alone).
 - **The Shrine, the Poffin Kitchen (Berry Farm level 3), landmarks and shared buildings** are still to design; the Sanctuary is unchanged.
 
+## The Game Corner (0.70.0)
+- **Every number is a first guess:** seats, residents and spend by size, the swing (±30%, a jackpot ×3 about 1 in 12, a losing week of half an average about 1 in 50), prize slots, the 1.25 markup, the rarest quarter of the region's lines as the pool, prizes at grade 2+. Measured once at about 900 a week a Corner in a hand-placed run.
+- **Open (design doc):** whether a jackpot week also brings turnout or prestige; a "suggested" tag for prizes that fill your steer gaps; a yearly cap on rivals' prize buys.
+- **A flake seen once (Nov 26, hand-placed `1 0 12 0 1`):** `the ranch over its cap`. Prize buys check for room, so likely a Ranch level lost in the red (decay or a sale) leaving the ranch over its new cap; the rerun passed. Find out whether losing a Ranch level should release or sell the excess.
+
 ## City buildings part 3 (0.65.0)
 - **Every number is a first guess:** Airport costs, fee, landing income, visitors a route and the renown boost, the movers' pull (`AIR_GAIN`, `AIR_DRAW`); Contest prize grades, gate and crowd; Pier and Fossil Lab prices and cadence; fossil weights; rivals' keep grades.
 - **Rivals rarely build the new four** in 8 to 12 year sims (Airports need a City, Piers a port, a Water gym or a Fisherman, Fossil Labs a level 2 Lab); look again with the economy retune.

@@ -343,6 +343,16 @@ async def run(path):
                       if (bld(6, 'wx', 100000, 2)) { if (inLeague(0, () => setField(0, 'mterr'))) log.push('FAIL any field refused at level 2'); const f = inLeague(0, () => fieldOf(0)); if (!f || f.t !== 'Fairy' || !f.lock || f.w) log.push('FAIL the level 2 field'); else log.push('Misty Terrain held at gym 1');
                         go('cities'); if (!/Misty Terrain/.test(document.querySelector('#main').textContent)) log.push('FAIL the field not shown on the Cities page'); }
                       inLeague(0, () => { sellBuilding(6, 'wx'); sellBuilding(6, 'wx'); }); }
+                    // (0.70.0) a Game Corner in the same City (refused in a Town first), a prize taken from its counter on the Cities
+                    // page (the price, the ranch and the Sold mark), then sold back
+                    if (!inLeague(0, () => buildCheck(7, 'corner')).why && inLeague(0, () => citySize(S.cities[S.gyms[7].city])) < 1) log.push('FAIL a Game Corner allowed in a Town');
+                    if (bld(6, 'corner', 40000, 1)) { inLeague(0, () => { if (ranchRoom() <= 0) S.ranch.mons.splice(S.ranch.mons.findIndex(e => e.at == null), 1); });
+                      go('cities'); const x = inLeague(0, () => cityB(S.cities[S.gyms[6].city]).find(y => y.k === 'corner')), pb = document.querySelector('[data-act=cornerbuy][data-g="6"]');
+                      if (!x || !x.prize || x.prize.length !== 2) log.push('FAIL a new Game Corner without its two prizes'); else if (!pb) log.push('FAIL no Game Corner prize button');
+                      else { const i = +pb.dataset.i, q = x.prize[i], m0 = S.fin.money, n0 = S.ranch.mons.length; pb.click();
+                        if (!q.sold || S.fin.money !== m0 - q.price || S.ranch.mons.length !== n0 + 1 || S.ranch.mons[S.ranch.mons.length - 1].b !== q.b) log.push('FAIL taking a Game Corner prize'); else log.push('took ' + q.b + ' from the Game Corner');
+                        go('cities'); if (!/Game Corner<\/b> level 1/.test(document.querySelector('#main').innerHTML) || document.querySelector(`[data-act=cornerbuy][data-g="6"][data-i="${i}"]`)) log.push('FAIL the Game Corner line after taking a prize'); }
+                      inLeague(0, () => sellBuilding(6, 'corner')); }
                     bld(4, 'lab', 25000, 1); if (!inLeague(0, () => buildCheck(4, 'fossil')).why) log.push('FAIL a Fossil Lab allowed beside a level 1 Lab');
                     bld(4, 'lab', 50000, 2); bld(4, 'fossil', 30000, 1);
                     go('cities'); const kg = document.querySelector('select.keepgsel[data-k=fossil]');

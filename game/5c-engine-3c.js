@@ -267,13 +267,14 @@ function aimItems(aim) {
 function buildings2Week(lap) {
   if (!S.fin) return;
   if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
+  cornerWeek(lap); // (0.70.0) the Game Corner's take and its prize counter
   schoolWeek(); tutorWeek(); labWeek();
   buildings3Week(lap); // (0.65.0) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
   // staff equipped before the League kept books (a League founded by hand) or by another path re-equip under the bag rule
   if (bagRule()) { const lg = S.lg || 0; for (const id of staffIds()) { const t = T(id); if (t && t.team.some(m => m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg !== lg)) { eliteItems(t); ITEM_LOG.fixed = (ITEM_LOG.fixed || 0) + 1; } } }
 }
 // world-level, from visitorsWeek
-function buildings2World() { shoppersWeek(); bagSync(); }
+function buildings2World() { shoppersWeek(); cornerPlayersWeek(); bagSync(); }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { SCHOOL_PAY, SCHOOL_LOG, schoolLv, ownSchool, ownYouth, schoolPay, schoolRank, schoolGrads, graduate, isProfessor, TUTOR_LOG, TUTOR_SOONER, tutorAt, tutorCov, teach, LAB_LOG, labLv, labBuilt, labScout, labFloor, labTrips, labHunt, labCond, LAB_GRANT, ITEM_LOG, STORE_SHELF, ITEM_PRICE, shelfOf, bagRule, itemFreeOk, storeFloors, storeBuilt, bagOf, itemPrice, shelfItems, bagUsed, bagFree, buyItem, equipSenior, storeIncome, SHOP_SPEND_AT, aimItems });
 
@@ -663,3 +664,127 @@ function aiWx(aim) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { FIELDS, FIELD_KEYS, FIELD_TERRAIN, FIELD_PREP, WX_LOG, wxAt, wxLv, wxPicks, wxClassOn, placeTypes, fieldOpts, fieldPick, fieldWhy, setField, fieldOf, fieldSeen, fieldFit, fieldRoute, aiWx });
+
+// ================= THE GAME CORNER (0.70.0) =================
+// (0.70.0, the owner, design doc claude/design-update-game-corner.md) Gym cities that are at least a City (level 3 a
+// Metropolis), one a city per League. Players each week: the city's visitors plus residents by size, shared by every
+// Corner in the city by level × the Hotel's gentle control weights, up to CORNER_SEATS a Corner; each spends
+// CORNER_SPEND_AT(size). The take swings week by week (the owner: a very rare losing week, but it makes money far more
+// often than not): usually ±CORNER_SWING, a jackpot week (×CORNER_JACKPOT) 1 in CORNER_JACK_N, a losing week
+// (−CORNER_LOSS of an average week) 1 in CORNER_LOSS_N. The prize counter: CORNER_PRIZES slots by level, drawn each
+// quarter from the region's rarest lines (the bottom CORNER_POOL share by how often they turn up; never a legendary or
+// Paradox), each at grade 2 or better, priced at the market value × CORNER_MARKUP (× (1 − CORNER_OFF) at level 3);
+// one of each per quarter, not repeating last quarter's lines while the pool allows. Prizes go straight to the ranch.
+// Closed in the red. Rivals: money-makers build one in their busiest City; wall-builders and star-makers buy prizes
+// that fit a senior post's type from Corners they own. All numbers provisional.
+const CORNER_SEATS = [10, 20, 34], CORNER_PRIZES = [2, 3, 4], CORNER_MARKUP = 1.25, CORNER_OFF = 0.1, CORNER_POOL = 0.25;
+const CORNER_SWING = 0.3, CORNER_JACKPOT = 3, CORNER_JACK_N = 12, CORNER_LOSS = 0.5, CORNER_LOSS_N = 50, CORNER_MIN_G = 2;
+const CORNER_AI_SHARE = 0.35;
+const CORNER_RESIDENTS_AT = k => Math.round(6 * Math.pow(1.8, k)), CORNER_SPEND_AT = k => Math.round(30 * Math.pow(1.5, k));
+const CORNER_LOG = { weeks: 0, take: 0, jackpots: 0, losses: 0, lossAmt: 0, rotations: 0, prizes: 0, prizeSpend: 0, aiPrizes: 0 };
+// world-level, from buildings2World: each city's players shared among its Corners (c.cg[lg])
+function cornerPlayersWeek() {
+  const m = gymMap();
+  for (const c of Object.values(S.cities || {})) {
+    c.cg = null;
+    const st = (m[c.id] || []).filter(i => !lgLapsed(i)).map(i => ({ i, lv: upLevel(cityB(c, i), 'corner') })).filter(x => x.lv);
+    if (!st.length) continue;
+    let left = (c.vw || 0) + CORNER_RESIDENTS_AT(citySize(c));
+    for (const s of st) { s.cap = CORNER_SEATS[s.lv - 1]; s.w = s.lv * (c.ctrl === s.i && c.tier != null ? HOTEL_CTRL[c.tier] : 1); s.g = 0; }
+    for (let pass = 0; pass < 3 && left > 0; pass++) {
+      const open = st.filter(s => s.g < s.cap), tw = open.reduce((a, s) => a + s.w, 0); if (!tw) break;
+      let given = 0;
+      for (const s of open) { const n = Math.min(s.cap - s.g, Math.floor(left * s.w / tw + 1e-9) || (pass === 2 ? 1 : 0)); s.g += n; given += n; }
+      left -= given; if (!given) break;
+    }
+    c.cg = {}; for (const s of st) if (s.g) c.cg[s.i] = s.g;
+  }
+}
+// the bound League's Corners: [{ gi, c, x }]
+function corners() {
+  const out = [];
+  S.gyms.forEach((g, gi) => { const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'corner'); if (x) out.push({ gi, c, x }); });
+  return out;
+}
+// a week's swing on an average take: [take, 'jackpot' | 'loss' | null]
+function cornerSwing(avg) {
+  const r = rand();
+  if (r < 1 / CORNER_LOSS_N) return [-Math.round(avg * CORNER_LOSS), 'loss'];
+  if (r < 1 / CORNER_LOSS_N + 1 / CORNER_JACK_N) return [Math.round(avg * CORNER_JACKPOT), 'jackpot'];
+  return [Math.round(avg * (1 - CORNER_SWING + 2 * CORNER_SWING * rand())), null];
+}
+function cornerYear(f) { if (!f.gc || f.gc.season !== S.season) { const o = f.gc; f.gc = { season: S.season, take: 0, jack: 0, loss: 0, last: o ? { season: o.season, take: o.take, jack: o.jack, loss: o.loss } : null }; } return f.gc; }
+// the region's prize pool: the rarest share of its lines (as findSpecies weighs them), strongest first among equals
+function cornerPool() {
+  const all = hereLines().filter(b => ranchable(b));
+  const w = b => (SP[b].rare ? 0.25 : 1) * (SP[b].starter ? 0.4 : 1) * (lineTop(b) > 540 ? 0.35 : 1);
+  return all.sort((a, b) => w(a) - w(b) || lineTop(b) - lineTop(a) || (a < b ? -1 : 1)).slice(0, Math.max(1, Math.ceil(all.length * CORNER_POOL)));
+}
+const prizePrice = (b, g, lv) => Math.round(monValue(b, g) * CORNER_MARKUP * (lv >= 3 ? 1 - CORNER_OFF : 1) / 50) * 50;
+// fill a Corner's counter: a new quarter draws every slot; a level raised mid-quarter adds slots
+function cornerStock(x, fresh) {
+  const want = CORNER_PRIZES[x.lv - 1] || 0, pool = cornerPool(); if (!pool.length) return;
+  const sc = ranchScout() + labScout();
+  if (fresh || !x.prize) { x.lastLines = x.prize ? x.prize.map(p => p.b) : x.lastLines || []; x.prize = []; x.at = S.turn; CORNER_LOG.rotations++; }
+  const taken = new Set(x.prize.map(p => p.b)), avoid = new Set(x.lastLines || []);
+  while (x.prize.length < want) {
+    let cand = pool.filter(b => !taken.has(b) && !avoid.has(b));
+    if (!cand.length) cand = pool.filter(b => !taken.has(b));
+    if (!cand.length) break;
+    const b = cand[Math.floor(rand() * cand.length)], g = Math.max(CORNER_MIN_G, gradeRoll(sc));
+    x.prize.push({ b, g, price: prizePrice(b, g, x.lv), sold: false }); taken.add(b);
+  }
+  for (const p of x.prize) if (!p.sold) p.price = prizePrice(p.b, p.g, x.lv);
+}
+const cornerNext = x => (x.at || 0) + QUARTER_WEEKS;
+// per League, from buildings2Week: the take (not in the red) and the counter
+function cornerWeek(lap) {
+  const cs = corners(); if (!cs.length || lap || !S.fin) return;
+  const f = S.fin, y = cornerYear(f), lg = S.lg || 0;
+  for (const { c, x } of cs) {
+    if (!x.prize || S.turn >= cornerNext(x)) cornerStock(x, true); else cornerStock(x, false);
+    const players = (c.cg && c.cg[lg]) || 0, avg = players * CORNER_SPEND_AT(citySize(c));
+    if (!avg) { x.wk = { t: S.turn, amt: 0, tag: null, players }; continue; }
+    const [amt, tag] = cornerSwing(avg);
+    x.wk = { t: S.turn, amt, tag, players };
+    if (amt) book(amt, 'corner', tag === 'loss' ? `A losing week at the Game Corner in ${c.name}` : tag === 'jackpot' ? `A jackpot week at the Game Corner in ${c.name}` : null);
+    y.take += amt; CORNER_LOG.weeks++; CORNER_LOG.take += amt;
+    if (tag === 'jackpot') { y.jack++; CORNER_LOG.jackpots++; if (playerLeague()) news(`A jackpot week at the Game Corner in ${c.name}: ${money(amt)} taken.`, 'league'); }
+    if (tag === 'loss') { y.loss++; CORNER_LOG.losses++; CORNER_LOG.lossAmt -= amt; if (playerLeague()) news(`The house lost this week at the Game Corner in ${c.name} (${money(-amt)}).`, 'league'); }
+  }
+}
+// buy prize i at the Corner in gym city gi: an error or null
+function buyPrize(gi, i, lg = ME()) {
+  return inLeague(lg, () => {
+    if (!booksOn()) return 'Money is off.';
+    if (lapsed()) return 'The Game Corner is closed while you are in the red.';
+    const c = S.cities[(S.gyms[gi] || {}).city], x = c && cityB(c).find(y => y.k === 'corner');
+    if (!x || !x.prize) return 'No Game Corner there.';
+    const p = x.prize[i]; if (!p) return 'No such prize.'; if (p.sold) return 'Already taken this quarter.';
+    if (!ranchOn() || ranchRoom() <= 0) return 'Your ranch is full.';
+    if (!canSpend(p.price)) return 'Not enough money.';
+    const e = newEntry(p.b, p.g, 'corner'); if (!ranchAdd(e)) return 'Your ranch is full.';
+    p.sold = true;
+    book(-p.price, 'ranchbuy', `${entryWords(e)} from the Game Corner in ${c.name}`);
+    ranchLog('corner', `Game Corner prize in ${c.name}`, { cost: p.price, got: [entryWords(e)] });
+    CORNER_LOG.prizes++; CORNER_LOG.prizeSpend += p.price; if (S.fin.aim) CORNER_LOG.aiPrizes++;
+    return null;
+  });
+}
+// a rival's monthly look at its own counters (from aimMonth): a wall-builder or star-maker takes one prize whose line
+// fits a senior post's type and that it holds no better of, within CORNER_AI_SHARE of its money above its reserve
+function aiCorner(aim) {
+  if (aim === 'money' || !S.fin || S.fin.money < 0 || !ranchOn() || ranchRoom() <= 0) return;
+  const spare = (S.fin.money - AIMS[aim].reserve) * CORNER_AI_SHARE; if (spare <= 0) return;
+  const types = new Set(); for (const id of seniorIds()) { const t = T(id); if (t && !t.acting) for (const ty of specTypes(t)) types.add(ty); }
+  for (const { gi, x } of corners()) for (let i = 0; i < (x.prize || []).length; i++) {
+    const p = x.prize[i]; if (p.sold || p.price > spare) continue;
+    if (types.size && ![...lineTypes(p.b)].some(ty => types.has(ty))) continue;
+    if (S.ranch.mons.some(e => e.b === p.b && e.g >= p.g)) continue;
+    if (!buyPrize(gi, i, S.lg || 0)) return;
+  }
+}
+// a money-maker's one Corner: wherever it has one, else the busiest place it can build (aimSpend tries busiest first)
+const aimCorner = where => placeLv(where, 'corner') > 0 || !corners().length;
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { CORNER_SEATS, CORNER_PRIZES, CORNER_MARKUP, CORNER_OFF, CORNER_LOG, CORNER_SPEND_AT, CORNER_RESIDENTS_AT, corners, cornerPool, cornerStock, cornerNext, prizePrice, buyPrize, cornerSwing, cornerYear });
