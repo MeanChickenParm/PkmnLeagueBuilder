@@ -6516,6 +6516,8 @@ function battle(tA, tB, stakes, title, opts = {}) {
   if (opts.crew) sides[1].mons.forEach(b => { if (!opts.crew.types || b.types.some(ty => opts.crew.types.includes(ty))) b.tmp = (b.tmp || 1) * opts.crew.mul; });
   if (opts.video) sides[1].smart += opts.video;
   if (opts.warm) sides[1].mons.slice(0, opts.warm).forEach(b => { const k = b.spa > b.atk ? 'spa' : 'atk'; b.st[k] = Math.min(6, b.st[k] + 1); });
+  // (0.72.0) a Wind Farm's tailwind for the home side (side 1): double Speed for its first opts.tail turns. Kept here, small.
+  sides[0].tail = 0; sides[1].tail = opts.tail || 0;
   // a legendary encounter: its single Pokémon has raid-sized HP, and starts with whatever damage earlier attempts left
   if (opts.boss) { const b = sides[1].mons[0]; b.max = Math.round(b.max * opts.boss.hpMul); b.hp = Math.max(1, Math.round(b.max * opts.boss.hpFrac));
     // v177: the challenger's luck on the day swings their damage hard, and how hard the legendary hits back a little
@@ -6533,6 +6535,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   if (fld) { weather = fld.w ? (fld.w === 'clear' ? null : fld.w) : regionWeather(); if (fld.t || fld.w === 'clear') ev.push({ k: 'note', s: -1, txt: `${fld.name} ${fld.lock ? 'holds' : 'lies over'} the field.`, cls: 'weather' }); }
   if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${fld && fld.w ? (fld.lock ? 'holds the field' : 'fills the field') : stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
   if (opts.ruleNote) ev.push({ k: 'note', s: -1, txt: opts.ruleNote, cls: 'weather' });
+  if (opts.tail) ev.push({ k: 'note', s: -1, txt: `A tailwind blows behind ${dn(sides[1].t)}'s team.`, cls: 'weather' }); // (0.72.0)
   const note = (si, i, txt, extra = {}) => ev.push(Object.assign({ k: 'note', s: si, i, txt }, extra));
   if (opts.boss && opts.boss.luck) { const x = opts.boss.luck; ev.push({ k: 'note', s: -1, cls: 'stat', txt: `${dn(tA)}'s team is having a ${luckWord(x)} day (damage x${x.toFixed(2)}).` }); }
   // terrain abilities power up the whole team from the start
@@ -6583,6 +6586,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   function speedOf(m) {
     let v = m.spe * stageMul(m.st.spe) * (m.status === 'par' ? 0.5 : 1) * (m.pBoost === 'spe' ? 1.5 : 1) * (m.slowStart > 0 ? 0.5 : 1);
     if (m.ab === 'Heavy Metal') v *= 0.9;
+    if (m.sd && m.sd.tail > 0) v *= 2; // (0.72.0) a tailwind
     if (m.ab === 'Surge Surfer' && m.sd && m.sd.terrain && m.sd.terrain.Electric) v *= 2;
     if ((m.ab === 'Swift Swim' && weather === 'rain') || (m.ab === 'Chlorophyll' && weather === 'sun') || (m.ab === 'Sand Rush' && weather === 'sand') || (m.ab === 'Slush Rush' && weather === 'snow')) v *= 2;
     return v;
@@ -6994,6 +6998,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
       if (m.hp > 0 && m.slowStart > 0 && --m.slowStart === 0) note(si, i, `{0} finally got its act together!`, { cls: 'ab' });
       if (m.hp <= 0 && !fallen(si)) { winner = 1 - si; break; }
     }
+    sides.forEach(sd => { if (sd.tail > 0 && --sd.tail === 0) ev.push({ k: 'note', s: -1, txt: 'The tailwind died down.', cls: 'weather' }); }); // (0.72.0)
   }
   if (winner < 0) winner = sides[0].mons.reduce((a, m) => a + m.hp / m.max, 0) >= sides[1].mons.reduce((a, m) => a + m.hp / m.max, 0) ? 0 : 1;
   ev.push({ k: 'end', w: winner });
@@ -13796,7 +13801,7 @@ function moneyWeek() {
     const lap = lapsed();
     for (const t of staffIds().map(T).filter(Boolean)) t.lastPay = payOf(t);
     const w = wageBill(); if (w) book(-w, 'salaries');
-    if (!lap) { const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
+    if (!lap) { const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); UTIL_LOG.saved += upkeepSaved(); }
     // (0.63.0) the Hotels' guests and the Berry Farms' harvest (tickets are sold in each battle)
     if (!lap) { const h = hotelIncome(); if (h) book(h, 'hotels'); berryWeek(); }
     buildings2Week(lap); // (0.64.0) Store shoppers, School graduates, Tutor lessons, Lab grants
@@ -13807,6 +13812,7 @@ function moneyWeek() {
     redWeek();
     decayWeek(lap);
     bankWeek(lap); // (0.71.0) the Bank's grace and the loan's payment
+    buildWeek(); // (0.72.0) builds under way: paused in the red, finished when due
   });
 }
 // (0.15.0) money limits what a League can field: every RED_BITE_WEEKS weeks in the red its best-paid member of staff
@@ -13911,9 +13917,9 @@ function expirePaidBans() {
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (0.68.0: and their add-ons, the home side's edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums and their add-ons (Home stands, Video rooms, Field crews, Warm-up rooms) and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['seat', 'stand'], ['gyms', 'bank'], ['gyms', 'stadium'], ['gyms', 'fanclub'], ['gyms', 'stand'], ['seat', 'video'], ['gyms', 'video'], ['seat', 'crew'], ['gyms', 'crew'], ['seat', 'warmup'], ['gyms', 'warmup'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'wx'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'bank'], ['gyms', 'center'], ['gyms', 'fanclub'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['seat', 'video'], ['gyms', 'stand'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'wx'], ['gyms', 'safari'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms, a Game Corner and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'bank'], ['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'corner'], ['gyms', 'stadium'], ['gyms', 'fanclub'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums and their add-ons (Home stands, Video rooms, Field crews, Warm-up rooms) and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['seat', 'stand'], ['gyms', 'bank'], ['gyms', 'yard'], ['gyms', 'stadium'], ['gyms', 'fanclub'], ['gyms', 'stand'], ['gyms', 'plant'], ['gyms', 'wind'], ['gyms', 'quarry'], ['seat', 'video'], ['gyms', 'video'], ['seat', 'crew'], ['gyms', 'crew'], ['seat', 'warmup'], ['gyms', 'warmup'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'wx'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'bank'], ['gyms', 'center'], ['gyms', 'fanclub'], ['gyms', 'yard'], ['gyms', 'quarry'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['gyms', 'plant'], ['gyms', 'wind'], ['seat', 'video'], ['gyms', 'stand'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'wx'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms, a Game Corner and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'bank'], ['gyms', 'yard'], ['gyms', 'quarry'], ['gyms', 'plant'], ['gyms', 'wind'], ['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'corner'], ['gyms', 'stadium'], ['gyms', 'fanclub'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -13994,7 +14000,7 @@ function aimSpend(aim) {
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
   // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
-  const net = runningNet(), earns = { bank: 1, sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1, corner: 1 };
+  const net = runningNet(), earns = { bank: 1, sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1, corner: 1, plant: 1, wind: 1, yard: 1 }; // (0.72.0) savers pay their way by their payback
   const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
     const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' || k === 'corner' ? busy : S.gyms.map((_, i) => i).reverse();
@@ -14245,6 +14251,7 @@ function topLevels() {
 function dropLevel(pl, k) {
   const x = pl.b.find(y => y.k === k), cost = upCost(k, x.lv - 1);
   x.lv--; if (!x.lv) pl.b.splice(pl.b.indexOf(x), 1);
+  dropBuild(pl.c ? pl.c.id : 'seat', k); // (0.72.0) a raise under way of it stops
   if (lapsed()) addRuin(pl.c ? pl.c.id : 'seat', k, 1);
   if (k === 'safari') safariTrim(); // (0.44.0) the stock past its room comes back
   if (k === 'fanclub' && x.lv && pl.c) x.fans = Math.min(x.fans || 0, fanCap(x, pl.c)); // (0.71.0) a smaller club's members within its cap
@@ -14285,7 +14292,7 @@ function sellBuilding(where, k, lg = ME()) {
 }
 // (AI) in the red: sell the costliest level first
 function aiSell() {
-  const x = topLevels().sort((a, b) => (a.k === 'bank') - (b.k === 'bank') || b.cost - a.cost)[0]; // (0.71.0) the Bank last
+  const x = topLevels().sort((a, b) => lastToGo(a.k) - lastToGo(b.k) || b.cost - a.cost)[0]; // (0.71.0) the Bank last; (0.72.0) the Yard before it
   if (x) sellBuilding(x.where, x.k, S.lg || 0);
 }
 // a distress sale: another League with a gym in the city (an AI League, not in the red, with money above its reserve
@@ -14359,7 +14366,7 @@ function buyDistress(i) {
 function declineDistress(i) { const o = (S.distress || [])[i]; if (o) S.distress.splice(i, 1); }
 // one building level lost to unpaid upkeep (sold at a distress price where someone buys it)
 function decayOne() {
-  const x = topLevels().sort((a, b) => (a.k === 'bank') - (b.k === 'bank') || b.cost - a.cost)[0]; // (0.71.0) the Bank last if (!x) return;
+  const x = topLevels().sort((a, b) => lastToGo(a.k) - lastToGo(b.k) || b.cost - a.cost)[0]; if (!x) return; // (0.71.0) the Bank last; (0.72.0) the Construction Yard just before it
   const pl = placeOf(x.where), sale = distressSale(x.where, x.k), nm = UPGRADES[x.k].name.toLowerCase();
   dropLevel(pl, x.k);
   let text;
@@ -14372,7 +14379,7 @@ function decayWeek(lap) {
   const f = S.fin;
   if (!lap) { f.unpaid = 0; return; }
   f.unpaid = (f.unpaid || 0) + 1;
-  if (f.unpaid % DECAY_WEEKS === 0) decayOne();
+  if (f.unpaid % decayWeeks() === 0) decayOne(); // (0.72.0) slower with a Construction Yard
 }
 // New Year, after the year's books: count years in the red, and fold a League that can't come back
 function foldNewYear() {
@@ -14553,6 +14560,12 @@ const UPGRADES = {
   contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
   fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
+  // (0.72.0) the utility buildings (5c): two upkeep cuts (Power Plant, Wind Farm), a League-wide building crew (Construction
+  // Yard) and a local building discount (Quarry), each gated by a gym type or a staff class
+  plant:   { name: 'Power Plant',     text: 'Gym cities only, where the gym is an Electric gym or with an Engineer on your staff (if that changes it keeps running but can\'t be raised). Cuts the upkeep of your other buildings in this city by 15%, 25%, then 35% (not its own). With a Wind Farm here the two cuts add up to at most 50%. At level 3 an Electric gym here fights on Electric Terrain (a Weather Institute\'s field for the gym comes first). Level 3 needs a City.', city: true, cond: true, max: 3, cost: [25000, 50000, 100000], tierAt: [0, 0, 1] },
+  wind:    { name: 'Wind Farm',       text: 'Gym cities only, where the gym is a Flying gym or with a Bird Keeper on your staff (if that changes it keeps running but can\'t be raised). Turbines (2, 4, 7 by level) each cut the upkeep of your other buildings in this city by 4% (not its own); about one week in eight is calm and the cut is halved. With a Power Plant here the two cuts add up to at most 50%. At level 3 a Flying gym here starts its battles with a tailwind (double Speed for its first 3 turns). Level 3 needs a City.', city: true, cond: true, max: 3, cost: [15000, 35000, 70000], tierAt: [0, 0, 1] },
+  yard:    { name: 'Construction Yard', text: 'Gym cities only, where the gym is a Fighting gym or with a Black Belt or Worker on your staff (if that changes it keeps running but can\'t be raised). Your best Yard works League-wide, and keeps working in the red: builds finish 20%, 35%, 50%, 65% sooner by level, levels lost in the red restore at 26%, 23%, 20%, 17% of their price (instead of 30%), and lapsed buildings decay 15%, 30%, 45%, 60% more slowly. Level 3 needs a City, level 4 a Metropolis.', city: true, cond: true, max: 4, cost: [30000, 60000, 120000, 240000], tierAt: [0, 0, 1, 2] },
+  quarry:  { name: 'Quarry',          text: 'Gym cities only, where the gym is a Rock or Ground gym or with a Hiker on your staff (if that changes it keeps running but can\'t be raised). Building, raising and restoring anything else of yours in this city costs 10%, 20%, then 30% less (Stadium levels and add-ons too). At level 3 a Rock or Ground gym here fights in a sandstorm (a Weather Institute\'s field for the gym comes first). Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
   // (0.20.0) only in a gym city that is a legendary site: earns while open, and adds prestige
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in income every week and a point of prestige a level each New Year while it is open (one of the site\'s legendaries is with your League).', site: true, income: [250, 500, 800] },
@@ -14615,6 +14628,9 @@ function buildCheck(where, k) {
   // (0.65.0) one Airport a League; the conditioned buildings (Bug Catching Contest, Fishing Pier, Fossil Lab) need theirs
   // to be built or raised
   if (U.oneLg && where !== 'seat' && S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k))) return { why: 'Your League already has one.' };
+  // (0.72.0) a build already under way, or a one-a-League building under way elsewhere
+  { const q = pendingAt(where, k); if (q) return { why: `Being built: level ${q.lv} ready ${turnDate(q.done)}.`, pending: q }; }
+  if ((U.one || U.oneLg) && where !== 'seat' && buildQ().some(q => q.k === k && q.place !== placeKey(where))) return { why: 'Your League is already building one.' };
   if (U.cond && where !== 'seat') { const cw = condWhy(where, k); if (cw) return { why: cw }; }
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
@@ -14622,34 +14638,43 @@ function buildCheck(where, k) {
   if (lv >= upMax(k)) return { why: 'Fully built.' };
   // (0.68.0) a Stadium add-on opens at its Stadium level
   if (UPGRADES[k].needs && upLevel(pl.b, 'stadium') < UPGRADES[k].needs) return { why: `Opens at Stadium level ${UPGRADES[k].needs}.` };
-  if (!lv && !U.slotless && slotsUsed(pl.b) >= pl.slots) return { why: 'No free slot.' };
+  if (!lv && !U.slotless && slotsUsed(pl.b) + pendingSlots(where) >= pl.slots) return { why: 'No free slot.' }; // (0.72.0) new buildings under way hold a slot
   // (0.63.0) bigger levels need a bigger city (the seat counts as the League's biggest gym city)
   const need = U.tierAt ? U.tierAt[lv] || 0 : 0, size = where === 'seat' ? seatSize() : citySize(S.cities[S.gyms[where].city]);
   if (need > size) return { why: `Level ${lv + 1} needs a ${sizeName(need)} (this is a ${sizeName(size)}).` };
   // (0.19.0) a level the League lost here (sold or decayed) is restored at RESTORE_SHARE of its price
+  // (0.72.0) a Construction Yard lowers the restore share; a Quarry here takes its share off anything else; builds take weeks
   const ru = ruinsAt(where, k) > 0;
-  return { cost: Math.round(upCost(k, lv) * (ru ? RESTORE_SHARE : 1)), lv: lv + 1, restore: ru };
+  return { cost: Math.round(upCost(k, lv) * (ru ? restoreShare() : 1) * (k === 'quarry' ? 1 : 1 - quarryCut(where))), lv: lv + 1, restore: ru, weeks: buildWeeks(k, lv + 1, ru) };
 }
 function build(where, k, lg = ME()) {
   return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
-    const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
-    if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
-    if (k === 'bank') bankBuiltNow(); // (0.71.0) a full grace
-    if (k === 'corner') cornerStock(b.find(x => x.k === k), false); // (0.70.0) the prize counter stocks at once (a new level adds a slot)
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
     book(-ck.cost, 'building', `${UPGRADES[k].name} ${ck.lv > 1 ? `to level ${ck.lv}` : 'built'} in ${name}${ck.restore ? ' (restored)' : ''}`);
+    // (0.72.0) builds take weeks: paid now, the level works once it is finished (buildWeek); instant with none to wait
+    { const qc = k === 'quarry' ? 0 : quarryCut(where); if (qc) UTIL_LOG.quarry += Math.round(ck.cost / (1 - qc)) - ck.cost; } // (0.72.0) what a Quarry took off
+    if (ck.weeks > 0) { startBuild(where, k, ck, name); return null; }
+    if (instantBuilds()) UTIL_LOG.instant++;
+    applyBuild(where, k);
     news(`The League ${ck.restore ? `restored its ${UPGRADES[k].name.toLowerCase()} in ${name}${ck.lv > 1 ? ` to level ${ck.lv}` : ''}` : ck.lv > 1 ? `raised its ${UPGRADES[k].name.toLowerCase()} in ${name} to level ${ck.lv}` : `built a ${UPGRADES[k].name.toLowerCase()} in ${name}`}.`, 'league');
     return null;
   });
 }
 // a gym moves to a city of the region where the League has no gym: the fee, and everything the League built in the
 // old city is lost (the city keeps its size)
+// (0.72.0) put a finished level in place (from build, or buildWeek when a build is finished)
+function applyBuild(where, k) {
+  const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
+  const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
+  if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
+  if (k === 'bank') bankBuiltNow(); // (0.71.0) a full grace
+  if (k === 'corner') cornerStock(b.find(x => x.k === k), false); // (0.70.0) the prize counter stocks at once (a new level adds a slot)
+}
 function moveGym(i, cityId, lg = ME()) {
   return inLeague(lg, () => {
     if (!booksOn()) return 'Money is off.';
@@ -14659,6 +14684,7 @@ function moveGym(i, cityId, lg = ME()) {
     const from = S.cities[g.city], lost = cityB(from).length;
     from.b[cityLg()] = []; if (from.st) delete from.st[cityLg()]; from.tier = from.ctrl === cityLg() ? null : from.tier;
     if (S.fin && S.fin.ruins) delete S.fin.ruins[from.id];
+    cancelBuildsAt(from.id, 'the gym moved'); // (0.72.0) builds under way there end, half back
     g.city = cityId;
     safariTrim(); // (0.44.0) a safari left behind sends its stock back
     book(-MOVE_FEE, 'building', `Moved ${from.name} Gym to ${to.name}`);
@@ -14805,7 +14831,7 @@ function contenderRenown(t, gi) {
 // (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
 // UPKEEP of that a year, so a large estate costs to hold
 function estateCost() { return myPlaces().filter(p => !p.none).reduce((a, p) => a + p.b.reduce((c, x) => c + builtCost(x), 0), 0); }
-const upkeepWeek = () => Math.round(Math.max(0, estateCost() - sealedCost()) * UPKEEP / YEAR_WEEKS); // (0.37.0) sealed Sanctuaries cost nothing
+const upkeepWeek = () => Math.max(0, Math.round(Math.max(0, estateCost() - sealedCost()) * UPKEEP / YEAR_WEEKS) - upkeepSaved()); // (0.37.0) sealed Sanctuaries cost nothing; (0.72.0) less the Power Plants' and Wind Farms' cuts
 // (0.16.0) the youth academy: each level raises a young prospect a year (in week ACADEMY_WEEK), a little better than
 // an ordinary newcomer, who sets out on the League's circuit tagged as its own (t.academy = the League). The League
 // pays them ACADEMY_PAY of the usual wage and they are ACADEMY_LOYAL likelier to take its offers. Stage 5 can later
@@ -14880,6 +14906,7 @@ function homeOpts(where, holder) {
   if (video) o.video = VIDEO_SMART * video; // send-out smarts in battle (battle() adds it to side 1's smart)
   if (warm) o.warm = warm;
   const fld = typeof fieldOf === 'function' ? fieldOf(where, true) : null; if (fld) o.field = fld; // (0.69.0) a Weather Institute's field
+  if (where !== 'seat') { const u = utilBattle(where, !o.field); if (u.field && !o.field) o.field = u.field; if (u.tail) o.tail = u.tail; } // (0.72.0) a level 3 Power Plant, Quarry or Wind Farm
   return o;
 }
 const videoStr = where => VIDEO_STR * addonLv(where, 'video');
@@ -15055,6 +15082,7 @@ function aimWorth(where, k) {
   if (k === 'store') return placeLv(where, k) === storeBuilt();
   if (k === 'corner') return aimCorner(where);
   if (k === 'bank') return aimBank(); // (0.71.0) early for a wall-builder, otherwise after a spell in the red
+  if (k === 'plant' || k === 'wind' || k === 'yard' || k === 'quarry') return aimUtil(where, k); // (0.72.0) by payback, after a scare, before big spending
   if (k === 'fanclub') return aimFan(where); // (0.71.0) where control is close; a money-maker's Stadium cities // (0.70.0) one Game Corner, in the busiest City
   return true;
 }
@@ -17478,7 +17506,7 @@ function condWhy(gi, k) {
   if (k === 'contest' && !gymTyped(gi, 'Bug') && !classOn(CONTEST_CLASSES)) return 'Needs a Bug gym here, or a Bug Catcher or Bug Maniac on your staff.';
   if (k === 'pier' && portKind(c) !== 'port' && !gymTyped(gi, 'Water') && !classOn(PIER_CLASSES)) return 'Needs a port city, a Water gym here, or a Fisherman on your staff.';
   if (k === 'fossil' && placeLv(gi, 'lab') < 2) return 'Needs your Research Lab here at level 2.';
-  return null;
+  return utilWhy(gi, k); // (0.72.0) the Power Plant, Wind Farm, Construction Yard and Quarry
 }
 
 // ---------- ranch rules and the keep grade (0.66.0; the keep grade 0.65.0) ----------
@@ -17826,7 +17854,7 @@ function fieldOf(where, count) {
   return { key: k, name: F.name, w: F.w || null, t: F.t || null, lock: wxLv() >= 2 };
 }
 // the field a challenger sees at a gym (no counting), for routing
-function fieldSeen(where) { const k = fieldPick(where); if (!k || fieldWhy(where)) return null; const F = FIELDS[k]; return { w: F.w || null, t: F.t || null }; }
+function fieldSeen(where) { let k = fieldPick(where); if (!k || fieldWhy(where)) k = where === 'seat' ? null : utilField(where); if (!k) return null; const F = FIELDS[k]; return { w: F.w || null, t: F.t || null }; } // (0.72.0) a level 3 Plant's or Quarry's field too
 // how well a Pokémon's types suit a field: boosted types +1, weakened −1, sand and snow's own types a little
 function fieldFit(types, f) {
   if (!f) return 0;
@@ -18199,6 +18227,159 @@ function aimFan(where) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { BANK_GRACE, BANK_REFILL, BANK_LIMIT, BANK_TERMS, BANK_SEIZE, BANK_MIN, BANK_LOG, bankAt, bankBuilt, bankState, graceLeft, graceOn, graceFull, creditLimit, creditRoom, loanOwed, loanRate, loanTerms, borrowCheck, borrow, payOffLoan, bankWeek, aiBank, FAN_CAP, FAN_LOG, FAN_PULL, FAN_PULL_MAX, FAN_FILL, FAN_CORE, fanClubs, fanCap, fanClubOf, fanWeek, fanFill, fanStanding, homePull, fanPoach });
+
+// ================= UTILITY BUILDINGS AND BUILD TIMES (0.72.0) =================
+// (0.72.0, the owner, design docs claude/design-update-power-plant.md, -wind-farm.md, -construction-yard.md and
+// -quarry.md) Four separate type-themed buildings, each gated by a gym type in its city or a staff class, each
+// keeping working at its level but not raisable when the condition goes (the general rule):
+// - Power Plant (Electric / Engineer): cuts the upkeep of the League's other buildings in its city (PLANT_CUT). Level 3:
+//   an Electric gym there fights on Electric Terrain.
+// - Wind Farm (Flying / Bird Keeper): the same kind of cut, cheaper and smaller (WIND_PER a turbine); a calm week (1 in
+//   WIND_CALM_N, rolled per city and week, the same every time it is read) halves it. With a Plant in the city the
+//   two add up to UTIL_CAP. Level 3: a Flying gym there starts its battles with a tailwind (TAILWIND_TURNS).
+// - Construction Yard (Fighting / Black Belt or Worker): the League's best Yard works League-wide and keeps working in
+//   the red: builds finish sooner (YARD_TIME), levels lost in the red restore cheaper (YARD_RESTORE in place of
+//   RESTORE_SHARE) and lapsed buildings decay more slowly (YARD_DECAY). Decayed and sold just before the Bank.
+// - Quarry (Rock or Ground / Hiker): building, raising and restoring anything else in its city costs QUARRY_CUT less.
+//   Level 3: a Rock or Ground gym there fights in a sandstorm.
+// The level 3 fields give way to a Weather Institute's field for that gym; a leader who would get both Electric
+// Terrain and a sandstorm gets the one of their first type (a gym never runs a weather and a terrain together).
+// Build times (every League): a new building or level takes BUILD_WEEKS by the level being built (a Stadium add-on
+// ADDON_WEEKS); a restored level half that; a Construction Yard shortens it. Paid when it starts; the building works at
+// its old level until it is done. In the red (not in a Bank's grace) builds pause. A build under way in a city the gym
+// leaves ends with half back (SELL_SHARE). God mode's Instant builds finish the player's at once. All numbers provisional.
+const PLANT_CUT = [0.15, 0.25, 0.35], WIND_TURBINES = [2, 4, 7], WIND_PER = 0.04, WIND_CALM_N = 8, UTIL_CAP = 0.5;
+const QUARRY_CUT = [0.1, 0.2, 0.3], TAILWIND_TURNS = 3, UTIL_PAYBACK = 3;
+const YARD_TIME = [0.2, 0.35, 0.5, 0.65], YARD_RESTORE = [0.26, 0.23, 0.2, 0.17], YARD_DECAY = [0.15, 0.3, 0.45, 0.6];
+const BUILD_WEEKS = [2, 4, 8, 12], ADDON_WEEKS = 2;
+const PLANT_CLASSES = ['Engineer'], WIND_CLASSES = ['Bird Keeper'], YARD_CLASSES = ['Black Belt', 'Worker'], QUARRY_CLASSES = ['Hiker'];
+const UTIL_LOG = { started: 0, finished: 0, instant: 0, paused: 0, cancelled: 0, waited: 0, saved: 0, quarry: 0, tail: 0, eterr: 0, sand: 0, built: { plant: 0, wind: 0, yard: 0, quarry: 0 } };
+// the gate of each (from condWhy)
+function utilWhy(gi, k) {
+  if (k === 'plant' && !gymTyped(gi, 'Electric') && !classOn(PLANT_CLASSES)) return 'Needs an Electric gym here, or an Engineer on your staff.';
+  if (k === 'wind' && !gymTyped(gi, 'Flying') && !classOn(WIND_CLASSES)) return 'Needs a Flying gym here, or a Bird Keeper on your staff.';
+  if (k === 'yard' && !gymTyped(gi, 'Fighting') && !classOn(YARD_CLASSES)) return 'Needs a Fighting gym here, or a Black Belt or Worker on your staff.';
+  if (k === 'quarry' && !gymTyped(gi, 'Rock') && !gymTyped(gi, 'Ground') && !classOn(QUARRY_CLASSES)) return 'Needs a Rock or Ground gym here, or a Hiker on your staff.';
+  return null;
+}
+const cityLv = (c, k, lg = S.lg || 0) => (c && c.b && (c.b[lg] || []).find(x => x.k === k) || { lv: 0 }).lv;
+const windCalm = c => !!c && strHash(`${c.id}:${S.turn || 0}`) % WIND_CALM_N === 0;
+// a city's upkeep cut for the bound League (0 in the red)
+function plantCut(c) { const lv = cityLv(c, 'plant'); return lv ? PLANT_CUT[lv - 1] : 0; }
+function windCut(c) { const lv = cityLv(c, 'wind'); return lv ? WIND_TURBINES[lv - 1] * WIND_PER * (windCalm(c) ? 0.5 : 1) : 0; }
+function utilCut(c) { if (lapsed() || fixedStaff()) return 0; return Math.min(UTIL_CAP, plantCut(c) + windCut(c)); }
+// what the cuts take off this week's upkeep (upkeepWeek)
+function upkeepSaved() {
+  if (!S.fin || lapsed() || fixedStaff()) return 0;
+  let saved = 0;
+  for (const g of S.gyms) {
+    const c = S.cities[g.city], cut = c ? utilCut(c) : 0; if (!cut) continue;
+    const cost = cityB(c).filter(x => x.k !== 'plant' && x.k !== 'wind' && !(x.k === 'sanct' && !sanctOpen(c))).reduce((a, x) => a + builtCost(x), 0);
+    saved += cost * cut;
+  }
+  return Math.round(saved * UPKEEP / YEAR_WEEKS);
+}
+// a city's saving a week (for the Cities page)
+function citySaved(c) { const cut = utilCut(c); if (!cut) return 0; return Math.round(cityB(c).filter(x => x.k !== 'plant' && x.k !== 'wind').reduce((a, x) => a + builtCost(x), 0) * cut * UPKEEP / YEAR_WEEKS); }
+// the League's best Construction Yard (works in the red too)
+function yardLv(i = S.lg || 0) {
+  const L = lgObj(i); if (!L || !L.gyms) return 0;
+  return Math.max(0, ...L.gyms.map(g => cityLv(S.cities[g.city], 'yard', i)));
+}
+const restoreShare = () => { const y = yardLv(); return y ? YARD_RESTORE[y - 1] : RESTORE_SHARE; };
+const decayWeeks = () => { const y = yardLv(); return Math.round(DECAY_WEEKS / (1 - (y ? YARD_DECAY[y - 1] : 0))); };
+// the Quarry's discount at a place (none at the seat, none in the red)
+function quarryCut(where) { if (where === 'seat' || lapsed()) return 0; const g = S.gyms[where], lv = g ? cityLv(S.cities[g.city], 'quarry') : 0; return lv ? QUARRY_CUT[lv - 1] : 0; }
+// the order buildings go in the red (decayOne, aiSell): the Construction Yard just before the Bank, the Bank last
+const lastToGo = k => k === 'bank' ? 2 : k === 'yard' ? 1 : 0;
+// ---------- build times ----------
+const instantBuilds = () => !!(S.cfg && S.cfg.instantBuild) && playerLeague(); // god mode's switch (and the tests')
+function buildWeeks(k, lv, restore) {
+  if (instantBuilds()) return 0;
+  let w = ADDONS.includes(k) ? ADDON_WEEKS : BUILD_WEEKS[Math.min(lv, BUILD_WEEKS.length) - 1];
+  if (restore) w /= 2;
+  const y = yardLv(); if (y) w *= 1 - YARD_TIME[y - 1];
+  return Math.max(1, Math.ceil(w));
+}
+const buildQ = () => { if (!S.fin) return []; return S.fin.bq = S.fin.bq || []; };
+const placeKey = where => where === 'seat' ? 'seat' : S.gyms[where] ? S.gyms[where].city : null;
+const pendingAt = (where, k) => { const p = placeKey(where); return buildQ().find(q => q.place === p && q.k === k) || null; };
+const pendingHere = where => { const p = placeKey(where); return buildQ().filter(q => q.place === p); };
+const pendingSlots = where => pendingHere(where).filter(q => q.nw && !UPGRADES[q.k].slotless).length;
+function startBuild(where, k, ck, name) {
+  const pl = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
+  buildQ().push({ place: placeKey(where), k, lv: ck.lv, cost: ck.cost, at: S.turn || 0, done: (S.turn || 0) + ck.weeks, weeks: ck.weeks, restore: !!ck.restore, nw: !upLevel(pl, k) });
+  UTIL_LOG.started++; UTIL_LOG.waited += ck.weeks;
+  news(`The League started ${ck.restore ? 'restoring' : ck.lv > 1 ? 'raising' : 'building'} its ${UPGRADES[k].name.toLowerCase()} in ${name}${ck.lv > 1 ? ` (level ${ck.lv})` : ''}: ready ${turnDate((S.turn || 0) + ck.weeks)}.`, 'league');
+}
+// each week per League (moneyWeek): in the red (not in a grace) every build waits a week; otherwise those due finish
+function buildWeek() {
+  const Q = buildQ(); if (!Q.length) return;
+  if (lapsed()) { Q.forEach(q => q.done++); UTIL_LOG.paused += Q.length; return; }
+  for (const q of Q.filter(x => x.done <= (S.turn || 0))) {
+    const where = q.place === 'seat' ? 'seat' : S.gyms.findIndex(g => g.city === q.place);
+    Q.splice(Q.indexOf(q), 1);
+    if (where !== 'seat' && where < 0) { refundBuild(q, 'the gym left the city'); continue; }
+    const U = UPGRADES[q.k], pl = where === 'seat' ? seatB() : cityB(S.cities[q.place]);
+    if (upLevel(pl, q.k) >= upMax(q.k)) { refundBuild(q, 'it was already fully built'); continue; }
+    applyBuild(where, q.k); UTIL_LOG.finished++;
+    if (UTIL_LOG.built[q.k] != null) UTIL_LOG.built[q.k]++;
+    const name = where === 'seat' ? seatPlace() : townName(where), lv = upLevel(pl, q.k);
+    const text = `The ${S.lgName}'s ${U.name.toLowerCase()} in ${name} is ${q.restore ? 'restored' : lv > 1 ? `finished at level ${lv}` : 'finished'}.`;
+    news(text, 'league');
+  }
+}
+function refundBuild(q, why) {
+  const back = Math.round(q.cost * SELL_SHARE); UTIL_LOG.cancelled++;
+  if (back) book(back, 'sales', `${UPGRADES[q.k].name} build stopped (${why})`);
+  if (q.restore && q.place != null) addRuin(q.place, q.k, 1);
+  news(`The ${S.lgName}'s ${UPGRADES[q.k].name.toLowerCase()} build stopped (${why}); ${money(back)} came back.`, 'league');
+}
+// a level lost (sold, decayed, seized): a raise under way of that building stops, half back
+function dropBuild(place, k) { const Q = buildQ(), q = Q.find(x => x.place === place && x.k === k); if (q) { Q.splice(Q.indexOf(q), 1); refundBuild(q, 'a level was lost'); } }
+// stop every build under way at a place (a gym moving out of the city)
+function cancelBuildsAt(place, why) { const Q = buildQ(); for (const q of Q.filter(x => x.place === place)) { Q.splice(Q.indexOf(q), 1); refundBuild(q, why); } }
+// the player stops a build under way: half back
+function cancelBuild(where, k, lg = ME()) {
+  return inLeague(lg, () => { const q = pendingAt(where, k); if (!q) return 'Nothing is being built there.'; const Q = buildQ(); Q.splice(Q.indexOf(q), 1); refundBuild(q, 'called off'); return null; });
+}
+// ---------- the level 3 fields and the tailwind ----------
+// what a gym's battle gets from its city's utility buildings: { field (only when nothing else set one), tail }
+function utilBattle(where, wantField) {
+  const o = {}; if (lapsed() || fixedStaff()) return o;
+  const g = S.gyms[where], c = g && S.cities[g.city], ld = g && T(g.leader); if (!c || !ld) return o;
+  const ty = specTypes(ld);
+  if (cityLv(c, 'wind') >= 3 && ty.includes('Flying')) { o.tail = TAILWIND_TURNS; UTIL_LOG.tail++; }
+  if (wantField) { const k = utilField(where); if (k) { const F = FIELDS[k]; o.field = { key: k, name: F.name, w: F.w || null, t: F.t || null, lock: false }; UTIL_LOG[k === 'eterr' ? 'eterr' : 'sand']++; } }
+  return o;
+}
+// the field a level 3 Power Plant or Quarry gives a gym (null if none), the leader's first type deciding between them
+function utilField(where) {
+  if (lapsed() || fixedStaff()) return null;
+  const g = S.gyms[where], c = g && S.cities[g.city], ld = g && T(g.leader); if (!c || !ld) return null;
+  const ty = specTypes(ld), e = cityLv(c, 'plant') >= 3 && ty.includes('Electric'), q = cityLv(c, 'quarry') >= 3 && (ty.includes('Rock') || ty.includes('Ground'));
+  if (e && q) return ty[0] === 'Electric' ? 'eterr' : 'sand';
+  return e ? 'eterr' : q ? 'sand' : null;
+}
+// ---------- rivals ----------
+// Power Plant and Wind Farm by payback (the step's saving a year × UTIL_PAYBACK covers its price); the Yard early for a
+// money-maker and after a spell in the red for everyone, raising only the best; the Quarry first where the League has
+// levels to restore or room for two more builds
+function aimUtil(where, k) {
+  const g = S.gyms[where], c = g && S.cities[g.city]; if (!c) return false;
+  if (k === 'plant' || k === 'wind') {
+    const lv = cityLv(c, k), cost = cityB(c).filter(x => x.k !== 'plant' && x.k !== 'wind').reduce((a, x) => a + builtCost(x), 0);
+    const cut = (kk, l) => kk === 'plant' ? (l ? PLANT_CUT[l - 1] : 0) : (l ? WIND_TURBINES[l - 1] * WIND_PER : 0);
+    const other = k === 'plant' ? cut('wind', cityLv(c, 'wind')) : cut('plant', cityLv(c, 'plant'));
+    const gain = Math.min(UTIL_CAP, other + cut(k, lv + 1)) - Math.min(UTIL_CAP, other + cut(k, lv));
+    return gain > 0 && cost * gain * UPKEEP * UTIL_PAYBACK >= upCost(k, lv);
+  }
+  if (k === 'yard') return (aimOf() === 'money' || !!(S.fin && S.fin.wasRed)) && cityLv(c, 'yard') === yardLv();
+  if (k === 'quarry') { const ru = S.fin && S.fin.ruins && S.fin.ruins[c.id] ? Object.keys(S.fin.ruins[c.id]).length : 0; return ru > 0 || citySlots(c) - slotsUsed(cityB(c)) - pendingSlots(where) >= 2; }
+  return true;
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { PLANT_CUT, WIND_TURBINES, WIND_PER, WIND_CALM_N, UTIL_CAP, QUARRY_CUT, TAILWIND_TURNS, YARD_TIME, YARD_RESTORE, YARD_DECAY, BUILD_WEEKS, ADDON_WEEKS, UTIL_LOG, utilWhy, cityLv, windCalm, plantCut, windCut, utilCut, upkeepSaved, citySaved, yardLv, restoreShare, decayWeeks, quarryCut, lastToGo, instantBuilds, buildWeeks, buildQ, placeKey, pendingAt, pendingHere, pendingSlots, startBuild, buildWeek, cancelBuild, cancelBuildsAt, dropBuild, utilBattle, utilField, aimUtil, applyBuild, seatB, upLevel, cityB });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -21080,6 +21261,15 @@ function cityBuilt(p, x, where) {
   else if (x.k === 'bank') what = bankPanel();
   else if (x.k === 'fanclub') { const cap = fanCap(x, p.c), f = x.fans || 0, core = Math.round((x.best || 0) * FAN_CORE), pull = Math.round(FAN_PULL[x.lv - 1] * 100);
     what = `${f.toLocaleString()} of ${cap.toLocaleString()} members (a loyal core of ${core.toLocaleString()}). Next New Year +${fanStanding(x)} standing here; the Stadium draws ${(Math.round(fanFill(p.gym) * 1000) / 10)}% more. ${f >= cap / 2 ? `Trainers from here need ${pull}% less prestige to sign.` : `From ${Math.ceil(cap / 2).toLocaleString()} members, trainers from here need ${pull}% less prestige to sign.`}${lap ? ' Lapsed: it does nothing, but nobody leaves.' : ''}`; }
+  // (0.72.0) the utility buildings
+  else if (x.k === 'plant' || x.k === 'wind') { const w = condWhy(p.gym, x.k), sv = citySaved(p.c), cut = utilCut(p.c), ld = T((S.gyms[p.gym] || {}).leader), ty = ld ? specTypes(ld) : [];
+    const own = x.k === 'plant' ? `cuts upkeep of your other buildings here by ${Math.round(PLANT_CUT[x.lv - 1] * 100)}%` : `${WIND_TURBINES[x.lv - 1]} turbines cut upkeep of your other buildings here by ${Math.round(WIND_TURBINES[x.lv - 1] * WIND_PER * 100)}%${windCalm(p.c) ? ' <span class="tag notice">Calm week: half</span>' : ''}`;
+    const perk = x.lv >= 3 ? (x.k === 'plant' ? (ty.includes('Electric') ? ` The gym fights on Electric Terrain${fieldPick(p.gym) && !fieldWhy(p.gym) ? ' when the Weather Institute sets nothing here' : ''}.` : ' Electric Terrain once the gym is an Electric gym.') : (ty.includes('Flying') ? ` The gym starts its battles with a tailwind (${TAILWIND_TURNS} turns).` : ' A tailwind once the gym is a Flying gym.')) : '';
+    what = `${own}; together here ${Math.round(cut * 100)}% (at most ${Math.round(UTIL_CAP * 100)}%), saving ${money(sv)} a week now.${perk}${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}${lap ? ' Lapsed: no cut.' : ''}`; }
+  else if (x.k === 'yard') { const w = condWhy(p.gym, 'yard'), y = yardLv();
+    what = `${x.lv < y ? `Your best Yard (level ${y}) sets it. ` : ''}League-wide, in the red too: builds ${Math.round(YARD_TIME[y - 1] * 100)}% sooner, lost levels restore at ${Math.round(YARD_RESTORE[y - 1] * 100)}%, lapsed buildings lose a level every ${decayWeeks()} weeks instead of ${DECAY_WEEKS}.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
+  else if (x.k === 'quarry') { const w = condWhy(p.gym, 'quarry'), ld = T((S.gyms[p.gym] || {}).leader), ty = ld ? specTypes(ld) : [];
+    what = `Everything else you build, raise or restore here costs ${Math.round(QUARRY_CUT[x.lv - 1] * 100)}% less.${x.lv >= 3 ? (ty.includes('Rock') || ty.includes('Ground') ? ' The gym fights in a sandstorm.' : ' A sandstorm once the gym is a Rock or Ground gym.') : ''}${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}${lap ? ' Lapsed: no discount.' : ''}`; }
   else if (x.k === 'contest') { const w = condWhy(p.gym, 'contest'); what = `Every ${CONTEST_WEEKS} weeks: ${x.lv} Bug find${x.lv === 1 ? '' : 's'}, the prize at grade ${CONTEST_PRIZE[x.lv - 1]} or better, ${CONTEST_VISIT * x.lv} visitors and a ${money(CONTEST_GATE * x.lv)} gate.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'pier') { const w = condWhy(p.gym, 'pier'), ls = rodLines(x.lv); what = `${['Old', 'Good', 'Super'][x.lv - 1]} Rod: one Water Pokémon every ${PIER_WEEKS} weeks from ${ls.length} line${ls.length === 1 ? '' : 's'} (${ls.slice(0, 8).map(esc).join(', ')}${ls.length > 8 ? '…' : ''}).${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'fossil') { const w = condWhy(p.gym, 'fossil'), eff = fossilEff(x.lv); what = `A revival every ${FOSSIL_WEEKS[eff - 1]} weeks at grade ${eff} or better${eff > x.lv ? ' (a Ruin Maniac on your staff adds a level)' : ''}${x.next != null ? `; next ${esc(turnDate(x.next))}` : ''}.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
@@ -21132,7 +21322,7 @@ function viewCities0() {
     // (0.67.0) the build controls: upgrades of what is here inline, new buildings in one closed list (a row each)
     const locked = p.none ? [] : Object.keys(UPGRADES).map(k => ({ k, ck: buildCheck(where, k) })).filter(x => x.ck.why && /needs a |^Opens at /.test(x.ck.why));
     const opts = p.none ? [] : Object.keys(UPGRADES).map(k => ({ k, ck: buildCheck(where, k) })).filter(x => !x.ck.why);
-    const bBtn = (k, ck, label) => `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}${ck.restore ? ` Restoring a level you lost here in the red costs ${Math.round(RESTORE_SHARE * 100)}% of its price.` : ''}">${label} (${money(ck.cost)})</button>`;
+    const bBtn = (k, ck, label) => `<button class="btn small" data-act="build" data-w="${where}" data-k="${k}"${canSpend(ck.cost) ? '' : ' disabled'} title="${esc(UPGRADES[k].text)}${ck.restore ? ` Restoring a level you lost here in the red costs ${Math.round(restoreShare() * 100)}% of its price.` : ''}${quarryCut(where) && k !== 'quarry' ? ` Your Quarry here takes ${Math.round(quarryCut(where) * 100)}% off.` : ''}">${label} (${money(ck.cost)}${ck.weeks ? `, ${ck.weeks} wk${ck.weeks === 1 ? '' : 's'}` : ''})</button>`; // (0.72.0) build times
     const has = k => k === 'stadium' ? !p.none : b.some(x => x.k === k && x.lv);
     const ups = opts.filter(x => has(x.k)), news = opts.filter(x => !has(x.k));
     const upRow = ups.length ? `<div class="confirm-row">${ups.map(({ k, ck }) => bBtn(k, ck, ck.restore ? `Restore ${UPGRADES[k].name}${ck.lv > 1 ? ` to level ${ck.lv}` : ''}` : `${UPGRADES[k].name} to level ${ck.lv}`)).join('')}</div>` : '';
@@ -21140,7 +21330,10 @@ function viewCities0() {
       <ul class="mini buildopts">${news.map(({ k, ck }) => `<li><span><b>${UPGRADES[k].name}</b>${UPGRADES[k].slotless ? ' <span class="small muted">(no slot)</span>' : ''} <span class="small muted blurb">${esc(BUILD_BLURB[k] || '')}</span></span>${bBtn(k, ck, ck.restore ? 'Restore' : 'Build')}</li>`).join('')}</ul>
       ${locked.length ? `<p class="small muted">Not yet: ${locked.map(x => `${UPGRADES[x.k].name} (${esc(x.ck.why)})`).join('; ')}</p>` : ''}</details>`
       : locked.length ? `<p class="small muted">Not yet: ${locked.map(x => `${UPGRADES[x.k].name} (${esc(x.ck.why)})`).join('; ')}</p>` : '';
-    const acts = upRow + newList;
+    // (0.72.0) builds under way here, with a Call it off button (half back)
+    const pend = p.none ? [] : pendingHere(where);
+    const pendRow = pend.length ? `<ul class="mini buildq">${pend.map(q => `<li><span class="tag">Building</span> <b>${UPGRADES[q.k].name}</b> ${q.restore ? 'restoring level' : 'level'} ${q.lv}, ready ${esc(turnDate(q.done))} (${Math.max(0, q.done - S.turn)} week${q.done - S.turn === 1 ? '' : 's'}${lapsed() ? ', paused in the red' : ''}) <button class="btn small ghost" data-act="cancelbuild" data-w="${where}" data-k="${q.k}">Call it off (+${money(Math.round(q.cost * SELL_SHARE))})</button></li>`).join('')}</ul>` : '';
+    const acts = pendRow + upRow + newList;
     // (0.67.0) one line of tags and the numbers that matter; the full city notes fold away
     const mine = p.c && lgs.includes(ME());
     const quick = p.c ? `<p class="small citytags"><span class="tag">${sizeName(sz)}</span>${mine ? ` <span class="tag${cs.ctrl === ME() && cs.tier >= 2 ? '' : ' notice'}">${TIER_NAMES[cs.tier]}</span>` : ''}${p.gym != null && !p.none && fieldPick(p.gym) && !fieldWhy(p.gym) ? ` <span class="tag">${FIELDS[fieldPick(p.gym)].name}</span>` : ''}${siteOn(p.c) ? ` <span class="tag gold">Legendary site: ${(p.c.site.sps || [p.c.site.sp]).map(esc).join(', ')}</span>` : ''} ${mine ? `Your share <b>${money(cityShare(p.c, lgs, ME()))}</b> a week · ` : ''}${p.c.vw || 0} visitor${p.c.vw === 1 ? '' : 's'} this week · ${sizeName(sz + 1)} at ${money(sizeAt(sz + 1))} (${money(spent)} spent)</p>`
@@ -21149,12 +21342,12 @@ function viewCities0() {
     return `<section class="panel"><div class="ph"><h2>${esc(p.name)}</h2><span class="muted">${p.seat ? 'League seat: the Elite Four and the Champion' : `Gym ${p.gym + 1}${T(S.gyms[p.gym].leader) ? ' · ' + typeLabel(T(S.gyms[p.gym].leader)) : ''}`} · ${slotsUsed(p.b)} of ${p.slots} slot${p.slots === 1 ? '' : 's'} used</span></div>
       ${quick}${more}${built ? `<ul>${built}</ul>` : ''}${acts}</section>`;
   };
-  const red = lapsed() ? `<p class="warn">The ${S.lgName} is in the red: upkeep is going unpaid, so every building has lapsed (Hotels and Berry Farms earn nothing, Stadiums sell only their first ${STADIUM_SEATS[0]} seats and their add-ons do nothing, and halls, Centers, the scouting office and the academy do nothing). Every ${DECAY_WEEKS} weeks unpaid, your costliest building loses a level${S.fin.unpaid ? ` (next in ${DECAY_WEEKS - S.fin.unpaid % DECAY_WEEKS} weeks)` : ''}; in a shared city a rival may buy it at a distress price. In the red at ${FOLD_YEARS} New Years running, with debts your buildings can't cover, the League folds.</p>` : '';
+  const red = lapsed() ? `<p class="warn">The ${S.lgName} is in the red: upkeep is going unpaid, so every building has lapsed (Hotels and Berry Farms earn nothing, Stadiums sell only their first ${STADIUM_SEATS[0]} seats and their add-ons do nothing, and halls, Centers, the scouting office and the academy do nothing). Every ${decayWeeks()} weeks unpaid, your costliest building loses a level${S.fin.unpaid ? ` (next in ${decayWeeks() - S.fin.unpaid % decayWeeks()} weeks)` : ''}; in a shared city a rival may buy it at a distress price. In the red at ${FOLD_YEARS} New Years running, with debts your buildings can't cover, the League folds.</p>` : '';
   const grc = graceOn() ? `<p class="warn">The ${S.lgName} is in the red, but its Bank's grace keeps every building working for ${graceLeft()} more week${graceLeft() === 1 ? '' : 's'}. Nothing new can be bought, and unpaid staff still give notice.</p>` : ''; // (0.71.0)
   const last = S.fin.last || {}, li = last.in || {};
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>${red}${grc}
     <p>Build in your gym cities and at your League's seat. Spending grows a city (Town, City at ${money(sizeAt(1))}, Metropolis at ${money(sizeAt(2))}…) and its slots; bigger cities pay more and unlock top building levels.</p>
-<p class="small">Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, Bug Catching Contests ${money(li.contests || 0)}, Game Corners ${money((li.corner || 0) - ((last.out || {}).corner || 0))}, Airport ${money((li.airport || 0) - ((last.out || {}).airport || 0))}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
+<p class="small">Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, Bug Catching Contests ${money(li.contests || 0)}, Game Corners ${money((li.corner || 0) - ((last.out || {}).corner || 0))}, Airport ${money((li.airport || 0) - ((last.out || {}).airport || 0))}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week${upkeepSaved() ? `, after ${money(upkeepSaved())} saved by Power Plants and Wind Farms` : ''}). New buildings and levels take weeks to finish (${BUILD_WEEKS.join(', ')} weeks by the level, add-ons ${ADDON_WEEKS}, a restore half${yardLv() ? `; your Construction Yard takes ${Math.round(YARD_TIME[yardLv() - 1] * 100)}% off` : ''}); they're paid when they start and pause in the red.</p>
     <details class="hist"><summary class="small"><b>How cities and buildings work</b></summary><div class="citymore-in">
     <p class="small"><b>Size:</b> everything every League has spent in a city makes it a Town, then a City at ${money(sizeAt(1))}, a Metropolis at ${money(sizeAt(2))}, a Megalopolis at ${money(sizeAt(3))} and on (three times as much each). Bigger cities pay more city income, their visitors spend more, their crowds are bigger and their tickets dearer, and the top levels of Stadiums, Hotels and Pokémon Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at ${money(slotAt(0))}, ${money(slotAt(1))}, ${money(slotAt(2))} and every doubling after; the seat has ${SEAT_SLOTS}. Stadiums take no slot. <b>Visitors:</b> each week every challenger heading for a city's gym, or resting at a Pokémon Center there, is a visitor: they spend in town (part of its city income) and fill its Hotels.</p>
     <ul class="small">${Object.values(UPGRADES).map(u => `<li><b>${u.name}:</b> ${u.text}</li>`).join('')}</ul><p class="small">Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></div></details></section>
@@ -21163,7 +21356,7 @@ function viewCities0() {
 // (0.67.0) a line on what each building is for, on the Cities page's build list (the full text is its tooltip)
 const BUILD_BLURB = { stadium: 'Seats for ticket income; opens its add-ons', stand: 'A home edge from the crowd', crew: 'The gym\'s type hits harder', video: 'Better picks against the challenger', warmup: 'Lead Pokémon start a stage up', hotel: 'Rooms for challengers in town', center: 'Draws challengers, shorter rests', berry: 'Sells berries or feeds the ranch', hall: 'Elite Four and Champion grow faster',
   school: 'Raises gym trainers of this gym\'s type', tutor: 'Teams learn coverage moves sooner', lab: 'Better trips and finds, League-wide', store: 'Held items for your staff', airport: 'A lane and visitors from another region', wx: 'Each gym\'s weather or terrain',
-  bank: 'Grace in the red, and a credit line', fanclub: 'Standing, fuller crowds, hometown signings',
+  bank: 'Grace in the red, and a credit line', fanclub: 'Standing, fuller crowds, hometown signings', plant: 'Cuts upkeep here; Electric Terrain at level 3', wind: 'A cheaper upkeep cut; a tailwind at level 3', yard: 'Faster builds and cheaper rebuilding, League-wide', quarry: 'Cheaper building here; a sandstorm at level 3',
   corner: 'Takings that swing, and rare prize Pokémon', contest: 'Bug finds and a gate every 8 weeks', pier: 'Steady Water finds', fossil: 'Revives fossils', scout: 'Better finds and more hiring storage', sanct: 'Income and prestige while its legendary is yours',
   ranch: 'More ranch room', lane: 'Migration from another region', safari: 'Quarterly finds from kept lines', daycare: 'Breeds from your pool', academy: 'A loyal prospect a year' };
 // (0.67.0) the region's towns where you have no gym, in one panel, each with the move-a-gym control
@@ -21355,6 +21548,10 @@ const GLOSS_TERMS = {
 GLOSS_TERMS.league.push(['Stadium add-ons', `A Stadium's levels add seats (ticket income) and open its add-ons, which take no slot and work for your staff in that Stadium's battles (at the seat: the Elite Four, the Champion and title claims) while the Stadium is at least the level they open at, and not while you are in the red. Home stand (Stadium level 1): a home edge of up to +${(STAND_EDGE * 100).toFixed(1)}% a level at a full house, less with empty seats. Field crew (level 2): Pokémon of the gym's type (every Pokémon at an untyped gym; at the seat, the battling trainer's type) hit ${Math.round(CREW_HIT * 100)}% harder a level. Video room (level 3): +${VIDEO_STR} Strategy a level when your staff choose which Pokémon to field against a challenger and when to send them out. Warm-up room (level 4): the first Pokémon of the team goes out a stage up in its better attacking stat, the first two at level 2, the first three at level 3. 3 levels each.`]); // (0.68.0)
 GLOSS_TERMS.league.push(['Weather Institute', `One per League, in a gym city that is at least a City, built from the Cities page; it works League-wide. It sets the field for each of your gyms' battles and for the seat's (the Elite Four, the Champion and title claims): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never a weather and a terrain together. The field replaces the gym's own weather (a gym left unset keeps the weather of its leader's type). A terrain powers its type's moves 20% for both sides. At level 1 a place can only use the fields its types bring (a Water gym rain, an Electric gym Electric Terrain); a weather-themed trainer on your staff opens them all. At level 2 any field works anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field, and the sharper ones (Strategy) pick their Pokémon and their next gym with it in mind. It stops working in the red.`]); // (0.69.0)
 GLOSS_TERMS.league.push(['Airport', `A gym-city building, one a League, in a City or bigger (3 levels: a second route needs a Metropolis, level 3 a Megalopolis). Each route to another region works like a shipping lane (its Pokémon on your targeted trips and at your market) and brings people: challengers moving out of that region lean toward your League and land in the Airport's city (a few weeks as visitors there), and about ${AIR_VISITS} visitors a month arrive from there (up to twice as many with your renown in its cities). Visitors spend in the city like any other (Hotels, where level 3 counts them twice, Department Stores). It costs ${money(AIR_WEEK)} a week to run and earns ${money(AIR_LAND)} for every arrival; changing a route costs ${money(AIR_ROUTE)}. Level 3 makes charters ${Math.round(AIR_CHARTER * 100)}% cheaper and a week faster, and your contenders win 25% more renown in other regions. In the red it lapses: no routes, no arrivals, no fee.`],
+  ['Build times', `(0.72.0) Every new building or level takes weeks to finish: ${BUILD_WEEKS.join(', ')} weeks for a level 1, 2, 3, or 4 and up, ${ADDON_WEEKS} for a Stadium add-on, and half that to restore a level lost in the red. It's paid when it starts, and the building keeps working at its old level until it's done. One build at a time per building. In the red (outside a Bank's grace) builds pause. Calling a build off, or the gym leaving the city, gives half back. A Construction Yard makes builds finish sooner.`],
+  ['Power Plant and Wind Farm', `(0.72.0) Two separate buildings that cut the upkeep of your other buildings in their city. The Power Plant (an Electric gym there or an Engineer on your staff) cuts ${PLANT_CUT.map(x => Math.round(x * 100) + '%').join(', ')} by level; at level 3 an Electric gym there fights on Electric Terrain. The Wind Farm (a Flying gym or a Bird Keeper) is cheaper: ${WIND_TURBINES.join(', ')} turbines by level, each ${Math.round(WIND_PER * 100)}%, halved on a calm week (about one in ${WIND_CALM_N}); at level 3 a Flying gym there starts its battles with a tailwind (double Speed for ${TAILWIND_TURNS} turns). Both in one city add up to at most ${Math.round(UTIL_CAP * 100)}%. A Weather Institute's field for the gym comes before the Plant's terrain. Level 3 needs a City.`],
+  ['Construction Yard', `(0.72.0) A Fighting gym there, or a Black Belt or Worker on your staff (4 levels; level 3 needs a City, level 4 a Metropolis). Your best Yard works League-wide and keeps working in the red: builds finish ${YARD_TIME.map(x => Math.round(x * 100) + '%').join(', ')} sooner, levels lost in the red restore at ${YARD_RESTORE.map(x => Math.round(x * 100) + '%').join(', ')} of their price instead of ${Math.round(RESTORE_SHARE * 100)}%, and lapsed buildings decay ${YARD_DECAY.map(x => Math.round(x * 100) + '%').join(', ')} more slowly. It's among the last buildings lost in the red, just before the Bank.`],
+  ['Quarry', `(0.72.0) A Rock or Ground gym there, or a Hiker on your staff (3 levels; level 3 needs a City). Everything else you build, raise or restore in its city costs ${QUARRY_CUT.map(x => Math.round(x * 100) + '%').join(', ')} less, on top of a Construction Yard's lower restore price. At level 3 a Rock or Ground gym there fights in a sandstorm (a Weather Institute's field comes first; a leader who would get both Electric Terrain and a sandstorm gets the one of their first type).`],
   ['Bank', `One per League, in any of your gym cities (3 levels; level 3 needs a City), built from the Cities page; it earns nothing and works League-wide. While you are in the red your buildings keep working for ${BANK_GRACE.join(', ')} weeks by level before they lapse; nothing new can be bought meanwhile, and unpaid staff still give notice. The grace comes back once you have been out of the red for ${BANK_REFILL} weeks. Its credit line lends up to ${BANK_LIMIT.map(x => x * 100 + '%').join(', ')} of your buildings at cost, paid back weekly over ${BANK_TERMS.join(' or ')} weeks at 4% to 8% a year (simple interest): the further down the League table by wealth, the lower the rate. Borrowing again refinances the old loan. Borrowed in the red, the money clears the debt first. A week you can't make a payment is missed; every ${BANK_SEIZE} missed in a row the Bank takes your lowest building level at a distress value against the loan. Once your buildings have lapsed the Bank lends nothing, though the loan is still owed. It is the last building to lapse or be sold. Wall-builders build one early; other rivals after a spell in the red, and money-makers borrow to expand.`],
   ['Fan Club', `A gym-city building (3 levels; level 3 needs a City), one in each gym city, backing that gym. Members join while the gym holds better than the region's gyms do this year and while trainers from the city are on its staff (its Gym Leader and gym trainers, and your Elite Four and Champion from the city), up to ${FAN_CAP.map(n => n.toLocaleString()).join(', ')} by level, more in bigger cities. A bad year loses members at half the speed a good year gains them, and a loyal core (a fifth of its best) never leaves. Each New Year the members add standing in the city; they draw up to ${FAN_FILL * 100}% more to the Stadium; and once the club is half full, trainers from the city need ${FAN_PULL[0] * 100}% less prestige to sign with you (${FAN_PULL[2] * 100}% at level 3; with a Stronghold's, at most ${FAN_PULL_MAX * 100}%). When another League poaches a member of staff from the city, some members follow them, and half of those join that League's club there. Lapsed in the red: it does nothing, but nobody leaves. Rival Leagues build them where control of a city is close, and money-makers in their Stadium cities.`],
   ['Game Corner', `A gym-city building (3 levels) that needs a City (level 3 a Metropolis). The city's visitors and residents play there each week, up to ${CORNER_SEATS.join(', ')} seats by level (every Game Corner in a city shares them; the controlling League's a little more), each spending by the city's size. The take swings: most weeks within 30% of its average, about 1 week in ${CORNER_JACK_N} a jackpot of about ${CORNER_JACKPOT} times as much, and about 1 week in ${CORNER_LOSS_N} a losing week, when the house pays out more than it takes. Its prize counter holds ${CORNER_PRIZES.join(', ')} of your region's rarest Pokémon by level (never a legendary or Paradox Pokémon), grade ${CORNER_MIN_G} or better, at ${Math.round(CORNER_MARKUP * 100)}% of their market value (10% off at level 3); it changes every quarter, each prize can be taken once, and it goes straight into your ranch. Closed in the red. Money-making rival Leagues build one in their busiest City; the others take prizes that fit their staff's types.`],
@@ -21435,7 +21632,8 @@ function viewGod() {
     <p>Open a League, or edit any trainer directly. These skip the usual limits.</p></section>
   <section class="panel"><div class="ph"><h3>Leagues</h3><span class="muted">${nLeagues()} Leagues open</span></div>
     <p>${Array.from({ length: nLeagues() }, (_, i) => leagueName(i)).join(' · ')}</p>
-    <div class="confirm-row"><button class="btn primary" data-act="godleague" ${nextRegion() != null ? '' : 'disabled'}>${nextRegion() != null ? `Open the ${nextRegionName()} now` : 'The world is full'}</button></div></section>${godEditor()}`;
+    <div class="confirm-row"><button class="btn primary" data-act="godleague" ${nextRegion() != null ? '' : 'disabled'}>${nextRegion() != null ? `Open the ${nextRegionName()} now` : 'The world is full'}</button></div></section>
+  <section class="panel"><div class="ph"><h3>Instant builds</h3><span class="muted">${S.cfg.instantBuild ? 'On' : 'Off'}</span></div><p class="small">Your League's buildings and levels finish the moment you pay for them, with no build time. Rival Leagues still wait.</p><div class="confirm-row"><button class="btn small" data-act="godinstant">${S.cfg.instantBuild ? 'Turn it off' : 'Turn it on'}</button></div></section>${godEditor()}`; // (0.72.0)
 }
 
 // ---------- post holders (0.49.0) ----------
@@ -21621,6 +21819,16 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 72, ver: '0.72.0', date: 'November 26, 2026', time: '4:46 PM ET', title: 'Build times, and four buildings for weaker types', items: [
+    "Buildings now take time. Every new building or level takes 2, 4, 8 or 12 weeks to finish by its level (a Stadium add-on 2, restoring a level lost in the red half the time). You pay when it starts, and the building keeps working at its old level until it's done. Builds pause while you're in the red (a Bank's grace keeps them going). The Cities page shows each build's time on its button, what's under way and when it's ready, with a Call it off button that gives half back. Rival Leagues wait too.",
+    "New, the Power Plant (an Electric gym in the city, or an Engineer on your staff): cuts the upkeep of your other buildings in that city by 15%, 25%, then 35% (25,000, 50,000, 100,000; level 3 needs a City). At level 3 an Electric gym there fights on Electric Terrain, unless your Weather Institute sets that gym a field.",
+    "New, the Wind Farm (a Flying gym, or a Bird Keeper): the cheaper upkeep cut. 2, 4, then 7 turbines each cut 4% (15,000, 35,000, 70,000), and about one week in eight is calm and cuts half. A Power Plant and a Wind Farm in one city add up to at most 50%. At level 3 a Flying gym there starts its battles with a tailwind: double Speed for its first 3 turns.",
+    "New, the Construction Yard (a Fighting gym, or a Black Belt or Worker): your best Yard works League-wide and keeps working in the red. Builds finish 20% to 65% sooner by level, levels lost in the red restore at 26% down to 17% of their price (instead of 30%), and lapsed buildings decay more slowly. 4 levels (30,000 to 240,000; level 3 needs a City, level 4 a Metropolis). It's among the last buildings lost in the red, just before the Bank.",
+    "New, the Quarry (a Rock or Ground gym, or a Hiker): everything else you build, raise or restore in its city costs 10%, 20%, then 30% less (20,000, 40,000, 80,000; level 3 needs a City). At level 3 a Rock or Ground gym there fights in a sandstorm. A leader who would get both Electric Terrain and a sandstorm gets the one of their first type.",
+    "These four keep working at their level if their gym changes type or the staff member leaves, but can't be raised until the condition is back. Rival Leagues build the Power Plant and Wind Farm where they pay back within about 3 years, the Yard early (money-makers) or after a spell in the red, and the Quarry where they have levels to restore or room to build.",
+    "God mode has a new switch, Instant builds, that finishes your League's builds at once.",
+    "Fixed: a League with nothing left to lose in the red no longer crashes when its upkeep goes unpaid.",
+  ] },
   { id: 71, ver: '0.71.0', date: 'November 26, 2026', time: '2:30 PM ET', title: 'The Bank and the Fan Club', items: [
     "A new building, the Bank: one per League, in any of your gym cities (40,000, 80,000, then 160,000 for level 3, which needs a City). It earns nothing; it is a safety net.",
     "Its grace: when you go into the red, your buildings keep working (and their upkeep is still paid) for 4, 8 or 12 weeks by level before they lapse. You still can't buy anything new, and unpaid staff still give notice. The grace comes back once you have been out of the red for 12 weeks.",
@@ -22688,6 +22896,8 @@ document.addEventListener('click', ev => {
     case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
     case 'distno': { declineDistress(+el.dataset.v); save(); render(); break; }
     case 'bankborrow': { const amt = Math.round(+((document.getElementById('bankamt') || {}).value || 0)), n = +((document.getElementById('bankterm') || {}).value || 0), w = borrow(amt, n); save(); render(); toast(w || `Borrowed ${money(amt)} from the Bank.`, w ? 6000 : undefined); break; } // (0.71.0)
+    case 'cancelbuild': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = cancelBuild(wh, el.dataset.k); save(); render(); toast(w || 'Build called off; half came back.', w ? 6000 : undefined); break; } // (0.72.0)
+    case 'godinstant': S.cfg.instantBuild = !S.cfg.instantBuild; save(); render(); toast(`Instant builds ${S.cfg.instantBuild ? 'on' : 'off'}.`); break; // (0.72.0)
     case 'bankpayoff': { const w = payOffLoan(); save(); render(); toast(w || 'The Bank loan is paid off.', w ? 6000 : undefined); break; } // (0.71.0)
     case 'cornerbuy': { const gi = +el.dataset.g, x = (cityB(S.cities[S.gyms[gi].city]).find(y => y.k === 'corner') || {}), pz = (x.prize || [])[+el.dataset.i], w = buyPrize(gi, +el.dataset.i); save(); render(); toast(w || `${pz.b} came to the ranch from the Game Corner.`, w ? 6000 : undefined); break; } // (0.70.0)
     case 'buyitem': { const w = buyItem(el.dataset.k); save(); render(); toast(w || `Bought a ${itemName(el.dataset.k)} for the item bag.`); break; } // (0.64.0)

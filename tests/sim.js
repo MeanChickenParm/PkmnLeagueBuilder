@@ -6,6 +6,7 @@ const g = require(require('path').join(__dirname, '..', 'dist', 'engine-node.js'
 // FAM (0.57.0): a sixth argument sets the famous share (0, 25, 50, 75 or 100)
 const [L, G, N, GOD, HAND, FAM] = process.argv.slice(2).map(Number);
 g.newWorld({ leagues: L || 1, growth: !!G, god: !!GOD, hand: !!HAND, famShare: FAM || 0 });
+if (HAND) g.S.cfg.instantBuild = true; // (0.72.0) the hand-placed League's builds finish at once, except in the build-times step
 if (g.S.cfg.famShare !== (FAM || 0)) { console.log('FAIL the famous share was not kept: ' + g.S.cfg.famShare); process.exit(1); }
 // (0.30.0) the world's regions are in the save: nine built-in records, neighbours two-way, every legendary home and port
 // kept; and where Leagues start (startRegions): picks honoured within room, your region only by a pick or a full world
@@ -40,6 +41,7 @@ const CB3 = { built: {}, refused: 0, routes: 0, keep: 0, airports: 0, finds: 0, 
 const ADD = { built: 0 }; // (0.68.0)
 const WX = { built: 0, set: 0, refused: 0, raised: 0, seen: 0, terrainSeen: 0 }; // (0.69.0)
 const GC = { seen: 0, built: 0, raised: 0, bought: 0, refused: 0 }; // (0.70.0)
+const UT = { queued: 0, queueMax: 0, timed: 0, timedOk: 0, cancelled: 0, refusedTwice: 0, gateRefused: 0, built: 0, saverChecks: 0, quarryChecks: 0, yardChecks: 0, tailSeen: 0, fieldSeen: 0 }; // (0.72.0)
 const BK = { keep: null, seen: 0, graceSeen: 0, loansSeen: 0, built: 0, borrowed: 0, refused: 0, paidOff: 0, forcedRed: 0, fanBuilt: 0, fanRaised: 0, clubs: 0, fansMax: 0 }; // (0.71.0)
 const RR2 = { set: 0, listedMax: 0 }; // (0.66.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
@@ -368,7 +370,19 @@ function check(tag) {
       GC.seen++; if (g.citySize(p.c) < 1) bad('a Game Corner in a Town'); if (x.lv >= 3 && g.citySize(p.c) < 2) bad('a level 3 Game Corner below a Metropolis');
       if (pz.length > g.CORNER_PRIZES[x.lv - 1]) bad('more prizes than the Game Corner holds'); if (new Set(pz.map(q => q.b)).size !== pz.length) bad('a prize line twice on one counter');
       for (const q of pz) { if (!g.ranchable(q.b)) bad('a prize that is not ranchable: ' + q.b); if (!(q.g >= 2 && q.g <= 5)) bad('a prize of grade ' + q.g); if (!(q.price > 0)) bad('a prize with no price'); }
-      if (x.prize && !g.lapsed() && z.turn - x.at > g.QUARTER_WEEKS) bad('a prize counter past its quarter'); }
+      if (x.prize && !g.lapsed() && z.turn - x.at > g.QUARTER_WEEKS + 1) bad('a prize counter past its quarter ' + JSON.stringify({ at: x.at, turn: z.turn, lv: x.lv, money: z.fin.money, pool: g.cornerPool().length, bq: (z.fin.bq || []).length, unpaid: z.fin.unpaid, redAt: z.fin.redAt, wk: x.wk })); /* (0.72.0) a week's slack: a League out of the red by the week's end skipped that week's counter */ }
+    // (0.72.0) builds under way: a real building at a real place of the League (the seat or a gym city), one at a time a
+    // building, the next level of what stands, due in the future and no longer than its weeks plus pauses; the upkeep
+    // cuts never more than half a city's upkeep; utility building levels within their sizes
+    { const Q = z.fin.bq || [], seen = new Set(); UT.queued += Q.length; UT.queueMax = Math.max(UT.queueMax, Q.length);
+      for (const q of Q) { const where = q.place === 'seat' ? 'seat' : z.gyms.findIndex(gm => gm.city === q.place), key = q.place + ':' + q.k;
+        if (!g.UPGRADES[q.k] || (where !== 'seat' && where < 0)) bad('a build under way at no place of the League ' + JSON.stringify(q));
+        else { const pl = where === 'seat' ? g.seatB() : g.cityB(z.cities[q.place]); if (q.lv !== g.upLevel(pl, q.k) + 1) bad('a build under way for the wrong level ' + JSON.stringify(q)); }
+        if (seen.has(key)) bad('two builds under way of one building'); seen.add(key);
+        if (!(q.weeks >= 1) || !(q.done >= z.turn) || !(q.cost >= 0) || !Number.isInteger(q.cost)) bad('a bad build under way ' + JSON.stringify(q)); }
+      for (const gm of z.gyms) { const c = z.cities[gm.city]; if (g.utilCut(c) > g.UTIL_CAP + 1e-9) bad('an upkeep cut over its cap');
+        for (const k of ['plant', 'wind', 'yard', 'quarry']) { const lv = g.cityLv(c, k, i), need = g.UPGRADES[k].tierAt; if (lv > g.upMax(k)) bad(k + ' past its top level'); if (lv && need[lv - 1] > g.citySize(c)) bad('a level ' + lv + ' ' + k + ' in too small a city'); } }
+      if (g.upkeepSaved() > Math.round(Math.max(0, g.estateCost() - g.sealedCost()) * g.UPKEEP / 48 * g.UTIL_CAP) + 1) bad('more upkeep saved than half the upkeep'); }
     // (0.71.0) the Bank: one a League, level 3 in a City; its grace within its level, the red's lapse following it, and
     // a well-formed loan. The Fan Club: members within the cap and at or above the loyal core, best at least the members
     { const bk = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'bank')); if (bk.length > 1) bad('two Banks in one League'); if (bk.some(p => p.b.find(x => x.k === 'bank').lv >= 3 && g.citySize(p.c) < 1)) bad('a level 3 Bank in a Town');
@@ -659,7 +673,7 @@ for (let i = 0; i < N; i++) {
         if (z.season >= 2 && !g.corners().length) { const c = z.cities[z.gyms[3].city]; if (g.citySize(c) < 1) { if (!g.buildCheck(3, 'corner').why) fail.push('a Game Corner allowed in a Town'); c.spent = c.spent || {}; c.spent[z.lg || 0] = (c.spent[z.lg || 0] || 0) + 100000; }
           if (!g.buildCheck('seat', 'corner').why) fail.push('a Game Corner allowed at the seat');
           const ck = g.buildCheck(3, 'corner'); if (!ck.why) { z.fin.money += ck.cost + 20000; const m8 = z.fin.money; if (g.build(3, 'corner') || z.fin.money !== m8 - ck.cost) fail.push('Game Corner build wrong'); else GC.built++; } }
-        if (g.corners().length && z.season >= 3 && Math.random() < 0.2) { const a = g.corners()[0], ck = g.buildCheck(a.gi, 'corner'); if (!ck.why) { z.fin.money += ck.cost; if (g.build(a.gi, 'corner')) fail.push('Game Corner raise refused'); else GC.raised++; } }
+        if (g.corners().length && z.season >= 3 && Math.random() < 0.2) { const a = g.corners()[0], ck = g.buildCheck(a.gi, 'corner'); if (!ck.why && z.fin.money >= 0) { z.fin.money += ck.cost; const wc = g.build(a.gi, 'corner'); if (wc) fail.push('Game Corner raise refused: ' + wc); else GC.raised++; } }
         if (!g.lapsed() && Math.random() < 0.8) for (const a of g.corners()) { const i3 = (a.x.prize || []).findIndex(q => !q.sold); if (i3 < 0) { GC.none = (GC.none || 0) + 1; continue; } if (g.ranchRoom() <= 0) { GC.full = (GC.full || 0) + 1; if (!g.buyPrize(a.gi, i3)) fail.push('a Game Corner prize taken into a full ranch'); continue; }
           const q = a.x.prize[i3]; z.fin.money += q.price; const m9 = z.fin.money, n9 = z.ranch.mons.length;
           const err = g.buyPrize(a.gi, i3); if (err) fail.push('a Game Corner prize refused: ' + err);
@@ -677,18 +691,48 @@ for (let i = 0; i < N; i++) {
         if (g.bankAt() && z.season >= 3 && !BK.forcedRed && z.fin.money >= 0 && g.graceLeft() > 1) { BK.forcedRed++; BK.keep = z.fin.money; z.fin.money = -150000; if (g.lapsed()) fail.push('lapsed at once with the Bank grace'); }
         if (z.season >= 2 && Math.random() < 0.1) { const gi = [4, 5, 7][Math.floor(Math.random() * 3)], ck = g.buildCheck(gi, 'fanclub'); if (!ck.why) { z.fin.money += ck.cost; const m3 = z.fin.money, had = g.placeLv(gi, 'fanclub'); if (g.build(gi, 'fanclub') || z.fin.money !== m3 - ck.cost) fail.push('Fan Club build wrong'); else if (had) BK.fanRaised++; else BK.fanBuilt++; } }
         if (!g.buildCheck('seat', 'fanclub').why) fail.push('a Fan Club allowed at the seat');
+        // (0.72.0) build times: with instant builds off, a build is paid now, waits its weeks (the level unchanged, a second
+        // refused), and half comes back if it is called off; the utility buildings: a gate refused where it isn't met,
+        // built where it is (cost checked), and their effects checked on a level put in place for the check and taken out
+        if (z.season >= 2 && z.fin.money >= 0 && Math.random() < 0.3) { z.cfg.instantBuild = false;
+          const gi = [6, 1, 0].find(i2 => !g.buildCheck(i2, 'center').why || !g.buildCheck(i2, 'fanclub').why);
+          if (gi != null) { const k = !g.buildCheck(gi, 'center').why ? 'center' : 'fanclub', ck = g.buildCheck(gi, k); z.fin.money += ck.cost; const m0 = z.fin.money, lv0 = g.placeLv(gi, k);
+            if (!(ck.weeks >= 1)) fail.push('a build with no weeks to wait'); if (g.build(gi, k)) fail.push('a timed build refused');
+            else { UT.timed++; const q = g.pendingAt(gi, k); if (!q || q.done !== z.turn + ck.weeks || g.placeLv(gi, k) !== lv0 || z.fin.money !== m0 - ck.cost) fail.push('a timed build booked wrong'); else UT.timedOk++;
+              if (!g.buildCheck(gi, k).why) fail.push('a second build of one building allowed'); else UT.refusedTwice++;
+              if (Math.random() < 0.4) { const m1 = z.fin.money; if (g.cancelBuild(gi, k) || g.pendingAt(gi, k) || z.fin.money !== m1 + Math.round(ck.cost * g.SELL_SHARE)) fail.push('a build called off wrong'); else UT.cancelled++; } } }
+          z.cfg.instantBuild = true; }
+        if (z.season >= 2 && Math.random() < 0.2) for (const k of ['plant', 'wind', 'yard', 'quarry']) { const gi = [0, 1, 6][Math.floor(Math.random() * 3)], /* away from the gyms the other steps use */ why = g.utilWhy(gi, k), ck = g.buildCheck(gi, k);
+          if (why && !ck.why && !g.placeLv(gi, k)) fail.push(k + ' allowed without its gate'); else if (why && !g.placeLv(gi, k)) UT.gateRefused++;
+          if (!ck.why) { z.fin.money += ck.cost; const m0 = z.fin.money; if (g.build(gi, k) || z.fin.money !== m0 - ck.cost) fail.push(k + ' build wrong'); else UT.built++; } }
+        if (z.season >= 2 && Math.random() < 0.15) { const gi = [0, 1, 6][Math.floor(Math.random() * 3)], c = z.cities[z.gyms[gi].city], b = g.cityB(c), lap = g.lapsed();
+          const had = ['plant', 'wind', 'yard', 'quarry'].some(k => b.some(x => x.k === k)) || (z.fin.bq || []).length || lap;
+          if (!had) { const cost = b.reduce((a, x) => a + g.builtCost(x), 0), calm = g.windCalm(c);
+            b.push({ k: 'plant', lv: 2 }, { k: 'wind', lv: 3 }); const cut = Math.min(0.5, 0.25 + 7 * 0.04 * (calm ? 0.5 : 1)), want = Math.round(cost * cut * g.UPKEEP / 48);
+            if (g.citySaved(c) !== want) fail.push('upkeep saved wrong ' + g.citySaved(c) + ' vs ' + want); else UT.saverChecks++;
+            b.splice(b.length - 2, 2); b.push({ k: 'quarry', lv: 1 });
+            const ck = g.buildCheck(gi, 'hotel'); if (!ck.why && !ck.restore && ck.cost !== Math.round(g.upCost('hotel', g.placeLv(gi, 'hotel')) * 0.9)) fail.push('the Quarry discount wrong'); else UT.quarryChecks++;
+            b.pop(); const ld = g.T(z.gyms[gi].leader), ty = ld ? g.specTypes(ld) : [];
+            b.push({ k: 'plant', lv: 3 }, { k: 'wind', lv: 3 }, { k: 'quarry', lv: 3 }); const u = g.utilBattle(gi, true), e = ty.includes('Electric'), q = ty.includes('Rock') || ty.includes('Ground');
+            const wantF = e && q ? (ty[0] === 'Electric' ? 'eterr' : 'sand') : e ? 'eterr' : q ? 'sand' : null;
+            if ((u.field ? u.field.key : null) !== wantF || (u.tail || 0) !== (ty.includes('Flying') ? g.TAILWIND_TURNS : 0) || (u.field && u.field.w && u.field.t)) fail.push('utility battle effects wrong for ' + ty.join('/') + ' ' + JSON.stringify(u)); else { UT.fieldSeen += u.field ? 1 : 0; UT.tailSeen += u.tail ? 1 : 0; }
+            if (!g.utilBattle(gi, false).field !== true) fail.push('a utility field where the Institute set one');
+            b.splice(b.length - 3, 3); b.push({ k: 'yard', lv: 2 });
+            if (g.restoreShare() !== 0.23 || g.decayWeeks() !== Math.round(24 / 0.7) || g.yardLv() !== 2) fail.push('the Construction Yard effects wrong'); else UT.yardChecks++;
+            z.cfg.instantBuild = false; if (g.buildWeeks('center', 1, false) !== 2 || g.buildWeeks('hotel', 3, false) !== 6 || g.buildWeeks('hotel', 3, true) !== 3) fail.push('Yard build weeks wrong ' + [g.buildWeeks('center', 1, false), g.buildWeeks('hotel', 3, false), g.buildWeeks('hotel', 3, true)]); z.cfg.instantBuild = true;
+            b.pop(); } }
         { const a = g.airportAt(); if (a && a.routes.length && Math.random() < 0.3) { const to = [...Array(g.nRegionsBuilt()).keys()].find(r => r !== z.region && !a.routes.includes(r)), m6 = z.fin.money; if (to != null) { const w6 = g.setAirRoute(0, to); if (!w6) { CB3.routes++; if (z.fin.money !== m6 - g.AIR_ROUTE || g.airRoutes()[0] !== to) fail.push('Airport route change wrong'); if (!g.laneSet().size && g.homeSet(z.region)) fail.push('an Airport route brings no Pokémon'); } else if (m6 >= g.AIR_ROUTE) fail.push('route change refused: ' + w6); } if (!g.setAirRoute(0, z.region)) fail.push('an Airport route home allowed'); } }
         { const ks = g.shelfItems().filter(k => g.ITEMS[k].tier >= 2); if (ks.length) { const k = rnd(ks), pr = g.itemPrice(k), m3 = z.fin.money, n0 = g.bagOf()[k] || 0, w3 = g.buyItem(k); if (!w3) { CB2.items++; if (z.fin.money !== m3 - pr || g.bagOf()[k] !== n0 + 1) fail.push('item purchase wrong'); } else CB2.itemRefused++; }
           if (!g.storeFloors() && !g.buyItem('leftovers')) fail.push('an item bought with no Store'); } }
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
       else if (r < 0.85) { const t = g.staffIds().map(g.T).find(x => x && g.canRaise(x)); if (t && !g.giveRaise(t.id)) money.raises++; }
       else if (r < 0.9) { const free = g.myPlaces().filter(p => p.none); if (free.length && !g.moveGym(rnd([0, 1, 2, 3, 4, 5, 6, 7]), rnd(free).c.id)) money.moved++; }
-      else if (r < 0.95) { const x = g.topLevels(); if (x.length) { const b = rnd(x), v = g.sellValue(b.where, b.k), keep = z.fin.money, inRed = Math.random() < 0.4; if (inRed) z.fin.money = -1000; const m0 = z.fin.money, e0 = g.estateCost(); if (g.sellBuilding(b.where, b.k)) fail.push('sellBuilding refused'); else { red.sold++; if (z.fin.money !== m0 + v || g.estateCost() !== e0 - b.cost || v !== Math.round(b.cost * g.SELL_SHARE)) fail.push('sale amounts wrong');
+      else if (r < 0.95) { const x = g.topLevels(); if (x.length) { const b = rnd(x), v = g.sellValue(b.where, b.k), keep = z.fin.money, inRed = Math.random() < 0.4; if (inRed) z.fin.money = -1000; const m0 = z.fin.money, e0 = g.estateCost(), lap0 = g.lapsed(); /* (0.72.0) a Bank's grace keeps it from lapsing: no ruin then */ if (g.sellBuilding(b.where, b.k)) fail.push('sellBuilding refused'); else { red.sold++; if (z.fin.money !== m0 + v || g.estateCost() !== e0 - b.cost || v !== Math.round(b.cost * g.SELL_SHARE)) fail.push('sale amounts wrong');
         // (0.19.0) the level sold can be restored at RESTORE_SHARE of its price
         const ck = g.buildCheck(b.where, b.k);
         // only a sale made in the red leaves a ruin
         if (!ck.why && m0 >= 0 && ck.restore && g.ruinsAt(b.where, b.k) === 0) fail.push('a restore price with no ruin');
-        if (!ck.why && m0 < 0 && (!ck.restore || ck.cost !== Math.round(g.upCost(b.k, ck.lv - 1) * g.RESTORE_SHARE))) fail.push('no restore price after a sale in the red');
+        if (!ck.why && m0 < 0 && lap0 && (!ck.restore || ck.cost !== Math.round(g.upCost(b.k, ck.lv - 1) * g.restoreShare() * (b.k === 'quarry' ? 1 : 1 - g.quarryCut(b.where))))) fail.push('no restore price after a sale in the red ' + JSON.stringify({ k: b.k, ck, lapsed: g.lapsed(), grace: g.graceOn(), share: g.restoreShare(), q: g.quarryCut(b.where), up: g.upCost(b.k, ck.lv - 1) })); // (0.72.0) a Yard's share, a Quarry's discount
         if (inRed) z.fin.money = keep + v; // back to what it was, plus the sale
         if (!ck.why && ck.restore && Math.random() < 0.5 && z.fin.money >= ck.cost) { const m1 = z.fin.money, e1 = g.estateCost(); if (g.build(b.where, b.k)) fail.push('restore refused'); else { red.restored++; if (z.fin.money !== m1 - ck.cost || g.estateCost() !== e1 + b.cost ) fail.push('restore amounts wrong'); } } } } }
     });
@@ -943,6 +987,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 // (0.69.0) the Weather Institute
 { const n = g.eachLeague(() => { const a = g.wxAt(); return a ? 'L' + a.x.lv + (S().fin.wx ? ' ' + Object.keys(S().fin.wx.g || {}).length + 'g' + (S().fin.wx.seat ? '+s' : '') : '') : '-'; }).join('/');
   console.log('weather institute', JSON.stringify(WX), 'log', JSON.stringify(g.WX_LOG), '| by League', n); }
+// (0.72.0) build times and the utility buildings
+{ const n = g.eachLeague(() => ['plant', 'wind', 'yard', 'quarry'].map(k => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + ((p.b.find(x => x.k === k) || {}).lv || 0), 0)).join('') + 'q' + (S().fin && S().fin.bq ? S().fin.bq.length : 0)).join('/');
+  console.log('utility buildings', JSON.stringify(UT), 'log', JSON.stringify(g.UTIL_LOG), '| by League (plant wind yard quarry levels, builds under way)', n); }
 // (0.71.0) the Bank and the Fan Club
 { const n = g.eachLeague(() => { const a = g.bankAt(), c = g.fanClubs(); return (a ? 'B' + a.x.lv : '-') + (g.loanOwed() ? '$' : '') + '/' + c.length + 'fc ' + c.reduce((s2, y) => s2 + (y.x.fans || 0), 0); }).join(' | ');
   console.log('bank and fan club', JSON.stringify(BK), 'bank log', JSON.stringify(g.BANK_LOG), 'fan log', JSON.stringify(g.FAN_LOG), '| by League', n); }

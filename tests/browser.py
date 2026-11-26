@@ -139,6 +139,7 @@ async def run(path):
           if (/Defending/.test((document.querySelector('#main') || {}).textContent || '') || eachLeague(() => dn(T(S.champion))).some(x => /Defending/.test(x))) log.push('FAIL a Champion is still titled Defending');
           log.push('started: ' + S.lgName + ', ' + S.challengers.length + ' challengers, cities ' + Object.values(S.cities).map(c => c.name).join(' '));
           // 0.21.0: three Leagues, each in its own region
+          S.cfg.instantBuild = true; // 0.72.0: your builds finish at once for the scripted steps (the build-times step turns it off)
           if (S.cfg.pace !== 12 || S.cfg.newRegions !== true) log.push('FAIL the world did not keep the growth pace and new regions: ' + S.cfg.pace + ' ' + S.cfg.newRegions);
           { const rg = eachLeague(() => S.region), nm = eachLeague(() => S.lgName); if (nLeagues() !== 3 || rg[0] !== 2 || rg[2] !== 2 || rg[1] === 2 || nm[2] !== 'Sky Pillar League' || nm[0] !== 'Browser Home Cup' || nm[1] !== 'Browser Rival Cup') log.push('FAIL the world did not start with the placed rival beside the player: ' + rg + ' ' + nm); }
           // 0.41.0: the regional field: the Circuit page shows the whole region's field (both Hoenn Leagues), the League
@@ -310,6 +311,13 @@ async def run(path):
                     if (!sel) log.push('FAIL no Berry Farm plot picker'); else { sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); const f = inLeague(0, () => berryFarms())[0]; if (!f || f.feed !== 1) log.push('FAIL setting Berry Farm plots'); else log.push('set Berry Farm plots'); }
                     if (!inLeague(0, () => buildCheck('seat', 'hotel')).why) log.push('FAIL a Hotel allowed at the seat');
                     inLeague(0, () => { sellBuilding(1, 'hotel'); sellBuilding(2, 'berry'); }); S.fin.money = 200000; } // their slots back for the later steps
+                  // 0.72.0: build times: with instant builds off, a Hotel's button shows its weeks, the build waits (level unchanged), shows on the page, and calling it off gives half back
+                  { S.cfg.instantBuild = false; S.fin.money = 200000; go('cities'); const hb = document.querySelector('[data-act=build][data-w="1"][data-k=hotel]'), m5 = S.fin.money;
+                    if (!hb) log.push('FAIL no Hotel to build for the build-times step'); else { if (!/wk/.test(hb.textContent)) log.push('FAIL no build time on a build button'); hb.click(); go('cities');
+                      const cb = document.querySelector('[data-act=cancelbuild][data-w="1"][data-k=hotel]');
+                      if (inLeague(0, () => placeLv(1, 'hotel')) !== 0 || !cb || S.fin.money !== m5 - 20000 || !/Building/.test(document.querySelector('#main').textContent)) log.push('FAIL a timed build not waiting');
+                      else { cb.click(); if (S.fin.money !== m5 - 10000 || inLeague(0, () => pendingAt(1, 'hotel'))) log.push('FAIL calling a build off'); else log.push('a timed build waited and was called off'); } }
+                    S.cfg.instantBuild = true; S.fin.money = 200000; }
                   // 0.64.0: a Trainer's School, a Move Tutor at the seat, a Research Lab and a Department Store from the Cities page; an item bought into the bag
                   { S.fin.money = 300000; const bld = (w, k, cost, lv) => { go('cities'); const b = document.querySelector(`[data-act=build][data-w="${w}"][data-k=${k}]`), m0 = S.fin.money; if (!b) { log.push('FAIL no ' + k + ' to build'); return; } b.click(); if (inLeague(0, () => placeLv(w, k)) !== lv || S.fin.money !== m0 - cost) log.push('FAIL building a ' + k); else log.push('built a ' + k); };
                     bld(3, 'school', 15000, 1); bld('seat', 'tutor', 20000, 1); bld(4, 'lab', 25000, 1); bld(5, 'store', 15000, 1); bld(5, 'store', 30000, 2);

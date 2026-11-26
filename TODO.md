@@ -23,6 +23,15 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **Not measured:** whether the grace speeds crash recovery (`econ.js` doesn't build Banks for L1 on purpose); whether Fan Clubs make control change hands more often.
 - **Upkeep is still paid during the grace** (the buildings work, so they cost), which deepens the debt a little; the design didn't say either way.
 
+## Build times and the utility buildings (0.72.0)
+- **Every number is a first guess:** build weeks 2/4/8/12 (add-ons 2, restores half), the Power Plant's 15/25/35% and prices, the Wind Farm's 4% a turbine, 1 calm week in 8 and prices, the 50% cap, the Yard's 20–65% time, 26–17% restore and 15–60% slower decay and prices, the Quarry's 10/20/30% and prices, the 3-turn tailwind.
+- **The upkeep cuts are small at 5% upkeep a year:** a level 1 Power Plant saves 0.75% of its city's buildings a year, so its 25,000 pays back in about 17 years in a city with 200,000 built. Rivals (payback 3 years) almost never build Plants or Wind Farms (none in `3 1 12 1`). Decide with the owner: cheaper prices, bigger cuts, or a longer payback for rivals.
+- **Rivals rarely build the Quarry** (needs ruins or 2+ free slots) and the Yard only after the red or as money-makers (one in `3 1 12 1`).
+- **Builds under way don't count in wealth** (`estateCost`, the League table, `econ.js`) until they finish; the money is simply gone for those weeks.
+- **The Construction Yard keeps working in the red** (the design said "among the last to lapse"; every building lapses at once, so it was built as working through the red and lost just before the Bank).
+- **Not measured:** build times' effect on the economy and the crash recovery; the tailwind and the level 3 fields in real battles (no League reached them in the sims; checked on levels put in place by the hand-placed sim and in a scratch battle).
+- **The Dam (Water)** was tabled by the owner until more types have buildings.
+
 ## City buildings part 3 (0.65.0)
 - **Every number is a first guess:** Airport costs, fee, landing income, visitors a route and the renown boost, the movers' pull (`AIR_GAIN`, `AIR_DRAW`); Contest prize grades, gate and crowd; Pier and Fossil Lab prices and cadence; fossil weights; rivals' keep grades.
 - **Rivals rarely build the new four** in 8 to 12 year sims (Airports need a City, Piers a port, a Water gym or a Fisherman, Fossil Labs a level 2 Lab); look again with the economy retune.

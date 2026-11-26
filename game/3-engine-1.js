@@ -1348,6 +1348,8 @@ function battle(tA, tB, stakes, title, opts = {}) {
   if (opts.crew) sides[1].mons.forEach(b => { if (!opts.crew.types || b.types.some(ty => opts.crew.types.includes(ty))) b.tmp = (b.tmp || 1) * opts.crew.mul; });
   if (opts.video) sides[1].smart += opts.video;
   if (opts.warm) sides[1].mons.slice(0, opts.warm).forEach(b => { const k = b.spa > b.atk ? 'spa' : 'atk'; b.st[k] = Math.min(6, b.st[k] + 1); });
+  // (0.72.0) a Wind Farm's tailwind for the home side (side 1): double Speed for its first opts.tail turns. Kept here, small.
+  sides[0].tail = 0; sides[1].tail = opts.tail || 0;
   // a legendary encounter: its single Pokémon has raid-sized HP, and starts with whatever damage earlier attempts left
   if (opts.boss) { const b = sides[1].mons[0]; b.max = Math.round(b.max * opts.boss.hpMul); b.hp = Math.max(1, Math.round(b.max * opts.boss.hpFrac));
     // v177: the challenger's luck on the day swings their damage hard, and how hard the legendary hits back a little
@@ -1365,6 +1367,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   if (fld) { weather = fld.w ? (fld.w === 'clear' ? null : fld.w) : regionWeather(); if (fld.t || fld.w === 'clear') ev.push({ k: 'note', s: -1, txt: `${fld.name} ${fld.lock ? 'holds' : 'lies over'} the field.`, cls: 'weather' }); }
   if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${fld && fld.w ? (fld.lock ? 'holds the field' : 'fills the field') : stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
   if (opts.ruleNote) ev.push({ k: 'note', s: -1, txt: opts.ruleNote, cls: 'weather' });
+  if (opts.tail) ev.push({ k: 'note', s: -1, txt: `A tailwind blows behind ${dn(sides[1].t)}'s team.`, cls: 'weather' }); // (0.72.0)
   const note = (si, i, txt, extra = {}) => ev.push(Object.assign({ k: 'note', s: si, i, txt }, extra));
   if (opts.boss && opts.boss.luck) { const x = opts.boss.luck; ev.push({ k: 'note', s: -1, cls: 'stat', txt: `${dn(tA)}'s team is having a ${luckWord(x)} day (damage x${x.toFixed(2)}).` }); }
   // terrain abilities power up the whole team from the start
@@ -1415,6 +1418,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
   function speedOf(m) {
     let v = m.spe * stageMul(m.st.spe) * (m.status === 'par' ? 0.5 : 1) * (m.pBoost === 'spe' ? 1.5 : 1) * (m.slowStart > 0 ? 0.5 : 1);
     if (m.ab === 'Heavy Metal') v *= 0.9;
+    if (m.sd && m.sd.tail > 0) v *= 2; // (0.72.0) a tailwind
     if (m.ab === 'Surge Surfer' && m.sd && m.sd.terrain && m.sd.terrain.Electric) v *= 2;
     if ((m.ab === 'Swift Swim' && weather === 'rain') || (m.ab === 'Chlorophyll' && weather === 'sun') || (m.ab === 'Sand Rush' && weather === 'sand') || (m.ab === 'Slush Rush' && weather === 'snow')) v *= 2;
     return v;
@@ -1826,6 +1830,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
       if (m.hp > 0 && m.slowStart > 0 && --m.slowStart === 0) note(si, i, `{0} finally got its act together!`, { cls: 'ab' });
       if (m.hp <= 0 && !fallen(si)) { winner = 1 - si; break; }
     }
+    sides.forEach(sd => { if (sd.tail > 0 && --sd.tail === 0) ev.push({ k: 'note', s: -1, txt: 'The tailwind died down.', cls: 'weather' }); }); // (0.72.0)
   }
   if (winner < 0) winner = sides[0].mons.reduce((a, m) => a + m.hp / m.max, 0) >= sides[1].mons.reduce((a, m) => a + m.hp / m.max, 0) ? 0 : 1;
   ev.push({ k: 'end', w: winner });
