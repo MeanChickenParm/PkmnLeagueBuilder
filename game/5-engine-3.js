@@ -866,6 +866,9 @@ function circuitValue(t) {
 }
 // put a trainer on League i's circuit
 function joinCircuit(t, i) {
+  // (0.65.0) staff talks end when their trainer goes back to the circuit (a beaten seat holder, someone replaced or let go
+  // later in the week than the talks' own check); a star's talks are a challenger's and stay
+  if (t.talk != null && STAFF_ROLES.includes(t.role)) { const k = talkOf(t); if (k && k.kind !== 'star') talkGone(k, `${t.name} left their post before the deadline.`); }
   t.role = 'challenger'; t.lg = i;
   S.freeAgents = S.freeAgents.filter(x => x !== t.id);
   inLeague(i, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); if (!t.home) setHome(t); }); // (0.40.0) a hometown if they have none
@@ -1281,6 +1284,7 @@ function shiftLeague(t, to) {
   t.lg = to;
   inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
   regionMove(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.27.0) at most 3 foreign Pokémon
+  airLand(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.65.0) landing at an Airport routed from where they left
   (t.lgMoves = t.lgMoves || []).push({ season: S.season, from, to });
 }
 // ---------- Grand Slam: Champion (at a season's end) of every League in the world ----------
@@ -1706,9 +1710,9 @@ function expirePaidBans() {
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (the home edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'sanct'], ['gyms', 'center'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -1789,7 +1793,7 @@ function aimSpend(aim) {
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
   // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
-  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1 };
+  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1 };
   const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
     const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' ? busy : S.gyms.map((_, i) => i).reverse();

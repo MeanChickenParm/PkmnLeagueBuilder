@@ -321,6 +321,22 @@ async def run(path):
                     const free = inLeague(0, () => staffIds().map(T).some(t => t && t.team.some(m => m.item && ITEMS[m.item].tier >= 2 && m.bagLg !== 0)));
                     if (free) log.push('FAIL a free tier 2-3 item on your staff');
                     inLeague(0, () => { sellBuilding(3, 'school'); sellBuilding('seat', 'tutor'); sellBuilding(4, 'lab'); sellBuilding(5, 'store'); sellBuilding(5, 'store'); }); S.fin.money = 200000; }
+                  // 0.65.0: an Airport in a gym city made a City (a route changed from its picker), a Research Lab to level 2 then a
+                  // Fossil Lab beside it, the keep grade set, a Contest refused without its condition
+                  { S.fin.money = 900000; const bld = (w, k, cost, lv) => { go('cities'); const b = document.querySelector(`[data-act=build][data-w="${w}"][data-k=${k}]`), m0 = S.fin.money; if (!b) { log.push('FAIL no ' + k + ' to build'); return false; } b.click(); if (inLeague(0, () => placeLv(w, k)) !== lv || S.fin.money !== m0 - cost) { log.push('FAIL building a ' + k); return false; } log.push('built a ' + k); return true; };
+                    if (!inLeague(0, () => buildCheck(6, 'airport')).why) log.push('FAIL an Airport allowed in a Town');
+                    { const c = S.cities[S.gyms[6].city]; c.spent = c.spent || {}; c.spent[0] = (c.spent[0] || 0) + 100000; }
+                    if (bld(6, 'airport', 150000, 1)) { const a = inLeague(0, () => airportAt(0)); if (!a || a.routes.length !== 1) log.push('FAIL a new Airport without a route');
+                      go('cities'); const sel = document.querySelector('select.airsel'), m1 = S.fin.money, to = [...sel.options].map(o => +o.value).find(r => r !== a.routes[0]);
+                      if (!sel) log.push('FAIL no Airport route picker'); else { sel.value = String(to); sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => airRoutes())[0] !== to || S.fin.money !== m1 - 25000) log.push('FAIL changing the Airport route'); else log.push('changed the Airport route'); }
+                      if (!inLeague(0, () => buildCheck(7, 'airport')).why) log.push('FAIL a second Airport allowed'); }
+                    bld(4, 'lab', 25000, 1); if (!inLeague(0, () => buildCheck(4, 'fossil')).why) log.push('FAIL a Fossil Lab allowed beside a level 1 Lab');
+                    bld(4, 'lab', 50000, 2); bld(4, 'fossil', 30000, 1);
+                    go('cities'); const kg = document.querySelector('select.keepgsel');
+                    if (!kg) log.push('FAIL no keep grade picker'); else { kg.value = '3'; kg.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => keepGrade()) !== 3) log.push('FAIL setting the keep grade'); else log.push('set the keep grade'); }
+                    const nb = [0, 1, 2, 3, 4, 5, 6, 7].find(i => inLeague(0, () => condWhy(i, 'contest'))); if (nb != null && !/Bug/.test(inLeague(0, () => buildCheck(nb, 'contest')).why || '')) log.push('FAIL a Contest allowed without a Bug gym or class');
+                    if (!/Fossil Lab/.test(document.querySelector('#main').textContent)) log.push('FAIL the Fossil Lab is not on the Cities page');
+                    inLeague(0, () => { sellBuilding(6, 'airport'); sellBuilding(4, 'fossil'); sellBuilding(4, 'lab'); sellBuilding(4, 'lab'); }); S.fin.money = 200000; }
                   // 0.13.0: money and cities. Build a scouting office at the seat (0.63.0: attractions are gone), ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=scout]');

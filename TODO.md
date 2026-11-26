@@ -13,6 +13,11 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **The multi-year sim managing your League** doesn't set your Berry Farm plots (it leaves your settings alone).
 - **The Shrine, the Poffin Kitchen (Berry Farm level 3), landmarks and shared buildings** are still to design; the Sanctuary is unchanged.
 
+## City buildings part 3 (0.65.0)
+- **Every number is a first guess:** Airport costs, fee, landing income, visitors a route and the renown boost, the movers' pull (`AIR_GAIN`, `AIR_DRAW`); Contest prize grades, gate and crowd; Pier and Fossil Lab prices and cadence; fossil weights; rivals' keep grades.
+- **Rivals rarely build the new four** in 8 to 12 year sims (Airports need a City, Piers a port, a Water gym or a Fisherman, Fossil Labs a level 2 Lab); look again with the economy retune.
+- **Not built:** an Airport's yearly renown in its routed regions (an open idea); rivals choosing Airport routes (they keep the default neighbours); the Lake of Rage and National Park landmarks (landmarks round); custom fossil species for custom regions.
+
 ## Left over from the seed (0.1.0)
 - **Unused styles.** `game/1-page.html` still has the CSS for the screens that were cut (office, party, draft, ranch, trade desk, tournament, villain banner, team marks). It does no harm; prune it when the new screens are built and it is clear what they reuse.
 - **Traits and temperaments that lost their effect.** The Mentor and Hero traits were removed (they acted on teammates and villains). The Naive, Quiet and Docile natures have no temperament now (theirs were about trades and the ranch), and Lonely, Adamant, Relaxed and Naughty lost half of theirs. To revisit when staff and gym trainers exist.

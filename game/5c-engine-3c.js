@@ -268,6 +268,7 @@ function buildings2Week(lap) {
   if (!S.fin) return;
   if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
   schoolWeek(); tutorWeek(); labWeek();
+  buildings3Week(lap); // (0.65.0) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
   // staff equipped before the League kept books (a League founded by hand) or by another path re-equip under the bag rule
   if (bagRule()) { const lg = S.lg || 0; for (const id of staffIds()) { const t = T(id); if (t && t.team.some(m => m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg !== lg)) { eliteItems(t); ITEM_LOG.fixed = (ITEM_LOG.fixed || 0) + 1; } } }
 }
@@ -275,3 +276,207 @@ function buildings2Week(lap) {
 function buildings2World() { shoppersWeek(); bagSync(); }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { SCHOOL_PAY, SCHOOL_LOG, schoolLv, ownSchool, ownYouth, schoolPay, schoolRank, schoolGrads, graduate, isProfessor, TUTOR_LOG, TUTOR_SOONER, tutorAt, tutorCov, teach, LAB_LOG, labLv, labBuilt, labScout, labFloor, labTrips, labHunt, labCond, LAB_GRANT, ITEM_LOG, STORE_SHELF, ITEM_PRICE, shelfOf, bagRule, itemFreeOk, storeFloors, storeBuilt, bagOf, itemPrice, shelfItems, bagUsed, bagFree, buyItem, equipSenior, storeIncome, SHOP_SPEND_AT, aimItems });
+
+// ================= CITY BUILDINGS, PART 3 (0.65.0; design docs cities-and-economy.md, design-update-city-buildings.md, design-update-buildings-part3.md) =================
+// Reach and catching: the Airport, the Bug Catching Contest, the Fishing Pier and the Fossil Lab, and the keep-grade
+// rule the three catching buildings share. The UPGRADES entries are in 5b-engine-3b. All numbers provisional.
+
+// ---------- conditions for the conditioned buildings ----------
+// A Bug Catching Contest needs a Bug gym in that city or a Bug Catcher or Bug Maniac on the staff; a Fishing Pier a port
+// (not a railway), a Water gym there or a Fisherman on the staff; a Fossil Lab a Research Lab at level 2 there. A lost
+// condition keeps the building working, but it can't be raised (buildCheck).
+const CONTEST_CLASSES = ['Bug Catcher', 'Bug Maniac'], PIER_CLASSES = ['Fisherman'];
+const classOn = cls => staffIds().some(id => { const t = T(id); return t && !t.acting && cls.includes(t.cls); });
+const gymTyped = (gi, ty) => { const ld = T((S.gyms[gi] || {}).leader); return !!ld && specTypes(ld).includes(ty); };
+function condWhy(gi, k) {
+  const g = S.gyms[gi], c = g && S.cities[g.city]; if (!c) return null;
+  if (k === 'contest' && !gymTyped(gi, 'Bug') && !classOn(CONTEST_CLASSES)) return 'Needs a Bug gym here, or a Bug Catcher or Bug Maniac on your staff.';
+  if (k === 'pier' && portKind(c) !== 'port' && !gymTyped(gi, 'Water') && !classOn(PIER_CLASSES)) return 'Needs a port city, a Water gym here, or a Fisherman on your staff.';
+  if (k === 'fossil' && placeLv(gi, 'lab') < 2) return 'Needs your Research Lab here at level 2.';
+  return null;
+}
+
+// ---------- the keep-grade rule ----------
+// Finds from the Contest, the Pier and the Fossil Lab below the League's keep grade, and any for a full ranch, are sold
+// back at once (SELL_BACK of their value); both go in the ranch log. Rivals keep by aim (provisional).
+const AI_KEEPG = { wall: 2, star: 3, money: 1 };
+const FIND_LOG = { contest: 0, pier: 0, fossil: 0, kept: 0, sold: 0, full: 0, gate: 0 };
+function keepGrade() { const f = S.fin; if (!f) return 1; if (f.keepG) return f.keepG; return (f.aim && AI_KEEPG[f.aim]) || 1; }
+function setKeepGrade(n) { if (!S.fin) return 'Money is off.'; n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.'; S.fin.keepG = n; return null; }
+// a find e from building k ('contest', 'pier', 'fossil'): into the ranch, or sold. Returns 'kept' or 'sold'.
+function autoFind(e, k, text) {
+  const wd = entryWords(e), low = e.g < keepGrade();
+  FIND_LOG[k]++;
+  if (!low && ranchAdd(e)) { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
+  const v = Math.round(entryValue(e) * SELL_BACK);
+  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
+  FIND_LOG.sold++; if (!low) FIND_LOG.full++;
+  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below your keep grade' : 'the ranch was full' });
+  return 'sold';
+}
+const findNews = (k, wd, res) => { if (playerLeague()) news(res === 'kept' ? `${wd} came to the ranch from ${k}.` : `${wd} came from ${k} and was sold.`, 'league'); };
+
+// ---------- the Bug Catching Contest ----------
+// Every CONTEST_WEEKS (staggered by gym): 1 to 3 Bug finds by level from the region's Bug lines (migrants in season
+// too), the first (the prize) at least CONTEST_PRIZE, all at the wild condition odds × CONTEST_COND; a crowd of
+// CONTEST_VISIT visitors a level that week (they spend like any visitor) and a gate of CONTEST_GATE a level.
+const CONTEST_WEEKS = 8, CONTEST_PRIZE = [3, 3, 4], CONTEST_COND = 1.5, CONTEST_VISIT = 8, CONTEST_GATE = 600;
+const contestDue = gi => (S.week + gi * 3) % CONTEST_WEEKS === 0;
+const typedLines = ty => hereLines().filter(b => SP[b] && ranchable(b) && lineTypes(b).has(ty));
+function contestWeek() {
+  S.gyms.forEach((g, gi) => {
+    const lv = placeLv(gi, 'contest'); if (!lv || !contestDue(gi)) return;
+    const pool = typedLines('Bug'), c = S.cities[g.city]; if (!pool.length || !c) return;
+    const sc = ranchScout() + labScout(), got = [];
+    for (let n = 0; n < lv; n++) {
+      const b = findSpecies(pool), e = newEntry(b, Math.max(n === 0 ? CONTEST_PRIZE[lv - 1] : 1, labFloor(), gradeRoll(sc)), 'contest');
+      const ks = condRoll(b, sc, CONTEST_COND); if (ks.length) condEntry(e, ks);
+      const wd = entryWords(e), res = autoFind(e, 'contest', `Bug Catching Contest in ${c.name}${n === 0 ? ' (the prize)' : ''}`);
+      got.push(res === 'kept' ? wd : `${wd} (sold)`);
+    }
+    const gate = CONTEST_GATE * lv; book(gate, 'contests'); FIND_LOG.gate += gate;
+    if (playerLeague()) news(`The Bug Catching Contest in ${c.name} brought ${got.join(', ')}.`, 'league');
+  });
+}
+
+// ---------- the Fishing Pier ----------
+// One Water find every PIER_WEEKS (staggered by gym). The region's Water lines (migrants in season too) by their final
+// form's strength in thirds: the Old Rod (level 1) the weakest third, the Good Rod adds the middle, the Super Rod the top.
+const PIER_WEEKS = 4;
+function rodLines(lv) {
+  const all = typedLines('Water').sort((a, b) => lineTop(a) - lineTop(b) || (a < b ? -1 : 1)), n = all.length;
+  return all.slice(0, lv >= 3 ? n : Math.max(1, Math.ceil(n * lv / 3)));
+}
+function pierWeek() {
+  S.gyms.forEach((g, gi) => {
+    const lv = placeLv(gi, 'pier'); if (!lv || (S.week + gi) % PIER_WEEKS !== 1) return;
+    const pool = rodLines(lv), c = S.cities[g.city]; if (!pool.length || !c) return;
+    const sc = ranchScout() + labScout(), b = findSpecies(pool), e = newEntry(b, Math.max(labFloor(), gradeRoll(sc)), 'pier');
+    const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
+    const wd = entryWords(e); findNews(`the Fishing Pier in ${c.name}`, wd, autoFind(e, 'pier', `Fishing Pier in ${c.name} (${['Old', 'Good', 'Super'][lv - 1]} Rod)`));
+  });
+}
+
+// ---------- the Fossil Lab ----------
+// A revival every FOSSIL_WEEKS by working level (its level, +1 with a Ruin Maniac on the staff, up to 4), at a grade no
+// lower than the working level. Any region's fossils (the owner's pick), the region's own (its home lines) FOSSIL_HOME
+// times as likely; a region with none of its own draws evenly. Fossils skip the regional lock here only.
+const FOSSIL_BASES = ['Omanyte', 'Kabuto', 'Aerodactyl', 'Lileep', 'Anorith', 'Cranidos', 'Shieldon', 'Tirtouga', 'Archen', 'Tyrunt', 'Amaura', 'Dracozolt', 'Arctozolt', 'Dracovish', 'Arctovish'];
+const FOSSIL_WEEKS = [12, 10, 8, 6], FOSSIL_HOME = 3, FOSSIL_MAX_EFF = 4;
+const fossilLines = () => FOSSIL_BASES.filter(b => SP[b] && ranchable(b));
+const fossilEff = lv => lv ? Math.min(FOSSIL_MAX_EFF, lv + (classOn(['Ruin Maniac']) ? 1 : 0)) : 0;
+function fossilPick() {
+  const ls = fossilLines(); if (!ls.length) return null;
+  const home = homeSet(S.region), w = ls.map(b => home && home.has(b) ? FOSSIL_HOME : 1);
+  let r = rand() * w.reduce((a, x) => a + x, 0);
+  for (let i = 0; i < ls.length; i++) { r -= w[i]; if (r <= 0) return ls[i]; }
+  return ls[ls.length - 1];
+}
+function fossilWeek() {
+  S.gyms.forEach((g, gi) => {
+    const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'fossil'); if (!x) return;
+    const eff = fossilEff(x.lv), wk = FOSSIL_WEEKS[eff - 1];
+    if (x.next == null || x.next > S.turn + wk) { x.next = S.turn + wk; return; }
+    if (S.turn < x.next) return;
+    x.next = S.turn + wk;
+    const b = fossilPick(); if (!b) return;
+    const sc = ranchScout() + labScout(), e = newEntry(b, Math.max(eff, labFloor(), gradeRoll(sc)), 'fossil');
+    const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
+    const wd = entryWords(e); findNews(`the Fossil Lab in ${c.name}`, wd, autoFind(e, 'fossil', `Fossil Lab in ${c.name} revived a fossil`));
+  });
+}
+
+// ---------- the Airport ----------
+// One a League, in a gym city of City size or more; x.routes on the building (one at level 1, two from level 2). Each
+// route works like a shipping lane (laneSet) and brings people: movers from that region lean toward the League
+// (airGain on the move, airDraw in their first regional draw) and land in the Airport city (t.land: their first
+// visitor-weeks there), and AIR_VISITS out-of-region visitor-weeks a month arrive there (× up to 2 with renown in that
+// region). AIR_WEEK a week to run, AIR_LAND for every arrival (movers and visitors), AIR_ROUTE to change a route. Level 3:
+// charters AIR_CHARTER cheaper and a week faster, and contenders win AIR_RENOWN more renown in other regions. In the red
+// it lapses: no routes, no arrivals, no fee.
+const AIR_WEEK = 1000, AIR_LAND = 150, AIR_ROUTE = 25000, AIR_VISITS = 4, AIR_GAIN = 0.3, AIR_DRAW = 1, AIR_LAND_WEEKS = 3;
+const AIR_CHARTER = 0.4, AIR_RENOWN = 1.25;
+const AIR_LOG = { movers: 0, visitors: 0, landed: 0, routes: 0, fees: 0, landing: 0 };
+const routeCount = lv => Math.min(2, lv || 0);
+// give an Airport (bound League) a route for each of its first two levels: neighbours first, then any other region
+function airFix(x) {
+  if (!x) return;
+  x.routes = (x.routes || []).filter(r => r !== S.region && r >= 0 && r < nRegionsBuilt());
+  const want = routeCount(x.lv), cands = (NEIGHBOURS[S.region] || []).concat(LEAGUE_SETS.map((_, r) => r)).filter(r => r !== S.region);
+  for (const r of cands) { if (x.routes.length >= want) break; if (!x.routes.includes(r)) x.routes.push(r); }
+}
+// League i's Airport: { gi, c, x, routes } (routes empty in the red), or null
+function airportAt(i = S.lg || 0) {
+  const L = lgObj(i); if (!L || !L.gyms || !L.fin) return null;
+  for (let gi = 0; gi < L.gyms.length; gi++) {
+    const c = S.cities[L.gyms[gi].city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'airport'); if (!x) continue;
+    const r0 = lgRegion(i), routes = lgLapsed(i) ? [] : (x.routes || []).slice(0, routeCount(x.lv)).filter(r => r !== r0 && r >= 0 && r < nRegionsBuilt());
+    return { gi, c, x, routes };
+  }
+  return null;
+}
+const airRoutes = () => { const a = airportAt(); return a ? a.routes : []; };
+const airportLv = (i = S.lg || 0) => { const a = airportAt(i); return a && !lgLapsed(i) ? a.x.lv : 0; };
+// change route k (0 or 1) of the bound League's Airport to region src
+function setAirRoute(k, src, lg = ME()) {
+  return inLeague(lg, () => {
+    const a = airportAt(); if (!a) return 'You have no Airport.';
+    airFix(a.x);
+    if (!(k >= 0 && k < routeCount(a.x.lv))) return 'No such route.';
+    if (src === S.region || !(src >= 0 && src < nRegionsBuilt())) return 'Choose another region.';
+    if (a.x.routes[k] === src) return null;
+    if (a.x.routes.includes(src)) return 'The other route already serves it.';
+    if (!canSpend(AIR_ROUTE)) return 'Not enough money.';
+    book(-AIR_ROUTE, 'airport', `The Airport in ${a.c.name} now flies to ${regionName(src)}`);
+    a.x.routes[k] = src; AIR_LOG.routes++;
+    return null;
+  });
+}
+const charterCost = () => Math.round(CHARTER_COST * (airportLv() >= 3 ? 1 - AIR_CHARTER : 1));
+const charterWeeks = () => CHARTER_WEEKS - (airportLv() >= 3 ? 1 : 0);
+// contenders sponsored by League lg win more renown in other regions with its Airport at level 3
+const airRenownMul = lg => lg != null && lgRegion(lg) !== S.region && airportLv(lg) >= 3 ? AIR_RENOWN : 1;
+// League i's routes from region r (0 or 1)
+const routedFrom = (i, r) => { const a = airportAt(i); return a && a.routes.includes(r) ? 1 : 0; };
+// a mover choosing a League (leagueMove): League i's Airport routed from the region they are in now
+function airGain(t, i) { const r = lgRegion(lgOf(t)); return r != null && lgRegion(i) !== r ? AIR_GAIN * routedFrom(i, r) : 0; }
+// their first draw in the new region (drawWeights): +AIR_DRAW for an Airport routed from where they came from
+function airDraw(i, t) { return t.flew != null ? AIR_DRAW * routedFrom(i, t.flew) : 0; }
+// a challenger moving from region fromR to toR (shiftLeague): an Airport in toR routed from fromR (theirs, else the
+// one with... the first) sees them land: they are visitors in its city for AIR_LAND_WEEKS, and its League's landing count
+function airLand(t, fromR, toR) {
+  if (fromR == null || toR == null || fromR === toR || !t || t.role !== 'challenger') return;
+  const lgs = regionLgs(toR).filter(j => routedFrom(j, fromR)); if (!lgs.length) return;
+  t.flew = fromR; AIR_LOG.movers++;
+  const j = lgs.includes(t.lg) ? t.lg : lgs[0], a = airportAt(j);
+  t.land = { c: a.c.id, until: S.turn + AIR_LAND_WEEKS };
+  const f = lgObj(j).fin; f.air = f.air || {}; f.air.land = (f.air.land || 0) + 1; airYear(f).m++;
+  AIR_LOG.landed++;
+}
+function airYear(f) { f.air = f.air || {}; if (!f.air.y || f.air.y.season !== S.season) f.air = Object.assign(f.air, { last: f.air.y || null, y: { season: S.season, m: 0, v: 0 } }); return f.air.y; }
+// League i's best renown in region r's cities
+function renownIn(i, r) { let best = 0; for (const c of Object.values(S.cities || {})) if (c.region === r) best = Math.max(best, renown(c, i)); return best; }
+// world-level, from visitorsWeek before the Hotels: Airport arrivals and the Contests' crowds this week
+function buildings3Visitors() {
+  for (let i = 0; i < nLeagues(); i++) {
+    const L = lgObj(i); if (!L || !L.fin || !L.gyms || lgLapsed(i)) continue;
+    const a = airportAt(i);
+    if (a && a.routes.length) {
+      let n = 0;
+      for (const r of a.routes) { const exp = AIR_VISITS / 4 * (1 + Math.min(1, renownIn(i, r) / 10)); n += Math.floor(exp) + (rand() < exp % 1 ? 1 : 0); }
+      if (n) { a.c.vw = (a.c.vw || 0) + n; a.c.vy = (a.c.vy || 0) + n; a.c.away = (a.c.away || 0) + n; const f = L.fin; f.air = f.air || {}; f.air.land = (f.air.land || 0) + n; airYear(f).v += n; AIR_LOG.visitors += n; }
+    }
+    L.gyms.forEach((g, gi) => { const c = S.cities[g.city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'contest'); if (!x) return;
+      if ((S.week + gi * 3) % CONTEST_WEEKS === 0) { const n = CONTEST_VISIT * x.lv; c.vw = (c.vw || 0) + n; c.vy = (c.vy || 0) + n; } });
+  }
+}
+// per League, from buildings2Week: the Airport's fee and landing income, then (not in the red) the catching buildings
+function buildings3Week(lap) {
+  const f = S.fin, a = airportAt();
+  if (a) { airFix(a.x); if (!lap) { book(-AIR_WEEK, 'airport'); AIR_LOG.fees += AIR_WEEK; const n = (f.air && f.air.land) || 0; if (n) { book(n * AIR_LAND, 'airport'); AIR_LOG.landing += n * AIR_LAND; } } }
+  if (f.air) f.air.land = 0;
+  if (lap || !ranchOn()) return;
+  contestWeek(); pierWeek(); fossilWeek();
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });

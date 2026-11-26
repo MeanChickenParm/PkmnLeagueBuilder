@@ -21,6 +21,11 @@ const UPGRADES = {
   tutor:   { name: 'Move Tutor',      text: 'In a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion). A tutored Pokémon learns all three of its line\'s coverage types, each 10 levels sooner, and keeps the lesson for good. Level 1 teaches 2 Pokémon a post, level 2 the whole team, level 3 puts a backup-type Pokémon\'s coverage on its trainer\'s threats first (needs a City).', max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   lab:     { name: 'Research Lab',    text: 'Gym cities only; your best Lab works League-wide (a Scientist on your staff counts as a level more). Catching trips +3 Scouting a level; finds of grade 2 or better from level 2 and 3 or better from level 4; one more trip out at once from level 3; condition hunts 5% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of 500 × its level for each new species of your region the ranch takes in. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [25000, 50000, 100000, 200000], tierAt: [0, 0, 1, 2] },
   store:   { name: 'Department Store', text: 'Gym cities only. Sells held items for your item bag (your best Store\'s floors, League-wide): the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (needs a City), 4F Life Orb, Choice Band and Choice Specs (needs a Metropolis); each floor above a shelf takes 10% off it. Your staff only hold tier 2 and 3 items from the bag. Shoppers (the city\'s visitors and residents) spend there too.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
+  // (0.65.0, city buildings part 3: 5c-engine-3c) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
+  airport: { name: 'Airport',         text: 'One per League, in a gym city that is at least a City. Each route works like a shipping lane (that region\'s Pokémon on your targeted trips and at your market) and also brings people: challengers moving out of a routed region lean toward your League and land here, and a few visitors from there arrive every month (more with your renown there), spending in this city. 1,000 a week to run plus 150 for every arrival; changing a route costs 25,000. Level 1 one route; level 2 a second (needs a Metropolis); level 3 makes charters 40% cheaper and a week faster, and your contenders win 25% more renown in other regions (needs a Megalopolis).', city: true, oneLg: true, max: 3, cost: [150000, 300000, 600000], tierAt: [1, 2, 3] },
+  contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
+  pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
+  fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
   // (0.20.0) only in a gym city that is a legendary site: earns while open, and adds prestige
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in income every week and a point of prestige a level each New Year while it is open (one of the site\'s legendaries is with your League).', site: true, income: [250, 500, 800] },
@@ -80,6 +85,10 @@ function buildCheck(where, k) {
   if (U.port && (where === 'seat' || !isPort(S.cities[(S.gyms[where] || {}).city]) || !homeSet(S.region))) return { why: 'Only in a port city (or Goldenrod, for its railway).' };
   if ((U.one || U.port) && !homeSet(S.region)) return { why: 'Every species is found everywhere (National Dex rules).' };
   if (U.one && (where === 'seat' || S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k)))) return { why: where === 'seat' ? 'Only in a gym city.' : 'Your League already has one.' };
+  // (0.65.0) one Airport a League; the conditioned buildings (Bug Catching Contest, Fishing Pier, Fossil Lab) need theirs
+  // to be built or raised
+  if (U.oneLg && where !== 'seat' && S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k))) return { why: 'Your League already has one.' };
+  if (U.cond && where !== 'seat') { const cw = condWhy(where, k); if (cw) return { why: cw }; }
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
@@ -98,7 +107,8 @@ function build(where, k, lg = ME()) {
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : { k, lv: 1 });
+    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
+    if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
@@ -256,8 +266,9 @@ function cityPrestige(i = S.lg || 0) {
 // a contender's badge at a gym of the bound League, and a title won here: renown for the sponsor
 function contenderRenown(t, gi) {
   const s = t && t.spon; if (!s || s.lg === (S.lg || 0)) return;
-  if (gi != null) addRenown(S.cities[S.gyms[gi].city], s.lg, RN_BADGE);
-  else for (const g of S.gyms) addRenown(S.cities[g.city], s.lg, RN_TITLE);
+  const mul = airRenownMul(s.lg); // (0.65.0) an Airport at level 3: 25% more in other regions
+  if (gi != null) addRenown(S.cities[S.gyms[gi].city], s.lg, RN_BADGE * mul);
+  else for (const g of S.gyms) addRenown(S.cities[g.city], s.lg, RN_TITLE * mul);
 }
 // (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
 // UPKEEP of that a year, so a large estate costs to hold
@@ -348,13 +359,15 @@ function visitorsWeek() {
     for (const id of L.challengers || []) {
       const t = T(id); if (!t || t.role !== 'challenger') continue;
       let c = null;
-      if (t.rest == null) { const gy = t.gymAt != null ? L.gyms[t.gymAt] : null; c = gy ? S.cities[gy.city] : null; }
+      if (t.land && t.land.until > S.turn && S.cities[t.land.c]) c = S.cities[t.land.c]; // (0.65.0) just landed at an Airport
+      else if (t.rest == null) { const gy = t.gymAt != null ? L.gyms[t.gymAt] : null; c = gy ? S.cities[gy.city] : null; }
       else if (t.rest > S.turn) c = centerCity(L, i, t);
       if (!c) continue;
       c.vw++; c.vy = (c.vy || 0) + 1;
       if (t.home && t.home.r !== c.region) c.away++;
     }
   }
+  buildings3Visitors(); // (0.65.0) Airport arrivals and Bug Catching Contest crowds
   // the Hotels: rooms × the control weight; guests go out in proportion, no Hotel past its rooms, the rest to those with room
   const m = gymMap();
   for (const c of cs) {
@@ -479,6 +492,11 @@ function aimWorth(where, k) {
   // raises its best rather than building a second
   if ((k === 'school' || k === 'store') && aimOf() === 'money' && placeLv(where, k) >= 2) return false;
   if (k === 'lab') return placeLv(where, k) === labBuilt();
+  // (0.65.0) part 3 by aim: a money-maker's Airport only in a Hotel city, its Pier only to the Old Rod; a wall-builder's
+  // Pier only at a Water gym; a star-maker's Fossil Lab (once a Lab there is at level 2) and Contest freely
+  if (k === 'airport' && aimOf() === 'money') return placeLv(where, 'hotel') > 0;
+  if (k === 'pier' && aimOf() === 'money') return placeLv(where, k) < 1;
+  if (k === 'pier' && aimOf() === 'wall') { const ld = T(S.gyms[where].leader); return !!ld && specTypes(ld).includes('Water'); }
   if (k === 'store') return placeLv(where, k) === storeBuilt();
   return true;
 }

@@ -1141,7 +1141,7 @@ function leagueMove(t, keen) {
   // (0.41.0) a challenger who isn't chasing a Triple Crown or the world won't move into a region whose field is already
   // MOVE_CROWD times its aim (tours and give-up moves would otherwise pile challengers into the most attractive region)
   const roomy = i => slamChaser(t) || globetrotter(t) || lgRegion(i) === lgRegion(from) || fieldCrowd(lgRegion(i)) < MOVE_CROWD;
-  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 + airGain(t, i) })).sort((a, b) => b.gain - a.gain)[0];
   if (!best) return false;
   const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
   if (!pulled && !keen) return false;
@@ -1601,6 +1601,7 @@ const retiresOnLosingPost = t => !comebackProtected(t) && !slamProtected(t) && t
 function returnToCircuit(t, why) {
   closePost(t);
   if (t.role === 'challenger') return;
+  if (t.talk != null) { const k = talkOf(t); if (k && k.kind !== 'star') talkGone(k, `${t.name} left their post before the deadline.`); } // (0.65.0) staff talks end with the post
   t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1;
   if (!S.challengers.includes(t.id)) S.challengers.push(t.id);
   news(`${t.name} ${why} and will return to the badge circuit.`, 'move', t.id);

@@ -341,7 +341,7 @@ function startTrip(kind, b, cond) {
     const o = obTrip(); if (!o) return 'There is no outbreak to reach.';
     tr = { id: uid(), k: 'outbreak', b: o.b, ob: o.ob.turn, cost: OB_TRIP_COST, due: S.turn + OB_TRIP_WEEKS, at: S.turn };
   } else if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; if (!tripOk(b)) return `${b} isn't found in ${regionName(S.region)} now.`; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn, safari: p.safari || undefined, floor: p.floor || undefined }; }
-  else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: CHARTER_COST, due: S.turn + CHARTER_WEEKS, at: S.turn }; }
+  else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: charterCost(), due: S.turn + charterWeeks(), at: S.turn }; } // (0.65.0) an Airport at level 3
   else tr = { id: uid(), k: 'area', cost: AREA_COST, due: S.turn + 2, at: S.turn };
   if (!canSpend(tr.cost)) return 'Not enough money.';
   book(-tr.cost, 'trips', kind === 'target' ? `Catching trip for ${cond ? COND_NAME[cond].toLowerCase() + ' ' : ''}${b}` : kind === 'outbreak' ? `Trip to the ${tr.b} outbreak` : kind === 'charter' ? `Charter from ${regionName(tr.r)}` : 'Catching trip (area)');
@@ -530,7 +530,7 @@ function aimRanch(aim) {
     if (t2) { startTrip('target', t2.b); return; }
   }
   // (0.27.0) a stopgap of a type the region can't answer: a charter from the region with most of that type
-  if (p.worst.m.stop && homeSet(S.region) && CHARTER_COST <= budget && ranchRoom() > 3 && p.ty.length) {
+  if (p.worst.m.stop && homeSet(S.region) && charterCost() <= budget && ranchRoom() > 3 && p.ty.length) {
     const has = r => [...regionLines().sets[r]].filter(b => !homeSet(S.region).has(b) && fits(b)).length;
     const r = [...Array(nRegionsBuilt()).keys()].filter(x => x !== S.region).sort((a, c) => has(c) - has(a))[0];
     if (r != null && has(r) && !ranchSpecies().some(b => fits(b) && tripOk(b))) { startTrip('charter', r); return; }
@@ -760,7 +760,7 @@ const laneSrc = x => (x.src != null && x.src !== S.region && x.src < nRegionsBui
 function laneSet() {
   const out = new Set(); if (!homeSet(S.region) || lapsed()) return out;
   const home = homeSet(S.region);
-  for (const l of lanesOf()) for (const b of regionLines().sets[l.src]) if (!home.has(b) && homeOnly(b) == null) out.add(b);
+  for (const src of lanesOf().map(l => l.src).concat(airRoutes())) for (const b of regionLines().sets[src]) if (!home.has(b) && homeOnly(b) == null) out.add(b); // (0.65.0) Airport routes too
   return out;
 }
 // change lane i's route (gym index) to region src
@@ -1791,6 +1791,7 @@ function drawWeights(t, r, opts = {}) {
     if (c && tot > 0 && there.includes(i)) w += DRAW_HOME * Math.max(0, standing(c, i)) / tot;
     if (t.loyal && t.loyal.lg === i && S.season <= t.loyal.until) w += DRAW_LOYAL;
     w += centerDraw(i, hc); // (0.63.0) its Pokémon Centers
+    w += airDraw(i, t); // (0.65.0) an Airport routed from the region they just left
     if (!strong) {
       if (eAvg > 0) w += DRAW_EASE * clamp((ease[i] || 0) / eAvg - 1, -0.8, 0.8);
       if (lgs.length > 1) w += DRAW_UNDER * clamp(avgN / Math.max(1, sizes[k]) - 1, -0.6, 0.6);
@@ -1812,9 +1813,10 @@ function regionDraw(t) {
   if (t.role !== 'challenger' || t.spon || t.hired || t.hireDue) return false;
   noteLoyal(t);
   const from = homeLeague(t), r = lgRegion(from);
-  if (r == null || regionLgs(r).length < 2) return false;
+  if (r == null || regionLgs(r).length < 2) { t.flew = null; return false; }
   FIELD_LOG.draws++;
   const to = drawLeague(t, r);
+  t.flew = null; // (0.65.0) an Airport's pull counts in the first draw only
   if (to == null || to === from) return false;
   inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
   t.lg = to;

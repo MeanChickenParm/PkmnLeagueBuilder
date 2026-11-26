@@ -8684,7 +8684,7 @@ function leagueMove(t, keen) {
   // (0.41.0) a challenger who isn't chasing a Triple Crown or the world won't move into a region whose field is already
   // MOVE_CROWD times its aim (tours and give-up moves would otherwise pile challengers into the most attractive region)
   const roomy = i => slamChaser(t) || globetrotter(t) || lgRegion(i) === lgRegion(from) || fieldCrowd(lgRegion(i)) < MOVE_CROWD;
-  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 })).sort((a, b) => b.gain - a.gain)[0];
+  const best = Array.from({ length: nLeagues() }, (_, i) => i).filter(i => slamRoom(t, i) && roomy(i) && !(S.founding && i === ME())).map(i => ({ i, gain: slamFit(t, i) - slamFit(t, from) + PRESTIGE_DRAW * (prestOf(i) - prestOf(from)) / 100 + airGain(t, i) })).sort((a, b) => b.gain - a.gain)[0];
   if (!best) return false;
   const pulled = (slamChaser(t) || globetrotter(t)) && best.gain > MOVE_EDGE * (globetrotter(t) ? 0.5 : 1);
   if (!pulled && !keen) return false;
@@ -9144,6 +9144,7 @@ const retiresOnLosingPost = t => !comebackProtected(t) && !slamProtected(t) && t
 function returnToCircuit(t, why) {
   closePost(t);
   if (t.role === 'challenger') return;
+  if (t.talk != null) { const k = talkOf(t); if (k && k.kind !== 'star') talkGone(k, `${t.name} left their post before the deadline.`); } // (0.65.0) staff talks end with the post
   t.role = 'challenger'; t.returned = S.season; t.lg = S.lg || 0; t.rest = S.turn + 1;
   if (!S.challengers.includes(t.id)) S.challengers.push(t.id);
   news(`${t.name} ${why} and will return to the badge circuit.`, 'move', t.id);
@@ -13035,6 +13036,9 @@ function circuitValue(t) {
 }
 // put a trainer on League i's circuit
 function joinCircuit(t, i) {
+  // (0.65.0) staff talks end when their trainer goes back to the circuit (a beaten seat holder, someone replaced or let go
+  // later in the week than the talks' own check); a star's talks are a challenger's and stay
+  if (t.talk != null && STAFF_ROLES.includes(t.role)) { const k = talkOf(t); if (k && k.kind !== 'star') talkGone(k, `${t.name} left their post before the deadline.`); }
   t.role = 'challenger'; t.lg = i;
   S.freeAgents = S.freeAgents.filter(x => x !== t.id);
   inLeague(i, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); if (!t.home) setHome(t); }); // (0.40.0) a hometown if they have none
@@ -13450,6 +13454,7 @@ function shiftLeague(t, to) {
   t.lg = to;
   inLeague(to, () => { if (!S.challengers.includes(t.id)) S.challengers.push(t.id); });
   regionMove(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.27.0) at most 3 foreign Pokémon
+  airLand(t, inLeague(from, () => S.region), inLeague(to, () => S.region)); // (0.65.0) landing at an Airport routed from where they left
   (t.lgMoves = t.lgMoves || []).push({ season: S.season, from, to });
 }
 // ---------- Grand Slam: Champion (at a season's end) of every League in the world ----------
@@ -13875,9 +13880,9 @@ function expirePaidBans() {
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (the home edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'sanct'], ['gyms', 'center'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -13958,7 +13963,7 @@ function aimSpend(aim) {
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
   // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
-  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1 };
+  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1, contest: 1 };
   const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
     const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' ? busy : S.gyms.map((_, i) => i).reverse();
@@ -14496,6 +14501,11 @@ const UPGRADES = {
   tutor:   { name: 'Move Tutor',      text: 'In a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion). A tutored Pokémon learns all three of its line\'s coverage types, each 10 levels sooner, and keeps the lesson for good. Level 1 teaches 2 Pokémon a post, level 2 the whole team, level 3 puts a backup-type Pokémon\'s coverage on its trainer\'s threats first (needs a City).', max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   lab:     { name: 'Research Lab',    text: 'Gym cities only; your best Lab works League-wide (a Scientist on your staff counts as a level more). Catching trips +3 Scouting a level; finds of grade 2 or better from level 2 and 3 or better from level 4; one more trip out at once from level 3; condition hunts 5% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of 500 × its level for each new species of your region the ranch takes in. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [25000, 50000, 100000, 200000], tierAt: [0, 0, 1, 2] },
   store:   { name: 'Department Store', text: 'Gym cities only. Sells held items for your item bag (your best Store\'s floors, League-wide): the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (needs a City), 4F Life Orb, Choice Band and Choice Specs (needs a Metropolis); each floor above a shelf takes 10% off it. Your staff only hold tier 2 and 3 items from the bag. Shoppers (the city\'s visitors and residents) spend there too.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
+  // (0.65.0, city buildings part 3: 5c-engine-3c) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
+  airport: { name: 'Airport',         text: 'One per League, in a gym city that is at least a City. Each route works like a shipping lane (that region\'s Pokémon on your targeted trips and at your market) and also brings people: challengers moving out of a routed region lean toward your League and land here, and a few visitors from there arrive every month (more with your renown there), spending in this city. 1,000 a week to run plus 150 for every arrival; changing a route costs 25,000. Level 1 one route; level 2 a second (needs a Metropolis); level 3 makes charters 40% cheaper and a week faster, and your contenders win 25% more renown in other regions (needs a Megalopolis).', city: true, oneLg: true, max: 3, cost: [150000, 300000, 600000], tierAt: [1, 2, 3] },
+  contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
+  pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
+  fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
   // (0.20.0) only in a gym city that is a legendary site: earns while open, and adds prestige
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in income every week and a point of prestige a level each New Year while it is open (one of the site\'s legendaries is with your League).', site: true, income: [250, 500, 800] },
@@ -14555,6 +14565,10 @@ function buildCheck(where, k) {
   if (U.port && (where === 'seat' || !isPort(S.cities[(S.gyms[where] || {}).city]) || !homeSet(S.region))) return { why: 'Only in a port city (or Goldenrod, for its railway).' };
   if ((U.one || U.port) && !homeSet(S.region)) return { why: 'Every species is found everywhere (National Dex rules).' };
   if (U.one && (where === 'seat' || S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k)))) return { why: where === 'seat' ? 'Only in a gym city.' : 'Your League already has one.' };
+  // (0.65.0) one Airport a League; the conditioned buildings (Bug Catching Contest, Fishing Pier, Fossil Lab) need theirs
+  // to be built or raised
+  if (U.oneLg && where !== 'seat' && S.gyms.some((g, i) => i !== where && S.cities[g.city] && upLevel(cityB(S.cities[g.city]), k))) return { why: 'Your League already has one.' };
+  if (U.cond && where !== 'seat') { const cw = condWhy(where, k); if (cw) return { why: cw }; }
   const pl = where === 'seat' ? { b: seatB(), slots: SEAT_SLOTS } : (() => { const g = S.gyms[where]; const c = g && S.cities[g.city]; return c ? { b: cityB(c), slots: citySlots(c) } : null; })();
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
@@ -14573,7 +14587,8 @@ function build(where, k, lg = ME()) {
     const ck = buildCheck(where, k); if (ck.why) return ck.why;
     if (!canSpend(ck.cost)) return 'Not enough money.';
     const b = where === 'seat' ? seatB() : cityB(S.cities[S.gyms[where].city]);
-    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : { k, lv: 1 });
+    const ex = b.find(x => x.k === k); if (ex) ex.lv++; else b.push(k === 'lane' ? { k, lv: 1, src: (NEIGHBOURS[S.region] || [0])[0] } : k === 'airport' ? { k, lv: 1, routes: [] } : { k, lv: 1 });
+    if (k === 'airport') airFix(b.find(x => x.k === k)); // (0.65.0) a new route with each of the first two levels
     if (ck.restore) addRuin(where === 'seat' ? 'seat' : S.gyms[where].city, k, -1);
     const name = where === 'seat' ? seatPlace() : townName(where);
     if (where !== 'seat') { const c = S.cities[S.gyms[where].city]; c.spent = c.spent || {}; c.spent[cityLg()] = (c.spent[cityLg()] || 0) + ck.cost; }
@@ -14731,8 +14746,9 @@ function cityPrestige(i = S.lg || 0) {
 // a contender's badge at a gym of the bound League, and a title won here: renown for the sponsor
 function contenderRenown(t, gi) {
   const s = t && t.spon; if (!s || s.lg === (S.lg || 0)) return;
-  if (gi != null) addRenown(S.cities[S.gyms[gi].city], s.lg, RN_BADGE);
-  else for (const g of S.gyms) addRenown(S.cities[g.city], s.lg, RN_TITLE);
+  const mul = airRenownMul(s.lg); // (0.65.0) an Airport at level 3: 25% more in other regions
+  if (gi != null) addRenown(S.cities[S.gyms[gi].city], s.lg, RN_BADGE * mul);
+  else for (const g of S.gyms) addRenown(S.cities[g.city], s.lg, RN_TITLE * mul);
 }
 // (0.16.0) what the bound League owns, at cost (its seat and the cities where it has a gym), and its weekly upkeep:
 // UPKEEP of that a year, so a large estate costs to hold
@@ -14823,13 +14839,15 @@ function visitorsWeek() {
     for (const id of L.challengers || []) {
       const t = T(id); if (!t || t.role !== 'challenger') continue;
       let c = null;
-      if (t.rest == null) { const gy = t.gymAt != null ? L.gyms[t.gymAt] : null; c = gy ? S.cities[gy.city] : null; }
+      if (t.land && t.land.until > S.turn && S.cities[t.land.c]) c = S.cities[t.land.c]; // (0.65.0) just landed at an Airport
+      else if (t.rest == null) { const gy = t.gymAt != null ? L.gyms[t.gymAt] : null; c = gy ? S.cities[gy.city] : null; }
       else if (t.rest > S.turn) c = centerCity(L, i, t);
       if (!c) continue;
       c.vw++; c.vy = (c.vy || 0) + 1;
       if (t.home && t.home.r !== c.region) c.away++;
     }
   }
+  buildings3Visitors(); // (0.65.0) Airport arrivals and Bug Catching Contest crowds
   // the Hotels: rooms × the control weight; guests go out in proportion, no Hotel past its rooms, the rest to those with room
   const m = gymMap();
   for (const c of cs) {
@@ -14954,6 +14972,11 @@ function aimWorth(where, k) {
   // raises its best rather than building a second
   if ((k === 'school' || k === 'store') && aimOf() === 'money' && placeLv(where, k) >= 2) return false;
   if (k === 'lab') return placeLv(where, k) === labBuilt();
+  // (0.65.0) part 3 by aim: a money-maker's Airport only in a Hotel city, its Pier only to the Old Rod; a wall-builder's
+  // Pier only at a Water gym; a star-maker's Fossil Lab (once a Lab there is at level 2) and Contest freely
+  if (k === 'airport' && aimOf() === 'money') return placeLv(where, 'hotel') > 0;
+  if (k === 'pier' && aimOf() === 'money') return placeLv(where, k) < 1;
+  if (k === 'pier' && aimOf() === 'wall') { const ld = T(S.gyms[where].leader); return !!ld && specTypes(ld).includes('Water'); }
   if (k === 'store') return placeLv(where, k) === storeBuilt();
   return true;
 }
@@ -15300,7 +15323,7 @@ function startTrip(kind, b, cond) {
     const o = obTrip(); if (!o) return 'There is no outbreak to reach.';
     tr = { id: uid(), k: 'outbreak', b: o.b, ob: o.ob.turn, cost: OB_TRIP_COST, due: S.turn + OB_TRIP_WEEKS, at: S.turn };
   } else if (kind === 'target') { if (!SP[b] || !ranchable(b)) return 'That Pokémon can\'t be caught on a trip.'; if (!tripOk(b)) return `${b} isn't found in ${regionName(S.region)} now.`; const p = tripPlan(b); tr = { id: uid(), k: 'target', b, cost: p.cost, odds: p.odds, due: S.turn + p.weeks, at: S.turn, safari: p.safari || undefined, floor: p.floor || undefined }; }
-  else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: CHARTER_COST, due: S.turn + CHARTER_WEEKS, at: S.turn }; }
+  else if (kind === 'charter') { const r = +b; if (!homeSet(S.region)) return 'Every species is found everywhere (National Dex rules).'; if (!(r >= 0 && r < nRegionsBuilt()) || r === S.region) return 'Choose another region.'; tr = { id: uid(), k: 'charter', r, cost: charterCost(), due: S.turn + charterWeeks(), at: S.turn }; } // (0.65.0) an Airport at level 3
   else tr = { id: uid(), k: 'area', cost: AREA_COST, due: S.turn + 2, at: S.turn };
   if (!canSpend(tr.cost)) return 'Not enough money.';
   book(-tr.cost, 'trips', kind === 'target' ? `Catching trip for ${cond ? COND_NAME[cond].toLowerCase() + ' ' : ''}${b}` : kind === 'outbreak' ? `Trip to the ${tr.b} outbreak` : kind === 'charter' ? `Charter from ${regionName(tr.r)}` : 'Catching trip (area)');
@@ -15489,7 +15512,7 @@ function aimRanch(aim) {
     if (t2) { startTrip('target', t2.b); return; }
   }
   // (0.27.0) a stopgap of a type the region can't answer: a charter from the region with most of that type
-  if (p.worst.m.stop && homeSet(S.region) && CHARTER_COST <= budget && ranchRoom() > 3 && p.ty.length) {
+  if (p.worst.m.stop && homeSet(S.region) && charterCost() <= budget && ranchRoom() > 3 && p.ty.length) {
     const has = r => [...regionLines().sets[r]].filter(b => !homeSet(S.region).has(b) && fits(b)).length;
     const r = [...Array(nRegionsBuilt()).keys()].filter(x => x !== S.region).sort((a, c) => has(c) - has(a))[0];
     if (r != null && has(r) && !ranchSpecies().some(b => fits(b) && tripOk(b))) { startTrip('charter', r); return; }
@@ -15719,7 +15742,7 @@ const laneSrc = x => (x.src != null && x.src !== S.region && x.src < nRegionsBui
 function laneSet() {
   const out = new Set(); if (!homeSet(S.region) || lapsed()) return out;
   const home = homeSet(S.region);
-  for (const l of lanesOf()) for (const b of regionLines().sets[l.src]) if (!home.has(b) && homeOnly(b) == null) out.add(b);
+  for (const src of lanesOf().map(l => l.src).concat(airRoutes())) for (const b of regionLines().sets[src]) if (!home.has(b) && homeOnly(b) == null) out.add(b); // (0.65.0) Airport routes too
   return out;
 }
 // change lane i's route (gym index) to region src
@@ -16750,6 +16773,7 @@ function drawWeights(t, r, opts = {}) {
     if (c && tot > 0 && there.includes(i)) w += DRAW_HOME * Math.max(0, standing(c, i)) / tot;
     if (t.loyal && t.loyal.lg === i && S.season <= t.loyal.until) w += DRAW_LOYAL;
     w += centerDraw(i, hc); // (0.63.0) its Pokémon Centers
+    w += airDraw(i, t); // (0.65.0) an Airport routed from the region they just left
     if (!strong) {
       if (eAvg > 0) w += DRAW_EASE * clamp((ease[i] || 0) / eAvg - 1, -0.8, 0.8);
       if (lgs.length > 1) w += DRAW_UNDER * clamp(avgN / Math.max(1, sizes[k]) - 1, -0.6, 0.6);
@@ -16771,9 +16795,10 @@ function regionDraw(t) {
   if (t.role !== 'challenger' || t.spon || t.hired || t.hireDue) return false;
   noteLoyal(t);
   const from = homeLeague(t), r = lgRegion(from);
-  if (r == null || regionLgs(r).length < 2) return false;
+  if (r == null || regionLgs(r).length < 2) { t.flew = null; return false; }
   FIELD_LOG.draws++;
   const to = drawLeague(t, r);
+  t.flew = null; // (0.65.0) an Airport's pull counts in the first draw only
   if (to == null || to === from) return false;
   inLeague(from, () => { S.challengers = S.challengers.filter(x => x !== t.id); });
   t.lg = to;
@@ -17343,6 +17368,7 @@ function buildings2Week(lap) {
   if (!S.fin) return;
   if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
   schoolWeek(); tutorWeek(); labWeek();
+  buildings3Week(lap); // (0.65.0) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
   // staff equipped before the League kept books (a League founded by hand) or by another path re-equip under the bag rule
   if (bagRule()) { const lg = S.lg || 0; for (const id of staffIds()) { const t = T(id); if (t && t.team.some(m => m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg !== lg)) { eliteItems(t); ITEM_LOG.fixed = (ITEM_LOG.fixed || 0) + 1; } } }
 }
@@ -17350,6 +17376,210 @@ function buildings2Week(lap) {
 function buildings2World() { shoppersWeek(); bagSync(); }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { SCHOOL_PAY, SCHOOL_LOG, schoolLv, ownSchool, ownYouth, schoolPay, schoolRank, schoolGrads, graduate, isProfessor, TUTOR_LOG, TUTOR_SOONER, tutorAt, tutorCov, teach, LAB_LOG, labLv, labBuilt, labScout, labFloor, labTrips, labHunt, labCond, LAB_GRANT, ITEM_LOG, STORE_SHELF, ITEM_PRICE, shelfOf, bagRule, itemFreeOk, storeFloors, storeBuilt, bagOf, itemPrice, shelfItems, bagUsed, bagFree, buyItem, equipSenior, storeIncome, SHOP_SPEND_AT, aimItems });
+
+// ================= CITY BUILDINGS, PART 3 (0.65.0; design docs cities-and-economy.md, design-update-city-buildings.md, design-update-buildings-part3.md) =================
+// Reach and catching: the Airport, the Bug Catching Contest, the Fishing Pier and the Fossil Lab, and the keep-grade
+// rule the three catching buildings share. The UPGRADES entries are in 5b-engine-3b. All numbers provisional.
+
+// ---------- conditions for the conditioned buildings ----------
+// A Bug Catching Contest needs a Bug gym in that city or a Bug Catcher or Bug Maniac on the staff; a Fishing Pier a port
+// (not a railway), a Water gym there or a Fisherman on the staff; a Fossil Lab a Research Lab at level 2 there. A lost
+// condition keeps the building working, but it can't be raised (buildCheck).
+const CONTEST_CLASSES = ['Bug Catcher', 'Bug Maniac'], PIER_CLASSES = ['Fisherman'];
+const classOn = cls => staffIds().some(id => { const t = T(id); return t && !t.acting && cls.includes(t.cls); });
+const gymTyped = (gi, ty) => { const ld = T((S.gyms[gi] || {}).leader); return !!ld && specTypes(ld).includes(ty); };
+function condWhy(gi, k) {
+  const g = S.gyms[gi], c = g && S.cities[g.city]; if (!c) return null;
+  if (k === 'contest' && !gymTyped(gi, 'Bug') && !classOn(CONTEST_CLASSES)) return 'Needs a Bug gym here, or a Bug Catcher or Bug Maniac on your staff.';
+  if (k === 'pier' && portKind(c) !== 'port' && !gymTyped(gi, 'Water') && !classOn(PIER_CLASSES)) return 'Needs a port city, a Water gym here, or a Fisherman on your staff.';
+  if (k === 'fossil' && placeLv(gi, 'lab') < 2) return 'Needs your Research Lab here at level 2.';
+  return null;
+}
+
+// ---------- the keep-grade rule ----------
+// Finds from the Contest, the Pier and the Fossil Lab below the League's keep grade, and any for a full ranch, are sold
+// back at once (SELL_BACK of their value); both go in the ranch log. Rivals keep by aim (provisional).
+const AI_KEEPG = { wall: 2, star: 3, money: 1 };
+const FIND_LOG = { contest: 0, pier: 0, fossil: 0, kept: 0, sold: 0, full: 0, gate: 0 };
+function keepGrade() { const f = S.fin; if (!f) return 1; if (f.keepG) return f.keepG; return (f.aim && AI_KEEPG[f.aim]) || 1; }
+function setKeepGrade(n) { if (!S.fin) return 'Money is off.'; n = Math.round(+n); if (!(n >= 1 && n <= 5)) return 'Pick a grade from 1 to 5.'; S.fin.keepG = n; return null; }
+// a find e from building k ('contest', 'pier', 'fossil'): into the ranch, or sold. Returns 'kept' or 'sold'.
+function autoFind(e, k, text) {
+  const wd = entryWords(e), low = e.g < keepGrade();
+  FIND_LOG[k]++;
+  if (!low && ranchAdd(e)) { FIND_LOG.kept++; ranchLog(k, text, { got: [wd] }); return 'kept'; }
+  const v = Math.round(entryValue(e) * SELL_BACK);
+  if (booksOn() && v) book(v, 'ranchsale', `Sold ${wd} (${text.toLowerCase()})`);
+  FIND_LOG.sold++; if (!low) FIND_LOG.full++;
+  ranchLog(k, text, { cost: -v, sold: [wd], why: low ? 'below your keep grade' : 'the ranch was full' });
+  return 'sold';
+}
+const findNews = (k, wd, res) => { if (playerLeague()) news(res === 'kept' ? `${wd} came to the ranch from ${k}.` : `${wd} came from ${k} and was sold.`, 'league'); };
+
+// ---------- the Bug Catching Contest ----------
+// Every CONTEST_WEEKS (staggered by gym): 1 to 3 Bug finds by level from the region's Bug lines (migrants in season
+// too), the first (the prize) at least CONTEST_PRIZE, all at the wild condition odds × CONTEST_COND; a crowd of
+// CONTEST_VISIT visitors a level that week (they spend like any visitor) and a gate of CONTEST_GATE a level.
+const CONTEST_WEEKS = 8, CONTEST_PRIZE = [3, 3, 4], CONTEST_COND = 1.5, CONTEST_VISIT = 8, CONTEST_GATE = 600;
+const contestDue = gi => (S.week + gi * 3) % CONTEST_WEEKS === 0;
+const typedLines = ty => hereLines().filter(b => SP[b] && ranchable(b) && lineTypes(b).has(ty));
+function contestWeek() {
+  S.gyms.forEach((g, gi) => {
+    const lv = placeLv(gi, 'contest'); if (!lv || !contestDue(gi)) return;
+    const pool = typedLines('Bug'), c = S.cities[g.city]; if (!pool.length || !c) return;
+    const sc = ranchScout() + labScout(), got = [];
+    for (let n = 0; n < lv; n++) {
+      const b = findSpecies(pool), e = newEntry(b, Math.max(n === 0 ? CONTEST_PRIZE[lv - 1] : 1, labFloor(), gradeRoll(sc)), 'contest');
+      const ks = condRoll(b, sc, CONTEST_COND); if (ks.length) condEntry(e, ks);
+      const wd = entryWords(e), res = autoFind(e, 'contest', `Bug Catching Contest in ${c.name}${n === 0 ? ' (the prize)' : ''}`);
+      got.push(res === 'kept' ? wd : `${wd} (sold)`);
+    }
+    const gate = CONTEST_GATE * lv; book(gate, 'contests'); FIND_LOG.gate += gate;
+    if (playerLeague()) news(`The Bug Catching Contest in ${c.name} brought ${got.join(', ')}.`, 'league');
+  });
+}
+
+// ---------- the Fishing Pier ----------
+// One Water find every PIER_WEEKS (staggered by gym). The region's Water lines (migrants in season too) by their final
+// form's strength in thirds: the Old Rod (level 1) the weakest third, the Good Rod adds the middle, the Super Rod the top.
+const PIER_WEEKS = 4;
+function rodLines(lv) {
+  const all = typedLines('Water').sort((a, b) => lineTop(a) - lineTop(b) || (a < b ? -1 : 1)), n = all.length;
+  return all.slice(0, lv >= 3 ? n : Math.max(1, Math.ceil(n * lv / 3)));
+}
+function pierWeek() {
+  S.gyms.forEach((g, gi) => {
+    const lv = placeLv(gi, 'pier'); if (!lv || (S.week + gi) % PIER_WEEKS !== 1) return;
+    const pool = rodLines(lv), c = S.cities[g.city]; if (!pool.length || !c) return;
+    const sc = ranchScout() + labScout(), b = findSpecies(pool), e = newEntry(b, Math.max(labFloor(), gradeRoll(sc)), 'pier');
+    const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
+    const wd = entryWords(e); findNews(`the Fishing Pier in ${c.name}`, wd, autoFind(e, 'pier', `Fishing Pier in ${c.name} (${['Old', 'Good', 'Super'][lv - 1]} Rod)`));
+  });
+}
+
+// ---------- the Fossil Lab ----------
+// A revival every FOSSIL_WEEKS by working level (its level, +1 with a Ruin Maniac on the staff, up to 4), at a grade no
+// lower than the working level. Any region's fossils (the owner's pick), the region's own (its home lines) FOSSIL_HOME
+// times as likely; a region with none of its own draws evenly. Fossils skip the regional lock here only.
+const FOSSIL_BASES = ['Omanyte', 'Kabuto', 'Aerodactyl', 'Lileep', 'Anorith', 'Cranidos', 'Shieldon', 'Tirtouga', 'Archen', 'Tyrunt', 'Amaura', 'Dracozolt', 'Arctozolt', 'Dracovish', 'Arctovish'];
+const FOSSIL_WEEKS = [12, 10, 8, 6], FOSSIL_HOME = 3, FOSSIL_MAX_EFF = 4;
+const fossilLines = () => FOSSIL_BASES.filter(b => SP[b] && ranchable(b));
+const fossilEff = lv => lv ? Math.min(FOSSIL_MAX_EFF, lv + (classOn(['Ruin Maniac']) ? 1 : 0)) : 0;
+function fossilPick() {
+  const ls = fossilLines(); if (!ls.length) return null;
+  const home = homeSet(S.region), w = ls.map(b => home && home.has(b) ? FOSSIL_HOME : 1);
+  let r = rand() * w.reduce((a, x) => a + x, 0);
+  for (let i = 0; i < ls.length; i++) { r -= w[i]; if (r <= 0) return ls[i]; }
+  return ls[ls.length - 1];
+}
+function fossilWeek() {
+  S.gyms.forEach((g, gi) => {
+    const c = S.cities[g.city], x = c && cityB(c).find(y => y.k === 'fossil'); if (!x) return;
+    const eff = fossilEff(x.lv), wk = FOSSIL_WEEKS[eff - 1];
+    if (x.next == null || x.next > S.turn + wk) { x.next = S.turn + wk; return; }
+    if (S.turn < x.next) return;
+    x.next = S.turn + wk;
+    const b = fossilPick(); if (!b) return;
+    const sc = ranchScout() + labScout(), e = newEntry(b, Math.max(eff, labFloor(), gradeRoll(sc)), 'fossil');
+    const ks = condRoll(b, sc, 1); if (ks.length) condEntry(e, ks);
+    const wd = entryWords(e); findNews(`the Fossil Lab in ${c.name}`, wd, autoFind(e, 'fossil', `Fossil Lab in ${c.name} revived a fossil`));
+  });
+}
+
+// ---------- the Airport ----------
+// One a League, in a gym city of City size or more; x.routes on the building (one at level 1, two from level 2). Each
+// route works like a shipping lane (laneSet) and brings people: movers from that region lean toward the League
+// (airGain on the move, airDraw in their first regional draw) and land in the Airport city (t.land: their first
+// visitor-weeks there), and AIR_VISITS out-of-region visitor-weeks a month arrive there (× up to 2 with renown in that
+// region). AIR_WEEK a week to run, AIR_LAND for every arrival (movers and visitors), AIR_ROUTE to change a route. Level 3:
+// charters AIR_CHARTER cheaper and a week faster, and contenders win AIR_RENOWN more renown in other regions. In the red
+// it lapses: no routes, no arrivals, no fee.
+const AIR_WEEK = 1000, AIR_LAND = 150, AIR_ROUTE = 25000, AIR_VISITS = 4, AIR_GAIN = 0.3, AIR_DRAW = 1, AIR_LAND_WEEKS = 3;
+const AIR_CHARTER = 0.4, AIR_RENOWN = 1.25;
+const AIR_LOG = { movers: 0, visitors: 0, landed: 0, routes: 0, fees: 0, landing: 0 };
+const routeCount = lv => Math.min(2, lv || 0);
+// give an Airport (bound League) a route for each of its first two levels: neighbours first, then any other region
+function airFix(x) {
+  if (!x) return;
+  x.routes = (x.routes || []).filter(r => r !== S.region && r >= 0 && r < nRegionsBuilt());
+  const want = routeCount(x.lv), cands = (NEIGHBOURS[S.region] || []).concat(LEAGUE_SETS.map((_, r) => r)).filter(r => r !== S.region);
+  for (const r of cands) { if (x.routes.length >= want) break; if (!x.routes.includes(r)) x.routes.push(r); }
+}
+// League i's Airport: { gi, c, x, routes } (routes empty in the red), or null
+function airportAt(i = S.lg || 0) {
+  const L = lgObj(i); if (!L || !L.gyms || !L.fin) return null;
+  for (let gi = 0; gi < L.gyms.length; gi++) {
+    const c = S.cities[L.gyms[gi].city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'airport'); if (!x) continue;
+    const r0 = lgRegion(i), routes = lgLapsed(i) ? [] : (x.routes || []).slice(0, routeCount(x.lv)).filter(r => r !== r0 && r >= 0 && r < nRegionsBuilt());
+    return { gi, c, x, routes };
+  }
+  return null;
+}
+const airRoutes = () => { const a = airportAt(); return a ? a.routes : []; };
+const airportLv = (i = S.lg || 0) => { const a = airportAt(i); return a && !lgLapsed(i) ? a.x.lv : 0; };
+// change route k (0 or 1) of the bound League's Airport to region src
+function setAirRoute(k, src, lg = ME()) {
+  return inLeague(lg, () => {
+    const a = airportAt(); if (!a) return 'You have no Airport.';
+    airFix(a.x);
+    if (!(k >= 0 && k < routeCount(a.x.lv))) return 'No such route.';
+    if (src === S.region || !(src >= 0 && src < nRegionsBuilt())) return 'Choose another region.';
+    if (a.x.routes[k] === src) return null;
+    if (a.x.routes.includes(src)) return 'The other route already serves it.';
+    if (!canSpend(AIR_ROUTE)) return 'Not enough money.';
+    book(-AIR_ROUTE, 'airport', `The Airport in ${a.c.name} now flies to ${regionName(src)}`);
+    a.x.routes[k] = src; AIR_LOG.routes++;
+    return null;
+  });
+}
+const charterCost = () => Math.round(CHARTER_COST * (airportLv() >= 3 ? 1 - AIR_CHARTER : 1));
+const charterWeeks = () => CHARTER_WEEKS - (airportLv() >= 3 ? 1 : 0);
+// contenders sponsored by League lg win more renown in other regions with its Airport at level 3
+const airRenownMul = lg => lg != null && lgRegion(lg) !== S.region && airportLv(lg) >= 3 ? AIR_RENOWN : 1;
+// League i's routes from region r (0 or 1)
+const routedFrom = (i, r) => { const a = airportAt(i); return a && a.routes.includes(r) ? 1 : 0; };
+// a mover choosing a League (leagueMove): League i's Airport routed from the region they are in now
+function airGain(t, i) { const r = lgRegion(lgOf(t)); return r != null && lgRegion(i) !== r ? AIR_GAIN * routedFrom(i, r) : 0; }
+// their first draw in the new region (drawWeights): +AIR_DRAW for an Airport routed from where they came from
+function airDraw(i, t) { return t.flew != null ? AIR_DRAW * routedFrom(i, t.flew) : 0; }
+// a challenger moving from region fromR to toR (shiftLeague): an Airport in toR routed from fromR (theirs, else the
+// one with... the first) sees them land: they are visitors in its city for AIR_LAND_WEEKS, and its League's landing count
+function airLand(t, fromR, toR) {
+  if (fromR == null || toR == null || fromR === toR || !t || t.role !== 'challenger') return;
+  const lgs = regionLgs(toR).filter(j => routedFrom(j, fromR)); if (!lgs.length) return;
+  t.flew = fromR; AIR_LOG.movers++;
+  const j = lgs.includes(t.lg) ? t.lg : lgs[0], a = airportAt(j);
+  t.land = { c: a.c.id, until: S.turn + AIR_LAND_WEEKS };
+  const f = lgObj(j).fin; f.air = f.air || {}; f.air.land = (f.air.land || 0) + 1; airYear(f).m++;
+  AIR_LOG.landed++;
+}
+function airYear(f) { f.air = f.air || {}; if (!f.air.y || f.air.y.season !== S.season) f.air = Object.assign(f.air, { last: f.air.y || null, y: { season: S.season, m: 0, v: 0 } }); return f.air.y; }
+// League i's best renown in region r's cities
+function renownIn(i, r) { let best = 0; for (const c of Object.values(S.cities || {})) if (c.region === r) best = Math.max(best, renown(c, i)); return best; }
+// world-level, from visitorsWeek before the Hotels: Airport arrivals and the Contests' crowds this week
+function buildings3Visitors() {
+  for (let i = 0; i < nLeagues(); i++) {
+    const L = lgObj(i); if (!L || !L.fin || !L.gyms || lgLapsed(i)) continue;
+    const a = airportAt(i);
+    if (a && a.routes.length) {
+      let n = 0;
+      for (const r of a.routes) { const exp = AIR_VISITS / 4 * (1 + Math.min(1, renownIn(i, r) / 10)); n += Math.floor(exp) + (rand() < exp % 1 ? 1 : 0); }
+      if (n) { a.c.vw = (a.c.vw || 0) + n; a.c.vy = (a.c.vy || 0) + n; a.c.away = (a.c.away || 0) + n; const f = L.fin; f.air = f.air || {}; f.air.land = (f.air.land || 0) + n; airYear(f).v += n; AIR_LOG.visitors += n; }
+    }
+    L.gyms.forEach((g, gi) => { const c = S.cities[g.city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'contest'); if (!x) return;
+      if ((S.week + gi * 3) % CONTEST_WEEKS === 0) { const n = CONTEST_VISIT * x.lv; c.vw = (c.vw || 0) + n; c.vy = (c.vy || 0) + n; } });
+  }
+}
+// per League, from buildings2Week: the Airport's fee and landing income, then (not in the red) the catching buildings
+function buildings3Week(lap) {
+  const f = S.fin, a = airportAt();
+  if (a) { airFix(a.x); if (!lap) { book(-AIR_WEEK, 'airport'); AIR_LOG.fees += AIR_WEEK; const n = (f.air && f.air.land) || 0; if (n) { book(n * AIR_LAND, 'airport'); AIR_LOG.landing += n * AIR_LAND; } } }
+  if (f.air) f.air.land = 0;
+  if (lap || !ranchOn()) return;
+  contestWeek(); pierWeek(); fossilWeek();
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -19052,7 +19282,7 @@ function viewMeta() {
 }
 // ---------- money and cities (0.13.0) ----------
 // the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
-const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', shops: 'Department Stores', grants: 'Research grants', items: 'Items (Department Store)', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying' };
+const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', shops: 'Department Stores', grants: 'Research grants', items: 'Items (Department Store)', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying', airport: 'Airport', contests: 'Bug Catching Contests' };
 function finTable(y) {
   if (!y) return '<p class="muted">Nothing yet.</p>';
   const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
@@ -19152,7 +19382,7 @@ function viewRanch() { return inLeague(ME(), viewRanch0); }
 // (0.44.0) the Ranch page in tabs; the pool's filters; the teams as one row a Pokémon
 let ranchTab = 'pool', ranchF = { show: 'free', type: '', g: 0, cond: '', from: '', sort: 'value' }, teamShow = 'all';
 const RANCH_TABS = [['pool', 'Pool'], ['teams', 'Teams'], ['trips', 'Trips & log'], ['market', 'Market'], ['daycare', 'Day Care'], ['region', 'Region & safari']];
-const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care' };
+const FROM_NAMES = { stock: 'founding stock', trip: 'catching trip', area: 'area trip', market: 'the market', league: 'another League', staff: 'a trainer\'s own', charter: 'a charter', hunt: 'a hunt', outbreak: 'an outbreak trip', storage: 'a hire\'s storage', safari: 'the Safari Zone', bred: 'the Day Care', contest: 'a Bug Catching Contest', pier: 'the Fishing Pier', fossil: 'the Fossil Lab' };
 const RANCH_SHOW = [['free', 'Not fielded'], ['fielded', 'Fielded'], ['all', 'Everything'], ['sale', 'Listed for sale'], ['held', 'Locked or reserved']];
 const RANCH_SORT = [['value', 'Value'], ['grade', 'Grade'], ['name', 'Name'], ['new', 'Newest'], ['type', 'Type'], ['egg', 'Egg group']];
 // (0.51.0) sorting by egg group: by the groups' names, Ditto first, Undiscovered (can't breed) last
@@ -19222,7 +19452,8 @@ function ranchLogPanel(R) {
   const L = R.log || [];
   const res = x => { const g = x.got || [], l = x.lost || [];
     if (/^(trip|hunt|area|charter|outbreak)$/.test(x.k)) return g.length ? `<span class="good">Came back with ${g.map(esc).join(', ')}</span>${l.length ? `; <span class="bad">no room for ${l.map(esc).join(', ')} (let go)</span>` : ''}` : l.length ? `<span class="bad">Found ${l.map(esc).join(', ')}, but the ranch was full: let go</span>` : '<span class="bad">Came back empty-handed</span>';
-    return `${g.map(esc).join(', ')}${l.length ? `${g.length ? '; ' : ''}<span class="bad">no room for ${l.map(esc).join(', ')} (let go)</span>` : ''}`; };
+    const sd = x.sold || []; // (0.65.0) the keep-grade rule
+    return `${g.map(esc).join(', ')}${l.length ? `${g.length ? '; ' : ''}<span class="bad">no room for ${l.map(esc).join(', ')} (let go)</span>` : ''}${sd.length ? `${g.length || l.length ? '; ' : ''}<span class="bad">sold ${sd.map(esc).join(', ')}${x.why ? ` (${esc(x.why)})` : ''}</span>` : ''}`; };
   const cost = x => x.cost == null || x.cost === 0 ? '' : x.cost < 0 ? `<span class="good">+${money(-x.cost)}</span>` : money(x.cost);
   return `<section class="panel"><div class="ph"><h2>Recent history</h2><span class="muted">The last ${RANCH_LOG} things the ranch did: trips and what they brought, buys, sales, releases, storage picks and the Safari Zone</span></div>
     ${L.length ? `<div class="scroll"><table class="tbl" id="ranchlog"><thead><tr><th>When</th><th>What</th><th>Cost</th><th>Odds</th><th>Result</th></tr></thead><tbody>${L.map(x => `<tr><td class="small">${turnDate(x.t)}${x.at != null ? `<br><span class="muted">set out ${turnDate(x.at)}</span>` : ''}</td><td>${esc(x.text)}</td><td class="num small">${cost(x)}</td><td class="num small">${x.odds != null ? Math.round(x.odds * 100) + '%' : ''}</td><td class="small">${res(x)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nothing yet.</p>'}</section>`;
@@ -20212,6 +20443,12 @@ function cityBuilt(p, x, where) {
   else if (x.k === 'tutor') what = `${x.lv >= 2 ? 'Whole teams' : `${TUTOR_FEW} Pokémon a post`} learn all three coverage types, ${TUTOR_SOONER} levels sooner${x.lv >= 3 ? '; backup-type Pokémon cover their trainer\'s threats first' : ''}. Lessons given here: ${(S.fin.tutored || {})[where] || 0}.`;
   else if (x.k === 'lab') what = x.lv < labBuilt() ? `Your best Lab (level ${labBuilt()}) sets the bonuses.` : `League-wide (level ${labLv()}${labLv() > x.lv ? ', +1 for a Scientist' : ''}): trips +${labScout()} Scouting, finds grade ${labFloor()}+${labTrips() ? ', one more trip out' : ''}, hunts ${Math.round((labHunt() - 1) * 100)}% likelier${labCond() > 1 ? ', conditions ×1.5 on trips' : ''}; ${money(LAB_GRANT * labLv())} a new species.`;
   else if (x.k === 'store') { const n = p.c.sg ? p.c.sg[ME()] || 0 : 0; what = `${x.lv} floor${x.lv === 1 ? '' : 's'}; ${n} shopper${n === 1 ? '' : 's'} this week at ${money(SHOP_SPEND_AT(citySize(p.c)))} each.${x.lv < storeBuilt() ? ' Your best Store sets what is on sale.' : ''}`; }
+  // (0.65.0) city buildings part 3
+  else if (x.k === 'airport') { const a = airportAt(ME()), others = LEAGUE_SETS.map((_, r) => r).filter(r => r !== S.region), y = (S.fin.air && S.fin.air.y && S.fin.air.y.season === S.season) ? S.fin.air.y : { m: 0, v: 0 };
+    what = `${(a ? a.routes : []).map((r, k) => `Route ${k + 1}: <select class="airsel" data-i="${k}" aria-label="Airport route ${k + 1}">${others.map(o => `<option value="${o}"${o === r ? ' selected' : ''}>${esc(regionName(o))}</option>`).join('')}</select>`).join(' ')} Arrivals this year: ${y.m} mover${y.m === 1 ? '' : 's'}, ${y.v} visitor${y.v === 1 ? '' : 's'} (${money(AIR_LAND)} each). Runs ${money(AIR_WEEK)} a week; changing a route ${money(AIR_ROUTE)}.${x.lv >= 3 ? ` Charters ${money(charterCost())}, ${charterWeeks()} weeks.` : ''}`; }
+  else if (x.k === 'contest') { const w = condWhy(p.gym, 'contest'); what = `Every ${CONTEST_WEEKS} weeks: ${x.lv} Bug find${x.lv === 1 ? '' : 's'}, the prize at grade ${CONTEST_PRIZE[x.lv - 1]} or better, ${CONTEST_VISIT * x.lv} visitors and a ${money(CONTEST_GATE * x.lv)} gate.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
+  else if (x.k === 'pier') { const w = condWhy(p.gym, 'pier'), ls = rodLines(x.lv); what = `${['Old', 'Good', 'Super'][x.lv - 1]} Rod: one Water Pokémon every ${PIER_WEEKS} weeks from ${ls.length} line${ls.length === 1 ? '' : 's'} (${ls.slice(0, 8).map(esc).join(', ')}${ls.length > 8 ? '…' : ''}).${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
+  else if (x.k === 'fossil') { const w = condWhy(p.gym, 'fossil'), eff = fossilEff(x.lv); what = `A revival every ${FOSSIL_WEEKS[eff - 1]} weeks at grade ${eff} or better${eff > x.lv ? ' (a Ruin Maniac on your staff adds a level)' : ''}${x.next != null ? `; next ${esc(turnDate(x.next))}` : ''}.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   return `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv} of ${upMax(x.k)}${UPGRADES[x.k].slotless ? ' <span class="small muted">(no slot)</span>' : ''}${lap ? ' <span class="tag notice small">lapsed</span>' : ''}${what ? ` <span class="small">${what}</span>` : ''}${p.none || !sellable ? '' : ` <button class="btn small ghost" data-act="sellb" data-w="${where}" data-k="${x.k}" title="Sell the top level for half what it cost.">Sell a level (+${money(sellValue(where, x.k))})</button>`}</li>`;
 }
 function viewCities0() {
@@ -20244,9 +20481,16 @@ function viewCities0() {
   const last = S.fin.last || {}, li = last.in || {};
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>${red}
     <p>Build in your gym cities and at your League's seat. <b>Size:</b> everything every League has spent in a city makes it a Town, then a City at ${money(sizeAt(1))}, a Metropolis at ${money(sizeAt(2))}, a Megalopolis at ${money(sizeAt(3))} and on (three times as much each). Bigger cities pay more city income, their visitors spend more, their crowds are bigger and their tickets dearer, and the top levels of Stadiums, Hotels and Pokémon Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at ${money(slotAt(0))}, ${money(slotAt(1))}, ${money(slotAt(2))} and every doubling after; the seat has ${SEAT_SLOTS}. Stadiums take no slot. <b>Visitors:</b> each week every challenger heading for a city's gym, or resting at a Pokémon Center there, is a visitor: they spend in town (part of its city income) and fill its Hotels.</p>
-    <p>Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
+    <p>Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, Bug Catching Contests ${money(li.contests || 0)}, Airport ${money((li.airport || 0) - ((last.out || {}).airport || 0))}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
     <p class="small">${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></section>
-    ${distressPanel()}${bagPanel()}${places.map(card).join('')}`;
+    ${distressPanel()}${keepPanel()}${bagPanel()}${places.map(card).join('')}`;
+}
+// (0.65.0) the keep grade for the catching buildings
+function keepPanel() {
+  const has = myPlaces().some(p => !p.none && p.b.some(x => ['contest', 'pier', 'fossil'].includes(x.k))); if (!has) return '';
+  const kg = keepGrade();
+  return `<section class="panel"><div class="ph"><h2>Keep grade</h2><span class="muted">Bug Catching Contests, Fishing Piers and Fossil Labs</span></div>
+    <p class="small">Finds below this grade, and any that come to a full ranch, are sold back at once for a third of their value; both show in the ranch log. <select class="keepgsel" aria-label="Keep grade">${[1, 2, 3, 4, 5].map(n => `<option value="${n}"${n === kg ? ' selected' : ''}>Keep grade ${n} and up ${gradeStars(n)}</option>`).join('')}</select></p></section>`;
 }
 // (0.64.0) the item bag and the Department Stores' shelves
 const SHELF_NAMES = ['Poké Mart', '2F', '3F', '4F'];
@@ -20399,6 +20643,11 @@ const GLOSS_TERMS = {
   ],
 };
 // (0.64.0) city buildings part 2
+GLOSS_TERMS.league.push(['Airport', `A gym-city building, one a League, in a City or bigger (3 levels: a second route needs a Metropolis, level 3 a Megalopolis). Each route to another region works like a shipping lane (its Pokémon on your targeted trips and at your market) and brings people: challengers moving out of that region lean toward your League and land in the Airport's city (a few weeks as visitors there), and about ${AIR_VISITS} visitors a month arrive from there (up to twice as many with your renown in its cities). Visitors spend in the city like any other (Hotels, where level 3 counts them twice, Department Stores). It costs ${money(AIR_WEEK)} a week to run and earns ${money(AIR_LAND)} for every arrival; changing a route costs ${money(AIR_ROUTE)}. Level 3 makes charters ${Math.round(AIR_CHARTER * 100)}% cheaper and a week faster, and your contenders win 25% more renown in other regions. In the red it lapses: no routes, no arrivals, no fee.`],
+  ['Bug Catching Contest', `A gym-city building (3 levels; 3 needs a City) where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff. Every ${CONTEST_WEEKS} weeks it brings your ranch 1, 2 or 3 of your region's Bug Pokémon (migrants in season too), the first, the prize, at grade ${CONTEST_PRIZE.join(', ')} or better by level, at a little better than the wild odds for a condition, plus ${CONTEST_VISIT} visitors a level and a gate of ${money(CONTEST_GATE)} a level. If the condition is lost it keeps running but can't be raised.`],
+  ['Fishing Pier', `A gym-city building (3 levels: the rods; the Super Rod needs a City) in a port, where the gym is a Water gym, or with a Fisherman on your staff. One Water Pokémon of your region every ${PIER_WEEKS} weeks: the Old Rod the weakest third of the region's Water lines by their final form's strength, the Good Rod the middle third too, the Super Rod all of them. If the condition is lost it keeps running but can't be raised.`],
+  ['Fossil Lab', `A gym-city building (3 levels; 3 needs a City) where your Research Lab is at level 2 or more. It revives a fossil Pokémon from any region (your region's own ${FOSSIL_HOME} times as often) every ${FOSSIL_WEEKS.slice(0, 3).join(', ')} weeks by level, at a grade no lower than its level; a Ruin Maniac on your staff counts as one more level (every ${FOSSIL_WEEKS[3]} weeks at the most). If the condition is lost it keeps running but can't be raised.`],
+  ['Keep grade', 'The grade (1 to 5) a find from a Bug Catching Contest, Fishing Pier or Fossil Lab must reach to join your ranch, set on the Cities page; finds below it, and any for a full ranch, are sold back at once for a third of their value. Rival Leagues keep by aim: wall-builders grade 2 and up, star-makers 3, money-makers everything.']); // (0.65.0)
 GLOSS_TERMS.league.push(['Trainer\'s School', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Each level graduates one young trainer a year (16 to 20, from that city, of a class that fits the gym), a little stronger each level than the field's typical gym trainer; a Pokémon Professor anywhere on your staff counts as one more level. A graduate takes an open gym trainer place at that gym, else at another of your gyms they fit; otherwise they set out on the region's field from that city, ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers, and your gym trainer picker lists them first. Rival Leagues also let a weaker gym trainer go at the end of a contract to take one on. Your graduates are paid ${SCHOOL_PAY.map(x => Math.round((1 - x) * 100) + '%').join(', ')} less by you, by the School's level when they graduated. The School is also that gym's training hall: its Gym Leader and gym trainers grow 12% faster a level and decline more slowly. The training hall itself is at the seat only now (the Elite Four and Champion). In the red a School lapses: no graduates, no growth bonus.`],
   ['Move Tutor', `A building in a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion), 3 levels. A tutored Pokémon learns all three of its line's coverage types instead of two, each ${TUTOR_SOONER} levels sooner, in an order its trainer's Strategy picks (a sharp strategist puts the types that answer the year's meta first). The lesson stays with the Pokémon for good, in the ranch and on whoever fields it next. Level 1 teaches ${TUTOR_FEW} Pokémon a post (planned ones first, then the strongest), level 2 the whole team; level 3 (needs a City) makes a backup-type Pokémon's coverage hit its trainer's own threats first. Lessons are given once a month; in the red, none, but lessons already taught stay.`],
   ['Research Lab', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Catching trips aren't tied to a city, so your best Lab works League-wide, and a Scientist on your staff counts as one more level: +${LAB_SCOUT} Scouting a level for catching trips; finds of grade 2 or better from level 2 and grade 3 or better from level 4; one more trip out at a time from level 3; condition hunts ${Math.round(LAB_HUNT * 100)}% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of ${LAB_GRANT} × its level for every new species of your region your ranch takes in (until the regional Pokédex comes, the ranch's own register).`],
@@ -20657,6 +20906,15 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 65, ver: '0.65.0', date: 'November 25, 2026', time: '9:30 PM ET', title: 'City buildings, part 3: Airports, Bug Catching Contests, Fishing Piers and Fossil Labs', items: [
+    "The Airport (one per League, in a gym city that is at least a City, 3 levels): each route to another region works like a shipping lane for its Pokémon and brings people, with challengers moving out of that region leaning toward your League and landing in its city, and a few visitors a month arriving from there (more with your renown there). It costs 1,000 a week to run and earns 150 for every arrival. Level 2 adds a second route; level 3 makes charters cheaper and faster and gives your contenders more renown abroad.",
+    "The Bug Catching Contest (where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff): every 8 weeks it brings 1 to 3 of your region's Bug Pokémon by level, the prize at a good grade, plus visitors and a gate.",
+    "The Fishing Pier (in a port, at a Water gym, or with a Fisherman on your staff): one Water Pokémon every 4 weeks. The level is the rod: the Old Rod brings the weakest third of your region's Water lines, the Good Rod the middle third too, the Super Rod all of them.",
+    "The Fossil Lab (where your Research Lab is at level 2): revives a fossil from any region, your own region's three times as often, every 12, 10 or 8 weeks by level and at a better grade each level; a Ruin Maniac on your staff counts as a level more.",
+    "A keep grade on the Cities page: finds from the Contest, the Pier and the Fossil Lab below it, or for a full ranch, are sold back at once, and the ranch log says so.",
+    "A conditioned building whose condition is lost keeps working but can't be raised. Rival Leagues build all four by aim. All numbers are first guesses.",
+    "Fixed: talks for a member of staff now end when they go back to the circuit (a beaten seat holder, or someone replaced or let go) instead of lingering a week."
+  ] },
   { id: 64, ver: '0.64.0', date: 'November 25, 2026', time: '7:45 PM ET', title: 'City buildings, part 2: Trainer\'s Schools, Move Tutors, Research Labs, Department Stores and the item bag', items: [
     "The Trainer's School (gym cities, 4 levels): each level graduates a young gym trainer a year from that city, of a class that fits its gym and a little stronger each level. A graduate takes an open gym trainer place, else sets out on the field likelier to take your offers (your gym trainer picker lists them first). Your graduates are paid less by you, and a Pokémon Professor on your staff counts as a level more.",
     "The School is also its gym's training hall (faster growth, slower decline for the Gym Leader and gym trainers); the training hall itself is now a seat building for the Elite Four and Champion.",
@@ -21822,6 +22080,8 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('airsel')) { const w = setAirRoute(+e.target.dataset.i, +e.target.value); save(); render(); toast(w || 'The Airport\'s route has changed.'); return; } // (0.65.0)
+  if (e.target && e.target.classList && e.target.classList.contains('keepgsel')) { const w = inLeague(ME(), () => setKeepGrade(+e.target.value)); save(); render(); toast(w || 'Keep grade set.'); return; } // (0.65.0)
   if (e.target && e.target.classList && e.target.classList.contains('berryfeed')) { const err = inLeague(ME(), () => setBerryFeed(+e.target.dataset.g, +e.target.value)); save(); render(); toast(err || 'Berry Farm plots set.'); return; } // (0.63.0)
   if (e.target && e.target.classList && e.target.classList.contains('steersel')) { const k = e.target.dataset.k, v = e.target.value || null; inLeague(ME(), () => setSteer(k, v)); save(); render(); toast(k === 'line' ? `League line: ${steerName(v)}` : `Steer set: ${v ? steerName(v) : 'follows the League line'}`); return; }
   if (e.target && e.target.id === 'imgfile' && e.target.files && e.target.files[0]) { imgPickFile(e.target.files[0]); return; }
