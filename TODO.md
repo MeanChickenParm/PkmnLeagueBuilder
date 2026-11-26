@@ -3,6 +3,7 @@
 Things left over from the seed, and ideas tabled for later. Remove an item once it is done.
 
 ## Broken tests
+- **(0.72.0) The hand-placed sim's `a prize counter past its quarter`** fails now and then (seen on an unchanged 0.71.0 build too): a counter goes 20 to 30 weeks without restocking while the League is solvent at the week's check. Likely the League is in the red when the week's money runs (the Corner is closed) and the sim's own steps top its money up before the check. The check now has a week's slack and prints the counter's state.
 - **(0.61.0) Very old trainers:** nothing makes a trainer retire by a set age. A staff member steps down only after 10 years in posts and past their career length, so Opal (famous, starts at 88) or an old custom trainer can serve past 100 (that crashed the growth table until 0.61.0). Ask the owner whether there should be an age cap or a stronger push to step down from about 75.
 - **The browser test's year-2 staffing step fails (found Nov 24 at 0.58.0, also on an unchanged 0.57.0 build):** `nobody to pick at once`, `vacancies left open: 2`, `posts not filled properly`, or `posts left open after the move`, varying by run. Find which change caused it (0.57.0's famous share or the talks changes are suspects), fix the game or the test, and remove this item.
 
