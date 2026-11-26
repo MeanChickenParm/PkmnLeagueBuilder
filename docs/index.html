@@ -5370,7 +5370,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 22; // 22: city sizes and buildings part 1 (0.63.0); 21: seat rules (0.43.0); 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 23; // 23: city buildings part 2, gym halls gone, the item bag (0.64.0); 22: city sizes and buildings part 1 (0.63.0); 21: seat rules (0.43.0); 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -7312,13 +7312,14 @@ function eliteItems(t) {
   if (t.role === 'gymtrainer') { const gi = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); n = gi < 4 ? 0 : Math.min(t.team.length, gi - 3); }
   // a sharp strategist gets one more of their Pokémon an item, a poor one one fewer
   if (t.role === 'leader' || t.role === 'gymtrainer') n = clamp(n + (t.r.str >= 75 ? 1 : t.r.str < 45 ? -1 : 0), 0, t.team.length);
-  const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone');
+  const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone' && itemFreeOk(k)); // (0.64.0) tier 2-3 only from the bag
   const order = t.team.slice().sort((a, b) => b.lvl - a.lvl || SP[b.sp].bst - SP[a.sp].bst).slice(0, n);
   const held = new Set();
   for (const m of order) {
     const best = keys.filter(k => ITEMS[k].type || !held.has(k)).map(k => [k, itemScore(m, k, t)]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
     if (best) { m.item = best[0]; held.add(best[0]); }
   }
+  if (bagRule()) bagEquip(t, held);
 }
 // a random item of up to this tier (rarer tiers less often)
 function rollItem(maxTier, notType) {
@@ -10074,7 +10075,7 @@ function gymTrainerCands(i) {
   S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && gymFits(t, L)) out.push({ t, from: 'e4', seat: k }); });
   for (const c of out) if (['gym', 'leader', 'e4'].includes(c.from)) c.refuse = refusal(c.t, 'gymtrainer', i);
   for (const c of out) if (['circuit', 'retired'].includes(c.from)) c.refuse = prestBlock(c.t) || c.refuse; // (0.23.0)
-  return out.sort((a, b) => ovr(b.t) - ovr(a.t));
+  return out.sort((a, b) => schoolRank(b.t) - schoolRank(a.t) || ovr(b.t) - ovr(a.t));
 }
 // put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
 // one short, so only a place that is held can be changed there. Returns the vacancy a moved senior member left, or
@@ -10153,7 +10154,7 @@ function acceptsOffer(t, post) {
   // (0.13.0) the scouting office and a bid over the asking pay (0.16.0: in every League, rival Leagues bid too)
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
-  if (ownAcademy(t)) p += ACADEMY_LOYAL;
+  if (ownYouth(t)) p += ACADEMY_LOYAL;
   p -= CON_ODDS * conMiss(t, post, t.conAsk); // (0.52.0) a contract length they don't want
   p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);
@@ -13683,7 +13684,7 @@ const playerFin = () => (S && handOn() ? inLeague(ME(), () => S.fin) : null);
 function payBase(post, slot) { return post === 'gymtrainer' ? PAY_BASE.gymtrainer : post === 'leader' ? PAY_BASE.leader + PAY_BASE.leaderStep * (slot || 0) : post === 'e4' ? PAY_BASE.e4 + PAY_BASE.e4Step * (slot || 0) : PAY_BASE.champion; }
 function payFor(t, post, slot, o) {
   const v = o != null ? o : ovr(t);
-  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? 1 + (PAY_FAMOUS - 1) * famPremium() : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1));
+  return Math.round(payBase(post, slot) * Math.pow(v / 60, 2) * (t.famous ? 1 + (PAY_FAMOUS - 1) * famPremium() : 1) * ((t.titleSeasons || []).length ? PAY_TITLE : 1) * (ownAcademy(t) ? ACADEMY_PAY : 1) * schoolPay(t, post));
 }
 function payOf(t) { const p = postOf(t); return p ? Math.round(payFor(t, p.post, p.slot, t.payOvr) * (t.payMul || 1) * (t.storeMul || 1)) : 0; }
 // what a candidate would ask for a post (founding, hiring pages)
@@ -13763,6 +13764,7 @@ function moneyWeek() {
     if (!lap) { const sn = sanctIncome(); if (sn) book(sn, 'sanctuary'); const u = upkeepWeek(); if (u) book(-u, 'upkeep'); }
     // (0.63.0) the Hotels' guests and the Berry Farms' harvest (tickets are sold in each battle)
     if (!lap) { const h = hotelIncome(); if (h) book(h, 'hotels'); berryWeek(); }
+    buildings2Week(lap); // (0.64.0) Store shoppers, School graduates, Tutor lessons, Lab grants
     const ci = cityIncome(); if (ci) book(ci, 'cities');
     const sh = S.ranch ? showcase().income : 0; if (sh) book(sh, 'showcase'); // (0.36.0) conditioned Pokémon at the seat draw a crowd
     expirePaidBans();
@@ -13873,9 +13875,9 @@ function expirePaidBans() {
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (the home edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['gyms', 'center'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['seat', 'academy'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'sanct'], ['gyms', 'hall'], ['gyms', 'lane'], ['seat', 'scout'], ['gyms', 'safari'], ['seat', 'daycare']] },
-  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'stadium'], ['gyms', 'sanct'], ['gyms', 'center'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums for the home edge and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['gyms', 'stadium'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'stadium'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'sanct'], ['gyms', 'center'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
 // (0.16.0) what a rich rival League does with its money besides building: bids over the asking pay when it hires
@@ -13891,7 +13893,7 @@ function aimBid() {
 function runningNet() {
   const y = S.fin.last || S.fin.yr; if (!y) return 0;
   const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
-  return sum(y.in) - (sum(y.out) - (y.out.building || 0) - (y.out.bans || 0) - (y.out.ranchbuy || 0) - (y.out.trips || 0) - (y.out.signing || 0) - (y.out.severance || 0));
+  return sum(y.in) - (sum(y.out) - (y.out.building || 0) - (y.out.bans || 0) - (y.out.ranchbuy || 0) - (y.out.trips || 0) - (y.out.items || 0) - (y.out.signing || 0) - (y.out.severance || 0));
 }
 function aimUpgrade() {
   const f = S.fin; if (!f || !f.aim || fixedStaff() || f.money - AIMS[f.aim].reserve < AIM_UPGRADE) return;
@@ -13928,7 +13930,7 @@ function aimMonth() {
     // a star-maker lets its gyms build freely and has only its Elite Four and Champion counter the year
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
-  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); } // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
+  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); aimItems(aim); } // (0.64.0) an item for the bag by aim // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
   if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff; (0.54.0) or another League's, by aim
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
@@ -13942,7 +13944,7 @@ function autoMonth(aim) {
   if (S.fin.money < 0) { aiSell(); AUTO_LOG.sold++; }
   aimRanch(aim);
   const est = estateCost(), bans = paidBans().length;
-  aimSpend(aim);
+  aimSpend(aim); aimItems(aim);
   if (estateCost() > est) AUTO_LOG.built++;
   if (paidBans().length > bans) AUTO_LOG.bans++;
 }
@@ -13956,7 +13958,7 @@ function aimSpend(aim) {
   }
   // (0.16.0) never take on more upkeep than last year's running balance can carry (buildings that earn pay their own way)
   // (0.63.0) a Stadium or a Hotel only where it would fill more (aimWorth); Hotels in the busiest cities first
-  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1 };
+  const net = runningNet(), earns = { sanct: 1, stadium: 1, hotel: 1, berry: 1, store: 1 };
   const busy = S.gyms.map((_, i) => i).sort((x, y) => ((S.cities[S.gyms[y].city] || {}).vly || 0) - ((S.cities[S.gyms[x].city] || {}).vly || 0));
   for (const [w, k] of A.build) {
     const spots = focus != null ? (w === 'seat' ? [] : [focus]) : w === 'seat' ? ['seat'] : k === 'hotel' ? busy : S.gyms.map((_, i) => i).reverse();
@@ -14432,6 +14434,8 @@ function removeLeague(k, info) {
   for (const t of Object.values(S.trainers)) {
     if (t.lg != null) { t.lg = rm(t.lg); if (t.lg < 0) t.lg = 0; }
     if (t.academy != null) t.academy = t.academy === k ? null : rm(t.academy);
+    if (t.school) { if (t.school.lg === k) delete t.school; else t.school.lg = rm(t.school.lg); } // (0.64.0)
+    for (const m of t.team || []) if (m.bagLg != null) { if (m.bagLg === k) { m.item = null; delete m.bagLg; } else m.bagLg = rm(m.bagLg); } // (0.64.0) item-bag items
     if (t.sponFrom != null) t.sponFrom = t.sponFrom === k ? null : rm(t.sponFrom);
     if (t.leftLg != null) t.leftLg = rm(t.leftLg);
     if (t.grudgeLg != null) t.grudgeLg = rm(t.grudgeLg); // (0.23.0)
@@ -14486,7 +14490,12 @@ const UPGRADES = {
   hotel:   { name: 'Hotel',           text: 'Gym cities only. Rooms (4, 8, 14, 22, 32 by level) for the challengers in town each week: a room filled pays by the city\'s size. Every Hotel in the city shares the week\'s guests; the League that controls the city fills a little more. From level 3 a guest from another region counts twice. Level 3 needs a City, 4 a Metropolis, 5 a Megalopolis.', city: true, max: 5, cost: [20000, 40000, 80000, 160000, 320000], tierAt: [0, 0, 1, 2, 3] },
   center:  { name: 'Pokémon Center',  text: 'Gym cities only. Challengers whose hometown it is lean toward your League (+0.5 a level in the draw), and everyone in the region a little (+0.1 a level). Your circuit\'s challengers rest at your Centers: each Center you have cuts a week off their rest (up to 3), and a resting challenger is a visitor in its city. Level 3 needs a City.', city: true, max: 3, cost: [10000, 20000, 40000], tierAt: [0, 0, 1] },
   berry:   { name: 'Berry Farm',      text: 'Gym cities only. Plots (2, 4, 7, 10 by level) harvested every 4 weeks: each plot you set to sell brings in about 50 a week, the same in any city; each plot set to feed cuts your ranch\'s upkeep by 2% (up to 20%), and any fed plot makes Day Care eggs come a week sooner. A Grass gym in the city, or an Aroma Lady or Gardener on your staff, adds a plot\'s yield.', city: true, max: 4, cost: [15000, 30000, 60000, 120000] },
-  hall:    { name: 'Training hall',   text: 'Staff here grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', max: 5 },
+  hall:    { name: 'Training hall',   text: 'Seat only (0.64.0: a gym city has a Trainer\'s School instead). The Elite Four and the Champion grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', seat: true, max: 5 },
+  // (0.64.0, city buildings part 2: 5c-engine-3c) the Trainer's School, the Move Tutor, the Research Lab, the Department Store
+  school:  { name: 'Trainer\'s School', text: 'Gym cities only. Graduates one young gym trainer a year a level (one more level with a Professor on your staff), from this city and of a class that fits its gym, a little stronger each level: they take an open gym trainer place, else set out on the field, likelier to take your offers. Your graduates are paid 10%, 18%, 26%, 35% less by you. Also the old training hall for this gym: its Gym Leader and gym trainers grow 12% faster a level and decline more slowly. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
+  tutor:   { name: 'Move Tutor',      text: 'In a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion). A tutored Pokémon learns all three of its line\'s coverage types, each 10 levels sooner, and keeps the lesson for good. Level 1 teaches 2 Pokémon a post, level 2 the whole team, level 3 puts a backup-type Pokémon\'s coverage on its trainer\'s threats first (needs a City).', max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
+  lab:     { name: 'Research Lab',    text: 'Gym cities only; your best Lab works League-wide (a Scientist on your staff counts as a level more). Catching trips +3 Scouting a level; finds of grade 2 or better from level 2 and 3 or better from level 4; one more trip out at once from level 3; condition hunts 5% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of 500 × its level for each new species of your region the ranch takes in. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [25000, 50000, 100000, 200000], tierAt: [0, 0, 1, 2] },
+  store:   { name: 'Department Store', text: 'Gym cities only. Sells held items for your item bag (your best Store\'s floors, League-wide): the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (needs a City), 4F Life Orb, Choice Band and Choice Specs (needs a Metropolis); each floor above a shelf takes 10% off it. Your staff only hold tier 2 and 3 items from the bag. Shoppers (the city\'s visitors and residents) spend there too.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
   // (0.20.0) only in a gym city that is a legendary site: earns while open, and adds prestige
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in income every week and a point of prestige a level each New Year while it is open (one of the site\'s legendaries is with your League).', site: true, income: [250, 500, 800] },
@@ -14778,7 +14787,8 @@ function sanctIncome() { return sanctuaries().filter(s => s.open).reduce((a, s) 
 function sanctLevels() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + s.lv, 0); }
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
-function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
+// (0.64.0) a gym's Gym Leader and gym trainers: its Trainer's School (with a Professor's level) instead of a gym hall
+function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : schoolLv(p.slot); }
 
 // ================= CITY BUILDINGS, PART 1 (0.63.0; design doc cities-and-economy.md) =================
 // Visitors, the Stadium's tickets, the Hotel, the Pokémon Center and the Berry Farm. All numbers provisional.
@@ -14837,6 +14847,7 @@ function visitorsWeek() {
     }
     c.hg = {}; for (const h of hs) if (h.g) c.hg[h.i] = h.g;
   }
+  buildings2World(); // (0.64.0) the Department Stores' shoppers, the item bags
 }
 // the bound League's Hotel income this week: guests × the room rate by size (a guest from another region twice, from level 3)
 function hotelIncome() {
@@ -14939,6 +14950,11 @@ function aiBerry() {
 function aimWorth(where, k) {
   if (k === 'stadium' && aimOf() !== 'wall') { const lv = placeLv(where, k), size = where === 'seat' ? seatSize() : citySize(S.cities[S.gyms[where].city]); return STADIUM_SEATS[lv] < CROWD_AT(size) * 1.6; }
   if (k === 'hotel') { const c = S.cities[S.gyms[where].city], lv = placeLv(where, k); return (c.vly || 0) * VISIT_PARTY / YEAR_WEEKS > (lv ? HOTEL_ROOMS[lv - 1] : 0) * 0.8; }
+  // (0.64.0) a money-maker's Schools and Stores stop at level 2; the Lab and the Store work from the best one, so a rival
+  // raises its best rather than building a second
+  if ((k === 'school' || k === 'store') && aimOf() === 'money' && placeLv(where, k) >= 2) return false;
+  if (k === 'lab') return placeLv(where, k) === labBuilt();
+  if (k === 'store') return placeLv(where, k) === storeBuilt();
   return true;
 }
 // ================= THE RANCH (0.25.0, design doc 6.5, part 1: the core) =================
@@ -15033,6 +15049,7 @@ function entryOfMon(m, of) {
   const top = m.top && SP[m.top] && LINE[m.top] === LINE[m.sp] ? m.top : m.sp;
   const e = { uid: uid(), b, sp: top, g: monGrade(m), iv: Object.assign({}, m.iv), nat: m.nat || null, from: 'staff', got: S.turn || 0, at: null, res: null, lock: false, of, sale: null };
   const c = condOf(m); if (c) e.c = c;
+  if (m.tut) e.tut = 1; // (0.64.0) a Move Tutor's lesson stays with it
   return e;
 }
 // the form an entry takes at level L (following the branch it came as)
@@ -15080,6 +15097,7 @@ function ranchMon(t, e, L, form) {
     const val = c => bad.filter(a => effOne(c.t, a) >= 2).length;
     m.cov = coverOptions(sp).map((c, i) => [c, val(c) - i / 10]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]).sort((a, b) => a.lv - b.lv);
   }
+  if (e.tut) { m.tut = 1; m.cov = tutorCov(t, m); } // (0.64.0)
   return ensureMon(m);
 }
 // stopgaps: when nothing in the ranch fits, the weakest commons of the trainer's type stand in (grade 1, free), so a
@@ -15255,10 +15273,10 @@ const stockPosts = placed => [{ t: T(placed.champion), role: 'champion', slot: 0
 // ---------- Scouting, trips, the market ----------
 // the League's Scouting for finds: its best senior member's (real rating) plus the scouting office
 function ranchScout() { const s = seniorIds().map(T).filter(t => !t.acting).map(t => t.r.sct); return (s.length ? Math.max(...s) : 40) + RANCH_SCOUT_OFFICE * scoutLv(); }
-const tripMax = () => TRIP_MAX + scoutLv();
+const tripMax = () => TRIP_MAX + scoutLv() + labTrips(); // (0.64.0) a Research Lab from level 3
 // a targeted trip for line b: its cost, length and odds (fixed when it sets out)
 function tripPlan(b) {
-  const top = lineTop(b), sc = ranchScout(), rare = !!(SP[b].rare || SP[b].starter);
+  const top = lineTop(b), sc = ranchScout() + labScout(), rare = !!(SP[b].rare || SP[b].starter);
   // (0.44.0) through the safari: cheaper and likelier with each level, likelier still for a stocked line, whose finds
   // are no worse than a grade below the best stocked one
   const sl = safariSet().has(b) ? safariLv() : 0, st = sl ? stockFloor(b) : 0;
@@ -15292,7 +15310,7 @@ function startTrip(kind, b, cond) {
 function tripsWeek() {
   const R = S.ranch, due = R.trips.filter(x => x.due <= S.turn); if (!due.length) return;
   R.trips = R.trips.filter(x => x.due > S.turn);
-  const sc = ranchScout(), mine = playerLeague();
+  const sc = ranchScout() + labScout(), mine = playerLeague(); // (0.64.0) the Research Lab's Scouting
   for (const tr of due) {
     const here = hereLines(), home = homeSet(S.region), abroad = tr.k === 'charter' ? [...regionLines().sets[tr.r]].filter(b => (!home || !home.has(b)) && homeOnly(b) == null) : null;
     const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
@@ -15302,8 +15320,8 @@ function tripsWeek() {
     // (0.36.0) every find rolls the wild odds for a condition (an outbreak's at outbreak odds); a hunt's find has its own
     const obMul = { alpha: OUTBREAK_ALPHA, delta: OUTBREAK_ALPHA, shiny: OUTBREAK_SHINY, radiant: OUTBREAK_SHINY };
     for (const b of finds) {
-      const e = newEntry(b, Math.max(tr.floor || 1, gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
-      const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : 1)))];
+      const e = newEntry(b, Math.max(tr.floor || 1, labFloor(), gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
+      const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : tr.cond ? 1 : labCond())))];
       if (ks.length) condEntry(e, ks);
       (ranchAdd(e) ? got : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
     }
@@ -16254,7 +16272,7 @@ const deltaMul = b => (b && deltaSet().has(b) ? DELTA_HOME : DELTA_AWAY);
 const huntOk = (b, k) => !!(COND_MUL[k] && featOn(k) && (tripOk(b) || (k === 'delta' && deltaSet().has(b))));
 function huntPlan(b, k) {
   const p = tripPlan(b), pool = k === 'delta' && deltaSet().has(b);
-  return { cost: Math.round(p.cost * COND_MUL[k] / 50) * 50, weeks: p.weeks + HUNT_WEEKS[k], odds: Math.round(clamp(p.odds * HUNT_ODDS[k] * (pool ? DELTA_HUNT : 1), 0.05, 0.9) * 100) / 100 };
+  return { cost: Math.round(p.cost * COND_MUL[k] / 50) * 50, weeks: p.weeks + HUNT_WEEKS[k], odds: Math.round(clamp(p.odds * HUNT_ODDS[k] * (pool ? DELTA_HUNT : 1) * labHunt(), 0.05, 0.9) * 100) / 100 };
 }
 // ---------- outbreaks ----------
 // the bound League's mass outbreak a trip can still reach (this week's or last week's), its line, or null
@@ -16318,6 +16336,7 @@ function storePayMul(t, post) { return SENIOR_POSTS.includes(post) && (t.store |
 const storePickN = () => STORE_PICKS + scoutLv();
 // a trainer takes a post (openPost): someone new to the staff of a League with a ranch offers their storage
 function storeHire(t, role, was) {
+  bagHire(t, role, was); // (0.64.0) their tier 2 and 3 items go into the League's item bag
   if (was || t.acting || !SENIOR_POSTS.includes(role) || !ranchOn() || !(t.store || []).length || S.founding) return;
   STORE_LOG.offered++;
   const n = storePickN();
@@ -17054,6 +17073,283 @@ if (typeof module !== 'undefined') Object.assign(module.exports, { leavingSet, s
 if (typeof module !== 'undefined') Object.assign(module.exports, { CON_SENIOR, CON_SHORT, CON_WINDOW, CON_ODDS, CON_PAY, CON_MORE, CON_LOG, conOpts, conShort, conWords, conPrefIdx, conPref, conMiss, conHolds, setContract, conWill, renewCon, aiRenew, conEnd, contractWeek, renewContract, conLetRun, conPending, setConAsk });
 if (typeof module !== 'undefined') Object.assign(module.exports, { TALK_MAX, TALK_WALK, TALK_COOL, TALK_STAR_OVR, TALK_BIDS, TALK_BONUS, PROM_WEEKS, PROMISES, TALK_LOG, talkList, talkOf, promOn, postVal, isStar, canTalk, talkWeeks, openTalks, starTalks, talkNeed, talkAsk, talkPay, talkBonus, talkInterest, talkRank, talkHeld, talkCount, offerCheck, makeOffer, withdrawTalkOffer, aiTalkPost, closeTalk, talkValid, talksWeek, settleTalk, talkSign, talkFromHire, talkMatch, talkLetGo, talkSight, talkFee, offerWords, aiPoach, TALK_AIM, BID_TEMPERS, BID_TEMPER_KEYS, TALK_AIM_LOG, bidTemper, talkKeen, beatTop, seatOpening, aiRaise, aiRetain, aiTalkMove, champUpTalks, champLeaves, champMakeRoom, isBestOf, founderChamp, conCatchUp, TALK_RES, TALK_RES_GOOD, TALK_RES_BAD, TALK_DONE_KEEP, TALK_DONE_LOG, talkDone, talkMine, talkUnseen, talkGone });
 if (typeof module !== 'undefined') Object.assign(module.exports, { citySize, sizeName, sizeAt, slotAt, cityPool, CITY_INCOME_AT, VISIT_SPEND_AT, TICKET_AT, CROWD_AT, ROOM_AT, SIZE_PREST_AT, STADIUM_SEATS, STADIUM_EDGE, SEAT_STADIUM, HOTEL_ROOMS, VISIT_PARTY, BERRY_PLOTS, BERRY_SELL, BERRY_FEED, BERRY_FEED_MAX, seatSize, visitorsWeek, hotelIncome, stadiumSeats, ticketSale, TIX_LOG, centerCut, centerDraw, berryFarms, berryFeedCut, berrySales, setBerryFeed, aiBerry, aimWorth, homeEdge, lgLapsed });
+// ================= CITY BUILDINGS, PART 2 (0.64.0; design docs cities-and-economy.md and design-update-city-buildings.md) =================
+// Staff strength: the Trainer's School, the Move Tutor, the Research Lab and the Department Store with the League's item
+// bag. The UPGRADES entries are in 5b-engine-3b. All numbers provisional.
+
+// ---------- the Trainer's School ----------
+// A gym city's own source of gym trainers. Each level (one more with a Professor anywhere on the staff) graduates one
+// student a year, spread through the year: 16 to 20, from that city, of a class that fits the gym, starting at the
+// regional field's gym-trainer cut (gtCircuitCut) + SCHOOL_OVR a level. A graduate takes an open gym trainer place at
+// that gym, then one at the League's other gyms that they fit; a rival League also lets a holder at least SCHOOL_WEAKER
+// OVR weaker go when their short contract is nearly up; otherwise they set out on the region's field, likelier to take
+// their School's League's offers (as academy prospects are). A graduate is paid SCHOOL_PAY of the usual wage by their
+// own League (by the School's built level when they graduated). The School also carries the old gym-city training
+// hall's growth bonus for the Gym Leader and gym trainers there (hallLv in 5b); the hall itself is seat-only now.
+const SCHOOL_PAY = [0.9, 0.82, 0.74, 0.65], SCHOOL_OVR = 2, SCHOOL_WEAKER = 3, SCHOOL_MAX_EFF = 5, SCHOOL_KEEP = 30;
+const SCHOOL_LOG = { grads: 0, gym: 0, other: 0, renewal: 0, field: 0 };
+const isProfessor = t => !!(t && /Professor/.test(t.cls || ''));
+const professorOn = () => staffIds().some(id => { const t = T(id); return t && !t.acting && isProfessor(t); });
+// the School's working level at gym gi (its built level, +1 for a Professor), 0 without one or in the red
+function schoolLv(gi) { if (lapsed()) return 0; const lv = placeLv(gi, 'school'); return lv ? Math.min(SCHOOL_MAX_EFF, lv + (professorOn() ? 1 : 0)) : 0; }
+const ownSchool = t => !!(t && t.school && t.school.lg === (S.lg || 0));
+// academy prospects and School graduates both lean toward their own League's offers
+const ownYouth = t => ownAcademy(t) || ownSchool(t);
+const schoolPay = (t, post) => post === 'gymtrainer' && ownSchool(t) ? SCHOOL_PAY[clamp((t.school.lv || 1) - 1, 0, SCHOOL_PAY.length - 1)] : 1;
+// the gym trainer picker lists the League's own graduates first
+const schoolRank = t => ownSchool(t) ? 1 : 0;
+function schoolGrads() { const f = S.fin; if (!f) return []; return f.grads = (f.grads || []).filter(x => x.season >= S.season - 1).slice(0, SCHOOL_KEEP); }
+function schoolWeek() {
+  if (!S.fin || fixedStaff() || lapsed() || S.founding) return;
+  S.gyms.forEach((g, gi) => {
+    const eff = schoolLv(gi); if (!eff) return;
+    for (let n = 0; n < eff; n++) if (S.week === (Math.floor((n + 0.5) * YEAR_WEEKS / eff) + gi * 5) % YEAR_WEEKS) graduate(gi, placeLv(gi, 'school'), eff);
+  });
+}
+// a place gym trainer k at gym gj that a graduate t can take now (empty, or held by nobody in post), or -1
+function openGtPlace(gj, t) {
+  const h = S.gyms[gj], L = h && T(h.leader); if (!L || h.acting || !gymFits(t, L)) return -1;
+  for (let k = 0; k < GYM_TRAINERS; k++) { const x = T((h.trainers || [])[k]); if (!x || x.role !== 'gymtrainer') return k; }
+  return -1;
+}
+function graduate(gi, lv, eff) {
+  const g = S.gyms[gi], L = T(g.leader), c = S.cities[g.city]; if (!L || !c) return null;
+  const ty = specTypes(L), cut = gtCircuitCut(), base = isFinite(cut) ? cut : 48;
+  const t = newTrainer({ age: ri(16, 20), quality: base, role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  setOvr(t, Math.round(base + SCHOOL_OVR * eff));
+  const ids = Object.values(S.cities).filter(x => x.region === c.region).sort((a, b) => a.id - b.id).map(x => x.id);
+  t.home = { r: c.region, i: Math.max(0, ids.indexOf(c.id)) };
+  t.school = { lg: S.lg || 0, city: c.id, gym: gi, lv, at: S.turn };
+  starterTeam(t, 9);
+  SCHOOL_LOG.grads++;
+  const rec = { id: t.id, gym: gi, season: S.season, at: S.turn, to: 'field' };
+  const order = [gi].concat(S.gyms.map((_, j) => j).filter(j => j !== gi));
+  for (const gj of order) { const k = openGtPlace(gj, t); if (k < 0) continue;
+    takeGymTrainer(t, gj, k, `${dn(t)} graduated from the Trainer's School in ${c.name} and became a gym trainer at ${townName(gj)} Gym.`);
+    rec.to = gj === gi ? 'gym' : 'other'; rec.gj = gj; SCHOOL_LOG[rec.to]++; break; }
+  // (provisional) a rival League lets a weaker gym trainer go at the end of their contract to take a graduate on; your
+  // League's graduates go to the field instead, and your gym trainer picker lists them first
+  if (rec.to === 'field' && !playerLeague()) {
+    for (const gj of order) { const h = S.gyms[gj], Lj = T(h.leader); if (!Lj || h.acting || !gymFits(t, Lj)) continue;
+      const k = (h.trainers || []).map((id, kk) => ({ x: T(id), kk })).filter(o => o.x && o.x.role === 'gymtrainer' && ovr(o.x) <= ovr(t) - SCHOOL_WEAKER && o.x.con && o.x.con.until - S.turn <= 4).sort((a, b) => ovr(a.x) - ovr(b.x))[0];
+      if (!k) continue;
+      const old = k.x; h.trainers[k.kk] = null; closePost(old); retireOrReturn(old, `was not kept on at ${townName(gj)} Gym when a School graduate came in`);
+      takeGymTrainer(t, gj, k.kk, `${dn(t)} graduated from the Trainer's School in ${c.name} and took ${old.name}'s place at ${townName(gj)} Gym.`);
+      rec.to = 'renewal'; rec.gj = gj; SCHOOL_LOG.renewal++; break; }
+  }
+  if (rec.to === 'field') {
+    joinCircuit(t, S.lg || 0); t.rest = S.turn + ri(1, 3); t.early = 0; SCHOOL_LOG.field++;
+    news(`${dn(t)} graduated from the Trainer's School in ${c.name} and is setting out as a challenger.`, 'circuit', t.id);
+  }
+  S.fin.grads = [rec].concat(schoolGrads()).slice(0, SCHOOL_KEEP);
+  return t;
+}
+
+// ---------- the Move Tutor ----------
+// Lessons for the staff at its place: the Gym Leader and gym trainers of that city's gym, or the Elite Four and the
+// Champion when it is at the seat. A tutored Pokémon learns all three of its line's coverage types, each TUTOR_SOONER
+// levels sooner, in the order its trainer's Strategy picks (the types that answer the year's meta first, for a sharp
+// strategist); at level 3 a backup-type Pokémon puts the types that hit its trainer's own threats first. A lesson stays
+// with the Pokémon (and its ranch entry) for good. Level 1 teaches TUTOR_FEW Pokémon a post (planned ones first, then
+// the strongest), level 2 the whole team. Lessons are given once a month.
+const TUTOR_SOONER = 10, TUTOR_FEW = 2;
+const TUTOR_LOG = { taught: 0, ranch: 0 };
+const tutorAt = where => lapsed() ? 0 : placeLv(where, 'tutor');
+// the coverage a tutored Pokémon m of trainer t learns, best first
+function tutorCov(t, m) {
+  const opts = coverOptions(m.sp).map(c => ({ t: c.t, lv: Math.max(1, c.lv - TUTOR_SOONER) }));
+  const meta = metaTypes('year'), sharp = clamp(((t && t.r ? t.r.str : 50) - 30) / 60, 0, 1);
+  const own = t ? specTypes(t) : [], threats = own.length ? TYPES.filter(a => own.some(d => effOne(a, d) >= 2)) : [];
+  const where = t && postOf(t) ? (['e4', 'champion'].includes(postOf(t).post) ? 'seat' : postOf(t).slot) : null;
+  const back = m.backup && where != null && tutorAt(where) >= 3;
+  const sc = c => sharp * (meta.includes(c.t) ? 2 : 0) + (back ? 2 * threats.filter(a => effOne(c.t, a) >= 2).length : 0) + (1 - sharp) * rand() - c.lv / 100;
+  return opts.map(c => [c, sc(c)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+function teach(t, m) {
+  if (!m || !SP[m.sp]) return false;
+  m.cov = tutorCov(t, m); m.tut = 1;
+  if (m.rid != null) { const e = ranchEntry(m.rid); if (e) e.tut = 1; }
+  refreshMoves(m);
+  return true;
+}
+function tutorPosts(where) {
+  if (where === 'seat') return [S.champion, ...S.e4].map(T).filter(t => t && !t.acting);
+  const g = S.gyms[where]; if (!g) return [];
+  return [g.leader, ...(g.trainers || [])].map(T).filter(t => t && STAFF_ROLES.includes(t.role));
+}
+// once a month: lessons at every Tutor, and ranch Pokémon taught before keep their lesson on whoever fields them
+function tutorWeek() {
+  if (!S.fin || fixedStaff() || S.week % 4 !== 2) return;
+  for (const id of seniorIds()) for (const m of T(id).team) if (!m.tut && m.rid != null) { const e = ranchEntry(m.rid); if (e && e.tut) { teach(T(id), m); TUTOR_LOG.ranch++; } }
+  const f = S.fin; f.tutored = f.tutored || {};
+  for (const where of ['seat'].concat(S.gyms.map((_, i) => i))) {
+    const lv = tutorAt(where); if (!lv) continue;
+    for (const t of tutorPosts(where)) {
+      const have = t.team.filter(m => m.tut).length, room = lv >= 2 ? t.team.length - have : Math.max(0, TUTOR_FEW - have);
+      if (room <= 0) continue;
+      const cand = t.team.filter(m => !m.tut && !m.stop).sort((a, b) => (isPlanned(t, b) - isPlanned(t, a)) || monPower(b) - monPower(a)).slice(0, room);
+      for (const m of cand) if (teach(t, m)) { TUTOR_LOG.taught++; f.tutored[where] = (f.tutored[where] || 0) + 1; }
+    }
+  }
+}
+
+// ---------- the Research Lab ----------
+// League-wide, from the best Lab (catching trips aren't tied to a city): +LAB_SCOUT Scouting a level for catching
+// trips, a grade floor of 2 from level 2 and 3 from level 4, one more trip out at a time from level 3, condition hunts
+// LAB_HUNT likelier a level, and at level 4 ordinary trips roll condition odds at ×LAB_COND. A Scientist on the staff
+// counts as one more level. Research grants: LAB_GRANT × the level for every new species the League's ranch takes in
+// that its region is home to (a first step toward the regional Pokédex, which isn't built yet).
+const LAB_SCOUT = 3, LAB_HUNT = 0.05, LAB_COND = 1.5, LAB_GRANT = 500, LAB_MAX_EFF = 5;
+const LAB_LOG = { grants: 0, paid: 0 };
+const scientistOn = () => staffIds().some(id => { const t = T(id); return t && !t.acting && t.cls === 'Scientist'; });
+function labBuilt() { let best = 0; for (const g of S.gyms || []) { const c = S.cities[g.city]; if (c) best = Math.max(best, upLevel(cityB(c), 'lab')); } return best; }
+function labLv() { if (!S.fin || lapsed()) return 0; const b = labBuilt(); return b ? Math.min(LAB_MAX_EFF, b + (scientistOn() ? 1 : 0)) : 0; }
+const labScout = () => LAB_SCOUT * labLv();
+const labFloor = () => labLv() >= 4 ? 3 : labLv() >= 2 ? 2 : 1;
+const labTrips = () => labLv() >= 3 ? 1 : 0;
+const labHunt = () => 1 + LAB_HUNT * labLv();
+const labCond = () => labLv() >= 4 ? LAB_COND : 1;
+// the species the League's ranch has ever held (S.ranch.dex); a new one of its region pays a grant while it has a Lab
+function labWeek() {
+  const R = S.ranch; if (!R) return;
+  const all = R.mons.concat(R.stock || [], (R.dc && R.dc.pool) || []), first = !R.dex;
+  const dex = new Set(R.dex || []), hs = homeSet(S.region), lv = labLv();
+  let n = 0;
+  for (const e of all) for (const sp of [e.b, e.sp]) {
+    if (!sp || dex.has(sp)) continue; dex.add(sp);
+    if (!first && lv && (!hs || hs.has(e.b))) n++;
+  }
+  R.dex = [...dex];
+  if (n && booksOn()) { const a = n * LAB_GRANT * lv; book(a, 'grants', `Research grants for ${n} new species`); LAB_LOG.grants += n; LAB_LOG.paid += a; }
+}
+
+// ---------- the Department Store and the item bag ----------
+// Staff keep the free supply of tier 1 items (under the old rules for who holds one). Tier 2 and 3 items come only from
+// the League's item bag (S.fin.bag: { item: count }), bought at its Stores: floors (League-wide, the best Store's)
+// carry shelves by STORE_SHELF; each floor above a shelf takes STORE_FLOOR_OFF off its prices. The bag serves the
+// Gym Leaders, Elite Four and Champion: one item a Pokémon, back in the bag when the Pokémon leaves the team or its
+// holder the League. A hired challenger's tier 2 and 3 items go into the bag. Shoppers (a city's visitors plus
+// residents by size) spend at the city's Stores, shared by floors × the Hotel's gentle control weights.
+const STORE_SHELF = { leftovers: 2, eviolite: 2, assaultvest: 2, expertbelt: 3, focussash: 3, lifeorb: 4, choiceband: 4, choicespecs: 4 };
+const ITEM_PRICE = [2000, 8000, 25000], STORE_FLOOR_OFF = 0.1, STORE_SHOPPERS = 5;
+const SHOP_RESIDENTS_AT = k => Math.round(4 * Math.pow(1.8, k)), SHOP_SPEND_AT = k => Math.round(20 * Math.pow(1.5, k));
+const ITEM_LOG = { bought: 0, spent: 0, hired: 0, back: 0, aiBought: 0 };
+const shelfOf = k => STORE_SHELF[k] || (ITEMS[k] && ITEMS[k].tier === 1 ? 1 : 99);
+// the bag rule is on for every League that keeps books (not the wall report's fixed tiers)
+const bagRule = () => !!(S.fin && !fixedStaff() && itemsOn());
+const itemFreeOk = k => !bagRule() || (ITEMS[k] && ITEMS[k].tier === 1);
+function storeBuilt() { let best = 0; for (const g of S.gyms || []) { const c = S.cities[g.city]; if (c) best = Math.max(best, upLevel(cityB(c), 'store')); } return best; }
+const storeFloors = () => (!S.fin || lapsed()) ? 0 : storeBuilt();
+const bagOf = () => (S.fin ? S.fin.bag = S.fin.bag || {} : {});
+function itemPrice(k) { const fl = storeFloors(), sh = shelfOf(k); return Math.round(ITEM_PRICE[(ITEMS[k] || { tier: 1 }).tier - 1] * (1 - STORE_FLOOR_OFF * Math.max(0, fl - sh)) / 50) * 50; }
+// items on sale now: every item on the floors the League's best Store has
+const shelfItems = () => { const fl = storeFloors(); return Object.keys(ITEMS).filter(k => shelfOf(k) <= fl && k !== 'everstone'); };
+// bag items fielded by the bound League's senior staff (leaving one trainer out)
+function bagUsed(except) {
+  const out = {}, lg = S.lg || 0;
+  for (const id of seniorIds()) { if (id === except) continue; for (const m of T(id).team) if (m.item && m.bagLg === lg) out[m.item] = (out[m.item] || 0) + 1; }
+  return out;
+}
+const bagFree = k => (bagOf()[k] || 0) - (bagUsed()[k] || 0);
+// after the free supply: the best bag items for senior trainer t's team (from eliteItems; held = the non-type items it holds)
+function bagEquip(t, held) {
+  for (const m of t.team) delete m.bagLg;
+  if (!['leader', 'e4', 'champion'].includes(t.role) || t.acting) return;
+  const bag = bagOf(), keys = Object.keys(bag).filter(k => bag[k] > 0 && ITEMS[k]); if (!keys.length) return;
+  const used = bagUsed(t.id), lg = S.lg || 0;
+  for (const m of t.team.slice().sort((a, b) => b.lvl - a.lvl || SP[b.sp].bst - SP[a.sp].bst)) {
+    const cur = m.item ? itemScore(m, m.item, t) : 0;
+    let best = null, bv = cur + 0.5;
+    for (const k of keys) { if ((bag[k] || 0) - (used[k] || 0) <= 0 || (!ITEMS[k].type && held.has(k))) continue; const v = itemScore(m, k, t); if (v > bv) { best = k; bv = v; } }
+    if (!best) continue;
+    if (m.item && !ITEMS[m.item].type) held.delete(m.item);
+    m.item = best; m.bagLg = lg; used[best] = (used[best] || 0) + 1; if (!ITEMS[best].type) held.add(best);
+  }
+}
+// re-equip every senior member of staff (after a purchase)
+function equipSenior() { for (const id of seniorIds()) { const t = T(id); if (t && !t.acting) eliteItems(t); } }
+function buyItem(k, lg = ME()) {
+  return inLeague(lg, () => {
+    if (!booksOn()) return 'Money is off.';
+    if (!itemsOn()) return 'Held items are switched off in this world.';
+    if (!ITEMS[k]) return 'No such item.';
+    if (!shelfItems().includes(k)) return storeFloors() ? 'Your Department Stores have no floor that sells it.' : 'You need a Department Store.';
+    const price = itemPrice(k); if (!canSpend(price)) return 'Not enough money.';
+    book(-price, 'items', `Bought a ${itemName(k)} at the Department Store`);
+    const bag = bagOf(); bag[k] = (bag[k] || 0) + 1;
+    ITEM_LOG.bought++; ITEM_LOG.spent += price;
+    equipSenior();
+    return null;
+  });
+}
+// a challenger hired to a senior post brings their tier 2 and 3 items into the League's bag (from storeHire)
+function bagHire(t, role, was) {
+  if (was || t.acting || !['leader', 'e4', 'champion'].includes(role) || !bagRule()) return;
+  const got = [];
+  t.bag = (t.bag || []).filter(k => { if (ITEMS[k] && ITEMS[k].tier >= 2) { got.push(k); return false; } return true; });
+  for (const m of t.team) if (m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg == null) { got.push(m.item); m.item = null; }
+  if (!got.length) return;
+  const bag = bagOf(); for (const k of got) bag[k] = (bag[k] || 0) + 1;
+  ITEM_LOG.hired += got.length;
+  if (playerLeague()) news(`${dn(t)} brought ${got.map(itemName).join(', ')} into the League's item bag.`, 'move', t.id);
+}
+// world-level, monthly: a League's bag items on anyone no longer on its senior staff go back to its bag
+function bagSync() {
+  if (S.week % 4) return;
+  const sen = []; for (let i = 0; i < nLeagues(); i++) sen.push(new Set(inLeague(i, () => seniorIds())));
+  for (const t of Object.values(S.trainers)) for (const m of t.team || []) if (m.bagLg != null && !(sen[m.bagLg] && sen[m.bagLg].has(t.id))) { m.item = null; delete m.bagLg; ITEM_LOG.back++; }
+}
+// world-level, weekly after the Hotels: each city's shoppers (its visitors plus residents by size) shared among the Stores
+// of the Leagues there (not in the red) by floors × the control weight, none past its floors' capacity: c.sg[lg]
+function shoppersWeek() {
+  const m = gymMap();
+  for (const c of Object.values(S.cities || {})) {
+    c.sg = null;
+    const st = (m[c.id] || []).filter(i => !lgLapsed(i)).map(i => ({ i, lv: upLevel(cityB(c, i), 'store') })).filter(x => x.lv);
+    if (!st.length) continue;
+    let left = (c.vw || 0) + SHOP_RESIDENTS_AT(citySize(c));
+    for (const s of st) { s.cap = s.lv * STORE_SHOPPERS; s.w = s.lv * (c.ctrl === s.i && c.tier != null ? HOTEL_CTRL[c.tier] : 1); s.g = 0; }
+    for (let pass = 0; pass < 3 && left > 0; pass++) {
+      const open = st.filter(s => s.g < s.cap), tw = open.reduce((a, s) => a + s.w, 0); if (!tw) break;
+      let given = 0;
+      for (const s of open) { const n = Math.min(s.cap - s.g, Math.floor(left * s.w / tw + 1e-9) || (pass === 2 ? 1 : 0)); s.g += n; given += n; }
+      left -= given; if (!given) break;
+    }
+    c.sg = {}; for (const s of st) if (s.g) c.sg[s.i] = s.g;
+  }
+}
+function storeIncome() {
+  if (lapsed()) return 0;
+  const lg = S.lg || 0; let a = 0;
+  for (const g of S.gyms) { const c = S.cities[g.city]; if (c && c.sg && c.sg[lg]) a += c.sg[lg] * SHOP_SPEND_AT(citySize(c)); }
+  return Math.round(a);
+}
+// a rival buys at most one item a month by aim: wall-builders tier 3 first, star-makers tier 2 and 3, money-makers only
+// the cheaper tier 2 shelves; only an item none of its bag can cover and a senior Pokémon would use, within its spare
+function aimItems(aim) {
+  const fl = storeFloors(); if (!fl || !bagRule() || S.fin.money < 0 || rand() < 0.5) return;
+  const spare = S.fin.money - AIMS[aim].reserve, maxTier = aim === 'money' ? 2 : 3;
+  const ks = shelfItems().filter(k => ITEMS[k].tier >= 2 && ITEMS[k].tier <= maxTier && bagFree(k) <= 0 && itemPrice(k) <= spare);
+  if (!ks.length) return;
+  const mons = seniorIds().map(T).filter(t => !t.acting).flatMap(t => t.team.map(m => ({ t, m })));
+  let best = null, bv = 3;
+  for (const k of ks) { const g = Math.max(0, ...mons.map(x => itemScore(x.m, k, x.t) - (x.m.item ? itemScore(x.m, x.m.item, x.t) : 0))) * (aim === 'wall' && ITEMS[k].tier === 3 ? 1.3 : 1); if (g > bv) { best = k; bv = g; } }
+  if (best && !buyItem(best, S.lg || 0)) ITEM_LOG.aiBought++;
+}
+
+// ---------- the weekly and world hooks ----------
+// per League, from moneyWeek: Store shoppers, School graduations, Tutor lessons, Lab grants
+function buildings2Week(lap) {
+  if (!S.fin) return;
+  if (!lap) { const s = storeIncome(); if (s) book(s, 'shops'); }
+  schoolWeek(); tutorWeek(); labWeek();
+  // staff equipped before the League kept books (a League founded by hand) or by another path re-equip under the bag rule
+  if (bagRule()) { const lg = S.lg || 0; for (const id of staffIds()) { const t = T(id); if (t && t.team.some(m => m.item && ITEMS[m.item] && ITEMS[m.item].tier >= 2 && m.bagLg !== lg)) { eliteItems(t); ITEM_LOG.fixed = (ITEM_LOG.fixed || 0) + 1; } } }
+}
+// world-level, from visitorsWeek
+function buildings2World() { shoppersWeek(); bagSync(); }
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { SCHOOL_PAY, SCHOOL_LOG, schoolLv, ownSchool, ownYouth, schoolPay, schoolRank, schoolGrads, graduate, isProfessor, TUTOR_LOG, TUTOR_SOONER, tutorAt, tutorCov, teach, LAB_LOG, labLv, labBuilt, labScout, labFloor, labTrips, labHunt, labCond, LAB_GRANT, ITEM_LOG, STORE_SHELF, ITEM_PRICE, shelfOf, bagRule, itemFreeOk, storeFloors, storeBuilt, bagOf, itemPrice, shelfItems, bagUsed, bagFree, buyItem, equipSenior, storeIncome, SHOP_SPEND_AT, aimItems });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -18572,7 +18868,8 @@ function hireTags(t) {
   if (!handOn() || (S.lg || 0) !== ME()) return sp;
   const imp = impressed(t);
   const st = (t.store || []).length && !STAFF_ROLES.includes(t.role) ? ` <span class="tag small" title="${esc(t.store.slice(0, 6).map(s => s.top || s.sp).join(', '))}${t.store.length > 6 ? '…' : ''}. Hired to a senior post, they let you take up to ${storePickN()} into the ranch, and ask more pay the richer it is.">Storage ${t.store.length} · ${money(storeTotal(t))}</span>` : '';
-  return st + sp + (claimOn(t) ? ` <span class="tag notice small" title="Claims the Champion's seat; glad to take a post instead">Claimant</span>` : '') + (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
+  const sch = ownSchool(t) && t.role !== 'gymtrainer' ? ` <span class="tag small" title="Graduated from your Trainer's School in ${esc((S.cities[t.school.city] || {}).name || '')}: likelier to take your offers, paid less as a gym trainer">School graduate</span>` : ''; // (0.64.0)
+  return sch + st + sp + (claimOn(t) ? ` <span class="tag notice small" title="Claims the Champion's seat; glad to take a post instead">Claimant</span>` : '') + (imp ? ` <span class="tag gold small" title="${esc(imp)}">Impressed</span>` : '') + (t.hired ? ` <span class="tag notice small">Hired: ${hireTarget(t.hired)} by ${turnDate(t.hired.by)}</span>` : '');
 }
 // (0.9.0) a warning on a Gym Leader's poor years in a row, or an Elite Four member with the worst record of the four
 // two or more years running. In the player's League nothing happens on its own: replacing them is the player's call.
@@ -18755,7 +19052,7 @@ function viewMeta() {
 }
 // ---------- money and cities (0.13.0) ----------
 // the Money page: the balance, the year's books by heading, salaries with raises, and the ledger
-const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying' };
+const FIN_NAMES = { bounties: 'Bounties', contenders: 'Contenders\' stipends', founding: 'Founding a League', entry: 'Entry fees', prize: 'Wall prize', attractions: 'Attractions', tickets: 'Stadium tickets', hotels: 'Hotels', berries: 'Berry Farms', shops: 'Department Stores', grants: 'Research grants', items: 'Items (Department Store)', sanctuary: 'Sanctuaries', salaries: 'Salaries', signing: 'Signing fees', severance: 'Severance', raises: 'Raises', bans: 'Bans', building: 'Buildings', upkeep: 'Upkeep', cities: 'City income', transfers: 'Transfer fees', sales: 'Building sales', ranch: 'Ranch upkeep', ranchbuy: 'Ranch purchases', ranchsale: 'Ranch sales', trips: 'Catching trips', showcase: 'Showcase', seatcup: 'Cup ticket sales', seatlobby: 'Council lobbying' };
 function finTable(y) {
   if (!y) return '<p class="muted">Nothing yet.</p>';
   const row = (o, sign) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${FIN_NAMES[k] || k}</td><td class="num">${sign}${money(v)}</td></tr>`).join('');
@@ -18914,7 +19211,7 @@ function ranchTeams(sen) {
   const bkLine = t => { const b = t.role === 'champion' ? [] : backupTypes(t); return b.length ? `<br><span class="muted">backups</span> ${chips(b)}` : ''; };
   const show = m => teamShow === 'all' || (teamShow === 'ranch' ? m.rid != null : teamShow === 'own' ? kind(m) === 'own' : kind(m) === 'stopgap' || kind(m) === 'backup');
   const rows = sen.map(t => { const ms = t.team.filter(show); if (!ms.length) return '';
-    return ms.map((m, i) => `<tr>${i ? '' : `<td class="small" rowspan="${ms.length}">${esc(postName(t))}${bkLine(t)}</td><td rowspan="${ms.length}">${tname(t.id)}<br><span class="small muted">${typeLabel(t)}</span></td>`}<td>${esc(m.sp)}${condTag(condOf(m))}</td><td>${chips(monTypes(m))}</td><td class="small">${gradeStars(monGrade(m))}</td><td class="small">${heldItem(m) ? esc(itemName(m.item)) : '<span class="muted">—</span>'}</td><td>${tag[kind(m)]}${isPlanned(t, m) ? ' <span class="tag small">planned</span>' : ''}</td></tr>`).join(''); }).join('');
+    return ms.map((m, i) => `<tr>${i ? '' : `<td class="small" rowspan="${ms.length}">${esc(postName(t))}${bkLine(t)}</td><td rowspan="${ms.length}">${tname(t.id)}<br><span class="small muted">${typeLabel(t)}</span></td>`}<td>${esc(m.sp)}${condTag(condOf(m))}${m.tut ? ' <span class="tag small" title="Move Tutor: knows all three coverage types">Tutored</span>' : ''}</td><td>${chips(monTypes(m))}</td><td class="small">${gradeStars(monGrade(m))}</td><td class="small">${heldItem(m) ? esc(itemName(m.item)) : '<span class="muted">—</span>'}</td><td>${tag[kind(m)]}${isPlanned(t, m) ? ' <span class="tag small">planned</span>' : ''}</td></tr>`).join(''); }).join('');
   const seg = [['all', 'Everyone'], ['ranch', 'From the ranch'], ['own', 'Their own'], ['gap', 'Stopgaps and backups']];
   return `<section class="panel"><div class="ph"><h2>Who fields what</h2><span class="muted">One row a Pokémon. Own: the trainer's own; ranch: from the ranch; backup type: from the ranch, of one of their backup types; stopgap: a weak stand-in</span></div>
     <div class="segs wide">${seg.map(([k, n]) => `<button class="seg${teamShow === k ? ' on' : ''}" data-act="ranchteams" data-v="${k}" aria-pressed="${teamShow === k}">${n}</button>`).join('')}</div>
@@ -19909,6 +20206,12 @@ function cityBuilt(p, x, where) {
   else if (x.k === 'berry') { const f = berryFarms().find(y => y.gi === p.gym), plots = berryPlots(x), opts = Array.from({ length: plots + 1 }, (_, n) => `<option value="${n}"${n === (f ? f.feed : 0) ? ' selected' : ''}>${n} feeding, ${plots - n} selling</option>`).join('');
     what = `${plots} plot${plots === 1 ? '' : 's'}${f && berryBonus(f.gi) ? ' (+1 plot\'s yield)' : ''}. <select class="berryfeed" data-g="${p.gym}" aria-label="Berry Farm plots that feed the ranch">${opts}</select>`; }
   else if (x.k === 'center') what = `Draw +${(CENTER_HOME * x.lv).toFixed(1)} for challengers from here, +${(CENTER_ALL * x.lv).toFixed(1)} for the rest of the region.`;
+  // (0.64.0) city buildings part 2
+  else if (x.k === 'school') { const eff = schoolLv(p.gym), gr = schoolGrads().filter(y => y.gym === p.gym && y.season === S.season), to = { gym: 'this gym', other: 'another of your gyms', renewal: 'a gym trainer place', field: 'the field' };
+    what = `${eff} graduate${eff === 1 ? '' : 's'} a year${eff > x.lv ? ' (a Professor on your staff adds one)' : ''}, paid ${Math.round((1 - SCHOOL_PAY[x.lv - 1]) * 100)}% less by you; growth +${Math.round(12 * eff)}% here. This year: ${gr.length ? gr.map(y => `${tname(y.id)} (${to[y.to]}${y.gj != null && y.gj !== p.gym ? ': ' + esc(townName(y.gj)) : ''})`).join(', ') : 'none yet'}.`; }
+  else if (x.k === 'tutor') what = `${x.lv >= 2 ? 'Whole teams' : `${TUTOR_FEW} Pokémon a post`} learn all three coverage types, ${TUTOR_SOONER} levels sooner${x.lv >= 3 ? '; backup-type Pokémon cover their trainer\'s threats first' : ''}. Lessons given here: ${(S.fin.tutored || {})[where] || 0}.`;
+  else if (x.k === 'lab') what = x.lv < labBuilt() ? `Your best Lab (level ${labBuilt()}) sets the bonuses.` : `League-wide (level ${labLv()}${labLv() > x.lv ? ', +1 for a Scientist' : ''}): trips +${labScout()} Scouting, finds grade ${labFloor()}+${labTrips() ? ', one more trip out' : ''}, hunts ${Math.round((labHunt() - 1) * 100)}% likelier${labCond() > 1 ? ', conditions ×1.5 on trips' : ''}; ${money(LAB_GRANT * labLv())} a new species.`;
+  else if (x.k === 'store') { const n = p.c.sg ? p.c.sg[ME()] || 0 : 0; what = `${x.lv} floor${x.lv === 1 ? '' : 's'}; ${n} shopper${n === 1 ? '' : 's'} this week at ${money(SHOP_SPEND_AT(citySize(p.c)))} each.${x.lv < storeBuilt() ? ' Your best Store sets what is on sale.' : ''}`; }
   return `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv} of ${upMax(x.k)}${UPGRADES[x.k].slotless ? ' <span class="small muted">(no slot)</span>' : ''}${lap ? ' <span class="tag notice small">lapsed</span>' : ''}${what ? ` <span class="small">${what}</span>` : ''}${p.none || !sellable ? '' : ` <button class="btn small ghost" data-act="sellb" data-w="${where}" data-k="${x.k}" title="Sell the top level for half what it cost.">Sell a level (+${money(sellValue(where, x.k))})</button>`}</li>`;
 }
 function viewCities0() {
@@ -19941,9 +20244,21 @@ function viewCities0() {
   const last = S.fin.last || {}, li = last.in || {};
   return `<section class="panel callout"><div class="eyebrow">${S.lgName} · ${money(S.fin.money)}</div><h2>Cities</h2>${red}
     <p>Build in your gym cities and at your League's seat. <b>Size:</b> everything every League has spent in a city makes it a Town, then a City at ${money(sizeAt(1))}, a Metropolis at ${money(sizeAt(2))}, a Megalopolis at ${money(sizeAt(3))} and on (three times as much each). Bigger cities pay more city income, their visitors spend more, their crowds are bigger and their tickets dearer, and the top levels of Stadiums, Hotels and Pokémon Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at ${money(slotAt(0))}, ${money(slotAt(1))}, ${money(slotAt(2))} and every doubling after; the seat has ${SEAT_SLOTS}. Stadiums take no slot. <b>Visitors:</b> each week every challenger heading for a city's gym, or resting at a Pokémon Center there, is a visitor: they spend in town (part of its city income) and fill its Hotels.</p>
-    <p>Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
+    <p>Last year: tickets ${money(li.tickets || 0)}, Hotels ${money(li.hotels || 0)}, Berry Farms ${money(li.berries || 0)}, Department Stores ${money(li.shops || 0)}, research grants ${money(li.grants || 0)}, city income ${money(li.cities || 0)}. Everything you own costs upkeep of ${Math.round(UPKEEP * 100)}% of its price a year (now <b>${money(upkeepWeek())}</b> a week).</p>
     <p class="small">${Object.values(UPGRADES).map(u => `<b>${u.name}:</b> ${u.text}`).join(' ')} Your League can only build where it has a gym; you can move a gym to a city of the region where you have none, but everything you built in the old city is lost. Any building level can be sold for half what it cost; a level you lose while in the red (sold, or to unpaid upkeep) can be restored for ${Math.round(RESTORE_SHARE * 100)}% of its price. A city where a legendary was found becomes a <b>legendary site</b>: a League with a gym there can build a <b>Sanctuary</b>, which earns and adds prestige while it is open (one of the site's legendaries is with your League) and is sealed, costing and earning nothing, while none is.</p></section>
-    ${distressPanel()}${places.map(card).join('')}`;
+    ${distressPanel()}${bagPanel()}${places.map(card).join('')}`;
+}
+// (0.64.0) the item bag and the Department Stores' shelves
+const SHELF_NAMES = ['Poké Mart', '2F', '3F', '4F'];
+function bagPanel() {
+  if (!bagRule()) return '';
+  const bag = bagOf(), used = bagUsed(), fl = storeFloors(), own = Object.keys(bag).filter(k => bag[k] > 0 && ITEMS[k]);
+  const holders = {}; for (const id of seniorIds()) for (const m of T(id).team) if (m.item && m.bagLg === ME()) (holders[m.item] = holders[m.item] || []).push(`${T(id).name}'s ${m.sp}`);
+  const shelf = fl ? [1, 2, 3, 4].filter(n => n <= fl).map(n => `<li><b>${SHELF_NAMES[n - 1]}</b> ${Object.keys(ITEMS).filter(k => shelfOf(k) === n && k !== 'everstone').map(k => `<button class="btn small ghost" data-act="buyitem" data-k="${k}" title="${esc(ITEMS[k].desc)}"${canSpend(itemPrice(k)) ? '' : ' disabled'}>${esc(itemName(k))} ${money(itemPrice(k))}</button>`).join(' ')}</li>`).join('') : '';
+  return `<section class="panel"><div class="ph"><h2>Item bag</h2><span class="muted">${own.reduce((a, k) => a + bag[k], 0)} items</span></div>
+    <p class="small">Your staff hold tier 1 items from the League's free supply as before (Gym Leaders from the fourth gym, the Elite Four and Champion on every Pokémon). Tier 2 and 3 items come only from this bag: your Gym Leaders, Elite Four and Champion take the best of it, one item a Pokémon, and it comes back when a Pokémon leaves the team. Challengers you hire to those posts bring theirs in. Buy at a Department Store: your best Store's floors set what is on sale, and each floor above a shelf takes ${Math.round(STORE_FLOOR_OFF * 100)}% off it.</p>
+    ${own.length ? `<ul class="mini">${own.map(k => `<li><span><b>${esc(itemName(k))}</b> ×${bag[k]} <span class="small muted">${used[k] || 0} held${holders[k] ? ': ' + holders[k].map(esc).join(', ') : ''}</span></span></li>`).join('')}</ul>` : '<p class="small muted">The bag is empty.</p>'}
+    ${fl ? `<ul>${shelf}</ul>` : '<p class="small muted">Build a Department Store in a gym city to buy items.</p>'}</section>`;
 }
 // ---------- glossary ----------
 // built from the game's own data (abilities, moves, items, traits), plus hand-written terms
@@ -20040,8 +20355,8 @@ const GLOSS_TERMS = {
     ['Contenders', `A League can send challengers at another League as its contenders: its own academy prospects, or a challenger from its circuit it signs. A contender runs only at that League for ${SPON_YEARS} years (renewable), and nobody else can hire them or seat them after a deep run meanwhile. The sponsor pays a weekly stipend; the target still gets their entry fees and pays the sponsor a bounty of ${money(SPON_BOUNTY)} for each title they win there (${money(SPON_E4_BOUNTY)} for a run that reaches the Elite Four). Rival Leagues send them too, by their aim, and may send them at you. Your Contenders page has yours; the year report lists each year's.`],
     ['Founding your own League', `Once your League's prestige reaches ${PRESTIGE_BAR}, you can leave it to found a new League for ${money(LEAVE_FEE)} from its money (on the Money page), if the world has room. The League you leave carries on as a rival with an aim of its own, keeping its money, buildings, staff and history. Up to ${LEAVE_TAKE} members of staff who want promotion come with you, and your academy prospects follow. You place the new League's staff by hand and start with ${money(START_FUND)}. You only ever run one League.`],
     ['Raises and bids', 'A raise keeps a restless member of staff, or one who gave notice over promotion, another year: once per post, for twelve weeks\' pay now and a fifth more after. A bid over the asking pay makes a challenger likelier to take your offer; they keep the higher pay.'],
-    ['Cities', 'Your gym cities, the region\'s other cities and towns (six with no gym at first), and your League\'s seat. Build where you have a gym, and at the seat. Every gym has a Stadium (tickets for every battle there, and a home edge from each level), and the seat starts with one at level 2; Hotels fill rooms with the challengers in town; Pokémon Centers draw challengers and shorten their rests; Berry Farms sell berries or feed the ranch; training halls help staff grow; and at the seat a scouting office, a youth academy and the rest. <b>Size:</b> everything all Leagues have spent in a city makes it a Town, then a City at 100,000, a Metropolis at 400,000, a Megalopolis at 1.2 million and on (×3 each): bigger cities pay more city income, their visitors spend more, crowds are bigger and tickets dearer, and the top levels of Stadiums, Hotels and Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at 60,000, 180,000, 400,000 and every doubling after; Stadiums take none. <b>Visitors:</b> every challenger heading for a city\'s gym, or resting at a Pokémon Center there, is a visitor that week. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
-    ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Hotels, Berry Farms and Stadiums usually pay their own way; training halls and Centers don\'t, they buy strength and draw.`],
+    ['Cities', 'Your gym cities, the region\'s other cities and towns (six with no gym at first), and your League\'s seat. Build where you have a gym, and at the seat. Every gym has a Stadium (tickets for every battle there, and a home edge from each level), and the seat starts with one at level 2; Hotels fill rooms with the challengers in town; Pokémon Centers draw challengers and shorten their rests; Berry Farms sell berries or feed the ranch; Trainer\'s Schools raise gym trainers and help a gym\'s staff grow; Move Tutors widen coverage; a Research Lab improves catching trips; Department Stores sell held items for the item bag; and at the seat a training hall, a scouting office, a youth academy and the rest. <b>Size:</b> everything all Leagues have spent in a city makes it a Town, then a City at 100,000, a Metropolis at 400,000, a Megalopolis at 1.2 million and on (×3 each): bigger cities pay more city income, their visitors spend more, crowds are bigger and tickets dearer, and the top levels of Stadiums, Hotels and Centers need a bigger city. <b>Slots:</b> a city starts with one and gains another at 60,000, 180,000, 400,000 and every doubling after; Stadiums take none. <b>Visitors:</b> every challenger heading for a city\'s gym, or resting at a Pokémon Center there, is a visitor that week. Everything you own costs upkeep. Moving a gym to a city with no gym of yours costs a fee and loses what you built in the old city.'],
+    ['Upkeep', `Every building level you own costs ${Math.round(UPKEEP * 100)}% of its price a year, paid weekly, so a large estate costs money to hold. Hotels, Berry Farms, Department Stores and Stadiums usually pay their own way; Schools, Tutors, Labs, training halls and Centers don\'t, they buy strength and draw.`],
     ['Ranch', `A League's own pool of Pokémon (the Ranch page). Its Gym Leaders, Elite Four and Champion field their own Pokémon plus Pokémon from the ranch; gym trainers keep their own. Every Pokémon has a grade (1 to 5 stars, from its IVs) and takes the form its line has at the level of the post that fields it, one post at a time. Staff swap one a month for a better one by their steer and Strategy; what they drop goes into the ranch, and a ranch Pokémon they hold leaves with them. Pokémon come in from catching trips (targeted or by area; Scouting sets the odds and grade), the market (a weekly list plus other Leagues' sales) and staff; they go out sold back for a third of their value, released, or sold to another League. Each costs upkeep a week by grade, and the Ranch building at the seat sets how many it holds. When the ranch has nothing of a typed post's own type left, its holder falls back on their three backup types (types outside their own, likelier ones that answer their weaknesses; at most half the team, swapped back for their own type as soon as one is in the ranch; the gym still counts as its type); when nothing fits even then, weak stopgaps stand in. Rival Leagues run their ranches by their aim. Since 0.36.0 the ranch also keeps alphas, Deltas, shinies and Radiants whole, found by luck on trips, charters and the market, by hunts (a trip for a line in a chosen condition, at a multiple of the price and lower odds) and by outbreak trips; each region has its own Delta lines. A condition multiplies a Pokémon's value, and shinies and Radiants on your Elite Four's and Champion's teams earn showcase income and a little prestige. Challengers keep what they drop in storage (up to ${STORE_MAX}); a new Gym Leader, Elite Four member or Champion lets the League take up to ${STORE_PICKS} of it (one more a scouting office level) into the ranch, and asks more pay the richer it is.`],
     ['Regional encounters', `Each region has its own Pokémon (about ${REGION_SIZE} species, counting evolutions): a family belongs to every region of its generations (Pichu: Kanto and Johto; Sylveon brings Eevee's family to Kalos), and regional forms belong to their region as well (Alolan forms to Alola, Galarian to Galar, Paldean to Paldea, Hisuian ones to Sinnoh). Every type has at least five strong lines in every region. Wild finds, the market, area trips and new challengers' teams come from the region. Others arrive through migration (three or four waves a year, about two months each, mostly from a neighbouring region), and a League's ranch can reach them with a shipping lane, a charter or the Safari Zone. Neighbours: ${NEIGHBOURS.map((ns, r) => `${regionName(r)} (${ns.map(regionName).join(', ')})`).join('; ')}. A challenger moving to another region brings at most three Pokémon from outside it. With regional encounters off (Advanced options), every species is found everywhere.`],
     ['Custom regions', `Regions of your own, made in Advanced options (Custom regions) and kept in this browser. A region always has 8 gym cities, 6 towns and 4 League seats, with names, ports and railways, 2 or 3 neighbours, its own legendaries (one shared with another region can then be held once for each region that has it at home) and its own names for posts. Its list of Pokémon can be copied, generated by type, generation and strength, and edited; thin types and an unusual size are flagged but allowed. Its own new Pokémon work as if added to My Pokédex and can be kept in the region; one with a base stat total over ${DEX_LEGEND_BST} can be a legendary encounter, at home in the region. At a new world a region can be added beside the nine, replace a built-in region's Pokémon only (keeping its name, cities and neighbours) or replace a whole region; Pokémon that lived only in a replaced region move to its neighbours. A region can be closed to rival Leagues. Regions are shared as a file or a paste code; a new Pokémon whose name is already taken is left out on import.`],
@@ -20083,6 +20398,12 @@ const GLOSS_TERMS = {
     ['Season awards', Object.values(AWARDS).map(a => a.name).join(', ') + '.'],
   ],
 };
+// (0.64.0) city buildings part 2
+GLOSS_TERMS.league.push(['Trainer\'s School', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Each level graduates one young trainer a year (16 to 20, from that city, of a class that fits the gym), a little stronger each level than the field's typical gym trainer; a Pokémon Professor anywhere on your staff counts as one more level. A graduate takes an open gym trainer place at that gym, else at another of your gyms they fit; otherwise they set out on the region's field from that city, ${Math.round(ACADEMY_LOYAL * 100)}% likelier to take your offers, and your gym trainer picker lists them first. Rival Leagues also let a weaker gym trainer go at the end of a contract to take one on. Your graduates are paid ${SCHOOL_PAY.map(x => Math.round((1 - x) * 100) + '%').join(', ')} less by you, by the School's level when they graduated. The School is also that gym's training hall: its Gym Leader and gym trainers grow 12% faster a level and decline more slowly. The training hall itself is at the seat only now (the Elite Four and Champion). In the red a School lapses: no graduates, no growth bonus.`],
+  ['Move Tutor', `A building in a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion), 3 levels. A tutored Pokémon learns all three of its line's coverage types instead of two, each ${TUTOR_SOONER} levels sooner, in an order its trainer's Strategy picks (a sharp strategist puts the types that answer the year's meta first). The lesson stays with the Pokémon for good, in the ranch and on whoever fields it next. Level 1 teaches ${TUTOR_FEW} Pokémon a post (planned ones first, then the strongest), level 2 the whole team; level 3 (needs a City) makes a backup-type Pokémon's coverage hit its trainer's own threats first. Lessons are given once a month; in the red, none, but lessons already taught stay.`],
+  ['Research Lab', `A gym-city building (4 levels; 3 needs a City, 4 a Metropolis). Catching trips aren't tied to a city, so your best Lab works League-wide, and a Scientist on your staff counts as one more level: +${LAB_SCOUT} Scouting a level for catching trips; finds of grade 2 or better from level 2 and grade 3 or better from level 4; one more trip out at a time from level 3; condition hunts ${Math.round(LAB_HUNT * 100)}% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of ${LAB_GRANT} × its level for every new species of your region your ranch takes in (until the regional Pokédex comes, the ranch's own register).`],
+  ['Department Store and the item bag', `Staff hold tier 1 items from the League's free supply as before. Tier 2 and 3 items (Leftovers, Eviolite, Assault Vest, Expert Belt, Focus Sash, Life Orb, Choice Band, Choice Specs) come only from your League's item bag: your Gym Leaders, Elite Four and Champion take the best of it, one item a Pokémon, and an item comes back when its Pokémon leaves the team or its holder the League. A challenger you hire to one of those posts brings their tier 2 and 3 items into the bag. Department Stores (gym cities, 4 floors) sell them, League-wide by your best Store's floors: the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (a City), 4F Life Orb and the Choice items (a Metropolis); each floor above a shelf takes ${Math.round(STORE_FLOOR_OFF * 100)}% off it. Items are bought once, with no upkeep. A Store also earns from shoppers: the city's visitors plus its residents (more in a bigger city), ${STORE_SHOPPERS} a floor, shared between the city's Stores by floors with a little more to the League that controls it. Rival Leagues buy by aim: wall-builders the strongest items, money-makers only the cheaper shelves. The item bag is on the Cities page.`]);
+
 const GLOSS_SECS = [['all', 'All'], ['abilities', 'Abilities'], ['moves', 'Moves'], ['items', 'Items'], ['traits', 'Trainer traits'], ['tempers', 'Temperaments'], ['ratings', 'Ratings'], ['plans', 'What trainers do'], ['battle', 'Battle terms'], ['mons', 'Pokémon terms'], ['league', 'League & careers']];
 let glossCache = null;
 function glossEntries() {
@@ -20336,6 +20657,15 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 64, ver: '0.64.0', date: 'November 25, 2026', time: '7:45 PM ET', title: 'City buildings, part 2: Trainer\'s Schools, Move Tutors, Research Labs, Department Stores and the item bag', items: [
+    "The Trainer's School (gym cities, 4 levels): each level graduates a young gym trainer a year from that city, of a class that fits its gym and a little stronger each level. A graduate takes an open gym trainer place, else sets out on the field likelier to take your offers (your gym trainer picker lists them first). Your graduates are paid less by you, and a Pokémon Professor on your staff counts as a level more.",
+    "The School is also its gym's training hall (faster growth, slower decline for the Gym Leader and gym trainers); the training hall itself is now a seat building for the Elite Four and Champion.",
+    "The Move Tutor (a gym city or the seat, 3 levels): tutored Pokémon learn all three of their line's coverage types, each 10 levels sooner, in an order their trainer's Strategy picks, and keep the lesson for good. Level 1 teaches 2 Pokémon a post, level 2 the whole team, level 3 points backup-type Pokémon at their trainer's threats. Tutored Pokémon are tagged on the Ranch page's Teams tab.",
+    "The Research Lab (gym cities, 4 levels, your best one works League-wide; a Scientist on staff adds a level): better Scouting on catching trips, a grade floor, one more trip out, likelier condition hunts, and a research grant for each new species of your region the ranch takes in.",
+    "The Department Store and the item bag: staff now hold only tier 1 items from the free supply. Leftovers, Eviolite, Assault Vest, Expert Belt, Focus Sash, Life Orb and the Choice items come from your League's item bag, bought at your Stores by floor (the bag is on the Cities page), and challengers you hire to senior posts bring theirs in. Stores also earn from shoppers.",
+    "Rival Leagues build all four by aim and buy items for their bags.",
+    "Old saves can't be loaded (save version 23).",
+  ] },
   { id: 63, ver: '0.63.0', date: 'November 25, 2026', time: '6:30 PM ET', title: 'City buildings, part 1: city sizes, Stadiums, Hotels, Pokémon Centers and Berry Farms', items: [
     "Cities grow by size. Everything every League has spent in a city makes it a Town, then a City at 100,000, a Metropolis at 400,000, a Megalopolis at 1.2 million and on (three times as much each). Bigger cities pay more city income, give more prestige to the League that controls them, draw bigger crowds at dearer tickets, and are needed for the top levels of Stadiums, Hotels and Pokémon Centers.",
     "No more slot ceiling: a city gains a slot at 60,000, 180,000, 400,000 and every doubling after.",
@@ -21342,6 +21672,7 @@ document.addEventListener('click', ev => {
     case 'raise': { const w = giveRaise(+el.dataset.id); save(); render(); toast(w || `${T(+el.dataset.id).name} took the raise.`); break; }
     case 'distbuy': { const w = buyDistress(+el.dataset.v); save(); render(); toast(w || 'Bought at a distress price.'); break; }
     case 'distno': { declineDistress(+el.dataset.v); save(); render(); break; }
+    case 'buyitem': { const w = buyItem(el.dataset.k); save(); render(); toast(w || `Bought a ${itemName(el.dataset.k)} for the item bag.`); break; } // (0.64.0)
     case 'sellb': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = sellBuilding(wh, el.dataset.k); save(); render(); toast(w || `Sold a level of ${UPGRADES[el.dataset.k].name.toLowerCase()}.`); break; }
     case 'build': { const wh = el.dataset.w === 'seat' ? 'seat' : +el.dataset.w, w = build(wh, el.dataset.k); save(); render(); toast(w || `${UPGRADES[el.dataset.k].name} built.`); break; }
     case 'movegym': { const sel = $('#move-' + el.dataset.c), i = sel ? +sel.value : 0, w = moveGym(i, +el.dataset.c); save(); render(); toast(w || `Gym ${i + 1} moved to ${townName(i)}.`); break; }

@@ -2,7 +2,7 @@
 # Usage: python3 tests/unused.py   (no output = nothing unused)
 import re,sys,os
 src=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'game')
-files=['1-page.html','3-engine-1.js','4-engine-2.js','4b-engine-2b.js','5-engine-3.js','5b-engine-3b.js','5-engine-4.js','6-ui-1.js','7-ui-2.js','7b-ui-2b.js','8-ui-3.js']
+files=['1-page.html','3-engine-1.js','4-engine-2.js','4b-engine-2b.js','5-engine-3.js','5b-engine-3b.js','5-engine-4.js','5c-engine-3c.js','6-ui-1.js','7-ui-2.js','7b-ui-2b.js','8-ui-3.js']
 nodes={}; root=''
 for f in files:
     L=open(os.path.join(src,f),encoding='utf-8').read().split('\n')

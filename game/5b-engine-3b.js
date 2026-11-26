@@ -15,7 +15,12 @@ const UPGRADES = {
   hotel:   { name: 'Hotel',           text: 'Gym cities only. Rooms (4, 8, 14, 22, 32 by level) for the challengers in town each week: a room filled pays by the city\'s size. Every Hotel in the city shares the week\'s guests; the League that controls the city fills a little more. From level 3 a guest from another region counts twice. Level 3 needs a City, 4 a Metropolis, 5 a Megalopolis.', city: true, max: 5, cost: [20000, 40000, 80000, 160000, 320000], tierAt: [0, 0, 1, 2, 3] },
   center:  { name: 'Pokémon Center',  text: 'Gym cities only. Challengers whose hometown it is lean toward your League (+0.5 a level in the draw), and everyone in the region a little (+0.1 a level). Your circuit\'s challengers rest at your Centers: each Center you have cuts a week off their rest (up to 3), and a resting challenger is a visitor in its city. Level 3 needs a City.', city: true, max: 3, cost: [10000, 20000, 40000], tierAt: [0, 0, 1] },
   berry:   { name: 'Berry Farm',      text: 'Gym cities only. Plots (2, 4, 7, 10 by level) harvested every 4 weeks: each plot you set to sell brings in about 50 a week, the same in any city; each plot set to feed cuts your ranch\'s upkeep by 2% (up to 20%), and any fed plot makes Day Care eggs come a week sooner. A Grass gym in the city, or an Aroma Lady or Gardener on your staff, adds a plot\'s yield.', city: true, max: 4, cost: [15000, 30000, 60000, 120000] },
-  hall:    { name: 'Training hall',   text: 'Staff here grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', max: 5 },
+  hall:    { name: 'Training hall',   text: 'Seat only (0.64.0: a gym city has a Trainer\'s School instead). The Elite Four and the Champion grow faster while they are still improving (+12% a level) and decline more slowly once past their peak (10% a level).', seat: true, max: 5 },
+  // (0.64.0, city buildings part 2: 5c-engine-3c) the Trainer's School, the Move Tutor, the Research Lab, the Department Store
+  school:  { name: 'Trainer\'s School', text: 'Gym cities only. Graduates one young gym trainer a year a level (one more level with a Professor on your staff), from this city and of a class that fits its gym, a little stronger each level: they take an open gym trainer place, else set out on the field, likelier to take your offers. Your graduates are paid 10%, 18%, 26%, 35% less by you. Also the old training hall for this gym: its Gym Leader and gym trainers grow 12% faster a level and decline more slowly. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
+  tutor:   { name: 'Move Tutor',      text: 'In a gym city (its Gym Leader and gym trainers) or at the seat (the Elite Four and Champion). A tutored Pokémon learns all three of its line\'s coverage types, each 10 levels sooner, and keeps the lesson for good. Level 1 teaches 2 Pokémon a post, level 2 the whole team, level 3 puts a backup-type Pokémon\'s coverage on its trainer\'s threats first (needs a City).', max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
+  lab:     { name: 'Research Lab',    text: 'Gym cities only; your best Lab works League-wide (a Scientist on your staff counts as a level more). Catching trips +3 Scouting a level; finds of grade 2 or better from level 2 and 3 or better from level 4; one more trip out at once from level 3; condition hunts 5% likelier a level; at level 4 ordinary trips find conditions 1.5× as often. A research grant of 500 × its level for each new species of your region the ranch takes in. Level 3 needs a City, 4 a Metropolis.', city: true, max: 4, cost: [25000, 50000, 100000, 200000], tierAt: [0, 0, 1, 2] },
+  store:   { name: 'Department Store', text: 'Gym cities only. Sells held items for your item bag (your best Store\'s floors, League-wide): the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (needs a City), 4F Life Orb, Choice Band and Choice Specs (needs a Metropolis); each floor above a shelf takes 10% off it. Your staff only hold tier 2 and 3 items from the bag. Shoppers (the city\'s visitors and residents) spend there too.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
   scout:   { name: 'Scouting office', text: 'Seat only. Each level adds an outsider to every hiring page, makes outsiders 2 points stronger and adds 4% to the odds an offer is taken.', seat: true },
   // (0.20.0) only in a gym city that is a legendary site: earns while open, and adds prestige
   sanct:   { name: 'Sanctuary',       text: 'Only in a city that is a legendary site. Brings in income every week and a point of prestige a level each New Year while it is open (one of the site\'s legendaries is with your League).', site: true, income: [250, 500, 800] },
@@ -307,7 +312,8 @@ function sanctIncome() { return sanctuaries().filter(s => s.open).reduce((a, s) 
 function sanctLevels() { return sanctuaries().filter(s => s.open).reduce((a, s) => a + s.lv, 0); }
 const scoutLv = () => S.seatB && !lapsed() ? upLevel(S.seatB, 'scout') : 0;
 // where a member of staff works, for the training hall: their gym, or the seat
-function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : placeLv(p.slot, 'hall'); }
+// (0.64.0) a gym's Gym Leader and gym trainers: its Trainer's School (with a Professor's level) instead of a gym hall
+function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e4' || p.post === 'champion' ? placeLv('seat', 'hall') : schoolLv(p.slot); }
 
 // ================= CITY BUILDINGS, PART 1 (0.63.0; design doc cities-and-economy.md) =================
 // Visitors, the Stadium's tickets, the Hotel, the Pokémon Center and the Berry Farm. All numbers provisional.
@@ -366,6 +372,7 @@ function visitorsWeek() {
     }
     c.hg = {}; for (const h of hs) if (h.g) c.hg[h.i] = h.g;
   }
+  buildings2World(); // (0.64.0) the Department Stores' shoppers, the item bags
 }
 // the bound League's Hotel income this week: guests × the room rate by size (a guest from another region twice, from level 3)
 function hotelIncome() {
@@ -468,5 +475,10 @@ function aiBerry() {
 function aimWorth(where, k) {
   if (k === 'stadium' && aimOf() !== 'wall') { const lv = placeLv(where, k), size = where === 'seat' ? seatSize() : citySize(S.cities[S.gyms[where].city]); return STADIUM_SEATS[lv] < CROWD_AT(size) * 1.6; }
   if (k === 'hotel') { const c = S.cities[S.gyms[where].city], lv = placeLv(where, k); return (c.vly || 0) * VISIT_PARTY / YEAR_WEEKS > (lv ? HOTEL_ROOMS[lv - 1] : 0) * 0.8; }
+  // (0.64.0) a money-maker's Schools and Stores stop at level 2; the Lab and the Store work from the best one, so a rival
+  // raises its best rather than building a second
+  if ((k === 'school' || k === 'store') && aimOf() === 'money' && placeLv(where, k) >= 2) return false;
+  if (k === 'lab') return placeLv(where, k) === labBuilt();
+  if (k === 'store') return placeLv(where, k) === storeBuilt();
   return true;
 }

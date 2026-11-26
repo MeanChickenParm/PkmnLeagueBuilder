@@ -2532,7 +2532,7 @@ function gymTrainerCands(i) {
   S.e4.forEach((id, k) => { const t = T(id); if (t && !t.acting && gymFits(t, L)) out.push({ t, from: 'e4', seat: k }); });
   for (const c of out) if (['gym', 'leader', 'e4'].includes(c.from)) c.refuse = refusal(c.t, 'gymtrainer', i);
   for (const c of out) if (['circuit', 'retired'].includes(c.from)) c.refuse = prestBlock(c.t) || c.refuse; // (0.23.0)
-  return out.sort((a, b) => ovr(b.t) - ovr(a.t));
+  return out.sort((a, b) => schoolRank(b.t) - schoolRank(a.t) || ovr(b.t) - ovr(a.t));
 }
 // put trainer id in gym trainer place k at gym i, letting go of whoever holds it. A gym under an acting leader runs
 // one short, so only a place that is held can be changed there. Returns the vacancy a moved senior member left, or
@@ -2611,7 +2611,7 @@ function acceptsOffer(t, post) {
   // (0.13.0) the scouting office and a bid over the asking pay (0.16.0: in every League, rival Leagues bid too)
   p += 0.04 * scoutLv() + BID_ODDS * Math.round((t.bidMul ? t.bidMul - 1 : 0) / 0.25);
   // (0.16.0) one of the League's own, raised in its youth academy, is loyal to it
-  if (ownAcademy(t)) p += ACADEMY_LOYAL;
+  if (ownYouth(t)) p += ACADEMY_LOYAL;
   p -= CON_ODDS * conMiss(t, post, t.conAsk); // (0.52.0) a contract length they don't want
   p += prestigePull(); // (0.18.0) trainers prefer a prestigious League
   return rand() < clamp(p, 0.1, 0.95);

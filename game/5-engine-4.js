@@ -90,6 +90,7 @@ function entryOfMon(m, of) {
   const top = m.top && SP[m.top] && LINE[m.top] === LINE[m.sp] ? m.top : m.sp;
   const e = { uid: uid(), b, sp: top, g: monGrade(m), iv: Object.assign({}, m.iv), nat: m.nat || null, from: 'staff', got: S.turn || 0, at: null, res: null, lock: false, of, sale: null };
   const c = condOf(m); if (c) e.c = c;
+  if (m.tut) e.tut = 1; // (0.64.0) a Move Tutor's lesson stays with it
   return e;
 }
 // the form an entry takes at level L (following the branch it came as)
@@ -137,6 +138,7 @@ function ranchMon(t, e, L, form) {
     const val = c => bad.filter(a => effOne(c.t, a) >= 2).length;
     m.cov = coverOptions(sp).map((c, i) => [c, val(c) - i / 10]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]).sort((a, b) => a.lv - b.lv);
   }
+  if (e.tut) { m.tut = 1; m.cov = tutorCov(t, m); } // (0.64.0)
   return ensureMon(m);
 }
 // stopgaps: when nothing in the ranch fits, the weakest commons of the trainer's type stand in (grade 1, free), so a
@@ -312,10 +314,10 @@ const stockPosts = placed => [{ t: T(placed.champion), role: 'champion', slot: 0
 // ---------- Scouting, trips, the market ----------
 // the League's Scouting for finds: its best senior member's (real rating) plus the scouting office
 function ranchScout() { const s = seniorIds().map(T).filter(t => !t.acting).map(t => t.r.sct); return (s.length ? Math.max(...s) : 40) + RANCH_SCOUT_OFFICE * scoutLv(); }
-const tripMax = () => TRIP_MAX + scoutLv();
+const tripMax = () => TRIP_MAX + scoutLv() + labTrips(); // (0.64.0) a Research Lab from level 3
 // a targeted trip for line b: its cost, length and odds (fixed when it sets out)
 function tripPlan(b) {
-  const top = lineTop(b), sc = ranchScout(), rare = !!(SP[b].rare || SP[b].starter);
+  const top = lineTop(b), sc = ranchScout() + labScout(), rare = !!(SP[b].rare || SP[b].starter);
   // (0.44.0) through the safari: cheaper and likelier with each level, likelier still for a stocked line, whose finds
   // are no worse than a grade below the best stocked one
   const sl = safariSet().has(b) ? safariLv() : 0, st = sl ? stockFloor(b) : 0;
@@ -349,7 +351,7 @@ function startTrip(kind, b, cond) {
 function tripsWeek() {
   const R = S.ranch, due = R.trips.filter(x => x.due <= S.turn); if (!due.length) return;
   R.trips = R.trips.filter(x => x.due > S.turn);
-  const sc = ranchScout(), mine = playerLeague();
+  const sc = ranchScout() + labScout(), mine = playerLeague(); // (0.64.0) the Research Lab's Scouting
   for (const tr of due) {
     const here = hereLines(), home = homeSet(S.region), abroad = tr.k === 'charter' ? [...regionLines().sets[tr.r]].filter(b => (!home || !home.has(b)) && homeOnly(b) == null) : null;
     const finds = tr.k === 'target' ? (rand() < tr.odds ? [tr.b] : []) : tr.k === 'charter' ? Array.from({ length: 2 + (rand() < 0.5) }, () => findSpecies(abroad))
@@ -359,8 +361,8 @@ function tripsWeek() {
     // (0.36.0) every find rolls the wild odds for a condition (an outbreak's at outbreak odds); a hunt's find has its own
     const obMul = { alpha: OUTBREAK_ALPHA, delta: OUTBREAK_ALPHA, shiny: OUTBREAK_SHINY, radiant: OUTBREAK_SHINY };
     for (const b of finds) {
-      const e = newEntry(b, Math.max(tr.floor || 1, gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
-      const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : 1)))];
+      const e = newEntry(b, Math.max(tr.floor || 1, labFloor(), gradeRoll(gsc)), tr.k === 'target' ? (tr.cond ? 'hunt' : 'trip') : tr.k === 'charter' ? 'charter' : tr.k === 'outbreak' ? 'outbreak' : 'area');
+      const ks = [...new Set((tr.cond ? [tr.cond] : []).concat(condRoll(b, sc, tr.k === 'outbreak' ? obMul : tr.cond ? 1 : labCond())))];
       if (ks.length) condEntry(e, ks);
       (ranchAdd(e) ? got : lost).push(`${e.c ? condWords(e.c) + ' ' : ''}${b} ${gradeStars(e.g)}`);
     }
@@ -1311,7 +1313,7 @@ const deltaMul = b => (b && deltaSet().has(b) ? DELTA_HOME : DELTA_AWAY);
 const huntOk = (b, k) => !!(COND_MUL[k] && featOn(k) && (tripOk(b) || (k === 'delta' && deltaSet().has(b))));
 function huntPlan(b, k) {
   const p = tripPlan(b), pool = k === 'delta' && deltaSet().has(b);
-  return { cost: Math.round(p.cost * COND_MUL[k] / 50) * 50, weeks: p.weeks + HUNT_WEEKS[k], odds: Math.round(clamp(p.odds * HUNT_ODDS[k] * (pool ? DELTA_HUNT : 1), 0.05, 0.9) * 100) / 100 };
+  return { cost: Math.round(p.cost * COND_MUL[k] / 50) * 50, weeks: p.weeks + HUNT_WEEKS[k], odds: Math.round(clamp(p.odds * HUNT_ODDS[k] * (pool ? DELTA_HUNT : 1) * labHunt(), 0.05, 0.9) * 100) / 100 };
 }
 // ---------- outbreaks ----------
 // the bound League's mass outbreak a trip can still reach (this week's or last week's), its line, or null
@@ -1375,6 +1377,7 @@ function storePayMul(t, post) { return SENIOR_POSTS.includes(post) && (t.store |
 const storePickN = () => STORE_PICKS + scoutLv();
 // a trainer takes a post (openPost): someone new to the staff of a League with a ranch offers their storage
 function storeHire(t, role, was) {
+  bagHire(t, role, was); // (0.64.0) their tier 2 and 3 items go into the League's item bag
   if (was || t.acting || !SENIOR_POSTS.includes(role) || !ranchOn() || !(t.store || []).length || S.founding) return;
   STORE_LOG.offered++;
   const n = storePickN();

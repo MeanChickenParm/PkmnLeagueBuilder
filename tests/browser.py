@@ -310,6 +310,17 @@ async def run(path):
                     if (!sel) log.push('FAIL no Berry Farm plot picker'); else { sel.value = '1'; sel.dispatchEvent(new Event('change', { bubbles: true })); const f = inLeague(0, () => berryFarms())[0]; if (!f || f.feed !== 1) log.push('FAIL setting Berry Farm plots'); else log.push('set Berry Farm plots'); }
                     if (!inLeague(0, () => buildCheck('seat', 'hotel')).why) log.push('FAIL a Hotel allowed at the seat');
                     inLeague(0, () => { sellBuilding(1, 'hotel'); sellBuilding(2, 'berry'); }); S.fin.money = 200000; } // their slots back for the later steps
+                  // 0.64.0: a Trainer's School, a Move Tutor at the seat, a Research Lab and a Department Store from the Cities page; an item bought into the bag
+                  { S.fin.money = 300000; const bld = (w, k, cost, lv) => { go('cities'); const b = document.querySelector(`[data-act=build][data-w="${w}"][data-k=${k}]`), m0 = S.fin.money; if (!b) { log.push('FAIL no ' + k + ' to build'); return; } b.click(); if (inLeague(0, () => placeLv(w, k)) !== lv || S.fin.money !== m0 - cost) log.push('FAIL building a ' + k); else log.push('built a ' + k); };
+                    bld(3, 'school', 15000, 1); bld('seat', 'tutor', 20000, 1); bld(4, 'lab', 25000, 1); bld(5, 'store', 15000, 1); bld(5, 'store', 30000, 2);
+                    if (!inLeague(0, () => buildCheck(0, 'hall')).why) log.push('FAIL a training hall allowed in a gym city');
+                    go('cities'); if (!/Item bag/.test(document.querySelector('#main').textContent)) log.push('FAIL no item bag on the Cities page');
+                    const ib = document.querySelector('[data-act=buyitem][data-k=leftovers]'), m5 = S.fin.money, n5 = inLeague(0, () => bagOf().leftovers || 0), pr = inLeague(0, () => itemPrice('leftovers'));
+                    if (!ib) log.push('FAIL no Leftovers on sale'); else { ib.click(); if (inLeague(0, () => bagOf().leftovers) !== n5 + 1 || S.fin.money !== m5 - pr) log.push('FAIL buying Leftovers'); else log.push('bought Leftovers'); }
+                    if (document.querySelector('[data-act=buyitem][data-k=lifeorb]')) log.push('FAIL a 4F item on sale from a 2-floor Store');
+                    const free = inLeague(0, () => staffIds().map(T).some(t => t && t.team.some(m => m.item && ITEMS[m.item].tier >= 2 && m.bagLg !== 0)));
+                    if (free) log.push('FAIL a free tier 2-3 item on your staff');
+                    inLeague(0, () => { sellBuilding(3, 'school'); sellBuilding('seat', 'tutor'); sellBuilding(4, 'lab'); sellBuilding(5, 'store'); sellBuilding(5, 'store'); }); S.fin.money = 200000; }
                   // 0.13.0: money and cities. Build a scouting office at the seat (0.63.0: attractions are gone), ban a Pokémon from the Meta page, read the books
                   { if (!/₽/.test(document.querySelector('header').textContent)) log.push('FAIL the header shows no money');
                     go('cities'); const m0 = S.fin.money, b = document.querySelector('[data-act=build][data-w=seat][data-k=scout]');

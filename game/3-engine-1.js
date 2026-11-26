@@ -217,7 +217,7 @@ function formAt(name, L, pref) { let s = SP[name], nx; while ((nx = pickBranch(s
 
 // ================= WORLD CONSTANTS =================
 // the save format's version: a save with any other number is not loaded
-const SAVE_VERSION = 22; // 22: city sizes and buildings part 1 (0.63.0); 21: seat rules (0.43.0); 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
+const SAVE_VERSION = 23; // 23: city buildings part 2, gym halls gone, the item bag (0.64.0); 22: city sizes and buildings part 1 (0.63.0); 21: seat rules (0.43.0); 20: post names and themes by League (0.42.0); 19: four Leagues a region (14 cities) and the regional field (0.41.0); 18: hometowns, renown and control tiers (0.40.0); 17: ranch part 3, sites without a timer and the vault (0.37.0); 16: gyms in any order (0.32.0); 15: nine regions (0.28.0); 14: the ranch (0.25.0); 13: growth (0.24.0); 12: prestige gating (0.23.0); 11: the Hall of Fame on winning and gym memory (0.21.0); 10: one of each legendary in the world (0.20.0); 9: stage 5 (0.17.0); 8: money and cities (0.13.0); 2: the wall rules (0.2.0); 3: the continuous world (0.4.0); 4: the year report (0.8.0); 5: ambitions (0.10.0); 6: seat challenges (0.11.0)
 // The calendar (0.4.0): one continuous world. A year is 48 weekly turns, twelve months of four weeks, and it never
 // stops for a League tournament or an offseason. S.season is the year's number (the name is kept from the
 // source), S.week the week of the year (0 to 47) and S.turn the count of weeks since the world began, which is
@@ -2159,13 +2159,14 @@ function eliteItems(t) {
   if (t.role === 'gymtrainer') { const gi = S.gyms.findIndex(g => (g.trainers || []).includes(t.id)); n = gi < 4 ? 0 : Math.min(t.team.length, gi - 3); }
   // a sharp strategist gets one more of their Pokémon an item, a poor one one fewer
   if (t.role === 'leader' || t.role === 'gymtrainer') n = clamp(n + (t.r.str >= 75 ? 1 : t.r.str < 45 ? -1 : 0), 0, t.team.length);
-  const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone');
+  const keys = Object.keys(ITEMS).filter(k => k !== 'soothebell' && k !== 'everstone' && itemFreeOk(k)); // (0.64.0) tier 2-3 only from the bag
   const order = t.team.slice().sort((a, b) => b.lvl - a.lvl || SP[b.sp].bst - SP[a.sp].bst).slice(0, n);
   const held = new Set();
   for (const m of order) {
     const best = keys.filter(k => ITEMS[k].type || !held.has(k)).map(k => [k, itemScore(m, k, t)]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
     if (best) { m.item = best[0]; held.add(best[0]); }
   }
+  if (bagRule()) bagEquip(t, held);
 }
 // a random item of up to this tier (rarer tiers less often)
 function rollItem(maxTier, notType) {

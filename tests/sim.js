@@ -35,6 +35,7 @@ g.eachLeague(() => { const ids = [S0().champion, ...S0().e4, ...S0().gyms.map(x 
 function S0() { return g.S; }
 const S = () => g.S, fail = [];
 const CB = { overTier: 0, feed: 0, grandfathered: false }; // (0.63.0)
+const CB2 = { built: {}, items: 0, itemRefused: 0, gradTag: 0, tutored: 0, bagMax: 0, hallGym: 0 }; // (0.64.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
 const amb = { refusedSwap: 0, refusedMove: 0, asked: new Set(), quit: new Set() };
@@ -342,6 +343,13 @@ function check(tag) {
       for (const x of p.b) { if (x.base && (x.k !== 'stadium' || !p.seat || x.lv < x.base)) bad('a base level off the seat Stadium in ' + p.name); const U = g.UPGRADES[x.k]; if (U && U.tierAt && !p.seat && !p.none && x.lv - 1 >= 0 && U.tierAt[x.lv - 1] > g.citySize(p.c)) bad('a ' + x.k + ' level past its city size in ' + p.name); if (x.k === 'berry' && !((x.feed || 0) >= 0 && (x.feed || 0) <= g.BERRY_PLOTS[x.lv - 1])) bad('Berry Farm plots fed out of range in ' + p.name); }
       if (p.seat && !p.b.some(x => x.k === 'stadium' && x.lv >= g.SEAT_STADIUM)) bad('a seat with no Stadium'); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
+    // (0.64.0) city buildings part 2: no training hall in a gym city; the item bag covers every tier 2-3 item its staff
+    // hold, and no staff hold one from the free supply; tutored Pokémon know three coverage types; graduates well-formed
+    for (const p of g.myPlaces()) if (!p.seat && p.b.some(x => x.k === 'hall')) bad('a training hall in a gym city: ' + p.name);
+    if (g.bagRule()) { const bag = g.bagOf(), u = g.bagUsed(); for (const k of Object.keys(u)) if ((bag[k] || 0) < u[k]) bad('more ' + k + ' held than the bag has'); CB2.bagMax = Math.max(CB2.bagMax, Object.values(bag).reduce((a, b) => a + b, 0));
+      for (const id of g.staffIds()) { const t = g.T(id); if (t) for (const m of t.team) if (m.item && g.ITEMS[m.item] && g.ITEMS[m.item].tier >= 2 && m.bagLg !== i) bad('a free tier ' + g.ITEMS[m.item].tier + ' item on ' + t.name + ': ' + m.item); } }
+    for (const id of g.staffIds()) { const t = g.T(id); if (t) for (const m of t.team) if (m.tut) { CB2.tutored++; if (!m.cov || m.cov.length !== g.coverOptions(m.sp).length) bad('a tutored Pokémon without all its coverage types'); } }
+    for (const x of g.schoolGrads()) { const t = g.T(x.id); if (!t) continue; CB2.gradTag++; if (!t.school || t.school.lg !== i || !(t.school.lv >= 1 && t.school.lv <= 4)) bad('a graduate with a bad School tag: ' + t.name); }
   });
   // (0.15.0) at most REGION_CAP Leagues a region (four since 0.41.0); standing only for Leagues with a gym in the city; control by one of them
   { const regs = g.eachLeague(() => S().region), gm = g.gymMap(); for (const r of new Set(regs)) if (regs.filter(x => x === r).length > g.REGION_CAP) bad('more than four Leagues in one region');
@@ -580,7 +588,12 @@ for (let i = 0; i < N; i++) {
         // (0.63.0) set a Berry Farm's plots, and check a city building is refused at the seat
         if (!g.berryFarms().length) { const gi = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !g.buildCheck(i, 'berry').why && z.fin.money >= g.buildCheck(i, 'berry').cost); if (gi != null) { const m1 = z.fin.money, c1 = g.buildCheck(gi, 'berry').cost; if (g.build(gi, 'berry') || z.fin.money !== m1 - c1) fail.push('Berry Farm build wrong'); } }
         const fs = g.berryFarms(); if (fs.length) { const f = rnd(fs), n = Math.floor(Math.random() * (f.plots + 1)); if (g.setBerryFeed(f.gi, n) || f.x.feed !== n) fail.push('Berry Farm plots not set'); else CB.feed++; }
-        if (!g.buildCheck('seat', 'hotel').why) fail.push('a Hotel allowed at the seat'); }
+        if (!g.buildCheck('seat', 'hotel').why) fail.push('a Hotel allowed at the seat');
+        // (0.64.0) part 2: a School, Tutor, Lab and Store where they can go, an item bought; a hall refused in a gym city
+        for (const k of ['school', 'tutor', 'lab', 'store']) { const where = k === 'tutor' && Math.random() < 0.5 ? 'seat' : [0, 1, 2, 3, 4, 5, 6, 7].find(i2 => !g.buildCheck(i2, k).why); if (where == null) continue; const ck2 = g.buildCheck(where, k); if (ck2.why || z.fin.money < ck2.cost + 30000) continue; const m2 = z.fin.money; if (g.build(where, k) || z.fin.money !== m2 - ck2.cost) fail.push(k + ' build wrong'); else CB2.built[k] = (CB2.built[k] || 0) + 1; }
+        if (!g.buildCheck(0, 'hall').why) fail.push('a training hall allowed in a gym city');
+        { const ks = g.shelfItems().filter(k => g.ITEMS[k].tier >= 2); if (ks.length) { const k = rnd(ks), pr = g.itemPrice(k), m3 = z.fin.money, n0 = g.bagOf()[k] || 0, w3 = g.buyItem(k); if (!w3) { CB2.items++; if (z.fin.money !== m3 - pr || g.bagOf()[k] !== n0 + 1) fail.push('item purchase wrong'); } else CB2.itemRefused++; }
+          if (!g.storeFloors() && !g.buyItem('leftovers')) fail.push('an item bought with no Store'); } }
       else if (r < 0.7) { const c = g.banCands().filter(x => !x.banned && !x.prot), x = c.length ? rnd(c.slice(0, 10)) : null; if (x) { const w = g.payBan(x.sp, rnd([1, 2, 3])); if (!w) money.bans++; else if (g.paidBans().length < g.BAN_PAID_MAX && z.fin.money >= x.price * 3) fail.push('ban refused: ' + w); } }
       else if (r < 0.85) { const t = g.staffIds().map(g.T).find(x => x && g.canRaise(x)); if (t && !g.giveRaise(t.id)) money.raises++; }
       else if (r < 0.9) { const free = g.myPlaces().filter(p => p.none); if (free.length && !g.moveGym(rnd([0, 1, 2, 3, 4, 5, 6, 7]), rnd(free).c.id)) money.moved++; }
@@ -835,6 +848,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 { const sizes = Object.values(S().cities).map(c => g.citySize(c)), by = {}; for (const k of sizes) by[g.sizeName(k)] = (by[g.sizeName(k)] || 0) + 1;
   const lgs = g.eachLeague(i => { const f = S().fin; if (!f) return null; const y = f.last || f.yr || { in: {} }, n = k => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0); return `L${i}(${f.aim || 'you'}) tix ${y.in.tickets || 0} hotels ${y.in.hotels || 0} berries ${y.in.berries || 0} cities ${y.in.cities || 0} | stadiums ${n('stadium')} hotels ${n('hotel')} centers ${n('center')} farms ${n('berry')}`; }).filter(Boolean);
   console.log('city buildings', JSON.stringify(by), 'tickets', JSON.stringify(g.TIX_LOG), 'over-tier', CB.overTier, 'berry sets', CB.feed, '\n  ' + lgs.join('\n  ')); }
+// (0.64.0) city buildings part 2
+{ const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0)).join('/');
+  console.log('city buildings 2', JSON.stringify(CB2), 'school', JSON.stringify(g.SCHOOL_LOG), 'tutor', JSON.stringify(g.TUTOR_LOG), 'lab', JSON.stringify(g.LAB_LOG), 'items', JSON.stringify(g.ITEM_LOG), '| by League: schools', n('school'), 'tutors', n('tutor'), 'labs', n('lab'), 'stores', n('store'), 'shops', g.eachLeague(() => { const f = S().fin, y = f && (f.last || f.yr); return y ? y.in.shops || 0 : 0; }).join('/'), 'grants', g.eachLeague(() => { const f = S().fin, y = f && (f.last || f.yr); return y ? y.in.grants || 0 : 0; }).join('/')); }
 console.log('regional field', JSON.stringify(fieldStats), 'draws', JSON.stringify(g.FIELD_LOG), 'rebuild', JSON.stringify(g.REBUILD_LOG), 'regions', [...new Set(g.eachLeague(() => g.S.region))].map(r => `${g.LEAGUE_SETS[r].name}: ${g.fieldSize(r)} of ${g.fieldTarget(r)} (${g.regionLgs(r).map(i => g.inLeague(i, () => g.S.challengers.length)).join('/')})`).join('; '));
 console.log('the red', JSON.stringify(red), 'folded', (S().folded || []).map(f => f.name).join(', ') || 'none');
 console.log('stage 5', JSON.stringify(spon), 'player League', g.ME(), 'prestige', g.eachLeague(() => Math.round(S().prest || 0)).join('/'), 'contenders', JSON.stringify(g.eachLeague(i => g.contendersOf(i).length)), 'bounties', g.eachLeague(() => S().fin && S().fin.last ? (S().fin.last.in.bounties || 0) - (S().fin.last.out.bounties || 0) : 0).join('/'));
