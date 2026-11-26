@@ -375,9 +375,9 @@ async def run(path):
                           else { sb.click(); if (S.fin.money !== m3 - 25000 || !inLeague(0, () => placeLv(gi, 'sanct'))) log.push('FAIL building a Sanctuary'); else log.push('built a Sanctuary'); } }
                         if (!document.querySelector('[data-act=build][data-w=seat][data-k=sanct]') === false) log.push('FAIL a Sanctuary offered at the seat'); }
                       S.fin.money = keep; go('cities'); }
-                    if (document.querySelectorAll('[data-act=movegym]').length !== 6) log.push('FAIL the Cities page should list six cities with no gym');
+                    if (document.querySelectorAll('#movetownsel option').length !== 6 || document.querySelectorAll('[data-act=movegym]').length !== 1) log.push('FAIL the Cities page should list six cities with no gym in one move control');
                     // 0.40.0: every gym city shows its control tier; a staff member's profile shows their hometown
-                    { const txt = document.body.innerText; if (!TIER_NAMES.some(n => txt.includes(n))) log.push('FAIL the Cities page shows no control tier');
+                    { const txt = document.querySelector('#main').textContent; if (!TIER_NAMES.some(n => txt.includes(n))) log.push('FAIL the Cities page shows no control tier');
                       const sid = inLeague(0, () => S.champion); modal = { kind: 'profile', id: sid }; renderModal(); const pt = (document.querySelector('.sheet-profile') || {}).textContent || ''; if (homeName(T(sid)) && !pt.includes('From ' + homeName(T(sid)))) log.push('FAIL a profile without its hometown'); modal = null; renderModal(); go('cities'); }
                     go('meta'); const bn = [...document.querySelectorAll('[data-act=ban][data-v="1"]')].find(x => !x.disabled);
                     if (bn) { const sp = bn.dataset.sp; bn.click(); if (!inLeague(0, () => paidBans().some(x => x.sp === sp))) log.push('FAIL paying for a ban'); else log.push('banned ' + sp); } else log.push('nothing to ban yet');
@@ -479,7 +479,7 @@ async def run(path):
                       if (opts.some(b => !inLeague(0, () => tripOk(b)))) log.push('FAIL the trip list offers a line out of reach');
                       go('cities');
                       let li = inLeague(0, () => S.gyms.findIndex(g => isPort(S.cities[g.city])));
-                      if (li < 0) { const port = inLeague(0, () => myPlaces().find(p => p.none && isPort(p.c))); if (port) { const sel = document.querySelector('#move-' + port.c.id), mb = document.querySelector('[data-act=movegym][data-c="' + port.c.id + '"]'); if (sel && mb) { sel.value = '0'; mb.click(); go('cities'); li = 0; log.push('moved a gym to ' + port.c.name); } } }
+                      if (li < 0) { const port = inLeague(0, () => myPlaces().find(p => p.none && isPort(p.c))); if (port) { const sel = document.querySelector('#movegymsel'), tsel = document.querySelector('#movetownsel'), mb = document.querySelector('[data-act=movegym]'); if (sel && tsel && mb) { sel.value = '0'; tsel.value = String(port.c.id); mb.click(); go('cities'); li = 0; log.push('moved a gym to ' + port.c.name); } } }
                       if (li >= 0) { inLeague(0, () => { cityB(S.cities[S.gyms[li].city]).length = 0; }); go('cities'); } // clear its slot for the lane
                       const lb = document.querySelector('[data-act=build][data-k=lane]');
                       if (li < 0) log.push('no port to build a lane in');

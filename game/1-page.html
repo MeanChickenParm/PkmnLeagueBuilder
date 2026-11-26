@@ -600,6 +600,21 @@ details.hist summary::-webkit-details-marker { display: none; }
 details.hist summary::before { content: '▸'; display: inline-block; width: 1em; color: var(--muted); transition: transform .15s; }
 details.hist[open] summary::before { transform: rotate(90deg); }
 details.hist .it-bag { padding: 0 12px 8px; margin: 0; }
+/* (0.67.0) the Cities page: city notes and the build list fold away */
+.citymore-in { padding: 0 12px 8px; }
+.citymore-in p, .citymore-in ul { margin: 6px 0; }
+details.citymore, details.buildlist { margin: 8px 0; }
+.citytags { line-height: 1.9; }
+.buildopts, .towns { padding: 0 12px 8px; }
+.buildopts li, .towns li { align-items: center; gap: 10px; padding: 6px 0; flex-wrap: wrap; }
+.buildopts li:first-child, .towns li:first-child { font-weight: inherit; }
+ul.buildopts li { flex-wrap: nowrap; }
+ul.buildopts li > span:first-child { display: block; flex: 1 1 auto; min-width: 0; }
+ul.buildopts .blurb { display: block; }
+ul.buildopts li > .btn { flex: 0 0 auto; }
+.towns { padding: 0; }
+.towns li > span:first-child { gap: 6px; }
+.movegym label { display: inline-flex; gap: 6px; align-items: center; }
 .rel.best { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 12%, var(--surface)); font-weight: 600; }
 #blog li.item { color: #6a5acd; }
 .tag.acc-slam { background: var(--gold); border-color: var(--gold); color: #1a1a1a; }
