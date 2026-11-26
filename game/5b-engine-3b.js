@@ -11,7 +11,13 @@
 const SEAT_SLOTS = 3, UP_COST = [25000, 50000, 100000, 200000, 400000], MOVE_FEE = 40000, UPKEEP = 0.05;
 const UPGRADES = {
   // (0.63.0) a gym's own Stadium: every gym has one at level 0 (500 seats); the seat's starts at level 2 (base)
-  stadium: { name: 'Stadium',         text: 'Every gym has one (500 seats at level 0) and the seat starts with a level 2 one. Battles are fought here: each try at the gym, and each Elite Four and title battle at the seat, sells tickets to the crowd its hype and the city\'s size bring, up to its seats (1,000, 2,000, 4,000, 7,000, 12,000). Each level is also a home edge of +1.5% in your staff\'s battles there. Level 3 needs a City, 4 a Metropolis, 5 a Megalopolis.', slotless: true, max: 5, tierAt: [0, 0, 1, 2, 3] },
+  stadium: { name: 'Stadium',         text: 'Every gym has one (500 seats at level 0) and the seat starts with a level 2 one. Battles are fought here: each try at the gym, and each Elite Four and title battle at the seat, sells tickets to the crowd its hype and the city\'s size bring, up to its seats (1,000, 2,000, 4,000, 7,000, 12,000). Levels add seats only (0.68.0); they open the Stadium\'s add-ons: a Home stand at level 1, a Field crew at 2, a Video room at 3 and a Warm-up room at 4. Level 3 needs a City, 4 a Metropolis, 5 a Megalopolis.', slotless: true, max: 5, tierAt: [0, 0, 1, 2, 3] },
+  // (0.68.0, the owner) the Stadium's add-ons: how your staff perform in its battles. Each opens at a Stadium level, takes
+  // no slot and works while the Stadium is at that level or more
+  stand:   { name: 'Home stand',      text: 'Opens at Stadium level 1, takes no slot. A home crowd behind your staff in this Stadium\'s battles: up to +1.5% a level, by how full the Stadium is for that battle (a full house gives it all). 3 levels.', slotless: true, max: 3, cost: [20000, 40000, 80000], needs: 1 },
+  crew:    { name: 'Field crew',      text: 'Opens at Stadium level 2, takes no slot. The field is laid out for the home side: your staff\'s Pokémon of the gym\'s type (all of them at an untyped gym; at the seat, the type of whoever is battling) hit 2% harder a level. 3 levels.', slotless: true, max: 3, cost: [25000, 50000, 100000], needs: 2 },
+  video:   { name: 'Video room',      text: 'Opens at Stadium level 3, takes no slot. Your staff study the challenger: +5 Strategy a level when they choose which Pokémon to field and when to send them out (not their battle ratings otherwise). 3 levels.', slotless: true, max: 3, cost: [40000, 80000, 160000], needs: 3 },
+  warmup:  { name: 'Warm-up room',    text: 'Opens at Stadium level 4, takes no slot. Your staff\'s lead Pokémon goes out one stage up in its better attacking stat; level 2 the first two of the team, level 3 the first three. 3 levels.', slotless: true, max: 3, cost: [50000, 100000, 200000], needs: 4 },
   hotel:   { name: 'Hotel',           text: 'Gym cities only. Rooms (4, 8, 14, 22, 32 by level) for the challengers in town each week: a room filled pays by the city\'s size. Every Hotel in the city shares the week\'s guests; the League that controls the city fills a little more. From level 3 a guest from another region counts twice. Level 3 needs a City, 4 a Metropolis, 5 a Megalopolis.', city: true, max: 5, cost: [20000, 40000, 80000, 160000, 320000], tierAt: [0, 0, 1, 2, 3] },
   center:  { name: 'Pokémon Center',  text: 'Gym cities only. Challengers whose hometown it is lean toward your League (+0.5 a level in the draw), and everyone in the region a little (+0.1 a level). Your circuit\'s challengers rest at your Centers: each Center you have cuts a week off their rest (up to 3), and a resting challenger is a visitor in its city. Level 3 needs a City.', city: true, max: 3, cost: [10000, 20000, 40000], tierAt: [0, 0, 1] },
   berry:   { name: 'Berry Farm',      text: 'Gym cities only. Plots (2, 4, 7, 10 by level) harvested every 4 weeks: each plot you set to sell brings in about 50 a week, the same in any city; each plot set to feed cuts your ranch\'s upkeep by 2% (up to 20%), and any fed plot makes Day Care eggs come a week sooner. A Grass gym in the city, or an Aroma Lady or Gardener on your staff, adds a plot\'s yield.', city: true, max: 4, cost: [15000, 30000, 60000, 120000] },
@@ -93,6 +99,8 @@ function buildCheck(where, k) {
   if (!pl) return { why: 'Your League has no gym there.' };
   const lv = upLevel(pl.b, k);
   if (lv >= upMax(k)) return { why: 'Fully built.' };
+  // (0.68.0) a Stadium add-on opens at its Stadium level
+  if (UPGRADES[k].needs && upLevel(pl.b, 'stadium') < UPGRADES[k].needs) return { why: `Opens at Stadium level ${UPGRADES[k].needs}.` };
   if (!lv && !U.slotless && slotsUsed(pl.b) >= pl.slots) return { why: 'No free slot.' };
   // (0.63.0) bigger levels need a bigger city (the seat counts as the League's biggest gym city)
   const need = U.tierAt ? U.tierAt[lv] || 0 : 0, size = where === 'seat' ? seatSize() : citySize(S.cities[S.gyms[where].city]);
@@ -299,8 +307,8 @@ function homeEdge(where) {
   if (lapsed()) return 1;
   // (0.40.0) a gym in a city that is the League's Stronghold fights with a crowd behind it
   const c = where !== 'seat' && S.gyms[where] ? S.cities[S.gyms[where].city] : null;
-  // (0.63.0) the Stadium carries the old gym feature's home edge
-  return 1 + STADIUM_EDGE * placeLv(where, 'stadium') + (strongholdOf(c, S.lg || 0) ? STRONG_EDGE : 0);
+  // (0.63.0) the Stadium carried the old gym feature's home edge; (0.68.0) only its Home stand does, by how full it is
+  return 1 + STAND_EDGE * addonLv(where, 'stand') * standFill(where) + (strongholdOf(c, S.lg || 0) ? STRONG_EDGE : 0);
 }
 // ---------- (0.20.0) legendary sites and sanctuaries ----------
 // A gym city where a legendary appeared or was caught becomes a legendary site (c.site = { sp, from, sps } since 0.37.0),
@@ -328,7 +336,28 @@ function hallLv(t) { const p = postOf(t); if (!p) return 0; return p.post === 'e
 
 // ================= CITY BUILDINGS, PART 1 (0.63.0; design doc cities-and-economy.md) =================
 // Visitors, the Stadium's tickets, the Hotel, the Pokémon Center and the Berry Farm. All numbers provisional.
-const STADIUM_EDGE = 0.015, STADIUM_SEATS = [500, 1000, 2000, 4000, 7000, 12000], SEAT_STADIUM = 2;
+const STADIUM_SEATS = [500, 1000, 2000, 4000, 7000, 12000], SEAT_STADIUM = 2;
+// (0.68.0) the Stadium's add-ons (all numbers provisional): the Home stand's edge at a full house a level, the Field
+// crew's damage a level, the Video room's Strategy a level (and send-out smarts in battle), and the Warm-up room's
+// stage. The Stadium's levels no longer give an edge of their own.
+const STAND_EDGE = 0.015, CREW_HIT = 0.02, VIDEO_STR = 5, VIDEO_SMART = 0.04, STAND_FILL_DEFAULT = 0.5, ADDONS = ['stand', 'crew', 'video', 'warmup'];
+// an add-on's working level at a place: none in the red, or while the Stadium is below the level it opens at
+function addonLv(where, k) {
+  if (lapsed() || fixedStaff()) return 0;
+  const lv = placeLv(where, k); return lv && placeLv(where, 'stadium') >= UPGRADES[k].needs ? lv : 0;
+}
+// how full the Stadium is for the battle being fought: the last ticket sale at the place (ticketSale), else half
+let fillNow = null;
+function standFill(where) { return fillNow && fillNow.lg === (S.lg || 0) && fillNow.where === where && fillNow.turn === S.turn ? fillNow.v : STAND_FILL_DEFAULT; }
+// what the add-ons give a battle at a place, for setBattle (holder: the member of staff battling there)
+function homeOpts(where, holder) {
+  const o = {}, crew = addonLv(where, 'crew'), video = addonLv(where, 'video'), warm = addonLv(where, 'warmup');
+  if (crew) { const ld = where === 'seat' ? holder : T((S.gyms[where] || {}).leader); const ty = ld ? specTypes(ld) : []; o.crew = { types: ty.length ? ty : null, mul: 1 + CREW_HIT * crew }; }
+  if (video) o.video = VIDEO_SMART * video; // send-out smarts in battle (battle() adds it to side 1's smart)
+  if (warm) o.warm = warm;
+  return o;
+}
+const videoStr = where => VIDEO_STR * addonLv(where, 'video');
 const HOTEL_ROOMS = [4, 8, 14, 22, 32], HOTEL_CTRL = [1, 1.1, 1.2, 1.3], HOTEL_AWAY_LV = 3;
 const VISIT_PARTY = 3; // a challenger in town brings a party (family, friends, fans): the guests a Hotel can fill
 const CENTER_HOME = 0.5, CENTER_ALL = 0.1, CENTER_CUT_MAX = 3;
@@ -418,6 +447,7 @@ function ticketSale(where, hype) {
   const c = where === 'seat' ? null : S.cities[(S.gyms[where] || {}).city];
   const size = where === 'seat' ? seatSize() : citySize(c), seats = stadiumSeats(where);
   const crowd = Math.round(CROWD_AT(size) * hype), sold = Math.min(seats, crowd), amt = Math.round(sold * TICKET_AT(size));
+  fillNow = { lg: S.lg || 0, where, turn: S.turn, v: seats ? sold / seats : 0 }; // (0.68.0) for the Home stand
   if (!amt) return 0;
   book(amt, 'tickets');
   const f = S.fin; f.tix = f.tix || {}; const key = where === 'seat' ? 'seat' : c.id; f.tix[key] = (f.tix[key] || 0) + amt;

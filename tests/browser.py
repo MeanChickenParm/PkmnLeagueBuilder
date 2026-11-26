@@ -325,6 +325,9 @@ async def run(path):
                   // Fossil Lab beside it, the keep grade set, a Contest refused without its condition
                   { S.fin.money = 900000; const bld = (w, k, cost, lv) => { go('cities'); const b = document.querySelector(`[data-act=build][data-w="${w}"][data-k=${k}]`), m0 = S.fin.money; if (!b) { log.push('FAIL no ' + k + ' to build'); return false; } b.click(); if (inLeague(0, () => placeLv(w, k)) !== lv || S.fin.money !== m0 - cost) { log.push('FAIL building a ' + k); return false; } log.push('built a ' + k); return true; };
                     if (!inLeague(0, () => buildCheck(6, 'airport')).why) log.push('FAIL an Airport allowed in a Town');
+                    // (0.68.0) Stadium add-ons: a Home stand at the seat (its Stadium starts at level 2), a Video room refused there, the add-on line on the page
+                    if (!inLeague(0, () => buildCheck('seat', 'video')).why) log.push('FAIL a Video room allowed below Stadium level 3');
+                    if (bld('seat', 'stand', 20000, 1)) { go('cities'); if (!/Home stand<\/b> level 1/.test(document.querySelector('#main').innerHTML) || !/at a full house/.test(document.querySelector('#main').textContent)) log.push('FAIL the Home stand line on the Cities page'); if (!(inLeague(0, () => homeEdge('seat')) > 1)) log.push('FAIL the Home stand gives no edge'); }
                     { const c = S.cities[S.gyms[6].city]; c.spent = c.spent || {}; c.spent[0] = (c.spent[0] || 0) + 100000; }
                     if (bld(6, 'airport', 150000, 1)) { const a = inLeague(0, () => airportAt(0)); if (!a || a.routes.length !== 1) log.push('FAIL a new Airport without a route');
                       go('cities'); const sel = document.querySelector('select.airsel'), m1 = S.fin.money, to = [...sel.options].map(o => +o.value).find(r => r !== a.routes[0]);

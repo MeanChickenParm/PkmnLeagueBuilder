@@ -1373,7 +1373,7 @@ function simManyBody() {
 }
 // (0.50.0) managing your League while the multi-year sim runs (S.simAuto, see autoMonth)
 const SIM_AUTO_TEXT = {
-  wall: 'Stadiums first (for the home edge), then Pokémon Centers, Sanctuaries, a Safari Zone, a training hall, shipping lanes and the rest, a paid ban now and then on the top of the meta, and a ranch that buys for its weakest posts and keeps six spares.',
+  wall: 'Stadiums and their add-ons first (Home stands, Video rooms, Field crews, Warm-up rooms), then Pokémon Centers, Sanctuaries, a Safari Zone, a training hall, shipping lanes and the rest, a paid ban now and then on the top of the meta, and a ranch that buys for its weakest posts and keeps six spares.',
   star: 'Pokémon Centers first, then a training hall and youth academy, Stadiums, Hotels, Sanctuaries, gym halls, shipping lanes, a scouting office and the rest, and a ranch that buys for its weakest posts and keeps four spares.',
   money: 'Hotels in the busiest cities and Berry Farms first, then Stadiums, a larger reserve, little bought for the ranch, and spare Pokémon sold quickly.',
 };

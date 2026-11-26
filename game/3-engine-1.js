@@ -1065,9 +1065,9 @@ function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.lea
 // trainer (Strategy) reads it better; a poor one is half guessing.
 function pickSquad(t, foe, mem) { return pickN(t, foe.team, foe.team.length, mem); }
 // (0.32.0) the n of t's Pokémon picked against a team; staff use it too, to field the number a gym battle needs
-function pickN(t, vs, n, mem) {
+function pickN(t, vs, n, mem, strB = 0) {
   if (t.team.length <= n) return t.team.slice();
-  const noise = (100 - t.r.str) / 100 * 1.2;
+  const noise = (100 - Math.min(100, t.r.str + strB)) / 100 * 1.2; // (0.68.0) strB: a Video room's study of the challenger
   // (0.21.0) gym memory: the types that beat them at this gym before weigh in, as much as their Strategy lets them learn
   const mw = mem && mem.length ? GMEM_SQUAD * gmemLearn(t) : 0;
   const sc = m => { let v = 0; for (const f of vs) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
@@ -1082,9 +1082,10 @@ function pickN(t, vs, n, mem) {
 const OBEY_BADGES = [[600, 4], [680, 6], [Infinity, 8]];
 function obeyBadges(sp) { const s = SP[sp]; if (!s || !(s.legend || s.paradox || s.ub)) return 0; return OBEY_BADGES.find(x => s.bst < x[0])[1]; }
 const obeys = (t, m, lvl) => t.role !== 'challenger' || lvl >= E4_LV[0] || (t.badges || []).length >= obeyBadges(m.sp);
-function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem) {
+function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem, extra) {
   const full = t.team, o = gymType !== undefined ? { equal: lvl, gymType } : { equal: lvl };
   if (edge && edge !== 1) o.edge = edge; // (0.13.0) a gym feature's home edge for the defending side
+  if (extra) Object.assign(o, extra); // (0.68.0) the Stadium's add-ons for the defending side (homeOpts: crew, video, warm)
   const ok = full.filter(m => obeys(t, m, lvl));
   if (ok.length) t.team = ok;
   t.team = pickSquad(t, foe, mem);
@@ -1092,10 +1093,10 @@ function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem) {
 }
 // (0.32.0) a member of staff fields n of the team they hold, each in the form and with the moves it has at level lvl,
 // picked by their Strategy against the challenger's team; restore() puts the team back as it was
-function staffField(s, lvl, n, vs) {
+function staffField(s, lvl, n, vs, strB = 0) {
   const full = s.team, saved = full.map(m => [m, m.sp, m.lvl, m.moves, m.top, m.cap, m.abSlot]);
   for (const m of full) { m.lvl = lvl; delete m.cap; if (heldItem(m) !== 'everstone') m.sp = stageAt(m, lvl, s.specialty); ensureMon(m); refreshMoves(m); }
-  s.team = pickN(s, vs, n);
+  s.team = pickN(s, vs, n, null, strB);
   return () => { s.team = full; for (const [m, sp, lv, mv, top, cap, ab] of saved) { m.sp = sp; m.lvl = lv; m.moves = mv; if (top == null) delete m.top; else m.top = top; m.abSlot = ab; if (cap == null) delete m.cap; else m.cap = cap; } };
 }
 
@@ -1340,6 +1341,11 @@ function battle(tA, tB, stakes, title, opts = {}) {
     const calm = team.some(m => isTemper(m, 'Calm')), jolly = team.some(m => isTemper(m, 'Jolly')) && ((sd.t.rec && sd.t.rec.cs) || 0) >= 2;
     sd.mons.forEach((b, i) => { const m = team[i]; if (m) b.tmp = temperMul(sd.t, foe, m, stakes, !!EQ, calm) * (jolly ? 1.03 : 1); });
   });
+  // (0.68.0) the Stadium's add-ons for the home side (side 1): a Field crew's type, a Video room's send-out calls and a
+  // Warm-up room's lead Pokémon a stage up in its better attacking stat. Kept here, small, for copying to the source game.
+  if (opts.crew) sides[1].mons.forEach(b => { if (!opts.crew.types || b.types.some(ty => opts.crew.types.includes(ty))) b.tmp = (b.tmp || 1) * opts.crew.mul; });
+  if (opts.video) sides[1].smart += opts.video;
+  if (opts.warm) sides[1].mons.slice(0, opts.warm).forEach(b => { const k = b.spa > b.atk ? 'spa' : 'atk'; b.st[k] = Math.min(6, b.st[k] + 1); });
   // a legendary encounter: its single Pokémon has raid-sized HP, and starts with whatever damage earlier attempts left
   if (opts.boss) { const b = sides[1].mons[0]; b.max = Math.round(b.max * opts.boss.hpMul); b.hp = Math.max(1, Math.round(b.max * opts.boss.hpFrac));
     // v177: the challenger's luck on the day swings their damage hard, and how hard the legendary hits back a little

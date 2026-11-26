@@ -1299,9 +1299,9 @@ function gymTry(t, entry) {
     if (autoItems) autoEquip(t, foe); // items picked for this battle
     // (0.32.0) the trainer in front of them fields the number this stage needs (a gym trainer one fewer than the
     // leader), at this stage's level
-    const vs = t.team.filter(m => obeys(t, m, lvl)), restore = staffField(foe, lvl, Math.max(1, isLeader ? size : size - 1), vs.length ? vs : t.team);
+    const vs = t.team.filter(m => obeys(t, m, lvl)), restore = staffField(foe, lvl, Math.max(1, isLeader ? size : size - 1), vs.length ? vs : t.team, videoStr(g));
     try {
-      res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · badge ${b + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g), mem);
+      res = setBattle(t, foe, lvl, 'gym', isLeader ? `${townName(g)} Gym · badge ${b + 1}` : `${townName(g)} Gym · gym trainer ${dn(foe)}`, gymWeatherType(T(gym.leader)), homeEdge(g), mem, homeOpts(g, foe));
     } finally { restore(); }
     if (autoItems) autoEquip(t);
     entry.opp = foe.id; entry.left = res.sides[0].left; entry.stage = k;
@@ -1367,7 +1367,7 @@ function leagueRun(q, entry) {
     setTeamLevel(q, E4_LV[i]);
     if (itemsOn()) autoEquip(q, foe);
     seatTickets(q, foe, i); // (0.63.0) the seat's Stadium
-    const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`, undefined, homeEdge('seat'));
+    const r = setBattle(q, foe, E4_LV[i], 'league', `Elite Four · ${dn(foe)}`, undefined, homeEdge('seat'), undefined, homeOpts('seat', foe));
     if (r.winner === 1) { ok = false; e.stage = i; e.lostTo = foe.id; foe.career.e4Wins++; break; }
     y.pts += 2; noteDepth(q, 9 + i);
   }
@@ -1377,7 +1377,7 @@ function leagueRun(q, entry) {
     setTeamLevel(q, champLv());
     if (itemsOn()) autoEquip(q, champ);
     seatTickets(q, champ, 4);
-    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`, undefined, homeEdge('seat'));
+    const r = setBattle(q, champ, champLv(), 'title', `Championship · ${dn(champ)}`, undefined, homeEdge('seat'), undefined, homeOpts('seat', champ));
     r.when = { season: S.season, week: S.week };
     L.logs.push(r); if (L.logs.length > TITLE_LOGS) L.logs.shift();
     if (r.winner === 0) {
@@ -1799,7 +1799,7 @@ function runChallenge(x) {
   } else if (x.from === 'circuit' || x.from === 'claim') setTeamLevel(cand, lvl);
   const claim = x.from === 'claim'; if (claim) cand.claimOn = null;
   const seat = champ ? "the Champion's seat" : `Elite Four seat #${x.slot + 1}`;
-  const res = setBattle(cand, inc, lvl, 'league', `${claim ? 'Title claim' : 'Seat challenge'} · ${champ ? 'Champion' : `Elite Four #${x.slot + 1}`}`, undefined, claim ? homeEdge('seat') * CLAIM_EDGE : undefined);
+  const res = setBattle(cand, inc, lvl, 'league', `${claim ? 'Title claim' : 'Seat challenge'} · ${champ ? 'Champion' : `Elite Four #${x.slot + 1}`}`, undefined, claim ? homeEdge('seat') * CLAIM_EDGE : undefined, undefined, claim ? homeOpts('seat', inc) : undefined);
   res.at = S.turn; res.cand = cand.id; res.when = { season: S.season, week: S.week };
   (S.seatLogs = S.seatLogs || []).push(res); if (S.seatLogs.length > SEAT_LOGS) S.seatLogs.shift();
   const won = res.winner === 0;

@@ -37,6 +37,7 @@ const S = () => g.S, fail = [];
 const CB = { overTier: 0, feed: 0, grandfathered: false }; // (0.63.0)
 const CB2 = { built: {}, items: 0, itemRefused: 0, gradTag: 0, tutored: 0, bagMax: 0, hallGym: 0 }; // (0.64.0)
 const CB3 = { built: {}, refused: 0, routes: 0, keep: 0, airports: 0, finds: 0, forcedCity: 0 }; // (0.65.0)
+const ADD = { built: 0 }; // (0.68.0)
 const RR2 = { set: 0, listedMax: 0 }; // (0.66.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
@@ -343,6 +344,7 @@ function check(tag) {
     for (const p of g.myPlaces()) { if (g.slotsUsed(p.b) > p.slots) bad('more buildings than slots in ' + p.name); for (const x of p.b) if (!(x.lv >= 1 && x.lv <= g.upMax(x.k)) || !g.UPGRADES[x.k] || (g.UPGRADES[x.k].seat && !p.seat) || (g.UPGRADES[x.k].site && p.seat) || (g.UPGRADES[x.k].city && p.seat)) bad('bad building in ' + p.name);
       // (0.63.0) the seat's Stadium from its founding; levels within the city's size; Berry Farm plots fed within the plots
       for (const x of p.b) { if (x.base && (x.k !== 'stadium' || !p.seat || x.lv < x.base)) bad('a base level off the seat Stadium in ' + p.name); const U = g.UPGRADES[x.k]; if (U && U.tierAt && !p.seat && !p.none && x.lv - 1 >= 0 && U.tierAt[x.lv - 1] > g.citySize(p.c)) bad('a ' + x.k + ' level past its city size in ' + p.name); if (x.k === 'berry' && !((x.feed || 0) >= 0 && (x.feed || 0) <= g.BERRY_PLOTS[x.lv - 1])) bad('Berry Farm plots fed out of range in ' + p.name); }
+      for (const k of g.ADDONS) { const w = p.seat ? 'seat' : p.gym; if (!p.none && g.addonLv(w, k) && g.placeLv(w, 'stadium') < g.UPGRADES[k].needs) bad('a ' + k + ' working below its Stadium level in ' + p.name); } // (0.68.0)
       if (p.seat && !p.b.some(x => x.k === 'stadium' && x.lv >= g.SEAT_STADIUM)) bad('a seat with no Stadium'); if (p.none && p.b.length) bad('buildings left where the League has no gym: ' + p.name); }
     if (new Set(z.gyms.map(x => x.city)).size !== 8) bad('two gyms of one League in one city');
     // (0.64.0) city buildings part 2: no training hall in a gym city; the item bag covers every tier 2-3 item its staff
@@ -601,6 +603,10 @@ for (let i = 0; i < N; i++) {
         if (!g.berryFarms().length) { const gi = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !g.buildCheck(i, 'berry').why && z.fin.money >= g.buildCheck(i, 'berry').cost); if (gi != null) { const m1 = z.fin.money, c1 = g.buildCheck(gi, 'berry').cost; if (g.build(gi, 'berry') || z.fin.money !== m1 - c1) fail.push('Berry Farm build wrong'); } }
         const fs = g.berryFarms(); if (fs.length) { const f = rnd(fs), n = Math.floor(Math.random() * (f.plots + 1)); if (g.setBerryFeed(f.gi, n) || f.x.feed !== n) fail.push('Berry Farm plots not set'); else CB.feed++; }
         if (!g.buildCheck('seat', 'hotel').why) fail.push('a Hotel allowed at the seat');
+        // (0.68.0) a Stadium add-on where it opens (cost checked), refused below its Stadium level
+        for (const k of g.ADDONS) { const where = rnd(['seat', 0, 1, 2, 3, 4, 5, 6, 7]), ck = g.buildCheck(where, k), st = g.placeLv(where, 'stadium');
+          if (st < g.UPGRADES[k].needs && !ck.why) fail.push('a ' + k + ' allowed below Stadium level ' + g.UPGRADES[k].needs);
+          if (!ck.why && z.fin.money >= ck.cost + 30000) { const m0 = z.fin.money; if (g.build(where, k)) fail.push(k + ' refused'); else { ADD.built++; if (z.fin.money !== m0 - ck.cost) fail.push(k + ' cost'); } } }
         // (0.64.0) part 2: a School, Tutor, Lab and Store where they can go, an item bought; a hall refused in a gym city
         for (const k of ['school', 'tutor', 'lab', 'store']) { const where = k === 'tutor' && Math.random() < 0.5 ? 'seat' : [0, 1, 2, 3, 4, 5, 6, 7].find(i2 => !g.buildCheck(i2, k).why); if (where == null) continue; const ck2 = g.buildCheck(where, k); if (ck2.why || z.fin.money < ck2.cost + 30000) continue; const m2 = z.fin.money; if (g.build(where, k) || z.fin.money !== m2 - ck2.cost) fail.push(k + ' build wrong'); else CB2.built[k] = (CB2.built[k] || 0) + 1; }
         if (!g.buildCheck(0, 'hall').why) fail.push('a training hall allowed in a gym city');
@@ -874,6 +880,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 // (0.64.0) city buildings part 2
 { const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0)).join('/');
   console.log('city buildings 2', JSON.stringify(CB2), 'school', JSON.stringify(g.SCHOOL_LOG), 'tutor', JSON.stringify(g.TUTOR_LOG), 'lab', JSON.stringify(g.LAB_LOG), 'items', JSON.stringify(g.ITEM_LOG), '| by League: schools', n('school'), 'tutors', n('tutor'), 'labs', n('lab'), 'stores', n('store'), 'shops', g.eachLeague(() => { const f = S().fin, y = f && (f.last || f.yr); return y ? y.in.shops || 0 : 0; }).join('/'), 'grants', g.eachLeague(() => { const f = S().fin, y = f && (f.last || f.yr); return y ? y.in.grants || 0 : 0; }).join('/')); }
+// (0.68.0) Stadium add-ons by League (seat and gyms), and the battles they worked in
+{ const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + ((p.b.find(x => x.k === k) || {}).lv || 0), 0)).join('/');
+  console.log('stadium add-ons', JSON.stringify(ADD), '| levels by League: stands', n('stand'), 'crews', n('crew'), 'video rooms', n('video'), 'warm-up rooms', n('warmup')); }
 // (0.65.0) city buildings part 3
 { const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0)).join('/');
   console.log('ranch rules', JSON.stringify(RR2), JSON.stringify(g.RR_LOG));
