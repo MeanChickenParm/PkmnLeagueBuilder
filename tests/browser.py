@@ -270,7 +270,7 @@ async def run(path):
                   // 0.53.0: talks. Open talks for a challenger, make an offer from the Talks page (post, pay, bonus, a promise),
                   // withdraw and offer again, settle it; a rival goes after a Gym Leader: let them go for the transfer fee
                   { const m = () => document.querySelector('#main'), set = (k, f, v) => { const el = m().querySelector('.talkf[data-k="' + k + '"][data-f="' + f + '"]' + (f === 'prom' ? '[data-v="' + v + '"]' : '')); if (!el) return false; if (f === 'prom') el.checked = true; else el.value = String(v); el.dispatchEvent(new Event('change', { bubbles: true })); return true; };
-                    const c = inLeague(0, () => challengers().find(t => t && canTalk(t) && t.rest != null));
+                    const c = inLeague(0, () => challengers().find(t => t && canTalk(t) && t.rest != null && willSign(t, 0))); // (0.69.0) one who will sign for you (a low-prestige League failed now and then)
                     const k = c && inLeague(0, () => openTalks(c, 'star', null, 'a test'));
                     if (!k) log.push('FAIL could not open talks');
                     else { go('talks'); if (!m().querySelector('.talk[data-talk="' + k.id + '"]') || /undefined|NaN/.test(m().textContent)) log.push('FAIL the Talks page does not show the talks');
@@ -333,6 +333,16 @@ async def run(path):
                       go('cities'); const sel = document.querySelector('select.airsel'), m1 = S.fin.money, to = [...sel.options].map(o => +o.value).find(r => r !== a.routes[0]);
                       if (!sel) log.push('FAIL no Airport route picker'); else { sel.value = String(to); sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => airRoutes())[0] !== to || S.fin.money !== m1 - 25000) log.push('FAIL changing the Airport route'); else log.push('changed the Airport route'); }
                       if (!inLeague(0, () => buildCheck(7, 'airport')).why) log.push('FAIL a second Airport allowed'); }
+                    // (0.69.0) the Weather Institute in the gym city made a City: refused in a Town, a seat field from its picker,
+                    // an off-type field refused at level 1, any field held at level 2, then sold back
+                    if (!inLeague(0, () => buildCheck(7, 'wx')).why && inLeague(0, () => citySize(S.cities[S.gyms[7].city])) < 1) log.push('FAIL a Weather Institute allowed in a Town');
+                    if (bld(6, 'wx', 50000, 1)) { go('cities'); const sel = document.querySelector('select.wxsel[data-w=seat]');
+                      if (!sel) log.push('FAIL no field picker'); else { const v = [...sel.options].map(o => o.value).find(x => x && x !== 'clear') || 'clear'; sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); if (inLeague(0, () => fieldPick('seat')) !== v) log.push('FAIL setting the seat field'); else log.push('set the seat field to ' + v); }
+                      const off = inLeague(0, () => { if (wxClassOn()) return null; for (let i = 0; i < 8; i++) { const k = FIELD_KEYS.find(f => !fieldOpts(i).includes(f)); if (k) return [i, k]; } return null; });
+                      if (off && !inLeague(0, () => setField(off[0], off[1]))) log.push('FAIL an off-type field taken at level 1');
+                      if (bld(6, 'wx', 100000, 2)) { if (inLeague(0, () => setField(0, 'mterr'))) log.push('FAIL any field refused at level 2'); const f = inLeague(0, () => fieldOf(0)); if (!f || f.t !== 'Fairy' || !f.lock || f.w) log.push('FAIL the level 2 field'); else log.push('Misty Terrain held at gym 1');
+                        go('cities'); if (!/Misty Terrain/.test(document.querySelector('#main').textContent)) log.push('FAIL the field not shown on the Cities page'); }
+                      inLeague(0, () => { sellBuilding(6, 'wx'); sellBuilding(6, 'wx'); }); }
                     bld(4, 'lab', 25000, 1); if (!inLeague(0, () => buildCheck(4, 'fossil')).why) log.push('FAIL a Fossil Lab allowed beside a level 1 Lab');
                     bld(4, 'lab', 50000, 2); bld(4, 'fossil', 30000, 1);
                     go('cities'); const kg = document.querySelector('select.keepgsel[data-k=fossil]');
@@ -347,7 +357,7 @@ async def run(path):
                           const n0 = R.mons.length, m0 = S.fin.money, hi = newEntry(b1, 4, 'trip'), lo = newEntry(b0, 1, 'trip');
                           if (ranchTake(lo) !== 'sold' || S.fin.money <= m0) log.push('FAIL a find below the floor kept or not sold');
                           if (ranchTake(hi) !== 'kept' || R.mons.length !== n0 || !R.mons.includes(hi)) log.push('FAIL make room'); else log.push('made room for a better find');
-                          const rr = ranchRules(), w = R.mons.filter(x => rrSpare(x, rr)).sort((x, y) => entryValue(x) - entryValue(y))[0]; if (w && ranchTake(Object.assign({}, w, { uid: uid() })) !== 'lost') log.push('FAIL make room for a find no better than every spare');
+                          const rr = ranchRules(), w = R.mons.filter(x => rrSpare(x, rr)).sort((x, y) => entryValue(x) - entryValue(y))[0]; if (w && ranchTake(Object.assign({}, w, { uid: uid() }), 1) !== 'lost') log.push('FAIL make room for a find no better than every spare');
                           R.mons = R.mons.filter(e => e.at != null || e.from !== 'trip' || e === hi); setRanchRules({ floor: 2, idle: false }); }); } go('cities'); }
                     const nb = [0, 1, 2, 3, 4, 5, 6, 7].find(i => inLeague(0, () => condWhy(i, 'contest'))); if (nb != null && !/Bug/.test(inLeague(0, () => buildCheck(nb, 'contest')).why || '')) log.push('FAIL a Contest allowed without a Bug gym or class');
                     if (!/Fossil Lab/.test(document.querySelector('#main').textContent)) log.push('FAIL the Fossil Lab is not on the Cities page');

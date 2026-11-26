@@ -6231,15 +6231,17 @@ function takeGymTrainer(t, i, k, how) {
 function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }
 // which of a challenger's Pokémon fight: as many as the other side fields, picked for the matchup. A sharper
 // trainer (Strategy) reads it better; a poor one is half guessing.
-function pickSquad(t, foe, mem) { return pickN(t, foe.team, foe.team.length, mem); }
+function pickSquad(t, foe, mem, field) { return pickN(t, foe.team, foe.team.length, mem, 0, field); }
 // (0.32.0) the n of t's Pokémon picked against a team; staff use it too, to field the number a gym battle needs
-function pickN(t, vs, n, mem, strB = 0) {
+function pickN(t, vs, n, mem, strB = 0, field = null) {
   if (t.team.length <= n) return t.team.slice();
   const noise = (100 - Math.min(100, t.r.str + strB)) / 100 * 1.2; // (0.68.0) strB: a Video room's study of the challenger
   // (0.21.0) gym memory: the types that beat them at this gym before weigh in, as much as their Strategy lets them learn
   const mw = mem && mem.length ? GMEM_SQUAD * gmemLearn(t) : 0;
+  // (0.69.0) a Weather Institute's field, seen beforehand: Pokémon it suits weigh in as much as their Strategy reads it
+  const fw = field ? FIELD_PREP * gmemLearn(t) : 0;
   const sc = m => { let v = 0; for (const f of vs) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
-    return v / Math.max(1, vs.length) + (mw ? mw * counterScore(monTypes(m), mem) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
+    return v / Math.max(1, vs.length) + (mw ? mw * counterScore(monTypes(m), mem) : 0) + (fw ? fw * fieldFit(monTypes(m), field) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
   const best = new Set(t.team.map(m => [m, sc(m)]).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]));
   return t.team.filter(m => best.has(m));
 }
@@ -6256,7 +6258,7 @@ function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem, extra) {
   if (extra) Object.assign(o, extra); // (0.68.0) the Stadium's add-ons for the defending side (homeOpts: crew, video, warm)
   const ok = full.filter(m => obeys(t, m, lvl));
   if (ok.length) t.team = ok;
-  t.team = pickSquad(t, foe, mem);
+  t.team = pickSquad(t, foe, mem, extra && extra.field);
   try { return battle(t, foe, stakes, title, o); } finally { t.team = full; }
 }
 // (0.32.0) a member of staff fields n of the team they hold, each in the form and with the moves it has at level lvl,
@@ -6524,12 +6526,18 @@ function battle(tA, tB, stakes, title, opts = {}) {
   const tally = sides.map(sd => sd.mons.map(() => ({ out: false, ko: 0, f: 0, dmg: 0 })));
   // the field: a gym's own weather, else the region's (events, legendaries); weather abilities and moves replace it
   let weather = (featOn('abilities') && stakes === 'gym' ? GYM_WEATHER[opts.gymType !== undefined ? opts.gymType : tB.specialty] : null) || regionWeather();
-  if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
+  // (0.69.0) a Weather Institute's field for the home side's battles (opts.field: { name, w, t, lock }): one weather,
+  // terrain or clear skies replaces the gym's own weather; a terrain powers its type for both sides (below); with lock
+  // (level 2) no ability or move changes the weather. Kept here, small, for copying to the source game.
+  const fld = featOn('abilities') && opts.field || null, wxHeld = () => !!(fld && fld.lock);
+  if (fld) { weather = fld.w ? (fld.w === 'clear' ? null : fld.w) : regionWeather(); if (fld.t || fld.w === 'clear') ev.push({ k: 'note', s: -1, txt: `${fld.name} ${fld.lock ? 'holds' : 'lies over'} the field.`, cls: 'weather' }); }
+  if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${fld && fld.w ? (fld.lock ? 'holds the field' : 'fills the field') : stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
   if (opts.ruleNote) ev.push({ k: 'note', s: -1, txt: opts.ruleNote, cls: 'weather' });
   const note = (si, i, txt, extra = {}) => ev.push(Object.assign({ k: 'note', s: si, i, txt }, extra));
   if (opts.boss && opts.boss.luck) { const x = opts.boss.luck; ev.push({ k: 'note', s: -1, cls: 'stat', txt: `${dn(tA)}'s team is having a ${luckWord(x)} day (damage x${x.toFixed(2)}).` }); }
   // terrain abilities power up the whole team from the start
   sides.forEach((sd, si) => { sd.terrain = {}; sd.mons.forEach((m, i) => { const g = SURGE[m.ab]; if (g && (sd.terrain[g[0]] || 1) < g[1]) { sd.terrain[g[0]] = g[1]; note(si, i, `{0}'s ${m.ab}: ${dn(sd.t)}'s team's ${g[0]} moves are powered up!`, { cls: 'ab' }); } }); });
+  if (fld && fld.t) sides.forEach(sd => { sd.terrain[fld.t] = Math.max(sd.terrain[fld.t] || 1, FIELD_TERRAIN); }); // (0.69.0) the field's terrain, both sides
   const breaks = a => BREAKERS.includes(a.ab);
   const abOf = (d, a) => a && breaks(a) ? null : d.ab; // the defender's ability, unless the attacker ignores it
   const active = si => { const sd = sides[si]; return sd.act >= 0 ? sd.mons[sd.act] : null; };
@@ -6614,11 +6622,11 @@ function battle(tA, tB, stakes, title, opts = {}) {
     if (m.plate && !m.plateNoted) { m.plateNoted = true; note(si, i, `{0}'s ${m.ab}: it is ${m.types[0]} type!`, { cls: 'ab' }); }
     if (m.ab === 'Illusion' && !m.illusionBroken) { const hide = sd.mons.filter((x, k) => k !== i && x.hp > 0); m.illusion = hide.length ? hide[hide.length - 1] : null; }
     if (m.ab === 'Download' && o && o.hp > 0) { const k = o.def * stageMul(o.st.def) <= o.spd * stageMul(o.st.spd) ? 'atk' : 'spa'; raise(si, i, k, 1, 'Download'); }
-    if (m.ab === 'Air Lock') { if (weather) note(si, i, `{0}'s Air Lock: the weather fades away!`, { cls: 'weather' }); weather = null; }
+    if (m.ab === 'Air Lock' && !wxHeld()) { if (weather) note(si, i, `{0}'s Air Lock: the weather fades away!`, { cls: 'weather' }); weather = null; }
     if (m.ab === 'Slow Start' && m.slowStart == null) { m.slowStart = 5; note(si, i, `{0} can't get it going!`, { cls: 'ab' }); }
     if ((m.ab === 'Intrepid Sword' || m.ab === 'Dauntless Shield') && !m.swordUsed) { m.swordUsed = true; raise(si, i, m.ab === 'Intrepid Sword' ? 'atk' : 'def', 1, m.ab); }
     if ((m.ab === 'Protosynthesis' || m.ab === 'Quark Drive') && m.hp === m.max && !m.pBoost) { m.pBoost = BEST_STAT(m); note(si, i, `{0}'s ${m.ab}: its ${STAT_NAME_B[m.pBoost]} is heightened!`, { cls: 'ab' }); }
-    if (setW && weather !== setW && !airLocked()) { weather = setW; note(si, i, `{0}'s ${m.ab}: ${WEATHER_NAME[setW]}!`, { cls: 'weather' }); }
+    if (setW && weather !== setW && !airLocked() && !wxHeld()) { weather = setW; note(si, i, `{0}'s ${m.ab}: ${WEATHER_NAME[setW]}!`, { cls: 'weather' }); }
     if (m.ab === 'Intimidate' && o && o.hp > 0) {
       const oi = sides[1 - si].act;
       note(si, i, `{0}'s Intimidate!`, { cls: 'ab' });
@@ -6766,7 +6774,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
         if (kind === 'heal' && atk.hp < atk.max) { atk.hp = Math.min(atk.max, atk.hp + Math.round(atk.max / 4)); note(si, ai, `{0} restored its HP!`, { hp: atk.hp, cls: 'heal' }); }
       }
       if (/^hazard/.test(fx)) { const k = fx.split(':')[1]; if (!o[k]) { o[k] = true; note(si, ai, k === 'rocks' ? `Pointed stones float around the other side!` : `Spikes were scattered on the other side!`, { cls: 'ab' }); } }
-      if (/^weather/.test(fx)) { const w = fx.split(':')[1]; if (weather !== w && !airLocked()) { weather = w; note(si, ai, `${WEATHER_NAME[w]}!`, { cls: 'weather' }); } }
+      if (/^weather/.test(fx)) { const w = fx.split(':')[1]; if (weather !== w && !airLocked() && !wxHeld()) { weather = w; note(si, ai, `${WEATHER_NAME[w]}!`, { cls: 'weather' }); } }
       if (fx === 'protect') { atk.guard = true; note(si, ai, `{0} braced itself!`, { cls: 'ab' }); }
     }
     if (dAb === 'Good as Gold' && mv.utility) { ev.push({ k: 'use', s: si, i: ai, mn: mv.name }); note(1 - si, di, `{0}'s Good as Gold shrugs off ${mv.name}!`, { cls: 'ab' }); atk.streak = 0; selfFx(); return; }
@@ -8770,7 +8778,7 @@ const ROUTE_NOISE = 1.6, ROUTE_MEM = 0.5, ROUTE_TRY = 0.2;
 const lineTypesOf = g => [...new Set([...(S.gyms[g].trainers || []), S.gyms[g].leader].map(T).filter(Boolean).flatMap(foeTypes))];
 function gymMatch(t, g) {
   const ty = lineTypesOf(g); if (!ty.length || !t.team.length) return 0;
-  return t.team.reduce((a, m) => a + counterScore(monTypes(m), ty), 0) / t.team.length;
+  return t.team.reduce((a, m) => a + counterScore(monTypes(m), ty), 0) / t.team.length + fieldRoute(t, g); // (0.69.0)
 }
 function pickGym(t) {
   const open = S.gyms.map((_, g) => g).filter(g => !t.badges.includes(g));
@@ -13901,8 +13909,8 @@ function expirePaidBans() {
 // world's average) turns to a wall or to stars. All numbers are provisional.
 const AIMS = {
   // (0.63.0, owner: by aim) wall-builders buy Stadiums first (0.68.0: and their add-ons, the home side's edge), star-makers Centers (the draw), money-makers Hotels and Berry Farms
-  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums and their add-ons (Home stands, Video rooms, Field crews, Warm-up rooms) and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['seat', 'stand'], ['gyms', 'stadium'], ['gyms', 'stand'], ['seat', 'video'], ['gyms', 'video'], ['seat', 'crew'], ['gyms', 'crew'], ['seat', 'warmup'], ['gyms', 'warmup'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
-  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['seat', 'video'], ['gyms', 'stand'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'safari'], ['seat', 'daycare']] },
+  wall:  { name: 'Wall-builder',  text: 'Hires the best, counters the meta, builds Stadiums and their add-ons (Home stands, Video rooms, Field crews, Warm-up rooms) and pays for bans.', reserve: 60000, build: [['seat', 'stadium'], ['seat', 'stand'], ['gyms', 'stadium'], ['gyms', 'stand'], ['seat', 'video'], ['gyms', 'video'], ['seat', 'crew'], ['gyms', 'crew'], ['seat', 'warmup'], ['gyms', 'warmup'], ['seat', 'tutor'], ['gyms', 'tutor'], ['gyms', 'center'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'safari'], ['seat', 'hall'], ['gyms', 'lane'], ['gyms', 'contest'], ['gyms', 'pier'], ['gyms', 'airport'], ['gyms', 'wx'], ['gyms', 'lab'], ['gyms', 'school'], ['seat', 'academy'], ['seat', 'daycare']] },
+  star:  { name: 'Star-maker',    text: 'Hires young, builds Pokémon Centers, training halls, a youth academy and a scouting office; its staff are sought after.', reserve: 60000, build: [['gyms', 'center'], ['seat', 'hall'], ['gyms', 'school'], ['seat', 'academy'], ['gyms', 'lab'], ['gyms', 'fossil'], ['gyms', 'stadium'], ['seat', 'video'], ['gyms', 'stand'], ['gyms', 'hotel'], ['gyms', 'store'], ['gyms', 'sanct'], ['gyms', 'lane'], ['gyms', 'airport'], ['gyms', 'contest'], ['seat', 'scout'], ['seat', 'tutor'], ['gyms', 'wx'], ['gyms', 'safari'], ['seat', 'daycare']] },
   money: { name: 'Money-maker',   text: 'Keeps wages down, builds Hotels, Berry Farms and Stadiums, and holds a reserve.', reserve: 120000, build: [['gyms', 'hotel'], ['gyms', 'berry'], ['gyms', 'store'], ['gyms', 'stadium'], ['gyms', 'school'], ['gyms', 'pier'], ['gyms', 'contest'], ['gyms', 'sanct'], ['gyms', 'center'], ['gyms', 'airport'], ['seat', 'hall'], ['gyms', 'safari'], ['seat', 'academy'], ['seat', 'daycare']] },
 };
 const AIM_KEYS = Object.keys(AIMS), AIM_MIN_YEARS = 3, AIM_RICH = 2.5, AIM_BAN_ODDS = 0.25;
@@ -13956,7 +13964,7 @@ function aimMonth() {
     // a star-maker lets its gyms build freely and has only its Elite Four and Champion counter the year
     if (aim === 'star') { S.e4.forEach((id, k) => { if (answersOnType(T(id), 'year')) st.posts['e4:' + k] = 'year'; }); if (answersOnType(T(S.champion), 'year')) st.posts.champion = 'year'; } }
   if (aim && S.fin.money < 0) aiSell(); // (0.18.0) in the red, one building level sold a month
-  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); aimItems(aim); } // (0.64.0) an item for the bag by aim // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
+  if (aim) { aimRanch(aim); aiBerry(); aimSpend(aim); aimItems(aim); aiWx(aim); } // (0.64.0) an item for the bag by aim // (0.25.0) the ranch first; (0.63.0) Berry Farm plots fed or sold
   if (aim) aiPoach(); // (0.53.0) now and then it goes after a member of your staff; (0.54.0) or another League's, by aim
 }
 // (0.50.0) the multi-year sim can manage the player's League while nobody is there: `S.simAuto` is the aim chosen
@@ -14530,6 +14538,8 @@ const UPGRADES = {
   store:   { name: 'Department Store', text: 'Gym cities only. Sells held items for your item bag (your best Store\'s floors, League-wide): the Poké Mart floor tier 1 items, 2F Leftovers, Eviolite and Assault Vest, 3F Expert Belt and Focus Sash (needs a City), 4F Life Orb, Choice Band and Choice Specs (needs a Metropolis); each floor above a shelf takes 10% off it. Your staff only hold tier 2 and 3 items from the bag. Shoppers (the city\'s visitors and residents) spend there too.', city: true, max: 4, cost: [15000, 30000, 60000, 120000], tierAt: [0, 0, 1, 2] },
   // (0.65.0, city buildings part 3: 5c-engine-3c) the Airport, the Bug Catching Contest, the Fishing Pier, the Fossil Lab
   airport: { name: 'Airport',         text: 'One per League, in a gym city that is at least a City. Each route works like a shipping lane (that region\'s Pokémon on your targeted trips and at your market) and also brings people: challengers moving out of a routed region lean toward your League and land here, and a few visitors from there arrive every month (more with your renown there), spending in this city. 1,000 a week to run plus 150 for every arrival; changing a route costs 25,000. Level 1 one route; level 2 a second (needs a Metropolis); level 3 makes charters 40% cheaper and a week faster, and your contenders win 25% more renown in other regions (needs a Megalopolis).', city: true, oneLg: true, max: 3, cost: [150000, 300000, 600000], tierAt: [1, 2, 3] },
+  // (0.69.0) the Weather Institute: one per League (needs a City), League-wide; each gym's and the seat's field (5c)
+  wx:      { name: 'Weather Institute', text: 'One per League, in a gym city that is at least a City; it works League-wide. On this page choose each gym\'s field and the seat\'s (Elite Four and title battles): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never both. It replaces the gym\'s own weather; a terrain powers its type\'s moves 20% for both sides. Level 1: only the fields a place\'s types bring (a weather-themed trainer on your staff opens them all). Level 2: any field anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field and the sharp ones plan for it.', city: true, oneLg: true, max: 2, cost: [50000, 100000], tierAt: [1, 1] },
   contest: { name: 'Bug Catching Contest', text: 'Gym cities only, and only where the gym is a Bug gym or with a Bug Catcher or Bug Maniac on your staff (if that changes it keeps running but can\'t be raised). Every 8 weeks a contest brings your ranch Bug Pokémon of your region (migrants in season too): 1, 2, then 3 by level, the prize of a guaranteed good grade (3, 3, 4), a small chance of a condition, plus visitors and a gate. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [20000, 40000, 80000], tierAt: [0, 0, 1] },
   pier:    { name: 'Fishing Pier',    text: 'Gym cities only, and only in a port city, where the gym is a Water gym, or with a Fisherman on your staff (if that changes it keeps running but can\'t be raised). One Water Pokémon of your region every 4 weeks. The level is the rod: the Old Rod brings the weakest third of the region\'s Water lines, the Good Rod adds the middle third, the Super Rod the strongest (needs a City). Finds below your keep grade are sold at once.', city: true, cond: true, max: 3, cost: [15000, 35000, 80000], tierAt: [0, 0, 1] },
   fossil:  { name: 'Fossil Lab',      text: 'Gym cities only, and only where your Research Lab there is at level 2 or more (if that changes it keeps running but can\'t be raised). Revives a fossil Pokémon from any region (your region\'s own fossils three times as often) every 12 weeks, then 10 and 8 by level, with a better grade each level; a Ruin Maniac on your staff counts as one more level. Finds below your keep grade are sold at once. Level 3 needs a City.', city: true, cond: true, max: 3, cost: [30000, 60000, 120000], tierAt: [0, 0, 1] },
@@ -14856,6 +14866,7 @@ function homeOpts(where, holder) {
   if (crew) { const ld = where === 'seat' ? holder : T((S.gyms[where] || {}).leader); const ty = ld ? specTypes(ld) : []; o.crew = { types: ty.length ? ty : null, mul: 1 + CREW_HIT * crew }; }
   if (video) o.video = VIDEO_SMART * video; // send-out smarts in battle (battle() adds it to side 1's smart)
   if (warm) o.warm = warm;
+  const fld = typeof fieldOf === 'function' ? fieldOf(where, true) : null; if (fld) o.field = fld; // (0.69.0) a Weather Institute's field
   return o;
 }
 const videoStr = where => VIDEO_STR * addonLv(where, 'video');
@@ -17723,6 +17734,102 @@ function buildings3Week(lap) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, ranchRules, setRanchRules, RR_DEFAULT, RR_LOG, RR_LIST_WEEKS, RR_LIST_MAX, RR_NEAR, rrSpare, ranchTake, makeRoom, rulesMonth, rulesWeek, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
+
+// ================= THE WEATHER INSTITUTE (0.69.0) =================
+// (0.69.0, the owner, design doc claude/design-update-weather-institute.md) One per League, in a gym city that is at
+// least a City; its level works League-wide. It sets the field of each gym's battles and of the seat's (the Elite Four,
+// title and title-claim battles): ONE of a weather (rain, sun, sand, snow), a terrain (Electric, Grassy, Psychic, Misty)
+// or clear skies — never a weather and a terrain together (the owner). Level 1: only fields the place's types bring
+// (a Water gym rain, an Electric gym Electric Terrain; clear skies always); a weather-themed class on your staff opens
+// every field at level 1. Level 2: any field anywhere, and it holds all battle (no ability or move changes the weather).
+// The field replaces the gym's own weather. A terrain powers its type's moves for both sides (as the Surge abilities do,
+// adapted). A place left unset keeps the old rule (the first of the leader's types that brings weather). Challengers
+// see every field: their Strategy weighs it when they pick their Pokémon and their next gym. In the red it lapses.
+// All numbers provisional.
+const FIELDS = {
+  rain:  { name: 'Rain',              w: 'rain', types: ['Water'] },
+  sun:   { name: 'Harsh sunlight',    w: 'sun',  types: ['Fire'] },
+  sand:  { name: 'Sandstorm',         w: 'sand', types: ['Rock', 'Ground'] },
+  snow:  { name: 'Snow',              w: 'snow', types: ['Ice'] },
+  eterr: { name: 'Electric Terrain',  t: 'Electric', types: ['Electric'] },
+  gterr: { name: 'Grassy Terrain',    t: 'Grass',    types: ['Grass'] },
+  pterr: { name: 'Psychic Terrain',   t: 'Psychic',  types: ['Psychic'] },
+  mterr: { name: 'Misty Terrain',     t: 'Fairy',    types: ['Fairy'] },
+  clear: { name: 'Clear skies',       w: 'clear', types: null },
+};
+const FIELD_KEYS = Object.keys(FIELDS), FIELD_TERRAIN = 1.2, FIELD_PREP = 0.6, WX_CLASS = /weather|storm|forecast|meteor|rain|sun/i;
+const WX_LOG = { set: 0, aiSet: 0, battles: 0, terrain: 0, held: 0 };
+// the League's Institute: { gi, x } (the gym city it stands in), or null
+function wxAt(i = S.lg || 0) {
+  const L = lgObj(i); if (!L || !L.gyms) return null;
+  for (let gi = 0; gi < L.gyms.length; gi++) { const c = S.cities[L.gyms[gi].city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'wx'); if (x) return { gi, x }; }
+  return null;
+}
+// its working level (0 in the red, in the report's fixed tiers, or with none)
+function wxLv() { if (lapsed() || fixedStaff()) return 0; const a = wxAt(); return a ? a.x.lv : 0; }
+const wxPicks = () => { const f = S.fin; if (!f) return { g: {}, seat: null }; f.wx = f.wx || { g: {}, seat: null }; f.wx.g = f.wx.g || {}; return f.wx; };
+// a weather-themed class on the staff (by its name) opens every field at level 1
+const wxClassOn = () => staffIds().map(T).some(t => t && WX_CLASS.test(t.cls || ''));
+// the types a place brings: a gym's leader's (an untyped leader: their team's), the seat's staff's
+function placeTypes(where) {
+  const ty = t => { if (!t) return []; const s = specTypes(t); return s.length ? s : [...new Set((t.team || []).flatMap(monTypes))]; };
+  if (where === 'seat') return [...new Set([S.champion, ...S.e4].map(T).flatMap(ty))];
+  const g = S.gyms[where]; return g ? ty(T(g.leader)) : [];
+}
+// the fields a place may use now: null when the League has no Institute
+function fieldOpts(where) {
+  const lv = wxLv(); if (!lv) return null;
+  if (lv >= 2 || wxClassOn()) return FIELD_KEYS.slice();
+  const ty = placeTypes(where);
+  return FIELD_KEYS.filter(k => !FIELDS[k].types || FIELDS[k].types.some(x => ty.includes(x)));
+}
+// the field chosen for a place (may no longer fit), and why it doesn't work, if it doesn't
+const fieldPick = where => { const p = wxPicks(); return (where === 'seat' ? p.seat : p.g[where]) || null; };
+function fieldWhy(where) {
+  const k = fieldPick(where); if (!k) return null;
+  if (!wxAt()) return 'no Weather Institute'; if (!wxLv()) return 'the League is in the red';
+  return fieldOpts(where).includes(k) ? null : `${FIELDS[k].name} doesn't fit this ${where === 'seat' ? 'seat' : 'gym'}'s types until level 2`;
+}
+// set a place's field (key null: back to the type's own weather); returns an error or null
+function setField(where, k, lg = ME()) {
+  return inLeague(lg, () => {
+    if (where !== 'seat' && !S.gyms[where]) return 'No such gym.';
+    if (k != null && !FIELDS[k]) return 'No such field.';
+    const opts = fieldOpts(where); if (!opts) return 'Build a Weather Institute first.';
+    if (k != null && !opts.includes(k)) return `${FIELDS[k].name} needs the Institute at level 2 here (or a weather-themed trainer on your staff).`;
+    const p = wxPicks(); if (where === 'seat') p.seat = k; else if (k == null) delete p.g[where]; else p.g[where] = k;
+    WX_LOG.set++; return null;
+  });
+}
+// what a battle at a place gets (homeOpts → battle()): { key, name, w, t, lock }, or null
+function fieldOf(where, count) {
+  const k = fieldPick(where); if (!k || fieldWhy(where)) return null;
+  const F = FIELDS[k]; if (count) { WX_LOG.battles++; if (F.t) WX_LOG.terrain++; if (wxLv() >= 2) WX_LOG.held++; }
+  return { key: k, name: F.name, w: F.w || null, t: F.t || null, lock: wxLv() >= 2 };
+}
+// the field a challenger sees at a gym (no counting), for routing
+function fieldSeen(where) { const k = fieldPick(where); if (!k || fieldWhy(where)) return null; const F = FIELDS[k]; return { w: F.w || null, t: F.t || null }; }
+// how well a Pokémon's types suit a field: boosted types +1, weakened −1, sand and snow's own types a little
+function fieldFit(types, f) {
+  if (!f) return 0;
+  if (f.t) return types.includes(f.t) ? 1 : 0;
+  let v = 0; for (const ty of types) { const m = weatherMul(f.w, ty); v += m > 1 ? 1 : m < 1 ? -1 : 0;
+    if (f.w === 'sand' && ['Rock', 'Ground', 'Steel'].includes(ty)) v += 0.5; if (f.w === 'snow' && ty === 'Ice') v += 0.5; }
+  return clamp(v, -1, 1);
+}
+// (0.69.0) what a gym's field adds to a challenger's route pick (gymMatch): how well their team suits it, by Strategy
+function fieldRoute(t, g) { const f = fieldSeen(g); if (!f || !t.team.length) return 0; return FIELD_PREP * gmemLearn(t) * t.team.reduce((a, m) => a + fieldFit(monTypes(m), f), 0) / t.team.length; }
+// rivals by aim (monthly): a wall-builder sets each gym and the seat to a field its types bring (a weather first); a
+// star-maker only the seat. A place already set is kept while it works.
+function aiWx(aim) {
+  if (!wxLv() || aim === 'money') return;
+  const want = where => { const o = fieldOpts(where).filter(k => k !== 'clear'), ty = placeTypes(where);
+    return o.find(k => FIELDS[k].w && FIELDS[k].types.some(x => ty.includes(x))) || o.find(k => FIELDS[k].types.some(x => ty.includes(x))) || null; };
+  const places = aim === 'wall' ? ['seat', ...S.gyms.map((_, i) => i)] : ['seat'];
+  for (const w of places) { if (fieldPick(w) && !fieldWhy(w)) continue; const k = want(w); if (k && !setField(w, k, S.lg || 0)) WX_LOG.aiSet++; }
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { FIELDS, FIELD_KEYS, FIELD_TERRAIN, FIELD_PREP, WX_LOG, wxAt, wxLv, wxPicks, wxClassOn, placeTypes, fieldOpts, fieldPick, fieldWhy, setField, fieldOf, fieldSeen, fieldFit, fieldRoute, aiWx });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -20593,10 +20700,25 @@ function cityBuilt(p, x, where) {
   // (0.65.0) city buildings part 3
   else if (x.k === 'airport') { const a = airportAt(ME()), others = LEAGUE_SETS.map((_, r) => r).filter(r => r !== S.region), y = (S.fin.air && S.fin.air.y && S.fin.air.y.season === S.season) ? S.fin.air.y : { m: 0, v: 0 };
     what = `${(a ? a.routes : []).map((r, k) => `Route ${k + 1}: <select class="airsel" data-i="${k}" aria-label="Airport route ${k + 1}">${others.map(o => `<option value="${o}"${o === r ? ' selected' : ''}>${esc(regionName(o))}</option>`).join('')}</select>`).join(' ')} Arrivals this year: ${y.m} mover${y.m === 1 ? '' : 's'}, ${y.v} visitor${y.v === 1 ? '' : 's'} (${money(AIR_LAND)} each). Runs ${money(AIR_WEEK)} a week; changing a route ${money(AIR_ROUTE)}.${x.lv >= 3 ? ` Charters ${money(charterCost())}, ${charterWeeks()} weeks.` : ''}`; }
+  // (0.69.0) the Weather Institute: a field picker for the seat and every gym
+  else if (x.k === 'wx') what = wxPanel();
   else if (x.k === 'contest') { const w = condWhy(p.gym, 'contest'); what = `Every ${CONTEST_WEEKS} weeks: ${x.lv} Bug find${x.lv === 1 ? '' : 's'}, the prize at grade ${CONTEST_PRIZE[x.lv - 1]} or better, ${CONTEST_VISIT * x.lv} visitors and a ${money(CONTEST_GATE * x.lv)} gate.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'pier') { const w = condWhy(p.gym, 'pier'), ls = rodLines(x.lv); what = `${['Old', 'Good', 'Super'][x.lv - 1]} Rod: one Water Pokémon every ${PIER_WEEKS} weeks from ${ls.length} line${ls.length === 1 ? '' : 's'} (${ls.slice(0, 8).map(esc).join(', ')}${ls.length > 8 ? '…' : ''}).${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   else if (x.k === 'fossil') { const w = condWhy(p.gym, 'fossil'), eff = fossilEff(x.lv); what = `A revival every ${FOSSIL_WEEKS[eff - 1]} weeks at grade ${eff} or better${eff > x.lv ? ' (a Ruin Maniac on your staff adds a level)' : ''}${x.next != null ? `; next ${esc(turnDate(x.next))}` : ''}.${w ? ` <span class="warn">${esc(w)} It keeps running but can't be raised.</span>` : ''}`; }
   return `<li><b>${UPGRADES[x.k].name}</b> level ${x.lv} of ${upMax(x.k)}${UPGRADES[x.k].slotless ? ' <span class="small muted">(no slot)</span>' : ''}${lap ? ' <span class="tag notice small">lapsed</span>' : ''}${what ? ` <span class="small">${what}</span>` : ''}${p.none || !sellable ? '' : ` <button class="btn small ghost" data-act="sellb" data-w="${where}" data-k="${x.k}" title="Sell the top level for half what it cost.">Sell a level (+${money(sellValue(where, x.k))})</button>`}</li>`;
+}
+// (0.69.0) the Weather Institute's pickers: one field (a weather, a terrain or clear skies) a place
+function fieldTag(where) {
+  const k = fieldPick(where), why = fieldWhy(where);
+  if (!k) { const ld = where === 'seat' ? null : T((S.gyms[where] || {}).leader), w = ld ? GYM_WEATHER[gymWeatherType(ld)] : null; return w ? `${WEATHER_NAME[w]} (its type's own)` : 'none'; }
+  return `${FIELDS[k].name}${why ? ` <span class="warn">(not working: ${esc(why)})</span>` : ''}`;
+}
+function wxPanel() {
+  const lv = wxLv(), places = [['seat', `Seat (${esc(seatPlace())})`]].concat(S.gyms.map((_, i) => [i, `Gym ${i + 1} · ${esc(townName(i))}`]));
+  const row = ([w, label]) => { const o = fieldOpts(w) || [], k = fieldPick(w), ty = placeTypes(w);
+    const opt = f => `<option value="${f}"${f === k ? ' selected' : ''}>${FIELDS[f].name}</option>`;
+    return `<li>${label} <span class="muted">(${ty.length ? ty.join('/') : 'no type'})</span>: <select class="wxsel" data-w="${w}" aria-label="Field at ${label}"${lv ? '' : ' disabled'}><option value=""${k ? '' : ' selected'}>Its type's own weather</option>${o.map(opt).join('')}${k && !o.includes(k) ? opt(k) : ''}</select> ${fieldTag(w)}</li>`; };
+  return `${lv >= 2 ? 'Any field anywhere, and it holds all battle.' : lv ? `Fields your places' types bring${wxClassOn() ? ' (a weather-themed trainer on your staff opens them all)' : ''}; level 2 opens any field and holds it all battle.` : 'Not working while the League is in the red.'} Challengers see these and plan for them.<ul class="mini wxlist">${places.map(row).join('')}</ul>`;
 }
 // (0.68.0) whose type a Field crew favours at a place
 function typeName(p) { if (p.seat) return 'the battling trainer\'s type\'s'; const ld = T((S.gyms[p.gym] || {}).leader); return ld && specTypes(ld).length ? typeLabel(ld) : 'all of the gym\'s'; }
@@ -20634,7 +20756,7 @@ function viewCities0() {
     const acts = upRow + newList;
     // (0.67.0) one line of tags and the numbers that matter; the full city notes fold away
     const mine = p.c && lgs.includes(ME());
-    const quick = p.c ? `<p class="small citytags"><span class="tag">${sizeName(sz)}</span>${mine ? ` <span class="tag${cs.ctrl === ME() && cs.tier >= 2 ? '' : ' notice'}">${TIER_NAMES[cs.tier]}</span>` : ''}${siteOn(p.c) ? ` <span class="tag gold">Legendary site: ${(p.c.site.sps || [p.c.site.sp]).map(esc).join(', ')}</span>` : ''} ${mine ? `Your share <b>${money(cityShare(p.c, lgs, ME()))}</b> a week · ` : ''}${p.c.vw || 0} visitor${p.c.vw === 1 ? '' : 's'} this week · ${sizeName(sz + 1)} at ${money(sizeAt(sz + 1))} (${money(spent)} spent)</p>`
+    const quick = p.c ? `<p class="small citytags"><span class="tag">${sizeName(sz)}</span>${mine ? ` <span class="tag${cs.ctrl === ME() && cs.tier >= 2 ? '' : ' notice'}">${TIER_NAMES[cs.tier]}</span>` : ''}${p.gym != null && !p.none && fieldPick(p.gym) && !fieldWhy(p.gym) ? ` <span class="tag">${FIELDS[fieldPick(p.gym)].name}</span>` : ''}${siteOn(p.c) ? ` <span class="tag gold">Legendary site: ${(p.c.site.sps || [p.c.site.sp]).map(esc).join(', ')}</span>` : ''} ${mine ? `Your share <b>${money(cityShare(p.c, lgs, ME()))}</b> a week · ` : ''}${p.c.vw || 0} visitor${p.c.vw === 1 ? '' : 's'} this week · ${sizeName(sz + 1)} at ${money(sizeAt(sz + 1))} (${money(spent)} spent)</p>`
       : `<p class="small citytags"><span class="tag">${sizeName(sz)}</span> Crowds as your biggest gym city: about ${CROWD_AT(sz).toLocaleString()} a battle at ${money(TICKET_AT(sz))}.</p>`;
     const more = p.c ? `<details class="hist citymore"><summary class="small">About this city</summary><div class="citymore-in">${size}${site}${share}</div></details>` : '';
     return `<section class="panel"><div class="ph"><h2>${esc(p.name)}</h2><span class="muted">${p.seat ? 'League seat: the Elite Four and the Champion' : `Gym ${p.gym + 1}${T(S.gyms[p.gym].leader) ? ' · ' + typeLabel(T(S.gyms[p.gym].leader)) : ''}`} · ${slotsUsed(p.b)} of ${p.slots} slot${p.slots === 1 ? '' : 's'} used</span></div>
@@ -20652,7 +20774,7 @@ function viewCities0() {
 }
 // (0.67.0) a line on what each building is for, on the Cities page's build list (the full text is its tooltip)
 const BUILD_BLURB = { stadium: 'Seats for ticket income; opens its add-ons', stand: 'A home edge from the crowd', crew: 'The gym\'s type hits harder', video: 'Better picks against the challenger', warmup: 'Lead Pokémon start a stage up', hotel: 'Rooms for challengers in town', center: 'Draws challengers, shorter rests', berry: 'Sells berries or feeds the ranch', hall: 'Elite Four and Champion grow faster',
-  school: 'Raises gym trainers of this gym\'s type', tutor: 'Teams learn coverage moves sooner', lab: 'Better trips and finds, League-wide', store: 'Held items for your staff', airport: 'A lane and visitors from another region',
+  school: 'Raises gym trainers of this gym\'s type', tutor: 'Teams learn coverage moves sooner', lab: 'Better trips and finds, League-wide', store: 'Held items for your staff', airport: 'A lane and visitors from another region', wx: 'Each gym\'s weather or terrain',
   contest: 'Bug finds and a gate every 8 weeks', pier: 'Steady Water finds', fossil: 'Revives fossils', scout: 'Better finds and more hiring storage', sanct: 'Income and prestige while its legendary is yours',
   ranch: 'More ranch room', lane: 'Migration from another region', safari: 'Quarterly finds from kept lines', daycare: 'Breeds from your pool', academy: 'A loyal prospect a year' };
 // (0.67.0) the region's towns where you have no gym, in one panel, each with the move-a-gym control
@@ -20842,6 +20964,7 @@ const GLOSS_TERMS = {
 };
 // (0.64.0) city buildings part 2
 GLOSS_TERMS.league.push(['Stadium add-ons', `A Stadium's levels add seats (ticket income) and open its add-ons, which take no slot and work for your staff in that Stadium's battles (at the seat: the Elite Four, the Champion and title claims) while the Stadium is at least the level they open at, and not while you are in the red. Home stand (Stadium level 1): a home edge of up to +${(STAND_EDGE * 100).toFixed(1)}% a level at a full house, less with empty seats. Field crew (level 2): Pokémon of the gym's type (every Pokémon at an untyped gym; at the seat, the battling trainer's type) hit ${Math.round(CREW_HIT * 100)}% harder a level. Video room (level 3): +${VIDEO_STR} Strategy a level when your staff choose which Pokémon to field against a challenger and when to send them out. Warm-up room (level 4): the first Pokémon of the team goes out a stage up in its better attacking stat, the first two at level 2, the first three at level 3. 3 levels each.`]); // (0.68.0)
+GLOSS_TERMS.league.push(['Weather Institute', `One per League, in a gym city that is at least a City, built from the Cities page; it works League-wide. It sets the field for each of your gyms' battles and for the seat's (the Elite Four, the Champion and title claims): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies, never a weather and a terrain together. The field replaces the gym's own weather (a gym left unset keeps the weather of its leader's type). A terrain powers its type's moves 20% for both sides. At level 1 a place can only use the fields its types bring (a Water gym rain, an Electric gym Electric Terrain); a weather-themed trainer on your staff opens them all. At level 2 any field works anywhere, and it holds all battle: no ability or move changes the weather. Challengers can see every field, and the sharper ones (Strategy) pick their Pokémon and their next gym with it in mind. It stops working in the red.`]); // (0.69.0)
 GLOSS_TERMS.league.push(['Airport', `A gym-city building, one a League, in a City or bigger (3 levels: a second route needs a Metropolis, level 3 a Megalopolis). Each route to another region works like a shipping lane (its Pokémon on your targeted trips and at your market) and brings people: challengers moving out of that region lean toward your League and land in the Airport's city (a few weeks as visitors there), and about ${AIR_VISITS} visitors a month arrive from there (up to twice as many with your renown in its cities). Visitors spend in the city like any other (Hotels, where level 3 counts them twice, Department Stores). It costs ${money(AIR_WEEK)} a week to run and earns ${money(AIR_LAND)} for every arrival; changing a route costs ${money(AIR_ROUTE)}. Level 3 makes charters ${Math.round(AIR_CHARTER * 100)}% cheaper and a week faster, and your contenders win 25% more renown in other regions. In the red it lapses: no routes, no arrivals, no fee.`],
   ['Bug Catching Contest', `A gym-city building (3 levels; 3 needs a City) where the gym is a Bug gym, or with a Bug Catcher or Bug Maniac on your staff. Every ${CONTEST_WEEKS} weeks it brings your ranch 1, 2 or 3 of your region's Bug Pokémon (migrants in season too), the first, the prize, at grade ${CONTEST_PRIZE.join(', ')} or better by level, at a little better than the wild odds for a condition, plus ${CONTEST_VISIT} visitors a level and a gate of ${money(CONTEST_GATE)} a level. If the condition is lost it keeps running but can't be raised.`],
   ['Fishing Pier', `A gym-city building (3 levels: the rods; the Super Rod needs a City) in a port, where the gym is a Water gym, or with a Fisherman on your staff. One Water Pokémon of your region every ${PIER_WEEKS} weeks: the Old Rod the weakest third of the region's Water lines by their final form's strength, the Good Rod the middle third too, the Super Rod all of them. If the condition is lost it keeps running but can't be raised.`],
@@ -21106,6 +21229,12 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 69, ver: '0.69.0', date: 'November 26, 2026', time: '11:45 AM ET', title: 'The Weather Institute', items: [
+    "A new building, the Weather Institute: one per League, in a gym city that is at least a City (50,000, then 100,000 for level 2). It works for your whole League.",
+    "From its line on the Cities page, choose each gym's field and the seat's (the Elite Four, the Champion and title claims): one weather (rain, sun, sand, snow), one terrain (Electric, Grassy, Psychic, Misty) or clear skies. Never a weather and a terrain together. The field replaces the gym's own weather; a gym you leave unset keeps the weather of its leader's type.",
+    "A terrain powers its type's moves 20% for both sides. At level 1 a place can only use the fields its types bring (a Water gym rain, an Electric gym Electric Terrain); a weather-themed trainer on your staff opens them all. At level 2 any field works anywhere, and it holds all battle: no ability or move can change the weather.",
+    "Challengers can see every field, and the sharper ones pick their Pokémon and their next gym with it in mind. The Institute stops working in the red. Wall-building rival Leagues build one and set every gym's field; star-makers set only the seat's.",
+  ] },
   { id: 68, ver: '0.68.0', date: 'November 26, 2026', time: '10:40 AM ET', title: 'Stadium add-ons', items: [
     "A Stadium's levels now add seats only: no home edge of their own. Instead each level opens an add-on for your staff, built from the Cities page. Add-ons take no slot, have 3 levels each and cost upkeep like everything else.",
     "Home stand (Stadium level 1): a home edge of up to +1.5% a level when the Stadium is full for that battle, less with empty seats. Field crew (level 2): Pokémon of the gym's type (every Pokémon at an untyped gym; at the seat, the battling trainer's type) hit 2% harder a level.",
@@ -22299,6 +22428,7 @@ document.addEventListener('change', e => {
   if (e.target && e.target.classList && e.target.classList.contains('rivalsel')) { setupRivals[+e.target.dataset.i] = e.target.value === '' ? null : +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leaveregsel')) { leaveRegion = +e.target.value; render(); return; }
   if (e.target && e.target.classList && e.target.classList.contains('leavetake')) { const id = +e.target.dataset.id; if (e.target.checked) leaveTake.add(id); else leaveTake.delete(id); render(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('wxsel')) { const w = e.target.dataset.w, err = setField(w === 'seat' ? 'seat' : +w, e.target.value || null); save(); render(); toast(err || 'The field is set.', err ? 6000 : undefined); return; } // (0.69.0)
   if (e.target && e.target.classList && e.target.classList.contains('airsel')) { const w = setAirRoute(+e.target.dataset.i, +e.target.value); save(); render(); toast(w || 'The Airport\'s route has changed.'); return; } // (0.65.0)
   if (e.target && e.target.classList && e.target.classList.contains('keepgsel')) { const w = inLeague(ME(), () => setKeepGrade(e.target.dataset.k, +e.target.value)); save(); render(); toast(w || 'Keep grade set.'); return; } // (0.65.0); (0.66.0) per building
   if (e.target && e.target.classList && e.target.classList.contains('rrf')) { const f = e.target.dataset.f, v = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; const w = inLeague(ME(), () => setRanchRules({ [f]: v })); save(); render(); toast(w || 'Ranch rules set.'); return; } // (0.66.0)

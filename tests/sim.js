@@ -38,6 +38,7 @@ const CB = { overTier: 0, feed: 0, grandfathered: false }; // (0.63.0)
 const CB2 = { built: {}, items: 0, itemRefused: 0, gradTag: 0, tutored: 0, bagMax: 0, hallGym: 0 }; // (0.64.0)
 const CB3 = { built: {}, refused: 0, routes: 0, keep: 0, airports: 0, finds: 0, forcedCity: 0 }; // (0.65.0)
 const ADD = { built: 0 }; // (0.68.0)
+const WX = { built: 0, set: 0, refused: 0, raised: 0, seen: 0, terrainSeen: 0 }; // (0.69.0)
 const RR2 = { set: 0, listedMax: 0 }; // (0.66.0)
 let renames = 0, postSets = 0, seatSet = 0, seatPicks = 0, seatLobbies = 0, conqForced = 0, conqSeen = 0;
 const moves = { let: 0, swap: 0, gt: 0, dated: 0, free: 0 }, offers = { now: 0, later: 0, refused: 0, cool: 0, withdrawn: 0, arrived: 0 };
@@ -355,6 +356,10 @@ function check(tag) {
     for (const id of g.staffIds()) { const t = g.T(id); if (t) for (const m of t.team) if (m.tut) { CB2.tutored++; if (!m.cov || m.cov.length !== g.coverOptions(m.sp).length) bad('a tutored Pokémon without all its coverage types'); } }
     // (0.65.0) part 3: one Airport a League, its routes real and not home, no more than its level allows; a keep grade in
     // range; finds from the catching buildings well-formed
+    // (0.69.0) the Weather Institute: one a League, in a City or bigger; fields real keys, one a place, gyms that exist
+    { const wx = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'wx')); if (wx.length > 1) bad('two Weather Institutes in one League'); if (wx.some(p => g.citySize(p.c) < 1)) bad('a Weather Institute in a Town');
+      const pk = z.fin.wx; if (pk) { for (const [k, v] of Object.entries(pk.g || {})) { if (!(+k >= 0 && +k < 8) || !g.FIELDS[v]) bad('a bad gym field ' + k + ':' + v); } if (pk.seat != null && !g.FIELDS[pk.seat]) bad('a bad seat field ' + pk.seat); }
+      for (const w of ['seat', 0, 1, 2, 3, 4, 5, 6, 7]) { const f = g.fieldOf(w); if (f) { WX.seen++; if (f.t) WX.terrainSeen++; if (f.w && f.t) bad('a weather and a terrain together'); if (!wx.length) bad('a field working with no Institute'); if (f.lock && g.wxLv() < 2) bad('a field held below level 2'); if (g.wxLv() < 2 && !g.wxClassOn() && !g.fieldOpts(w).includes(f.key)) bad('a field off its types at level 1'); } } }
     { const air = g.myPlaces().filter(p => !p.none && p.b.some(x => x.k === 'airport')); if (air.length > 1) bad('two Airports in one League'); CB3.airports = Math.max(CB3.airports, air.length);
       const a = g.airportAt(i); if (a) { if (a.routes.length > g.routeCount(a.x.lv) || a.routes.some(r => r === z.region || !(r >= 0 && r < g.nRegionsBuilt())) || new Set(a.routes).size !== a.routes.length) bad('bad Airport routes ' + JSON.stringify(a.x.routes)); if (a.c.region !== z.region) bad('an Airport outside its region'); }
       if (z.fin && z.fin.keepB) for (const [k, v] of Object.entries(z.fin.keepB)) if (!['contest', 'pier', 'fossil'].includes(k) || !(v >= 1 && v <= 5)) bad('a bad keep grade ' + k + ' ' + v);
@@ -620,6 +625,15 @@ for (let i = 0; i < N; i++) {
           if (g.setRanchRules(p) || g.ranchRules()[f] !== v) fail.push('ranch rule not set ' + JSON.stringify(p)); else RR2.set++;
           if (!g.setRanchRules({ floor: 9 }) || !g.setRanchRules({ idleN: 1 }) || !g.setRanchRules({ bogus: 1 })) fail.push('a bad ranch rule taken'); }
         if (!g.airportAt() && !CB3.forcedCity && z.season >= 2) { const c = z.cities[z.gyms[2].city]; if (!g.buildCheck(2, 'airport').why) fail.push('an Airport allowed in a Town'); c.spent = c.spent || {}; c.spent[z.lg || 0] = (c.spent[z.lg || 0] || 0) + 100000; CB3.forcedCity++; z.fin.money += 200000; const ck4 = g.buildCheck(2, 'airport'); if (ck4.why) fail.push('Airport refused in a City: ' + ck4.why); else { const m5 = z.fin.money; if (g.build(2, 'airport') || z.fin.money !== m5 - ck4.cost) fail.push('Airport build wrong'); else { CB3.built.airport = (CB3.built.airport || 0) + 1; const a = g.airportAt(); if (!a || a.routes.length !== 1) fail.push('a new Airport without one route'); if (!g.buildCheck(3, 'airport').why) fail.push('a second Airport allowed'); } } }
+        // (0.69.0) the Weather Institute once a gym city is a City (made one if needed), raised later; fields at random,
+        // off-type ones refused at level 1 (unless a weather-themed trainer opens them), cleared now and then
+        if (z.season >= 2 && !g.wxAt()) { const gi = [0, 1, 2, 3, 4, 5, 6, 7].find(i2 => !g.buildCheck(i2, 'wx').why); if (!g.buildCheck(0, 'wx').why && g.citySize(z.cities[z.gyms[0].city]) < 1) fail.push('a Weather Institute allowed in a Town');
+          if (!g.buildCheck('seat', 'wx').why) fail.push('a Weather Institute allowed at the seat');
+          if (gi != null) { z.fin.money += 60000; const ck = g.buildCheck(gi, 'wx'), m7 = z.fin.money; if (g.build(gi, 'wx') || z.fin.money !== m7 - ck.cost) fail.push('Weather Institute build wrong'); else { WX.built++; const o = [0, 1, 2, 3, 4, 5, 6, 7].find(i2 => i2 !== gi && !g.buildCheck(i2, 'wx').why); if (o != null) fail.push('a second Weather Institute allowed'); } } }
+        if (g.wxAt() && g.wxLv() === 1 && z.season >= 4 && Math.random() < 0.2) { const a = g.wxAt(), ck = g.buildCheck(a.gi, 'wx'); if (!ck.why) { z.fin.money += ck.cost; if (g.build(a.gi, 'wx')) fail.push('Weather Institute raise refused'); else WX.raised++; } }
+        if (g.wxLv()) for (let n = 0; n < 2; n++) { const w = rnd(['seat', 0, 1, 2, 3, 4, 5, 6, 7]), k = Math.random() < 0.15 ? null : rnd(g.FIELD_KEYS), ok = k == null || g.fieldOpts(w).includes(k), err = g.setField(w, k);
+          if (ok && err) fail.push('a field refused: ' + err); if (!ok && !err) fail.push('an off-type field taken at level 1'); if (!ok) WX.refused++; else if (g.fieldPick(w) !== k) fail.push('a field not set'); else WX.set++; }
+        if (g.wxLv() && !g.setField(0, 'hail')) fail.push('a made-up field taken');
         { const a = g.airportAt(); if (a && a.routes.length && Math.random() < 0.3) { const to = [...Array(g.nRegionsBuilt()).keys()].find(r => r !== z.region && !a.routes.includes(r)), m6 = z.fin.money; if (to != null) { const w6 = g.setAirRoute(0, to); if (!w6) { CB3.routes++; if (z.fin.money !== m6 - g.AIR_ROUTE || g.airRoutes()[0] !== to) fail.push('Airport route change wrong'); if (!g.laneSet().size && g.homeSet(z.region)) fail.push('an Airport route brings no Pokémon'); } else if (m6 >= g.AIR_ROUTE) fail.push('route change refused: ' + w6); } if (!g.setAirRoute(0, z.region)) fail.push('an Airport route home allowed'); } }
         { const ks = g.shelfItems().filter(k => g.ITEMS[k].tier >= 2); if (ks.length) { const k = rnd(ks), pr = g.itemPrice(k), m3 = z.fin.money, n0 = g.bagOf()[k] || 0, w3 = g.buyItem(k); if (!w3) { CB2.items++; if (z.fin.money !== m3 - pr || g.bagOf()[k] !== n0 + 1) fail.push('item purchase wrong'); } else CB2.itemRefused++; }
           if (!g.storeFloors() && !g.buyItem('leftovers')) fail.push('an item bought with no Store'); } }
@@ -883,6 +897,9 @@ console.log('city control', JSON.stringify(ctrlStats), 'tiers', g.TIER_NAMES.joi
 // (0.68.0) Stadium add-ons by League (seat and gyms), and the battles they worked in
 { const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + ((p.b.find(x => x.k === k) || {}).lv || 0), 0)).join('/');
   console.log('stadium add-ons', JSON.stringify(ADD), '| levels by League: stands', n('stand'), 'crews', n('crew'), 'video rooms', n('video'), 'warm-up rooms', n('warmup')); }
+// (0.69.0) the Weather Institute
+{ const n = g.eachLeague(() => { const a = g.wxAt(); return a ? 'L' + a.x.lv + (S().fin.wx ? ' ' + Object.keys(S().fin.wx.g || {}).length + 'g' + (S().fin.wx.seat ? '+s' : '') : '') : '-'; }).join('/');
+  console.log('weather institute', JSON.stringify(WX), 'log', JSON.stringify(g.WX_LOG), '| by League', n); }
 // (0.65.0) city buildings part 3
 { const n = k => g.eachLeague(() => g.myPlaces().filter(p => !p.none).reduce((a, p) => a + (p.b.find(x => x.k === k) ? 1 : 0), 0)).join('/');
   console.log('ranch rules', JSON.stringify(RR2), JSON.stringify(g.RR_LOG));

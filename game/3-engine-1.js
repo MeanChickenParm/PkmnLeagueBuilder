@@ -1063,15 +1063,17 @@ function takeGymTrainer(t, i, k, how) {
 function staffIds() { return [S.champion, ...S.e4, ...S.gyms.flatMap(g => [g.leader, ...(g.trainers || [])])].filter(x => x != null); }
 // which of a challenger's Pokémon fight: as many as the other side fields, picked for the matchup. A sharper
 // trainer (Strategy) reads it better; a poor one is half guessing.
-function pickSquad(t, foe, mem) { return pickN(t, foe.team, foe.team.length, mem); }
+function pickSquad(t, foe, mem, field) { return pickN(t, foe.team, foe.team.length, mem, 0, field); }
 // (0.32.0) the n of t's Pokémon picked against a team; staff use it too, to field the number a gym battle needs
-function pickN(t, vs, n, mem, strB = 0) {
+function pickN(t, vs, n, mem, strB = 0, field = null) {
   if (t.team.length <= n) return t.team.slice();
   const noise = (100 - Math.min(100, t.r.str + strB)) / 100 * 1.2; // (0.68.0) strB: a Video room's study of the challenger
   // (0.21.0) gym memory: the types that beat them at this gym before weigh in, as much as their Strategy lets them learn
   const mw = mem && mem.length ? GMEM_SQUAD * gmemLearn(t) : 0;
+  // (0.69.0) a Weather Institute's field, seen beforehand: Pokémon it suits weigh in as much as their Strategy reads it
+  const fw = field ? FIELD_PREP * gmemLearn(t) : 0;
   const sc = m => { let v = 0; for (const f of vs) v += (bestMult(monTypes(m), monTypes(f)) >= 2 ? 1 : 0) - (bestMult(monTypes(f), monTypes(m)) >= 2 ? 1 : 0);
-    return v / Math.max(1, vs.length) + (mw ? mw * counterScore(monTypes(m), mem) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
+    return v / Math.max(1, vs.length) + (mw ? mw * counterScore(monTypes(m), mem) : 0) + (fw ? fw * fieldFit(monTypes(m), field) : 0) + SP[m.sp].bst / 300 + (isSpecial(m) ? 0.3 : 0) + (rand() - 0.5) * 2 * noise * (mw ? 1 - gmemLearn(t) / 2 : 1); };
   const best = new Set(t.team.map(m => [m, sc(m)]).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]));
   return t.team.filter(m => best.has(m));
 }
@@ -1088,7 +1090,7 @@ function setBattle(t, foe, lvl, stakes, title, gymType, edge, mem, extra) {
   if (extra) Object.assign(o, extra); // (0.68.0) the Stadium's add-ons for the defending side (homeOpts: crew, video, warm)
   const ok = full.filter(m => obeys(t, m, lvl));
   if (ok.length) t.team = ok;
-  t.team = pickSquad(t, foe, mem);
+  t.team = pickSquad(t, foe, mem, extra && extra.field);
   try { return battle(t, foe, stakes, title, o); } finally { t.team = full; }
 }
 // (0.32.0) a member of staff fields n of the team they hold, each in the form and with the moves it has at level lvl,
@@ -1356,12 +1358,18 @@ function battle(tA, tB, stakes, title, opts = {}) {
   const tally = sides.map(sd => sd.mons.map(() => ({ out: false, ko: 0, f: 0, dmg: 0 })));
   // the field: a gym's own weather, else the region's (events, legendaries); weather abilities and moves replace it
   let weather = (featOn('abilities') && stakes === 'gym' ? GYM_WEATHER[opts.gymType !== undefined ? opts.gymType : tB.specialty] : null) || regionWeather();
-  if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
+  // (0.69.0) a Weather Institute's field for the home side's battles (opts.field: { name, w, t, lock }): one weather,
+  // terrain or clear skies replaces the gym's own weather; a terrain powers its type for both sides (below); with lock
+  // (level 2) no ability or move changes the weather. Kept here, small, for copying to the source game.
+  const fld = featOn('abilities') && opts.field || null, wxHeld = () => !!(fld && fld.lock);
+  if (fld) { weather = fld.w ? (fld.w === 'clear' ? null : fld.w) : regionWeather(); if (fld.t || fld.w === 'clear') ev.push({ k: 'note', s: -1, txt: `${fld.name} ${fld.lock ? 'holds' : 'lies over'} the field.`, cls: 'weather' }); }
+  if (weather && featOn('abilities')) ev.push({ k: 'note', s: -1, txt: `${WEATHER_NAME[weather]} ${fld && fld.w ? (fld.lock ? 'holds the field' : 'fills the field') : stakes === 'gym' ? 'fills the gym' : 'covers the region'}.`, cls: 'weather' });
   if (opts.ruleNote) ev.push({ k: 'note', s: -1, txt: opts.ruleNote, cls: 'weather' });
   const note = (si, i, txt, extra = {}) => ev.push(Object.assign({ k: 'note', s: si, i, txt }, extra));
   if (opts.boss && opts.boss.luck) { const x = opts.boss.luck; ev.push({ k: 'note', s: -1, cls: 'stat', txt: `${dn(tA)}'s team is having a ${luckWord(x)} day (damage x${x.toFixed(2)}).` }); }
   // terrain abilities power up the whole team from the start
   sides.forEach((sd, si) => { sd.terrain = {}; sd.mons.forEach((m, i) => { const g = SURGE[m.ab]; if (g && (sd.terrain[g[0]] || 1) < g[1]) { sd.terrain[g[0]] = g[1]; note(si, i, `{0}'s ${m.ab}: ${dn(sd.t)}'s team's ${g[0]} moves are powered up!`, { cls: 'ab' }); } }); });
+  if (fld && fld.t) sides.forEach(sd => { sd.terrain[fld.t] = Math.max(sd.terrain[fld.t] || 1, FIELD_TERRAIN); }); // (0.69.0) the field's terrain, both sides
   const breaks = a => BREAKERS.includes(a.ab);
   const abOf = (d, a) => a && breaks(a) ? null : d.ab; // the defender's ability, unless the attacker ignores it
   const active = si => { const sd = sides[si]; return sd.act >= 0 ? sd.mons[sd.act] : null; };
@@ -1446,11 +1454,11 @@ function battle(tA, tB, stakes, title, opts = {}) {
     if (m.plate && !m.plateNoted) { m.plateNoted = true; note(si, i, `{0}'s ${m.ab}: it is ${m.types[0]} type!`, { cls: 'ab' }); }
     if (m.ab === 'Illusion' && !m.illusionBroken) { const hide = sd.mons.filter((x, k) => k !== i && x.hp > 0); m.illusion = hide.length ? hide[hide.length - 1] : null; }
     if (m.ab === 'Download' && o && o.hp > 0) { const k = o.def * stageMul(o.st.def) <= o.spd * stageMul(o.st.spd) ? 'atk' : 'spa'; raise(si, i, k, 1, 'Download'); }
-    if (m.ab === 'Air Lock') { if (weather) note(si, i, `{0}'s Air Lock: the weather fades away!`, { cls: 'weather' }); weather = null; }
+    if (m.ab === 'Air Lock' && !wxHeld()) { if (weather) note(si, i, `{0}'s Air Lock: the weather fades away!`, { cls: 'weather' }); weather = null; }
     if (m.ab === 'Slow Start' && m.slowStart == null) { m.slowStart = 5; note(si, i, `{0} can't get it going!`, { cls: 'ab' }); }
     if ((m.ab === 'Intrepid Sword' || m.ab === 'Dauntless Shield') && !m.swordUsed) { m.swordUsed = true; raise(si, i, m.ab === 'Intrepid Sword' ? 'atk' : 'def', 1, m.ab); }
     if ((m.ab === 'Protosynthesis' || m.ab === 'Quark Drive') && m.hp === m.max && !m.pBoost) { m.pBoost = BEST_STAT(m); note(si, i, `{0}'s ${m.ab}: its ${STAT_NAME_B[m.pBoost]} is heightened!`, { cls: 'ab' }); }
-    if (setW && weather !== setW && !airLocked()) { weather = setW; note(si, i, `{0}'s ${m.ab}: ${WEATHER_NAME[setW]}!`, { cls: 'weather' }); }
+    if (setW && weather !== setW && !airLocked() && !wxHeld()) { weather = setW; note(si, i, `{0}'s ${m.ab}: ${WEATHER_NAME[setW]}!`, { cls: 'weather' }); }
     if (m.ab === 'Intimidate' && o && o.hp > 0) {
       const oi = sides[1 - si].act;
       note(si, i, `{0}'s Intimidate!`, { cls: 'ab' });
@@ -1598,7 +1606,7 @@ function battle(tA, tB, stakes, title, opts = {}) {
         if (kind === 'heal' && atk.hp < atk.max) { atk.hp = Math.min(atk.max, atk.hp + Math.round(atk.max / 4)); note(si, ai, `{0} restored its HP!`, { hp: atk.hp, cls: 'heal' }); }
       }
       if (/^hazard/.test(fx)) { const k = fx.split(':')[1]; if (!o[k]) { o[k] = true; note(si, ai, k === 'rocks' ? `Pointed stones float around the other side!` : `Spikes were scattered on the other side!`, { cls: 'ab' }); } }
-      if (/^weather/.test(fx)) { const w = fx.split(':')[1]; if (weather !== w && !airLocked()) { weather = w; note(si, ai, `${WEATHER_NAME[w]}!`, { cls: 'weather' }); } }
+      if (/^weather/.test(fx)) { const w = fx.split(':')[1]; if (weather !== w && !airLocked() && !wxHeld()) { weather = w; note(si, ai, `${WEATHER_NAME[w]}!`, { cls: 'weather' }); } }
       if (fx === 'protect') { atk.guard = true; note(si, ai, `{0} braced itself!`, { cls: 'ab' }); }
     }
     if (dAb === 'Good as Gold' && mv.utility) { ev.push({ k: 'use', s: si, i: ai, mn: mv.name }); note(1 - si, di, `{0}'s Good as Gold shrugs off ${mv.name}!`, { cls: 'ab' }); atk.streak = 0; selfFx(); return; }

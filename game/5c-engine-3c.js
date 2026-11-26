@@ -567,3 +567,99 @@ function buildings3Week(lap) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { condWhy, keepGrade, setKeepGrade, AI_KEEPG, ranchRules, setRanchRules, RR_DEFAULT, RR_LOG, RR_LIST_WEEKS, RR_LIST_MAX, RR_NEAR, rrSpare, ranchTake, makeRoom, rulesMonth, rulesWeek, FIND_LOG, CONTEST_WEEKS, CONTEST_PRIZE, CONTEST_GATE, rodLines, typedLines, FOSSIL_BASES, FOSSIL_WEEKS, fossilLines, fossilEff, AIR_LOG, AIR_WEEK, AIR_ROUTE, AIR_LAND, lineTypes, airportAt, airRoutes, airportLv, setAirRoute, airFix, charterCost, charterWeeks, routeCount });
+
+// ================= THE WEATHER INSTITUTE (0.69.0) =================
+// (0.69.0, the owner, design doc claude/design-update-weather-institute.md) One per League, in a gym city that is at
+// least a City; its level works League-wide. It sets the field of each gym's battles and of the seat's (the Elite Four,
+// title and title-claim battles): ONE of a weather (rain, sun, sand, snow), a terrain (Electric, Grassy, Psychic, Misty)
+// or clear skies — never a weather and a terrain together (the owner). Level 1: only fields the place's types bring
+// (a Water gym rain, an Electric gym Electric Terrain; clear skies always); a weather-themed class on your staff opens
+// every field at level 1. Level 2: any field anywhere, and it holds all battle (no ability or move changes the weather).
+// The field replaces the gym's own weather. A terrain powers its type's moves for both sides (as the Surge abilities do,
+// adapted). A place left unset keeps the old rule (the first of the leader's types that brings weather). Challengers
+// see every field: their Strategy weighs it when they pick their Pokémon and their next gym. In the red it lapses.
+// All numbers provisional.
+const FIELDS = {
+  rain:  { name: 'Rain',              w: 'rain', types: ['Water'] },
+  sun:   { name: 'Harsh sunlight',    w: 'sun',  types: ['Fire'] },
+  sand:  { name: 'Sandstorm',         w: 'sand', types: ['Rock', 'Ground'] },
+  snow:  { name: 'Snow',              w: 'snow', types: ['Ice'] },
+  eterr: { name: 'Electric Terrain',  t: 'Electric', types: ['Electric'] },
+  gterr: { name: 'Grassy Terrain',    t: 'Grass',    types: ['Grass'] },
+  pterr: { name: 'Psychic Terrain',   t: 'Psychic',  types: ['Psychic'] },
+  mterr: { name: 'Misty Terrain',     t: 'Fairy',    types: ['Fairy'] },
+  clear: { name: 'Clear skies',       w: 'clear', types: null },
+};
+const FIELD_KEYS = Object.keys(FIELDS), FIELD_TERRAIN = 1.2, FIELD_PREP = 0.6, WX_CLASS = /weather|storm|forecast|meteor|rain|sun/i;
+const WX_LOG = { set: 0, aiSet: 0, battles: 0, terrain: 0, held: 0 };
+// the League's Institute: { gi, x } (the gym city it stands in), or null
+function wxAt(i = S.lg || 0) {
+  const L = lgObj(i); if (!L || !L.gyms) return null;
+  for (let gi = 0; gi < L.gyms.length; gi++) { const c = S.cities[L.gyms[gi].city], x = c && c.b && (c.b[i] || []).find(y => y.k === 'wx'); if (x) return { gi, x }; }
+  return null;
+}
+// its working level (0 in the red, in the report's fixed tiers, or with none)
+function wxLv() { if (lapsed() || fixedStaff()) return 0; const a = wxAt(); return a ? a.x.lv : 0; }
+const wxPicks = () => { const f = S.fin; if (!f) return { g: {}, seat: null }; f.wx = f.wx || { g: {}, seat: null }; f.wx.g = f.wx.g || {}; return f.wx; };
+// a weather-themed class on the staff (by its name) opens every field at level 1
+const wxClassOn = () => staffIds().map(T).some(t => t && WX_CLASS.test(t.cls || ''));
+// the types a place brings: a gym's leader's (an untyped leader: their team's), the seat's staff's
+function placeTypes(where) {
+  const ty = t => { if (!t) return []; const s = specTypes(t); return s.length ? s : [...new Set((t.team || []).flatMap(monTypes))]; };
+  if (where === 'seat') return [...new Set([S.champion, ...S.e4].map(T).flatMap(ty))];
+  const g = S.gyms[where]; return g ? ty(T(g.leader)) : [];
+}
+// the fields a place may use now: null when the League has no Institute
+function fieldOpts(where) {
+  const lv = wxLv(); if (!lv) return null;
+  if (lv >= 2 || wxClassOn()) return FIELD_KEYS.slice();
+  const ty = placeTypes(where);
+  return FIELD_KEYS.filter(k => !FIELDS[k].types || FIELDS[k].types.some(x => ty.includes(x)));
+}
+// the field chosen for a place (may no longer fit), and why it doesn't work, if it doesn't
+const fieldPick = where => { const p = wxPicks(); return (where === 'seat' ? p.seat : p.g[where]) || null; };
+function fieldWhy(where) {
+  const k = fieldPick(where); if (!k) return null;
+  if (!wxAt()) return 'no Weather Institute'; if (!wxLv()) return 'the League is in the red';
+  return fieldOpts(where).includes(k) ? null : `${FIELDS[k].name} doesn't fit this ${where === 'seat' ? 'seat' : 'gym'}'s types until level 2`;
+}
+// set a place's field (key null: back to the type's own weather); returns an error or null
+function setField(where, k, lg = ME()) {
+  return inLeague(lg, () => {
+    if (where !== 'seat' && !S.gyms[where]) return 'No such gym.';
+    if (k != null && !FIELDS[k]) return 'No such field.';
+    const opts = fieldOpts(where); if (!opts) return 'Build a Weather Institute first.';
+    if (k != null && !opts.includes(k)) return `${FIELDS[k].name} needs the Institute at level 2 here (or a weather-themed trainer on your staff).`;
+    const p = wxPicks(); if (where === 'seat') p.seat = k; else if (k == null) delete p.g[where]; else p.g[where] = k;
+    WX_LOG.set++; return null;
+  });
+}
+// what a battle at a place gets (homeOpts → battle()): { key, name, w, t, lock }, or null
+function fieldOf(where, count) {
+  const k = fieldPick(where); if (!k || fieldWhy(where)) return null;
+  const F = FIELDS[k]; if (count) { WX_LOG.battles++; if (F.t) WX_LOG.terrain++; if (wxLv() >= 2) WX_LOG.held++; }
+  return { key: k, name: F.name, w: F.w || null, t: F.t || null, lock: wxLv() >= 2 };
+}
+// the field a challenger sees at a gym (no counting), for routing
+function fieldSeen(where) { const k = fieldPick(where); if (!k || fieldWhy(where)) return null; const F = FIELDS[k]; return { w: F.w || null, t: F.t || null }; }
+// how well a Pokémon's types suit a field: boosted types +1, weakened −1, sand and snow's own types a little
+function fieldFit(types, f) {
+  if (!f) return 0;
+  if (f.t) return types.includes(f.t) ? 1 : 0;
+  let v = 0; for (const ty of types) { const m = weatherMul(f.w, ty); v += m > 1 ? 1 : m < 1 ? -1 : 0;
+    if (f.w === 'sand' && ['Rock', 'Ground', 'Steel'].includes(ty)) v += 0.5; if (f.w === 'snow' && ty === 'Ice') v += 0.5; }
+  return clamp(v, -1, 1);
+}
+// (0.69.0) what a gym's field adds to a challenger's route pick (gymMatch): how well their team suits it, by Strategy
+function fieldRoute(t, g) { const f = fieldSeen(g); if (!f || !t.team.length) return 0; return FIELD_PREP * gmemLearn(t) * t.team.reduce((a, m) => a + fieldFit(monTypes(m), f), 0) / t.team.length; }
+// rivals by aim (monthly): a wall-builder sets each gym and the seat to a field its types bring (a weather first); a
+// star-maker only the seat. A place already set is kept while it works.
+function aiWx(aim) {
+  if (!wxLv() || aim === 'money') return;
+  const want = where => { const o = fieldOpts(where).filter(k => k !== 'clear'), ty = placeTypes(where);
+    return o.find(k => FIELDS[k].w && FIELDS[k].types.some(x => ty.includes(x))) || o.find(k => FIELDS[k].types.some(x => ty.includes(x))) || null; };
+  const places = aim === 'wall' ? ['seat', ...S.gyms.map((_, i) => i)] : ['seat'];
+  for (const w of places) { if (fieldPick(w) && !fieldWhy(w)) continue; const k = want(w); if (k && !setField(w, k, S.lg || 0)) WX_LOG.aiSet++; }
+}
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { FIELDS, FIELD_KEYS, FIELD_TERRAIN, FIELD_PREP, WX_LOG, wxAt, wxLv, wxPicks, wxClassOn, placeTypes, fieldOpts, fieldPick, fieldWhy, setField, fieldOf, fieldSeen, fieldFit, fieldRoute, aiWx });

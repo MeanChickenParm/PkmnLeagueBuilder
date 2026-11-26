@@ -1206,7 +1206,7 @@ const ROUTE_NOISE = 1.6, ROUTE_MEM = 0.5, ROUTE_TRY = 0.2;
 const lineTypesOf = g => [...new Set([...(S.gyms[g].trainers || []), S.gyms[g].leader].map(T).filter(Boolean).flatMap(foeTypes))];
 function gymMatch(t, g) {
   const ty = lineTypesOf(g); if (!ty.length || !t.team.length) return 0;
-  return t.team.reduce((a, m) => a + counterScore(monTypes(m), ty), 0) / t.team.length;
+  return t.team.reduce((a, m) => a + counterScore(monTypes(m), ty), 0) / t.team.length + fieldRoute(t, g); // (0.69.0)
 }
 function pickGym(t) {
   const open = S.gyms.map((_, g) => g).filter(g => !t.badges.includes(g));
