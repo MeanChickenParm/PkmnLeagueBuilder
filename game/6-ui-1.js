@@ -1064,7 +1064,7 @@ function profileBody(t, full) {
   const c = t.career;
   const elite = STAFF_ROLES.includes(t.role);
   return `<div class="profile">
-    <section class="panel tcard"><div class="tcard-top">${trPortrait(t)}<div class="tcard-id"><div class="eyebrow">${t.famous ? '★ Famous trainer' + (famousTags(t).length ? ' (' + famousTags(t).map(k => FAMOUS_TAG_LABELS[k]).join(', ') + ')' : '') + ' · ' : ''}${roleLabel(t)} · Age ${t.age}${homeName(t) ? ` · From ${esc(homeName(t))}` : ''}${t.hof ? ' · Hall of Fame' : ''}</div>${cardName(t)}<div class="spec">${specLine(t)}<span class="muted"> · ${LEAD_STYLES[leadStyle(t)]}</span>${elite ? ` · formerly ${t.cls}` : ''}${traitChip(t)}</div>${rivalLine(t)}</div>
+    <section class="panel tcard"><div class="tcard-top">${trPortraitAce(t)}<div class="tcard-id"><div class="eyebrow">${t.famous ? '★ Famous trainer' + (famousTags(t).length ? ' (' + famousTags(t).map(k => FAMOUS_TAG_LABELS[k]).join(', ') + ')' : '') + ' · ' : ''}${roleLabel(t)} · Age ${t.age}${homeName(t) ? ` · From ${esc(homeName(t))}` : ''}${t.hof ? ' · Hall of Fame' : ''}</div>${cardName(t)}<div class="spec">${specLine(t)}<span class="muted"> · ${LEAD_STYLES[leadStyle(t)]}</span>${elite ? ` · formerly ${t.cls}` : ''}${traitChip(t)}</div>${rivalLine(t)}</div>
       <div class="tcard-ovr"><span>${ovr(t)}</span><small>OVR${t.role !== 'retired' ? ' · POT ' + t.pot : ''}</small></div></div>
       ${t.role === 'challenger' ? badgeRow(t, true) : ''}
       ${ratingBars(t)}
@@ -1168,6 +1168,14 @@ const CAM_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="tr
 function trPortrait(t) {
   const has = !!trImg(t), own = !!imgUrl(IMG_TR(t));
   return `<div class="tport${has ? ' big' : ''}">${trFace(t, has ? IMG_PX : 64)}<button class="tcam" data-act="imgup" data-k="${esc(IMG_TR(t))}" data-c="${esc(t.cls || '')}" title="${own ? 'Change' : 'Add'} portrait" aria-label="${own ? 'Change' : 'Add'} ${esc(t.name)}'s portrait">${CAM_SVG}</button></div>`;
+}
+// 0.73.0: a trainer's ace beside their portrait, only when the trainer and the ace both have a picture. The ace is the
+// strongest Pokémon on the team (level × base stats, as `styledPick` reads it); it opens that Pokémon's page.
+const profileAce = t => t && t.team && t.team.length ? t.team.reduce((a, m) => (monPower(m) > monPower(a) ? m : a), t.team[0]) : null;
+function trPortraitAce(t) {
+  const m = trImg(t) ? profileAce(t) : null, u = m ? monImg(m.sp, m.shiny || m.radiant) : null;
+  if (!u) return trPortrait(t);
+  return `<div class="tportace">${trPortrait(t)}<button class="tace" data-act="mon" data-t="${t.id}" data-u="${m.uid}" title="Their ace: ${esc(m.sp)}, Lv ${lvShow(m)}"><img class="pic" src="${u}" alt="${esc(m.sp)}" width="${IMG_PX}" height="${IMG_PX}" decoding="async"><span class="tace-lbl">Ace · ${esc(m.sp)}</span></button></div>`;
 }
 // the Add image / Add shiny image buttons on a Pokémon's page (they apply to the whole species)
 function monImgBtns(sp) {
