@@ -46,7 +46,7 @@ function gymStatus(t) {
 }
 function eliteCard(t, label, extra = '', foot = '') {
   return `<article class="elite"><div class="eyebrow">${label}</div><div class="elite-h"><span class="elite-who">${trMini(t, 40)}${tname(t.id)}</span> ${ovrPill(t)}</div><div class="elite-s">${specChips(t)} <span class="muted">Age ${t.age}</span> ${staffTags(t)}${extra}</div>
-    <ul class="mini">${t.team.slice().reverse().map(m => `<li><span>${monMini(m.sp, m.shiny || m.radiant)}<button class="tlink" data-act="mon" data-t="${t.id}" data-u="${m.uid}">${m.sp}</button></span><span class="num">${stOf(m).b ? wl(stOf(m)) + ' · ' : ''}Lv ${Math.floor(m.lvl)}</span></li>`).join('')}</ul>${foot}</article>`;
+${foot}</article>`;
 }
 function viewGyms() {
   const ch = T(S.champion);
@@ -57,7 +57,7 @@ function viewGyms() {
 function gymTrainerList(g, i) {
   const ts = (g.trainers || []).map(T).filter(Boolean);
   if (!ts.length) return '';
-  return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · up to ${GT_HOLD} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${trMini(t)}${tname(t.id)} ${specChips(t)} ${ovrPill(t)} ${staffTags(t)}</span><span class="small muted">${t.team.map(m => m.sp).join(', ')}</span></li>`).join('')}</ul>`;
+  return `<div class="eyebrow" style="margin-top:.6rem">Gym trainers · up to ${GT_HOLD} Pokémon each</div><ul class="mini">${ts.map(t => `<li><span>${trMini(t)}${tname(t.id)} ${specChips(t)} ${ovrPill(t)} ${staffTags(t)}</span></li>`).join('')}</ul>`;
 }
 // the last few badges a gym of the player's League conceded, to watch (0.7.0)
 function gymWatch(g, i) {
