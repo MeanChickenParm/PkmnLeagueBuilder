@@ -46,7 +46,7 @@ function gymStatus(t) {
 }
 function eliteCard(t, label, extra = '', foot = '') {
   return `<article class="elite"><div class="eyebrow">${label}</div><div class="elite-h"><span class="elite-who">${trMini(t, 40)}${tname(t.id)}</span> ${ovrPill(t)}</div><div class="elite-s">${specChips(t)} <span class="muted">Age ${t.age}</span> ${staffTags(t)}${extra}</div>
-${foot}</article>`;
+    <ul class="mini">${t.team.slice().reverse().map(m => `<li><span>${monMini(m.sp, m.shiny || m.radiant)}<button class="tlink" data-act="mon" data-t="${t.id}" data-u="${m.uid}">${m.sp}</button></span><span class="num">${stOf(m).b ? wl(stOf(m)) + ' · ' : ''}Lv ${Math.floor(m.lvl)}</span></li>`).join('')}</ul>${foot}</article>`;
 }
 function viewGyms() {
   const ch = T(S.champion);
