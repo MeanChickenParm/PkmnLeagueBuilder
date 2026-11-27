@@ -66,6 +66,7 @@ const WAVES = new Set();
 const anyOrder = { out: 0, outOfOrder: 0, noAim: 0 }; // (0.32.0)
 const PLAN = { set: 0, now: 0, later: 0, cleared: 0, refused: 0, sugg: 0, reviews: 0, checked: 0, kept: 0, benched: 0, restless: 0 }; // (0.39.0) team plans
 const backupStat = { teams: 0, mons: 0, most: 0, stopgaps: 0 }; // (0.38.0) summed over weekly checks
+const CCLS = { seen: new Set(), miss: 0, missPrev: new Set() }; // (0.76.0) condition classes
 const OVERDUE = new Map(); // (0.26.0) a rival's spare: the turn it was first seen overdue for selling back // (0.25.0)
 let steersSet = 0, hands = 0, gods = 0, fieldSum = 0, fieldN = 0, fieldMax = 0, stops = {};
 const ctrlStats = { cities: 0, tiers: [0, 0, 0, 0], renown: 0, slice: 0, homed: 0 }; // (0.40.0)
@@ -75,6 +76,14 @@ const TALKS = { results: 0, weeks: 0, most: 0, maxOffers: 0, hand: 0, handErr: 0
 function check(tag) {
   { const all = g.eachLeague(() => S().lgName).concat((S().folded || []).map(f => f.name)).map(n => String(n).toLowerCase()); if (new Set(all).size !== all.length) fail.push('two Leagues (folded included) share a name: ' + all); }
   const s = S(), bad = m => fail.push(tag + ' ' + m);
+  // (0.76.0) condition classes: a real kind, untyped, not famous, and carrying one of their condition (a miss allowed for one week)
+  { const miss = new Set();
+    for (const t of Object.values(s.trainers)) { if (!t.condCls) continue; CCLS.seen.add(t.id);
+      if (g.COND_CLASS_OF[t.cls] !== t.condCls) bad('a condition class ' + t.condCls + ' on a ' + t.cls);
+      if (t.specialty || t.spec2 || t.famous) bad('a typed or famous condition class: ' + t.name);
+      if (t.role === 'retired' || !g.featOn(t.condCls) || !t.team.length || t.acting) continue;
+      if (!t.team.some(m => m[t.condCls])) { miss.add(t.id); CCLS.miss++; if (CCLS.missPrev.has(t.id)) bad('a ' + t.cls + ' (' + t.role + ') without one two weeks running: ' + t.team.map(m => m.sp).join(',')); } }
+    CCLS.missPrev = miss; }
   // (0.27.0) migration waves: from another region, lines that aren't the region's own, not past their end
   for (const [r, w] of Object.entries(s.migr || {})) { if (!w || w.from === +r || !(w.from >= 0 && w.from < g.nRegionsBuilt()) || !w.lines.length || w.until < s.turn) bad('a bad migration ' + r + ' ' + JSON.stringify(w)); else { for (const b of w.lines) if (g.regionLines().sets[r].has(b)) bad('a migrant ' + b + ' already lives in region ' + r); const key = r + ':' + w.at; if (!WAVES.has(key)) { WAVES.add(key); REG.waves++; if (w.far) REG.far++; } } }
   if (s.cfg && s.cfg.hand) g.inLeague(g.ME(), () => { if (g.S.ranch && !g.S.founding) REG.gapsMax = Math.max(REG.gapsMax, g.steerGaps().length); });
@@ -969,6 +978,7 @@ console.log('team plans', JSON.stringify(PLAN));
 console.log('ranch part 3', JSON.stringify(PART3), 'storage', JSON.stringify(g.STORE_LOG), 'vault', JSON.stringify(g.VAULT_LOG));
 console.log('ranch', JSON.stringify(RAN), g.eachLeague(i => { const R = S().ranch; if (!R) return `L${i} none`; g.ranchSync(); const sen = g.seniorIds().map(g.T), held = sen.reduce((a, t) => a + t.team.filter(m => m.rid != null).length, 0), st = sen.reduce((a, t) => a + t.team.filter(m => m.stop).length, 0);
 console.log('backup types', JSON.stringify(backupStat));
+console.log('condition classes', 'trainers', CCLS.seen.size, 'misses', CCLS.miss, 'by class', JSON.stringify(Object.fromEntries(g.COND_CLASSES.map(([c, k]) => [c, Object.values(S().trainers).filter(t => t.condCls === k).length]))), 'roles', JSON.stringify(Object.values(S().trainers).filter(t => t.condCls).reduce((a, t) => (a[t.role] = (a[t.role] || 0) + 1, a), {})), JSON.stringify(g.COND_LOG));
   return `L${i} ${R.mons.length}/${g.ranchCap()} held ${held} stopgaps ${st} upkeep ${g.ranchUpkeep()}/wk grades ${[1, 2, 3, 4, 5].map(k => R.mons.filter(e => e.g === k).length).join(',')}`; }).join(' | '));
 console.log('safari', JSON.stringify(SAF), JSON.stringify(g.SAFARI_LOG));
 console.log('breeding', JSON.stringify(BRD), JSON.stringify(g.BREED_LOG));

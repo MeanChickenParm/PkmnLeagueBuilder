@@ -812,7 +812,7 @@ const FAMOUS_NEWCOMER_CHANCE = 0.06; // per newcomer
 const FAMOUS_POST_CHANCE = 0.2;   // per outsider appointed to a gym or an Elite Four seat later on
 function famousAvailable(filter) { ensureCustom(); S.famousUsed = S.famousUsed || []; return FAMOUS.filter(f => famousOn(f) && !S.famousUsed.includes(f.name) && famousNameFree(f) && filter(f)); }
 function makeFamous(f, role, quality, lvl) {
-  const t = newTrainer({ age: f.age, quality, role, specialty: f.spec });
+  const t = newTrainer({ age: f.age, quality, role, specialty: f.spec, noCond: true });
   t.name = f.name; t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = f.spec2 || null; t.trait = (f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[f.name]) || t.trait;
   t.pot = clamp(Math.max(t.pot, ovr(t) + (f.age <= 18 ? ri(14, 24) : ri(2, 8))), ovr(t), 99);
   t.team = signaturePicks(f.team).map((sp, i) => stamp(makeMon(sp, lvl - i * 2, f.spec), 'starter'));

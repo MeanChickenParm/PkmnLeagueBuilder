@@ -351,6 +351,12 @@ function specFit(t, sp) { const ty = specTypes(t); if (!ty.length) return 0; con
 const onSpec = (t, sp) => specFit(t, sp) > 0;
 // Generalists carry a mixed team and no type bias
 const GENERAL = [['Ace Trainer',null],['Veteran',null]];
+// (0.76.0) condition classes: rare untyped trainers who research one condition Pokémon can have, and always carry one
+// Pokémon with it. Not behind the Extended toggle (the owner): buildings will use them. Radiants have none, on purpose.
+const COND_CLASSES = [['Delta Researcher', 'delta'], ['Alpha Tracker', 'alpha'], ['Shiny Hunter', 'shiny']];
+const COND_CLASS_OF = Object.fromEntries(COND_CLASSES.map(([c, k]) => [c, k]));
+const COND_CLASS_CHANCE = 0.01; // about 1 trainer in 100 where the class isn't set by a post (provisional)
+const condClassesOn = () => COND_CLASSES.filter(([, k]) => featOn(k));
 const CLASS_TYPE = {};
 for (const [ty, list] of Object.entries(CLASSES)) for (const [c] of list) (CLASS_TYPE[c] = CLASS_TYPE[c] || []).push(ty);
 const RK = ['str','trn','bnd','sct','nrv'];
@@ -385,6 +391,10 @@ function assignClass(t, age, allowDual) {
     // keep the asked-for type as the primary one, so counter-type prospects still counter the meta
     t.spec2 = d[1] === t.specialty ? d[2] : d[1];
   }
+  nameTrainer(t, cls, g);
+}
+// a class and a name for it: a name can repeat across titles, but never within one
+function nameTrainer(t, cls, g) {
   t.cls = cls;
   t.gender = g || (rand() < 0.5 ? 'm' : 'f');
   const pool = t.gender === 'm' ? MALE : FEMALE;
@@ -641,7 +651,7 @@ const famShare = () => (S.cfg && S.cfg.famShare) || 0;
 const famRoll = () => famShare() >= 100 || (famShare() > 0 && rand() < famShare() / 100);
 // how much being famous still counts for pay and prestige: in full against ordinary trainers, not at all when everyone is
 const famPremium = () => 1 - famShare() / 100;
-function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null }) {
+function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null, noCond = false }) {
   const id = S.nextId++;
   const r = {};
   for (const k of RK) r[k] = clamp(Math.round(quality + (rand() - 0.5) * 34), 8, 96);
@@ -652,12 +662,15 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     seasonHist: [], joined: S.season,
   };
   assignClass(t, age, true);
+  // (0.76.0) a condition class, where the class isn't one a post or a gym's type sets
+  const condFree = !noCond && !(famNeed && famNeed.length) && (specialty === undefined || ['challenger', 'prospect', 'free'].includes(role));
+  if (condFree && rand() < COND_CLASS_CHANCE) { const opts = condClassesOn(); if (opts.length) { const [c, k] = pick(opts); t.specialty = null; t.spec2 = null; nameTrainer(t, c, null); t.condCls = k; } }
   // (0.57.0) the famous share: this trainer is a famous one, while any are free (famNeed: types one must share, for a gym)
   const f = !noFamous && famRoll() ? chooseFamous(role, t.specialty, famNeed) : null;
   if (f) {
     const ver = chooseFamous.ver || 1;
     t.name = famName(f, ver); t.famKey = f.name; if (ver > 1) t.famVer = ver;
-    t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
+    delete t.condCls; t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
     if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; t.spec2 = f.spec2 || null; }
     // (0.57.0) a famous gym trainer keeps only the types they share with their leader
     if (famNeed && famNeed.length) { const ty = [f.spec, f.spec2].filter(x => x && famNeed.includes(x)); t.specialty = ty[0]; t.spec2 = ty[1] || null; }
@@ -738,6 +751,7 @@ function starterTeam(t, lvl) {
     t.team = [makeMon(first, lvl), makeMon(pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
   }
   t.team.forEach(m => stamp(m, 'starter'));
+  condGuard(t); // (0.76.0) a condition class starts with one of their condition
 }
 
 // ---------- elite teams ----------

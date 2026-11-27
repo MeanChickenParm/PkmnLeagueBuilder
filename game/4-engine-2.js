@@ -1416,6 +1416,7 @@ function simWeek() {
   hireArrivals();
   eachLeague(ambitionWeek);
   eachLeague(contractWeek); // (0.52.0) contracts: renewal windows and endings
+  eachLeague(condClassWeek);
   talksWeek(); // (0.53.0) open talks: offers, raises, deadlines
   challengeWeek();
   seatWeek(); // (0.43.0) a Term appointment left unanswered
@@ -1563,7 +1564,7 @@ function reinvent(t) {
   let ty = null, cls = null;
   for (const cand of types) { const opts = CLASSES[cand].filter(([c, g]) => (!g || g === t.gender) && !titleNameTaken(c, t.name, t)); if (opts.length) { ty = cand; cls = pick(opts)[0]; break; } }
   if (!ty) return;
-  t.specialty = ty; t.spec2 = null; t.cls = cls;
+  t.specialty = ty; t.spec2 = null; t.cls = cls; delete t.condCls;
   for (const k of RK) t.r[k] = clamp(t.r[k] + ri(2, 4), 1, 99);
   t.pot = Math.max(t.pot, ovr(t) + ri(1, 3));
   // a Pokémon of the new type to build around, at the team's level

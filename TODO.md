@@ -7,6 +7,12 @@ Things left over from the seed, and ideas tabled for later. Remove an item once 
 - **(0.61.0) Very old trainers:** nothing makes a trainer retire by a set age. A staff member steps down only after 10 years in posts and past their career length, so Opal (famous, starts at 88) or an old custom trainer can serve past 100 (that crashed the growth table until 0.61.0). Ask the owner whether there should be an age cap or a stronger push to step down from about 75.
 - **The browser test's year-2 staffing step fails (found Nov 24 at 0.58.0, also on an unchanged 0.57.0 build):** `nobody to pick at once`, `vacancies left open: 2`, `posts not filled properly`, or `posts left open after the move`, varying by run. Find which change caused it (0.57.0's famous share or the talks changes are suspects), fix the game or the test, and remove this item.
 
+## Condition classes (0.76.0)
+- **Staff effects and buildings** for the Delta Researcher, Alpha Tracker and Shiny Hunter wait for the buildings that use them (e.g. a class bonus on the Research Lab's condition research).
+- **Every number is a first guess:** `COND_CLASS_CHANCE` 0.01; the fresh Pokémon a member of staff brings in (a regional common line under 450 base stats).
+- **Not decided:** famous trainers and trainer packs can't be one for now (the owner, Nov 26); a custom pack trainer with one of these class names is just a name.
+- **`4-engine-2.js` is at 239,988 bytes:** the next change there needs a split first.
+
 ## City buildings part 1 (0.63.0)
 - **Every number is a first guess:** size thresholds, city income and visitor spending by size, crowds (`CROWD_AT`), ticket prices, hype, Hotel rooms and rates, `VISIT_PARTY` 3, Center draw and rest cut, Berry Farm yields, the seat Stadium's free level 2 (+3% edge at the seat from founding, multiplied with the claim edge ×1.05; not settled), the Cup gates the seat Stadium was to absorb (still separate).
 - **The economy needs the retune** planned since 0.41.0: tickets alone are now a big share of every League's income, money-makers (Hotels, Berry Farms) pull far ahead and then turn wall or star (AIM_RICH), and the passive player ends rich. Run `econ.js` and decide targets with the owner.

@@ -40,7 +40,7 @@ function openGtPlace(gj, t) {
 function graduate(gi, lv, eff) {
   const g = S.gyms[gi], L = T(g.leader), c = S.cities[g.city]; if (!L || !c) return null;
   const ty = specTypes(L), cut = gtCircuitCut(), base = isFinite(cut) ? cut : 48;
-  const t = newTrainer({ age: ri(16, 20), quality: base, role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  const t = newTrainer({ age: ri(16, 20), quality: base, role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true, noCond: true });
   setOvr(t, Math.round(base + SCHOOL_OVR * eff));
   const ids = Object.values(S.cities).filter(x => x.region === c.region).sort((a, b) => a.id - b.id).map(x => x.id);
   t.home = { r: c.region, i: Math.max(0, ids.indexOf(c.id)) };
@@ -1169,3 +1169,38 @@ function aimUtil(where, k) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { PLANT_CUT, WIND_TURBINES, WIND_PER, WIND_CALM_N, UTIL_CAP, QUARRY_CUT, TAILWIND_TURNS, YARD_TIME, YARD_RESTORE, YARD_DECAY, BUILD_WEEKS, ADDON_WEEKS, UTIL_LOG, utilWhy, cityLv, windCalm, plantCut, windCut, utilCut, upkeepSaved, citySaved, yardLv, restoreShare, decayWeeks, quarryCut, lastToGo, instantBuilds, buildWeeks, buildQ, placeKey, pendingAt, pendingHere, pendingSlots, startBuild, buildWeek, cancelBuild, cancelBuildsAt, dropBuild, utilBattle, utilField, aimUtil, applyBuild, seatB, upLevel, cityB });
+
+// ================= CONDITION CLASSES (0.76.0) =================
+// A Delta Researcher, Alpha Tracker or Shiny Hunter (COND_CLASSES, 3-engine-1) always carries one Pokémon of their
+// condition (the owner: guaranteed for life). One of their own on the team gets it; a member of staff fielding only ranch
+// Pokémon swaps the weakest one not in a team plan for one of their own. Their effects as staff wait for the buildings
+// that use them. All numbers provisional.
+const COND_LOG = { given: 0, fresh: 0 };
+function condClassMon(m, k) {
+  if (k === 'shiny') { m.shiny = true; m.iv = ivSet(31); }
+  else if (k === 'alpha') { m.alpha = true; if (!m.shiny) m.iv = ivSet(() => ri(28, 31)); }
+  else if (k === 'delta') makeDelta(m);
+  return m;
+}
+const condCarried = t => !!(t && t.condCls && (t.team || []).some(m => m[t.condCls]));
+function condGuard(t) {
+  const k = t && t.condCls; if (!k || !featOn(k) || t.role === 'retired' || !t.team || !t.team.length || condCarried(t)) return;
+  // their own Pokémon, ones the ranch could keep first (a legendary or Paradox Pokémon only when they have nothing else)
+  const ok = m => m.rid == null && !m.stop && !(k === 'shiny' && m.radiant);
+  const own = t.team.filter(ok).sort((a, b) => (ranchKeeps(b) - ranchKeeps(a)) || monPower(b) - monPower(a));
+  if (own.length) { condClassMon(own[0], k); COND_LOG.given++; return; }
+  if (!STAFF_ROLES.includes(t.role) || t.acting) return;
+  const out = t.team.filter(m => !isPlanned(t, m) && !(t.mega && t.mega.uid === m.uid)).sort((a, b) => monPower(a) - monPower(b))[0];
+  if (!out) return;
+  const lvl = (eliteSlot(t) || {}).lvl || out.lvl, lg = S.lg || 0;
+  const lines = new Set(t.team.filter(m => m !== out).map(m => LINE[m.sp]));
+  const pool = regional(BASES).filter(b => !SP[b].rare && !SP[b].legend && !SP[b].baby && SP[b].bst < 450 && !lines.has(LINE[b]) && !bannedIn(b, lg) && ranchKeeps({ sp: b }));
+  if (!pool.length) return;
+  const m = stamp(condClassMon(makeMon(pick(pool), lvl), k), 'assigned');
+  t.team[t.team.indexOf(out)] = m;
+  dropMon(t, out, 'made room for one of their own');
+  relevelElite(t); COND_LOG.fresh++;
+}
+function condClassWeek() { for (const id of S.challengers.concat(staffIds())) { const t = T(id); if (t && t.condCls) condGuard(t); } }
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { COND_CLASSES, COND_CLASS_OF, COND_CLASS_CHANCE, condClassesOn, COND_LOG, condClassMon, condCarried, condGuard, condClassWeek });

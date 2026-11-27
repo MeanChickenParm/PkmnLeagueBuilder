@@ -205,7 +205,8 @@ function rivalLine(t) {
 }
 const specChips = t => t.specialty ? chip(t.specialty) + (t.spec2 ? ' ' + chip(t.spec2) : '') : chip(null);
 const specName = t => t.specialty ? t.specialty + (t.spec2 ? ' / ' + t.spec2 : '') : 'Mixed';
-const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}${t.role !== 'champion' && backupTypes(t).length ? ` <span class="muted">· backups</span> ${chips(backupTypes(t))}` : ''}` : `${chip(null)} team, no type focus`;
+const COND_RESEARCH = { delta: 'Deltas', alpha: 'alphas', shiny: 'shinies' }; // (0.76.0) a condition class's line
+const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}${t.role !== 'champion' && backupTypes(t).length ? ` <span class="muted">· backups</span> ${chips(backupTypes(t))}` : ''}` : `${chip(null)} team, no type focus${t.condCls ? ` <span class="tag small" title="A rare condition class: always carries one of these">researches ${COND_RESEARCH[t.condCls]}</span>` : ''}`;
 function ovrPill(t) { const o = ovr(t); const c = o >= 70 ? 'hi' : o >= 55 ? 'mid' : 'lo'; return `<span class="ovr ${c}">${o}</span>`; }
 function roleLabel(t) {
   const r = roleHere(t);
@@ -1139,6 +1140,7 @@ function imgClassList() {
   for (const list of Object.values(CLASSES)) for (const [c] of list) add(c);
   for (const d of DUAL_CLASSES) if (!d[4] || !S || featOn('extclasses')) add(d[0]);
   for (const [c] of GENERAL) add(c);
+  for (const [c] of COND_CLASSES) add(c); // (0.76.0)
   if (S) for (const t of Object.values(S.trainers)) add(t.cls);
   for (const k of IMGS.keys()) if (k[0] === 'c') add(k.slice(2));
   return out;

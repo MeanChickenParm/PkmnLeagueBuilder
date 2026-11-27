@@ -5528,6 +5528,12 @@ function specFit(t, sp) { const ty = specTypes(t); if (!ty.length) return 0; con
 const onSpec = (t, sp) => specFit(t, sp) > 0;
 // Generalists carry a mixed team and no type bias
 const GENERAL = [['Ace Trainer',null],['Veteran',null]];
+// (0.76.0) condition classes: rare untyped trainers who research one condition Pokémon can have, and always carry one
+// Pokémon with it. Not behind the Extended toggle (the owner): buildings will use them. Radiants have none, on purpose.
+const COND_CLASSES = [['Delta Researcher', 'delta'], ['Alpha Tracker', 'alpha'], ['Shiny Hunter', 'shiny']];
+const COND_CLASS_OF = Object.fromEntries(COND_CLASSES.map(([c, k]) => [c, k]));
+const COND_CLASS_CHANCE = 0.01; // about 1 trainer in 100 where the class isn't set by a post (provisional)
+const condClassesOn = () => COND_CLASSES.filter(([, k]) => featOn(k));
 const CLASS_TYPE = {};
 for (const [ty, list] of Object.entries(CLASSES)) for (const [c] of list) (CLASS_TYPE[c] = CLASS_TYPE[c] || []).push(ty);
 const RK = ['str','trn','bnd','sct','nrv'];
@@ -5562,6 +5568,10 @@ function assignClass(t, age, allowDual) {
     // keep the asked-for type as the primary one, so counter-type prospects still counter the meta
     t.spec2 = d[1] === t.specialty ? d[2] : d[1];
   }
+  nameTrainer(t, cls, g);
+}
+// a class and a name for it: a name can repeat across titles, but never within one
+function nameTrainer(t, cls, g) {
   t.cls = cls;
   t.gender = g || (rand() < 0.5 ? 'm' : 'f');
   const pool = t.gender === 'm' ? MALE : FEMALE;
@@ -5818,7 +5828,7 @@ const famShare = () => (S.cfg && S.cfg.famShare) || 0;
 const famRoll = () => famShare() >= 100 || (famShare() > 0 && rand() < famShare() / 100);
 // how much being famous still counts for pay and prestige: in full against ordinary trainers, not at all when everyone is
 const famPremium = () => 1 - famShare() / 100;
-function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null }) {
+function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons = 0, noFamous = false, famNeed = null, noCond = false }) {
   const id = S.nextId++;
   const r = {};
   for (const k of RK) r[k] = clamp(Math.round(quality + (rand() - 0.5) * 34), 8, 96);
@@ -5829,12 +5839,15 @@ function newTrainer({ age, quality = 50, role = 'challenger', specialty, seasons
     seasonHist: [], joined: S.season,
   };
   assignClass(t, age, true);
+  // (0.76.0) a condition class, where the class isn't one a post or a gym's type sets
+  const condFree = !noCond && !(famNeed && famNeed.length) && (specialty === undefined || ['challenger', 'prospect', 'free'].includes(role));
+  if (condFree && rand() < COND_CLASS_CHANCE) { const opts = condClassesOn(); if (opts.length) { const [c, k] = pick(opts); t.specialty = null; t.spec2 = null; nameTrainer(t, c, null); t.condCls = k; } }
   // (0.57.0) the famous share: this trainer is a famous one, while any are free (famNeed: types one must share, for a gym)
   const f = !noFamous && famRoll() ? chooseFamous(role, t.specialty, famNeed) : null;
   if (f) {
     const ver = chooseFamous.ver || 1;
     t.name = famName(f, ver); t.famKey = f.name; if (ver > 1) t.famVer = ver;
-    t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
+    delete t.condCls; t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = null; t.age = f.age; t.famousTeam = f.team;
     if (!['leader', 'e4', 'champion'].includes(role) || f.spec) { t.specialty = f.spec; t.spec2 = f.spec2 || null; }
     // (0.57.0) a famous gym trainer keeps only the types they share with their leader
     if (famNeed && famNeed.length) { const ty = [f.spec, f.spec2].filter(x => x && famNeed.includes(x)); t.specialty = ty[0]; t.spec2 = ty[1] || null; }
@@ -5915,6 +5928,7 @@ function starterTeam(t, lvl) {
     t.team = [makeMon(first, lvl), makeMon(pick(regional(BASES).filter(b => SP[b].bst < 330 && b !== first && !SP[b].rare)), lvl - 2)];
   }
   t.team.forEach(m => stamp(m, 'starter'));
+  condGuard(t); // (0.76.0) a condition class starts with one of their condition
 }
 
 // ---------- elite teams ----------
@@ -9002,6 +9016,7 @@ function simWeek() {
   hireArrivals();
   eachLeague(ambitionWeek);
   eachLeague(contractWeek); // (0.52.0) contracts: renewal windows and endings
+  eachLeague(condClassWeek);
   talksWeek(); // (0.53.0) open talks: offers, raises, deadlines
   challengeWeek();
   seatWeek(); // (0.43.0) a Term appointment left unanswered
@@ -9149,7 +9164,7 @@ function reinvent(t) {
   let ty = null, cls = null;
   for (const cand of types) { const opts = CLASSES[cand].filter(([c, g]) => (!g || g === t.gender) && !titleNameTaken(c, t.name, t)); if (opts.length) { ty = cand; cls = pick(opts)[0]; break; } }
   if (!ty) return;
-  t.specialty = ty; t.spec2 = null; t.cls = cls;
+  t.specialty = ty; t.spec2 = null; t.cls = cls; delete t.condCls;
   for (const k of RK) t.r[k] = clamp(t.r[k] + ri(2, 4), 1, 99);
   t.pot = Math.max(t.pot, ovr(t) + ri(1, 3));
   // a Pokémon of the new type to build around, at the team's level
@@ -13026,7 +13041,7 @@ const FAMOUS_NEWCOMER_CHANCE = 0.06; // per newcomer
 const FAMOUS_POST_CHANCE = 0.2;   // per outsider appointed to a gym or an Elite Four seat later on
 function famousAvailable(filter) { ensureCustom(); S.famousUsed = S.famousUsed || []; return FAMOUS.filter(f => famousOn(f) && !S.famousUsed.includes(f.name) && famousNameFree(f) && filter(f)); }
 function makeFamous(f, role, quality, lvl) {
-  const t = newTrainer({ age: f.age, quality, role, specialty: f.spec });
+  const t = newTrainer({ age: f.age, quality, role, specialty: f.spec, noCond: true });
   t.name = f.name; t.cls = f.cls; t.gender = f.g; t.famous = true; t.famTags = f.tags.slice(); t.spec2 = f.spec2 || null; t.trait = (f.custom ? TRAITS[f.trait] && f.trait : FAMOUS_TRAITS[f.name]) || t.trait;
   t.pot = clamp(Math.max(t.pot, ovr(t) + (f.age <= 18 ? ri(14, 24) : ri(2, 8))), ovr(t), 99);
   t.team = signaturePicks(f.team).map((sp, i) => stamp(makeMon(sp, lvl - i * 2, f.spec), 'starter'));
@@ -17260,7 +17275,7 @@ function openGtPlace(gj, t) {
 function graduate(gi, lv, eff) {
   const g = S.gyms[gi], L = T(g.leader), c = S.cities[g.city]; if (!L || !c) return null;
   const ty = specTypes(L), cut = gtCircuitCut(), base = isFinite(cut) ? cut : 48;
-  const t = newTrainer({ age: ri(16, 20), quality: base, role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true });
+  const t = newTrainer({ age: ri(16, 20), quality: base, role: 'prospect', specialty: ty.length ? pick(ty) : (rand() < 0.14 ? null : pick(TYPES)), noFamous: true, noCond: true });
   setOvr(t, Math.round(base + SCHOOL_OVR * eff));
   const ids = Object.values(S.cities).filter(x => x.region === c.region).sort((a, b) => a.id - b.id).map(x => x.id);
   t.home = { r: c.region, i: Math.max(0, ids.indexOf(c.id)) };
@@ -18389,6 +18404,41 @@ function aimUtil(where, k) {
 }
 
 if (typeof module !== 'undefined') Object.assign(module.exports, { PLANT_CUT, WIND_TURBINES, WIND_PER, WIND_CALM_N, UTIL_CAP, QUARRY_CUT, TAILWIND_TURNS, YARD_TIME, YARD_RESTORE, YARD_DECAY, BUILD_WEEKS, ADDON_WEEKS, UTIL_LOG, utilWhy, cityLv, windCalm, plantCut, windCut, utilCut, upkeepSaved, citySaved, yardLv, restoreShare, decayWeeks, quarryCut, lastToGo, instantBuilds, buildWeeks, buildQ, placeKey, pendingAt, pendingHere, pendingSlots, startBuild, buildWeek, cancelBuild, cancelBuildsAt, dropBuild, utilBattle, utilField, aimUtil, applyBuild, seatB, upLevel, cityB });
+
+// ================= CONDITION CLASSES (0.76.0) =================
+// A Delta Researcher, Alpha Tracker or Shiny Hunter (COND_CLASSES, 3-engine-1) always carries one Pokémon of their
+// condition (the owner: guaranteed for life). One of their own on the team gets it; a member of staff fielding only ranch
+// Pokémon swaps the weakest one not in a team plan for one of their own. Their effects as staff wait for the buildings
+// that use them. All numbers provisional.
+const COND_LOG = { given: 0, fresh: 0 };
+function condClassMon(m, k) {
+  if (k === 'shiny') { m.shiny = true; m.iv = ivSet(31); }
+  else if (k === 'alpha') { m.alpha = true; if (!m.shiny) m.iv = ivSet(() => ri(28, 31)); }
+  else if (k === 'delta') makeDelta(m);
+  return m;
+}
+const condCarried = t => !!(t && t.condCls && (t.team || []).some(m => m[t.condCls]));
+function condGuard(t) {
+  const k = t && t.condCls; if (!k || !featOn(k) || t.role === 'retired' || !t.team || !t.team.length || condCarried(t)) return;
+  // their own Pokémon, ones the ranch could keep first (a legendary or Paradox Pokémon only when they have nothing else)
+  const ok = m => m.rid == null && !m.stop && !(k === 'shiny' && m.radiant);
+  const own = t.team.filter(ok).sort((a, b) => (ranchKeeps(b) - ranchKeeps(a)) || monPower(b) - monPower(a));
+  if (own.length) { condClassMon(own[0], k); COND_LOG.given++; return; }
+  if (!STAFF_ROLES.includes(t.role) || t.acting) return;
+  const out = t.team.filter(m => !isPlanned(t, m) && !(t.mega && t.mega.uid === m.uid)).sort((a, b) => monPower(a) - monPower(b))[0];
+  if (!out) return;
+  const lvl = (eliteSlot(t) || {}).lvl || out.lvl, lg = S.lg || 0;
+  const lines = new Set(t.team.filter(m => m !== out).map(m => LINE[m.sp]));
+  const pool = regional(BASES).filter(b => !SP[b].rare && !SP[b].legend && !SP[b].baby && SP[b].bst < 450 && !lines.has(LINE[b]) && !bannedIn(b, lg) && ranchKeeps({ sp: b }));
+  if (!pool.length) return;
+  const m = stamp(condClassMon(makeMon(pick(pool), lvl), k), 'assigned');
+  t.team[t.team.indexOf(out)] = m;
+  dropMon(t, out, 'made room for one of their own');
+  relevelElite(t); COND_LOG.fresh++;
+}
+function condClassWeek() { for (const id of S.challengers.concat(staffIds())) { const t = T(id); if (t && t.condCls) condGuard(t); } }
+
+if (typeof module !== 'undefined') Object.assign(module.exports, { COND_CLASSES, COND_CLASS_OF, COND_CLASS_CHANCE, condClassesOn, COND_LOG, condClassMon, condCarried, condGuard, condClassWeek });
 </script>
 <script>
 // ================= POKÉMON LEAGUE BUILDER UI =================
@@ -18598,7 +18648,8 @@ function rivalLine(t) {
 }
 const specChips = t => t.specialty ? chip(t.specialty) + (t.spec2 ? ' ' + chip(t.spec2) : '') : chip(null);
 const specName = t => t.specialty ? t.specialty + (t.spec2 ? ' / ' + t.spec2 : '') : 'Mixed';
-const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}${t.role !== 'champion' && backupTypes(t).length ? ` <span class="muted">· backups</span> ${chips(backupTypes(t))}` : ''}` : `${chip(null)} team, no type focus`;
+const COND_RESEARCH = { delta: 'Deltas', alpha: 'alphas', shiny: 'shinies' }; // (0.76.0) a condition class's line
+const specLine = t => t.specialty ? `${specChips(t)} ${t.spec2 ? 'dual-type specialist' : 'specialist'}${t.role !== 'champion' && backupTypes(t).length ? ` <span class="muted">· backups</span> ${chips(backupTypes(t))}` : ''}` : `${chip(null)} team, no type focus${t.condCls ? ` <span class="tag small" title="A rare condition class: always carries one of these">researches ${COND_RESEARCH[t.condCls]}</span>` : ''}`;
 function ovrPill(t) { const o = ovr(t); const c = o >= 70 ? 'hi' : o >= 55 ? 'mid' : 'lo'; return `<span class="ovr ${c}">${o}</span>`; }
 function roleLabel(t) {
   const r = roleHere(t);
@@ -19532,6 +19583,7 @@ function imgClassList() {
   for (const list of Object.values(CLASSES)) for (const [c] of list) add(c);
   for (const d of DUAL_CLASSES) if (!d[4] || !S || featOn('extclasses')) add(d[0]);
   for (const [c] of GENERAL) add(c);
+  for (const [c] of COND_CLASSES) add(c); // (0.76.0)
   if (S) for (const t of Object.values(S.trainers)) add(t.cls);
   for (const k of IMGS.keys()) if (k[0] === 'c') add(k.slice(2));
   return out;
@@ -21838,6 +21890,12 @@ function talkAction(a, el) {
 GLOSS_TERMS.league.push(['Talks', `Competitive negotiations between Leagues, on the Talks page (Manage). Talks open for a challenger who wins a title or reaches the Elite Four at OVR ${TALK_STAR_OVR} or better, when their run ends, and for any star (a title this year or last, or the Elite Four) or other League's member of staff you make an offer to from a hiring page; for a Gym Leader or Elite Four member whose contract ends without a renewal (they stay in post meanwhile); and when another League goes after one of your staff under contract (the Retention stop: match its pay and bonus in their post, beat it, or let them go now for the transfer fee). Talks run 2 to 6 weeks by the trainer's stature (2 when a rival goes after your staff); a new leader in the final week adds a week, once. Each League makes one offer and can change it every week: a Gym Leader's post or an Elite Four seat (a vacancy, or one whose holder it replaces, let go with severance), pay over their asking (up to +75%), a signing bonus (up to 48 weeks' pay), the contract length and promises (no step down or release for 2 years: broken by letting them go, a certain grudge; keeping their own team with no team plan for 2 years; a legendary from your Sanctuary vault with an Elite Four seat). The trainer weighs the pay, the bonus, the post against the one they hold, the length they prefer, promises, your seat rule (an open seat draws the hungry, a protected one those wanting to stay put), their hometown and its Stronghold, prestige, any grudge and their own academy; their own League gets a little loyalty, or less if they were restless. At the deadline they sign with the League they like best if it is enough for them: stars chasing titles want a lot; staff whose contract ran out little. If nothing is enough, ${Math.round(TALK_WALK * 100)}% of the time they walk away from every League (a star then isn't asked again for half a year). A League is in at most ${TALK_MAX} talks besides its own staff's, its bonuses on the table count against its money, and nobody makes offers in the red. Other offers are hidden: your scouting office shows them roughly (level 1), then closely (2), then how keen the trainer is on each (3). A Champion is in talks when their contract ends without a renewal or they want a bigger League's seat; only a League whose own Champion is leaving (stepping down or under notice) can offer them its seat, and their own League can offer to keep them. Rival Leagues bid by their aim: a star-maker chases any star who would improve one of its posts, opens over the asking and counters up to three times (as high as +75% and 48 weeks' bonus); a wall-builder goes for its weakest posts and for trainers whose types answer what its wall keeps losing to; a money-maker offers only the asking pay with no bonus, never raises, and lets its staff go for the transfer fee unless they are its best. Each rival also has a temper (bold, steady or tight, shown on the League table) that makes it bid more or less often and raise more or less, and its keenness varies from talks to talks. Rival Leagues go after each other's Gym Leaders through talks too, and you can join those with an offer of your own. The multi-year sim keeps your staff by matching and bids only when it runs your League by an aim (then by that aim's rules). Whenever talks you were in end (an offer of yours, or one of your staff), the sim stops, the Talks page opens and its Results list says how it came out: Won or Kept, Lost or Left, Let go, Walked away, No deal, or Closed (the trainer took another post, retired or their League folded), with the terms that won. The news says the same, outcome first, and a trainer you signed is tagged on Your staff for ${TALK_NEW_WEEKS} weeks.`]);
 const verName = u => u.ver || u.id;
 const UPDATES = [
+  { id: 76, ver: '0.76.0', date: 'November 26, 2026', time: '10:05 PM ET', title: 'Condition classes', items: [
+    "Three rare new trainer classes: the Delta Researcher, the Alpha Tracker and the Shiny Hunter. About 1 trainer in 100 is one, among challengers, the founding pool and the trainers made for open posts.",
+    "Each always carries one Pokémon of their condition: a Delta Researcher a Delta, an Alpha Tracker an alpha, a Shiny Hunter a shiny. If they ever lose it, another of their own Pokémon takes its place.",
+    "They have no type of their own, like an Ace Trainer, so a gym one of them leads fields a mixed team. They aren't behind the Extended trainer classes setting. Their profile says what they research.",
+    "They do nothing more yet: buildings that use them come later.",
+  ] },
   { id: 75, ver: '0.75.0', date: 'November 26, 2026', time: '8:15 PM ET', title: 'A cleaner Gyms page', items: [
     "The Gyms page no longer lists each gym trainer's Pokémon under their name; click a gym trainer to see their team. The Champion's, Elite Four members' and Gym Leaders' teams still show on their cards.",
   ] },
@@ -22774,6 +22832,7 @@ function planGapNote() {
   return g.length ? `<section class="panel"><p class="warn small">Team plans with places that can't be filled (the steer fills them): ${g.map(x => `${esc(x.sp || 'a Pokémon')} for ${esc(planHolder(x.key) ? postName(planHolder(x.key)) : x.key)} (${esc(x.why)})`).join(', ')}. See <button class="tlink" data-act="nav" data-v="plans">Team plans</button>.</p></section>` : '';
 }
 GLOSS_TERMS.league.push(['Breeding and the Day Care', `The Day Care is a seat building (no slot, ${DC_PAIRS.length - 1} levels) that breeds from your breeding pool, on the Ranch page's Day Care tab. Breed on the Pool tab moves a ranch Pokémon there for good: it leaves the ranch and every team, takes no ranch space, costs half its upkeep and stays ${BREED_YEARS} years, then is sold automatically for ${Math.round(BREED_SELL * 100)}% of its value. The pool holds one of each line and condition; a better one bumps the old one out (sold the same way). A locked Pokémon can't go in; a reserved or planned one asks first. Pairs share an egg group (the games' own; your own Pokémon take one from My Pokédex or the region editor, else from their type), or one parent is Ditto; Undiscovered lines can't breed. Ditto can be in several pairs, everyone else in one. A pair lays an egg every ${DC_WEEKS[1]} weeks at level 1, down to ${DC_WEEKS[DC_WEEKS.length - 1]} at the top level, until you end it. The young one takes the non-Ditto parent's line (else either's), each IV from one parent (the better more often) plus a small bump, so it usually comes out a grade above its parents. Conditions come at twice the wild odds and five times for one a parent has; a Delta parent passes on the Delta gene, so the young one rolls its own unusual type, whichever line it takes. A bred shiny, alpha or Delta has at least the IVs a wild one would. A young one hatched into a full ranch waits ${HATCH_WAIT} weeks, then is let go. In the red the Day Care closes: eggs wait, the pool's upkeep is still paid. The Safari Zone's quarterly finds stay plain: only the Day Care passes anything on. Rival Leagues breed too: wall-builders for their posts' types, star-makers the best grades, money-makers rarities to sell.`]); // (0.45.0)
+GLOSS_TERMS.league.push(['Condition classes', 'Three rare trainer classes, about 1 trainer in 100: the Delta Researcher, the Alpha Tracker and the Shiny Hunter. Each always carries one Pokémon of their condition (a Delta, an alpha, a shiny); if they lose it, another of their own takes it on, and a member of staff fielding only ranch Pokémon brings one of their own in for the weakest. They have no type, like an Ace Trainer, so a gym one leads is mixed. They come whether or not Extended trainer classes is on, but not while their condition is switched off in Wild Pokémon. Buildings that use them come later.']); // (0.76.0)
 GLOSS_TERMS.league.push(['Team plans', `The Team plans page: up to ${PLAN_MAX} named Pokémon for a Gym Leader, Elite Four member or your Champion, from their own team or your ranch, with the steer filling the rest. A plan belongs to the post. It takes effect at the quarterly team review (every ${QUARTER_WEEKS} weeks, when the game suggests a team for each post), or at once when set in the review's week, for a post whose holder is new since the review, or for a vacant post. Planned Pokémon are never swapped out by the monthly swap or a Gym Leader's losing-streak shake-up. Staff always follow a plan, but one whose own Pokémon it keeps benched for ${BENCH_QUARTERS} reviews running grows restless (promotion's clock moves on a quarter; a stay-put member may start wanting more). A planned Pokémon sold, locked, listed or banned leaves a gap, flagged on the Ranch page, that the steer fills.`]);
 
 // Move time on by up to n weeks. A step of more than a week stops early when something needs you: a title
